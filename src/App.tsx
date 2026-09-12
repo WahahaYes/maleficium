@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import CompileStatus from './components/CompileStatus';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -108,8 +109,10 @@ export default function App() {
     } else if (!r.ok && r.log.includes('spawn')) {
       setLog(r.log + ' (no engine on PATH and sidecar failed — see notes/2026-09-12-tectonic-sidecar.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
+      try { const c = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     } else if (!r.ok) {
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
+      try { const c = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     }
   }
 
@@ -134,7 +137,7 @@ export default function App() {
     });
   }
 
-  const base = fileName.replace(/\.tex$/, '');
+  const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
 
   return (
     <MainLayout 
@@ -145,11 +148,12 @@ export default function App() {
             <Button variant="outlined" onClick={save}>Save</Button>
             <Button variant="contained" onClick={compile}>Compile</Button>
             <Typography variant="body2" sx={{ml:1}}>{fileName}</Typography>
+          <CompileStatus/>
           </Box>
           {root?<Box sx={{maxHeight:200,overflow:'auto'}}><FileTree tree={tree} selected={fileName} onSelect={handleSelect} /></Box>:null}
           <Editor value={tex} onChange={setTex} onSave={save} />
           <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
-          {logText ? <Problems logText={logText} root={root || ''} base={base} onJump={handleJump} /> : null}
+          {logText ? <Problems logText={logText} root={root || workdirHint} base={workdirHint} onJump={handleJump} /> : null}
           <EventLog/>
           <Box sx={{display:'flex',gap:1,mt:1}}>
             <Button variant="outlined" onClick={handleForwardSync}>Forward SyncTeX</Button>
@@ -163,7 +167,7 @@ export default function App() {
         <Box sx={{p:2}}>
           <Preview pdfUrl={pdfUrl} />
           <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
-          {logText ? <Problems logText={logText} root={root || ''} base={base} onJump={handleJump} /> : null}
+          {logText ? <Problems logText={logText} root={root || workdirHint} base={workdirHint} onJump={handleJump} /> : null}
           <Box sx={{display:'flex',gap:1,mt:1}}>
             <Button variant="outlined" onClick={handleForwardSync}>Forward SyncTeX</Button>
             <Button variant="outlined" onClick={handleGitStatus}>Git Status</Button>
