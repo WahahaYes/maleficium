@@ -10,7 +10,7 @@ import FileTree from './components/FileTree';
 import Problems from './components/Problems';
 import EventLog from './components/EventLog';
 import { openProject, listTree, loadTex, saveTex, saveTexToDisk, TreeEntry } from './lib/files';
-import { compileTex, onCompileLine } from './lib/compile';
+import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus } from './lib/git';
 import { forward_sync } from './lib/synctex';
@@ -34,6 +34,7 @@ export default function App() {
 
   useEffect(()=>onPdf(setPdfUrl),[]);
 
+  useEffect(()=>{ const h=()=>{ cancelCompile().catch(()=>{}); }; window.addEventListener('beforeunload',h); return ()=>window.removeEventListener('beforeunload',h); },[]);
   useEffect(() => {
     if (fileName.includes('/')) {
       if (autosaveTimeout.current) clearTimeout(autosaveTimeout.current);

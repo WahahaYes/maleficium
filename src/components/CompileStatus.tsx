@@ -1,7 +1,10 @@
 import {useEffect,useState} from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 import {subscribe,BusEvent} from '../lib/events';
+import { emit } from '../lib/events';
+import { cancelCompile } from '../lib/compile';
 type St='idle'|'preparing'|'compiling'|'success'|'failure';
 export default function CompileStatus(){
 const [st,setSt]=useState<St>('idle');
@@ -17,5 +20,5 @@ else if(e.kind==='error'){setSt('failure');setLast(e.message)}
 }),[]);
 useEffect(()=>{if(st!=='compiling'||started==null)return;const t=setInterval(()=>setElapsed(Math.floor((Date.now()-started)/1000)),500);return ()=>clearInterval(t)},[st,started]);
 const color=st==='success'?'green':st==='failure'?'red':st==='compiling'?'orange':'grey';
-return (<Box sx={{display:'flex',gap:1,alignItems:'center'}}><Typography variant="body2" sx={{color}}>{st}{st==='compiling'?` (${elapsed}s)`:''}</Typography><Typography variant="caption" sx={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:400}}>{last}</Typography></Box>)
+return (<Box sx={{display:'flex',gap:1,alignItems:'center'}}><Typography variant="body2" sx={{color}}>{st}{st==='compiling'?` (${elapsed}s)`:''}</Typography><Typography variant="caption" sx={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:400}}>{last}</Typography>{st==='compiling' ? <Button size="small" onClick={()=>{ emit({scope:'compile',kind:'progress',message:'cancelling...'}); cancelCompile().catch((e)=>emit({scope:'compile',kind:'error',message:'cancel failed: '+String(e).slice(0,120)})); }}>Cancel</Button> : null}</Box>)
 }

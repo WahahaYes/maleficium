@@ -13,3 +13,5 @@ export async function compileTex(inputPath: string, workdir: string): Promise<Co
     return { ok: false, pdfPath: null, log: String(e) };
   }
 }
+
+export async function cancelCompile(): Promise<string> { return await invoke<string>('cancel_compile'); }
