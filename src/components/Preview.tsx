@@ -1,5 +1,6 @@
 import { Typography } from '@mui/material';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { openPdf } from '../lib/pdfjs';
 
 interface PreviewProps {
   pdfUrl: string | null;
@@ -7,15 +8,14 @@ interface PreviewProps {
 
 export default function Preview({ pdfUrl }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [numPages, setNumPages] = useState(1);
 
   useEffect(() => {
     if (!pdfUrl || !canvasRef.current) return;
 
     const loadImage = async () => {
-      const pdfJs = await import('pdfjs-dist');
-      const workerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs?url', import.meta.url).toString();
-      pdfJs.GlobalWorkerOptions.workerSrc = workerUrl;
-      const pdf = await pdfJs.getDocument(pdfUrl).promise;
+      const pdf = await openPdf(pdfUrl);
+      setNumPages(pdf.numPages);
       const page = await pdf.getPage(1);
       const viewport = page.getViewport({ scale: 1.2 });
       canvasRef.current!.height = viewport.height;
@@ -29,7 +29,7 @@ export default function Preview({ pdfUrl }: PreviewProps) {
 
   return (
     <>
-      <Typography variant="subtitle2">Page 1 of 1</Typography>
+      <Typography variant="subtitle2">Page 1 of {numPages}</Typography>
       <canvas ref={canvasRef} />
     </>
   );

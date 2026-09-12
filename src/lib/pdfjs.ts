@@ -1,0 +1,20 @@
+let cachedPdfJs: any = null;
+
+async function getPdfJs(): Promise<any> {
+  if (cachedPdfJs) return cachedPdfJs;
+  const pdfJs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { GlobalWorkerOptions } = pdfJs as any;
+  const worker = new Worker(
+    new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url),
+    { type: 'module' }
+  );
+  (pdfJs as any).PDFWorker({ port: worker });
+  GlobalWorkerOptions.workerPort = worker;
+  cachedPdfJs = pdfJs;
+  return cachedPdfJs;
+}
+
+export async function openPdf(url: string): Promise<any> {
+  const pdfJs = await getPdfJs();
+  return pdfJs.getDocument(url);
+}
