@@ -18,3 +18,8 @@ export async function openPdf(url: string): Promise<any> {
   const pdfJs = await getPdfJs();
   return pdfJs.getDocument(url);
 }
+
+export async function openPdfFromBytes(data: Uint8Array): Promise<any> {
+  const pdfJs = await getPdfJs();
+  return pdfJs.getDocument({ data });
+}
