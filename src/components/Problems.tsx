@@ -17,7 +17,7 @@ function resolvePath(p: string): string {
   const out: string[] = [];
   for (const part of parts) {
     if (part === '..') out.pop();
-    else if (part !== '.') out.push(part);
+    else if (part !== '.' && part !== '') out.push(part);
   }
   return '/' + out.join('/');
 }
@@ -29,8 +29,7 @@ export function parseLog(logText: string, root: string, base: string): ParsedLin
     const m = line.match(re);
     if (m) {
       let file = m[2];
-      if (m[1] === './') file = resolvePath(joinPath(base, file));
-      else file = resolvePath(file);
+      file = file.startsWith('/') ? resolvePath(file) : resolvePath(joinPath(base, file));
       const clickable = file.startsWith(root);
       lines.push({ file, line: parseInt(m[3], 10), msg: m[4], clickable });
     }
