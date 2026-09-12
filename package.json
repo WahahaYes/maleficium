@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "PIDS=$(lsof -ti:1420,1421 2>/dev/null); if [ -n \"$PIDS\" ]; then echo reclaiming 1420/1421: $PIDS; echo \"$PIDS\" | xargs -r kill -TERM 2>/dev/null; sleep 2; lsof -ti:1420,1421 2>/dev/null | xargs -r kill -KILL 2>/dev/null; fi; pkill -f '[b]inaries/tectonic' 2>/dev/null; true",
+    "predev:desktop": "PIDS=$(lsof -ti:1420,1421 2>/dev/null); if [ -n \"$PIDS\" ]; then echo reclaiming 1420/1421: $PIDS; echo \"$PIDS\" | xargs -r kill -TERM 2>/dev/null; sleep 2; lsof -ti:1420,1421 2>/dev/null | xargs -r kill -KILL 2>/dev/null; fi; pkill -f '[b]inaries/tectonic' 2>/dev/null; true",
     "dev": "vite",
     "dev:desktop": "tauri dev",
     "build": "tsc && vite build",
@@ -18,7 +20,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-fs": "^2.5.2",
     "@tauri-apps/plugin-opener": "^2",
-    "pdfjs-dist": "^5.6.205",
+    "pdfjs-dist": "^5.5.207",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
