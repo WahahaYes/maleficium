@@ -1,52 +1,22 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@mui/material";
-import "./App.css";
-
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <Button type="submit" variant="contained">Greet</Button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+import { useEffect, useState } from 'react';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
+import MainLayout from './components/MainLayout';
+import Editor from './components/Editor';
+import Preview from './components/Preview';
+import { loadTexViaDialog, saveTexToDisk } from './lib/files';
+import { compileTex } from './lib/compile';
+import { emitPdf, onPdf } from './lib/preview-bus';
+const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
+export default function App() {
+  const [tex, setTex] = useState(HELLO);
+  const [fileName, setFileName] = useState('hello.tex');
+  const [log, setLog] = useState('ready');
+  const [pdfUrl, setPdfUrl] = useState<string|null>(null);
+  useEffect(()=>onPdf(setPdfUrl),[]);
+  async function open(){ const r=await loadTexViaDialog(); if(r){setTex(r.content);setFileName(r.name);setLog('opened '+r.name)} else setLog('open cancelled (stub)'); }
+  function save(){ saveTexToDisk(fileName,tex); setLog('saved '+fileName); }
+  async function compile(){ setLog('compiling...'); const r=await compileTex(fileName,'/tmp'); setLog(r.log); if(r.ok&&r.pdfPath){emitPdf(r.pdfPath)} else if(!r.ok&&r.log.includes('spawn')){setLog(r.log+' (tectonic not installed — bundle in P5)')} }
+  return (<MainLayout editor={<Box sx={{p:2}}><Box sx={{display:'flex',gap:1,mb:1}}><Button variant="outlined" onClick={open}>Open</Button><Button variant="outlined" onClick={save}>Save</Button><Button variant="contained" onClick={compile}>Compile</Button><Typography variant="body2" sx={{ml:1}}>{fileName}</Typography></Box><Editor value={tex} onChange={setTex} onSave={save} /></Box>} preview={<Box sx={{p:2}}><Preview pdfUrl={pdfUrl} /><Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography></Box>} />);
 }
-
-export default App;
