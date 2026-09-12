@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
-use tauri::{AppHandle, Emitter};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
 
 fn out_pdf(outdir: &Path, main_file: &str) -> PathBuf {
     let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
@@ -44,8 +45,17 @@ fn sidecar_path() -> Option<PathBuf> {
     }
     None
 }
+
+pub struct CompileState(pub Mutex<Option<std::process::Child>>);
+
+impl Default for CompileState {
+    fn default() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
 #[tauri::command]
-pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<String, String> {
+pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String, workdir: String) -> Result<String, String> {
     let (dir, main_file) = if Path::new(&input).is_absolute() {
         let p = Path::new(&input);
         let d = p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| PathBuf::from(&workdir));
@@ -72,10 +82,14 @@ pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<Str
             .stderr(Stdio::piped())
             .spawn()
         {
-            Ok(mut child) => {
-                let stdout = child.stdout.take().unwrap();
-                let stderr = child.stderr.take().unwrap();
-                
+            Ok(child) => {
+                let mut child = child;
+                let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+                    let _ = child.kill();
+                    return Err(String::from("sidecar pipes unavailable"));
+                };
+                state.0.lock().unwrap().replace(child);
+
                 let app_clone = app.clone();
                 let stdout_handle = std::thread::spawn(move || {
                     let reader = BufReader::new(stdout);
@@ -95,19 +109,22 @@ pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<Str
                     }
                 }
                 
-                stdout_handle.join().unwrap();
-                let status = child.wait();
-                
-                if let Ok(exit_status) = status {
-                    if exit_status.success() {
-                        let pdf = out_pdf(&outdir, &main_file);
-                        return Ok(pdf.to_string_lossy().to_string());
-                    }
+                let _ = stdout_handle.join();
+                match state.0.lock().unwrap().take() {
+                    None => return Err(String::from("compile cancelled")),
+                    Some(mut c) => match c.wait() {
+                        Ok(s) if s.success() => {
+                            let pdf = out_pdf(&outdir, &main_file);
+                            return Ok(pdf.to_string_lossy().to_string());
+                        }
+                        _ => {
+                            let tail = collected.join("\n");
+                            let t = &tail[..500.min(tail.len())];
+                            sidecar_err = Some(format!("bundled tectonic failed: {}", t));
+                            last_err = sidecar_err.clone().unwrap();
+                        }
+                    },
                 }
-                let tail = collected.join("\n");
-                let t = &tail[..500.min(tail.len())];
-                sidecar_err = Some(format!("bundled tectonic failed: {}", t));
-                last_err = sidecar_err.clone().unwrap();
             }
             Err(e) => {
                 last_err = format!("bundled tectonic spawn failed (sidecar missing?): {}", e);
@@ -121,4 +138,16 @@ pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<Str
     }
     if let Some(e) = sidecar_err { return Err(e); }
     Err(last_err)
+}
+
+#[tauri::command]
+pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> {
+    match state.0.lock().unwrap().take() {
+        Some(mut c) => {
+            let _ = c.kill();
+            let _ = c.wait();
+            Ok(String::from("cancelled"))
+        }
+        None => Err(String::from("nothing to cancel"))
+    }
 }
