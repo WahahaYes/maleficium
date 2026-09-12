@@ -12,7 +12,7 @@ import { compileTex } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus } from './lib/git';
 import { forward_sync } from './lib/synctex';
-import { readTextFile } from '@tauri-apps/plugin-fs';
+import { mkdir, readTextFile } from '@tauri-apps/plugin-fs';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -74,20 +74,32 @@ export default function App() {
     } 
   }
 
-  async function compile(){ 
-    setLog('compiling...'); 
-    const r=await compileTex(fileName,'/tmp'); 
+  async function compile(){
+    setLog('compiling...');
+    // Write-then-compile: the engine reads from disk, so persist first.
+    let target: string;
+    let workdir: string;
+    if (fileName.includes('/')) {
+      await saveTex(fileName, tex);
+      target = fileName;
+      workdir = fileName.slice(0, fileName.lastIndexOf('/')) || '/tmp';
+    } else {
+      workdir = '/tmp/maleficium-untitled';
+      await mkdir(workdir, { recursive: true });
+      target = workdir + '/' + fileName;
+      await saveTex(target, tex);
+    }
+    const main = target.slice(target.lastIndexOf('/') + 1);
+    const r = await compileTex(target, workdir);
     setLog(r.log);
     if (r.ok && r.pdfPath) {
       emitPdf(r.pdfPath);
-      const workdir = '/tmp';
-      const base = fileName.replace(/\.tex$/, '');
       try {
-        const logContent = await readTextFile(`${workdir}/out/${base}.log`);
+        const logContent = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`);
         setLogText(logContent);
       } catch {}
-    } else if(!r.ok && r.log.includes('spawn')){
-      setLog(r.log+' (tectonic not installed — bundle in P5)');
+    } else if (!r.ok && r.log.includes('spawn')) {
+      setLog(r.log + ' (no engine on PATH and sidecar failed — see notes/2026-09-12-tectonic-sidecar.md)');
     }
   }
 

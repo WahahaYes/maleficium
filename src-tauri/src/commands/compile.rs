@@ -57,7 +57,10 @@ pub fn compile_tex(input: String, workdir: String) -> Result<String, String> {
     let outdir_str = outdir.to_string_lossy().to_string();
 
     // 1) Bundled sidecar (externalBin `binaries/tectonic`), resolved without new deps.
+    // Its stderr is the most relevant failure (the file was actually processed),
+    // so it wins over PATH-missing noise below when everything fails.
     let mut last_err = String::from("no latex engine succeeded");
+    let mut sidecar_err: Option<String> = None;
     if let Some(bin) = sidecar_path() {
         match Command::new(&bin)
             .args(["-X", "compile", &main_file, "--outdir", &outdir_str])
@@ -71,10 +74,11 @@ pub fn compile_tex(input: String, workdir: String) -> Result<String, String> {
             Ok(o) => {
                 let tail = String::from_utf8_lossy(&o.stderr);
                 let t = &tail[..500.min(tail.len())];
-                last_err = format!("bundled tectonic failed: {}", t);
+                sidecar_err = Some(format!("bundled tectonic failed: {}", t));
+                last_err = sidecar_err.clone().unwrap();
             }
             Err(e) => {
-                last_err = format!("bundled tectonic spawn failed: {}", e);
+                last_err = format!("bundled tectonic spawn failed (sidecar missing?): {}", e);
             }
         }
     }
@@ -105,8 +109,17 @@ pub fn compile_tex(input: String, workdir: String) -> Result<String, String> {
                 last_err = format!("{} failed: {}", bin, t);
             }
             Err(e) => {
-                last_err = format!("{} spawn failed: {} (tried sidecar first)", bin, e);
+                // Only PATH noise; keep any real sidecar stderr as the final error.
+                if sidecar_err.is_none() {
+                    last_err = format!("{} spawn failed: {} (tried sidecar first)", bin, e);
+                }
             }
+        }
+    }
+    if let Some(e) = sidecar_err {
+        // Sidecar actually processed the file but failed: its message beats "not on PATH".
+        if last_err.contains("spawn failed") || last_err == "no latex engine succeeded" {
+            return Err(e);
         }
     }
     Err(last_err)
