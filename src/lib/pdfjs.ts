@@ -8,7 +8,6 @@ async function getPdfJs(): Promise<any> {
     new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url),
     { type: 'module' }
   );
-  (pdfJs as any).PDFWorker({ port: worker });
   GlobalWorkerOptions.workerPort = worker;
   cachedPdfJs = pdfJs;
   return cachedPdfJs;
@@ -16,10 +15,10 @@ async function getPdfJs(): Promise<any> {
 
 export async function openPdf(url: string): Promise<any> {
   const pdfJs = await getPdfJs();
-  return pdfJs.getDocument(url);
+  return await pdfJs.getDocument(url).promise;
 }
 
 export async function openPdfFromBytes(data: Uint8Array): Promise<any> {
   const pdfJs = await getPdfJs();
-  return pdfJs.getDocument({ data });
+  return await pdfJs.getDocument({ data }).promise;
 }

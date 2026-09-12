@@ -28,9 +28,12 @@ export default function Preview({ pdfUrl }: PreviewProps) {
         setNumPages(pdf.numPages);
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 1.2 });
-        canvasRef.current!.height = viewport.height;
-        canvasRef.current!.width = viewport.width;
-        await page.render({ canvas: canvasRef.current, viewport }).promise;
+        const canvas = canvasRef.current!;
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('2d context unavailable');
+        await page.render({ canvasContext: ctx, viewport }).promise;
       } catch (e) {
         if (!isCancelled) {
           setError(`Failed to load PDF: ${String(e)}`);
