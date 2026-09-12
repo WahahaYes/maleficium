@@ -1,6 +1,7 @@
 import { Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { openPdf, openPdfFromBytes } from '../lib/pdfjs';
+import { emit } from '../lib/events';
 import { readFile } from '@tauri-apps/plugin-fs';
 
 interface PreviewProps {
@@ -12,32 +13,48 @@ export default function Preview({ pdfUrl, stamp }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState('');
 
   useEffect(() => {
     if (!pdfUrl || !canvasRef.current) return;
 
     let isCancelled = false;
+    const yieldUi = () => new Promise<void>((r) => setTimeout(r, 0));
 
     const loadImage = async () => {
       try {
         setError(null);
-        const pdf = pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://') || pdfUrl.startsWith('asset:')
-          ? await openPdf(pdfUrl)
-          : await openPdfFromBytes(new Uint8Array(await readFile(pdfUrl)));
-        
+        const canvas = canvasRef.current!;
+        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+        setPhase('reading...');
+        const t0 = Date.now();
+        const isRemote = pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://') || pdfUrl.startsWith('asset:');
+        const bytes = isRemote ? null : new Uint8Array(await readFile(pdfUrl));
         if (isCancelled) return;
+        await yieldUi();
+        setPhase('loading...');
+        const pdf = isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array);
+        if (isCancelled) return;
+        emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
+        await yieldUi();
         setNumPages(pdf.numPages);
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 1.2 });
-        const canvas = canvasRef.current!;
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('2d context unavailable');
+        setPhase('rendering...');
+        await yieldUi();
+        const t1 = Date.now();
         await page.render({ canvasContext: ctx, viewport }).promise;
+        if (isCancelled) return;
+        emit({ scope: 'preview', kind: 'progress', message: `page 1 rendered in ${Date.now() - t1}ms` });
+        setPhase('');
       } catch (e) {
         if (!isCancelled) {
           setError(`Failed to load PDF: ${String(e)}`);
+          setPhase('');
         }
       }
     };
@@ -54,7 +71,7 @@ export default function Preview({ pdfUrl, stamp }: PreviewProps) {
 
   return (
     <>
-      <Typography variant="subtitle2">Page 1 of {numPages}</Typography>
+      <Typography variant="subtitle2">Page 1 of {numPages}{phase ? ` (${phase})` : ''}</Typography>
       <canvas ref={canvasRef} />
     </>
   );
