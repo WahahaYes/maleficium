@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import CompileStatus from './components/CompileStatus';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -69,7 +69,7 @@ export default function App() {
     } 
   }
 
-  async function save(){ 
+  const save = useCallback(async ()=>{ 
     if(fileName.includes('/')){
       await saveTex(fileName,tex);
       setLog('saved '+fileName);
@@ -79,7 +79,7 @@ export default function App() {
       setLog('saved '+fileName);
       emit({scope:'fs',kind:'success',message:'saved '+fileName});
     } 
-  }
+  }, [fileName, tex]);
 
   async function compile(){
     emit({scope:'compile',kind:'progress',message:'compiling '+fileName});

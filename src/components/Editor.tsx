@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { TextField } from '@mui/material';
 
 interface EditorProps {
@@ -6,7 +7,7 @@ interface EditorProps {
   onSave: () => void;
 }
 
-export default function Editor({ value, onChange, onSave }: EditorProps) {
+function Editor({ value, onChange, onSave }: EditorProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
@@ -25,3 +26,5 @@ export default function Editor({ value, onChange, onSave }: EditorProps) {
     />
   );
 }
+
+export default memo(Editor);
