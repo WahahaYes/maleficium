@@ -10,7 +10,7 @@ import FileTree from './components/FileTree';
 import Problems from './components/Problems';
 import EventLog from './components/EventLog';
 import { openProject, listTree, loadTex, saveTex, saveTexToDisk, TreeEntry } from './lib/files';
-import { compileTex } from './lib/compile';
+import { compileTex, onCompileLine } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus } from './lib/git';
 import { forward_sync } from './lib/synctex';
@@ -96,6 +96,9 @@ export default function App() {
       await saveTex(target, tex);
     }
     const main = target.slice(target.lastIndexOf('/') + 1);
+    let unlisten: ()=>void = ()=>{};
+    try { unlisten = await onCompileLine((line)=>emit({scope:'compile',kind:'progress',message:String(line).slice(0,300)})); } catch {}
+    const t0 = Date.now(); const hb = setInterval(()=>emit({scope:'compile',kind:'progress',message:`still compiling ${fileName} (${Math.floor((Date.now()-t0)/1000)}s)`}), 5000);
     const r = await compileTex(target, workdir);
     setLog(r.log);
     if (r.ok && r.pdfPath) {
@@ -114,6 +117,7 @@ export default function App() {
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       try { const c = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     }
+    clearInterval(hb); try { unlisten(); } catch {}
   }
 
   async function handleForwardSync(){

@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export type CompileResult = { ok: boolean, pdfPath: string | null, log: string };
+
+export function onCompileLine(cb:(line:string)=>void):Promise<()=>void> { return listen<string>('compile-line', (e)=>cb(e.payload)); }
 
 export async function compileTex(inputPath: string, workdir: string): Promise<CompileResult> {
   try {

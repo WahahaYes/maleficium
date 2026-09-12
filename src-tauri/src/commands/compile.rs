@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use tauri::{AppHandle, Emitter};
 
 fn out_pdf(outdir: &Path, main_file: &str) -> PathBuf {
     let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
@@ -43,7 +45,7 @@ fn sidecar_path() -> Option<PathBuf> {
     None
 }
 #[tauri::command]
-pub fn compile_tex(input: String, workdir: String) -> Result<String, String> {
+pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<String, String> {
     let (dir, main_file) = if Path::new(&input).is_absolute() {
         let p = Path::new(&input);
         let d = p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| PathBuf::from(&workdir));
@@ -65,14 +67,43 @@ pub fn compile_tex(input: String, workdir: String) -> Result<String, String> {
         match Command::new(&bin)
             .args(["-X", "compile", &main_file, "--outdir", &outdir_str])
             .current_dir(&dir)
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
         {
-            Ok(o) if o.status.success() => {
-                let pdf = out_pdf(&outdir, &main_file);
-                return Ok(pdf.to_string_lossy().to_string());
-            }
-            Ok(o) => {
-                let tail = String::from_utf8_lossy(&o.stderr);
+            Ok(mut child) => {
+                let stdout = child.stdout.take().unwrap();
+                let stderr = child.stderr.take().unwrap();
+                
+                let app_clone = app.clone();
+                let stdout_handle = std::thread::spawn(move || {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines() {
+                        if let Ok(line) = line {
+                            let _ = app_clone.emit("compile-line", line.clone());
+                        }
+                    }
+                });
+                
+                let mut collected: Vec<String> = Vec::new();
+                let stderr_reader = BufReader::new(stderr);
+                for line in stderr_reader.lines() {
+                    if let Ok(line) = line {
+                        let _ = app.emit("compile-line", line.clone());
+                        collected.push(line);
+                    }
+                }
+                
+                stdout_handle.join().unwrap();
+                let status = child.wait();
+                
+                if let Ok(exit_status) = status {
+                    if exit_status.success() {
+                        let pdf = out_pdf(&outdir, &main_file);
+                        return Ok(pdf.to_string_lossy().to_string());
+                    }
+                }
+                let tail = collected.join("\n");
                 let t = &tail[..500.min(tail.len())];
                 sidecar_err = Some(format!("bundled tectonic failed: {}", t));
                 last_err = sidecar_err.clone().unwrap();
