@@ -151,3 +151,23 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
         None => Err(String::from("nothing to cancel"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn out_pdf_maps_tex_stem_to_pdf() {
+        assert_eq!(out_pdf(Path::new("/t/out"), "hello.tex"), Path::new("/t/out/hello.pdf"));
+    }
+
+    #[test]
+    fn out_pdf_appends_pdf_when_no_tex_suffix() {
+        assert_eq!(out_pdf(Path::new("/t/out"), "hello"), Path::new("/t/out/hello.pdf"));
+    }
+
+    #[test]
+    fn sidecar_triple_returns_non_empty() {
+        assert!(!sidecar_triple().is_empty());
+    }
+}
