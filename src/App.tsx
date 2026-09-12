@@ -85,20 +85,26 @@ export default function App() {
     // Write-then-compile: the engine reads from disk, so persist first.
     let target: string;
     let workdir: string;
-    if (fileName.includes('/')) {
-      await saveTex(fileName, tex);
-      target = fileName;
-      workdir = fileName.slice(0, fileName.lastIndexOf('/')) || '/tmp';
-    } else {
-      workdir = '/tmp/maleficium-untitled';
-      await mkdir(workdir, { recursive: true });
-      target = workdir + '/' + fileName;
-      await saveTex(target, tex);
-    }
-    const main = target.slice(target.lastIndexOf('/') + 1);
     let unlisten: ()=>void = ()=>{};
     try { unlisten = await onCompileLine((line)=>emit({scope:'compile',kind:'progress',message:String(line).slice(0,300)})); } catch {}
     const t0 = Date.now(); const hb = setInterval(()=>emit({scope:'compile',kind:'progress',message:`still compiling ${fileName} (${Math.floor((Date.now()-t0)/1000)}s)`}), 5000);
+    try {
+      if (fileName.includes('/')) {
+        await saveTex(fileName, tex);
+        target = fileName;
+        workdir = fileName.slice(0, fileName.lastIndexOf('/')) || '/tmp';
+      } else {
+        workdir = '/tmp/maleficium-untitled';
+        await mkdir(workdir, { recursive: true });
+        target = workdir + '/' + fileName;
+        await saveTex(target, tex);
+      }
+    } catch(e){
+      emit({scope:'compile',kind:'error',message:'save failed: '+String(e).slice(0,200)});
+      clearInterval(hb); try{unlisten();}catch{}
+      return;
+    }
+    const main = target.slice(target.lastIndexOf('/') + 1);
     const r = await compileTex(target, workdir);
     setLog(r.log);
     if (r.ok && r.pdfPath) {
@@ -110,7 +116,7 @@ export default function App() {
         setLogText(logContent);
       } catch {}
     } else if (!r.ok && r.log.includes('spawn')) {
-      setLog(r.log + ' (no engine on PATH and sidecar failed — see notes/2026-09-12-tectonic-sidecar.md)');
+      setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       try { const c = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     } else if (!r.ok) {

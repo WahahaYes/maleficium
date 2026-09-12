@@ -57,6 +57,7 @@ pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<Str
     let outdir = dir.join("out");
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
+    let _ = app.emit("compile-line", format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()));
 
     // 1) Bundled sidecar (externalBin `binaries/tectonic`), resolved without new deps.
     // Its stderr is the most relevant failure (the file was actually processed),
@@ -114,44 +115,10 @@ pub fn compile_tex(app: AppHandle, input: String, workdir: String) -> Result<Str
         }
     }
 
-    // 2) PATH fallback chain for dev machines without the sidecar built in.
-    let attempts: Vec<(&str, Vec<String>)> = vec![
-        ("latexmk", vec!["-cd".into(), "-interaction=nonstopmode".into(), "-file-line-error".into(), "-synctex=1".into(), "-output-directory".into(), outdir_str.clone(), main_file.clone()]),
-        ("pdflatex", vec!["-interaction=nonstopmode".into(), "-file-line-error".into(), "-synctex=1".into(), "-output-directory".into(), outdir_str.clone(), main_file.clone()]),
-        ("tectonic", vec!["-X".into(), "compile".into(), main_file.clone(), "--outdir".into(), outdir_str.clone()]),
-    ];
-    for (bin, args) in attempts {
-        match Command::new(bin).args(&args).current_dir(&dir).output() {
-            Ok(o) if o.status.success() => {
-                let pdf = out_pdf(&outdir, &main_file);
-                // latexmk may place the pdf beside the source instead of outdir; probe both.
-                if pdf.exists() {
-                    return Ok(pdf.to_string_lossy().to_string());
-                }
-                let alt = dir.join(format!("{}.pdf", main_file.strip_suffix(".tex").unwrap_or(&main_file)));
-                if alt.exists() {
-                    return Ok(alt.to_string_lossy().to_string());
-                }
-                return Ok(pdf.to_string_lossy().to_string());
-            }
-            Ok(o) => {
-                let tail = String::from_utf8_lossy(&o.stderr);
-                let t = &tail[..500.min(tail.len())];
-                last_err = format!("{} failed: {}", bin, t);
-            }
-            Err(e) => {
-                // Only PATH noise; keep any real sidecar stderr as the final error.
-                if sidecar_err.is_none() {
-                    last_err = format!("{} spawn failed: {} (tried sidecar first)", bin, e);
-                }
-            }
-        }
+    match sidecar_path() {
+        None => return Err(String::from("bundled tectonic sidecar missing (src-tauri/binaries/) — no PATH fallback")),
+        Some(_) => {}
     }
-    if let Some(e) = sidecar_err {
-        // Sidecar actually processed the file but failed: its message beats "not on PATH".
-        if last_err.contains("spawn failed") || last_err == "no latex engine succeeded" {
-            return Err(e);
-        }
-    }
+    if let Some(e) = sidecar_err { return Err(e); }
     Err(last_err)
 }
