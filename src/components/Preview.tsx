@@ -5,9 +5,10 @@ import { readFile } from '@tauri-apps/plugin-fs';
 
 interface PreviewProps {
   pdfUrl: string | null;
+  stamp: number;
 }
 
-export default function Preview({ pdfUrl }: PreviewProps) {
+export default function Preview({ pdfUrl, stamp }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +46,7 @@ export default function Preview({ pdfUrl }: PreviewProps) {
     return () => {
       isCancelled = true;
     };
-  }, [pdfUrl]);
+  }, [pdfUrl, stamp]);
 
   if (!pdfUrl) return <Typography variant="body1">No PDF yet</Typography>;
 

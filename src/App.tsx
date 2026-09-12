@@ -29,6 +29,7 @@ export default function App() {
   const [gitText, setGitText] = useState('');
   const [forwardMsg, setForwardMsg] = useState('');
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
+  const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
   const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -111,6 +112,7 @@ export default function App() {
     if (r.ok && r.pdfPath) {
       emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
       emitPdf(r.pdfPath);
+      setPdfStamp(s=>s+1);
       emit({scope:'preview',kind:'success',message:'preview '+String(r.pdfPath)});
       try {
         const logContent = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`);
@@ -176,7 +178,7 @@ export default function App() {
       }
       preview={
         <Box sx={{p:2}}>
-          <Preview pdfUrl={pdfUrl} />
+          <Preview pdfUrl={pdfUrl} stamp={pdfStamp} />
           <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
           {logText ? <Problems logText={logText} root={root || workdirHint} base={workdirHint} onJump={handleJump} /> : null}
           <Box sx={{display:'flex',gap:1,mt:1}}>
