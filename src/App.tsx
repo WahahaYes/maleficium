@@ -117,7 +117,7 @@ export default function App() {
       try {
         const logContent = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`);
         setLogText(logContent);
-      } catch {}
+      } catch { setLogText(''); }
     } else if (!r.ok && r.log.includes('spawn')) {
       setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
