@@ -7,11 +7,13 @@ import Editor from './components/Editor';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
 import Problems from './components/Problems';
+import EventLog from './components/EventLog';
 import { openProject, listTree, loadTex, saveTex, saveTexToDisk, TreeEntry } from './lib/files';
 import { compileTex } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus } from './lib/git';
 import { forward_sync } from './lib/synctex';
+import { emit } from './lib/events';
 import { mkdir, readTextFile } from '@tauri-apps/plugin-fs';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
@@ -46,8 +48,8 @@ export default function App() {
 
   async function open(){ 
     const r=await openProject(); 
-    if(r){setRoot(r);const t=await listTree(r);setTree(t);setLog('opened '+r)} 
-    else setLog('open cancelled'); 
+    if(r){setRoot(r);const t=await listTree(r);setTree(t);setLog('opened '+r); emit({scope:'fs',kind:'info',message:'opened '+r})} 
+    else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});} 
   }
 
   async function handleSelect(path:string){ 
@@ -68,13 +70,16 @@ export default function App() {
     if(fileName.includes('/')){
       await saveTex(fileName,tex);
       setLog('saved '+fileName);
+      emit({scope:'fs',kind:'success',message:'saved '+fileName});
     } else {
       await saveTexToDisk(fileName,tex);
       setLog('saved '+fileName);
+      emit({scope:'fs',kind:'success',message:'saved '+fileName});
     } 
   }
 
   async function compile(){
+    emit({scope:'compile',kind:'progress',message:'compiling '+fileName});
     setLog('compiling...');
     // Write-then-compile: the engine reads from disk, so persist first.
     let target: string;
@@ -93,13 +98,18 @@ export default function App() {
     const r = await compileTex(target, workdir);
     setLog(r.log);
     if (r.ok && r.pdfPath) {
+      emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
       emitPdf(r.pdfPath);
+      emit({scope:'preview',kind:'success',message:'preview '+String(r.pdfPath)});
       try {
         const logContent = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`);
         setLogText(logContent);
       } catch {}
     } else if (!r.ok && r.log.includes('spawn')) {
       setLog(r.log + ' (no engine on PATH and sidecar failed — see notes/2026-09-12-tectonic-sidecar.md)');
+      emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
+    } else if (!r.ok) {
+      emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
     }
   }
 
@@ -140,6 +150,7 @@ export default function App() {
           <Editor value={tex} onChange={setTex} onSave={save} />
           <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
           {logText ? <Problems logText={logText} root={root || ''} base={base} onJump={handleJump} /> : null}
+          <EventLog/>
           <Box sx={{display:'flex',gap:1,mt:1}}>
             <Button variant="outlined" onClick={handleForwardSync}>Forward SyncTeX</Button>
             <Button variant="outlined" onClick={handleGitStatus}>Git Status</Button>
