@@ -20,14 +20,22 @@ const actions: CommandActions = {
 };
 
 describe('command registry', () => {
-  it('submenu hierarchy builds (pick-1 / pick-N / theme)', () => {
+  it('submenu hierarchy builds (pick-1 / pick-N / theme / layout)', () => {
     const all = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
     const pickOne = all.find((c) => c.id === 'selection.pick-one')!;
     const pickMany = all.find((c) => c.id === 'selection.pick-many')!;
     const theme = all.find((c) => c.id === 'view.theme')!;
+    const layout = all.find((c) => c.id === 'view.layout')!;
     expect(pickOne.children?.length).toBe(1);
     expect(pickMany.children?.[0].checked).toBe(true);
     expect(theme.children?.map((k) => k.id)).toEqual(['view.theme-dark', 'view.theme-light']);
+    // Layout is choose-1-of-N: exactly one child checked, label echoes choice.
+    expect(layout.label).toBe('Layout: Editor + Preview');
+    expect(layout.children?.map((k) => k.id)).toEqual(['view.preset-both', 'view.preset-editor', 'view.preset-preview']);
+    expect(layout.children?.filter((k) => k.checked).length).toBe(1);
+    // Leaf ids stay unique even counting submenu children (MCP-safe).
+    const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
+    expect(new Set(leafIds).size).toBe(leafIds.length);
   });
   it('ids are unique across sections', () => {
     const ids = buildMenus(baseCtx, actions).flatMap((s) => s.commands.map((c) => c.id));

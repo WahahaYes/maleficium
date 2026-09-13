@@ -18,7 +18,7 @@ export type CommandId =
   | 'edit.undo-delete' | 'edit.rename' | 'edit.delete'
   | 'selection.select-all' | 'selection.expand' | 'selection.shrink' | 'selection.go-to-line'
   | 'selection.pick-one' | 'selection.pick-many'
-  | 'view.preset-both' | 'view.preset-editor' | 'view.preset-preview'
+  | 'view.layout' | 'view.preset-both' | 'view.preset-editor' | 'view.preset-preview'
   | 'view.toggle-tree' | 'view.toggle-preview' | 'view.toggle-log' | 'view.toggle-outline'
   | 'view.theme' | 'view.theme-dark' | 'view.theme-light'
   | 'tools.compile' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
@@ -173,9 +173,16 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
     },
     {
       id: 'view', title: 'View', commands: [
-        { id: 'view.preset-both', label: 'Editor + Preview', checked: ctx.preset === 'both', enabled: true, run: () => a.setPreset('both') },
-        { id: 'view.preset-editor', label: 'Editor Only', checked: ctx.preset === 'editor', enabled: true, run: () => a.setPreset('editor') },
-        { id: 'view.preset-preview', label: 'Preview Only', checked: ctx.preset === 'preview', enabled: true, run: () => a.setPreset('preview') },
+        {
+          id: 'view.layout', label: `Layout: ${ctx.preset === 'both' ? 'Editor + Preview' : ctx.preset === 'editor' ? 'Editor Only' : ctx.preset === 'preview' ? 'Preview Only' : 'Custom'}`, enabled: true,
+          children: (['both', 'editor', 'preview'] as const).map((p) => ({
+            id: ({ both: 'view.preset-both', editor: 'view.preset-editor', preview: 'view.preset-preview' } as const)[p],
+            label: p === 'both' ? 'Editor + Preview' : p === 'editor' ? 'Editor Only' : 'Preview Only',
+            checked: ctx.preset === p,
+            enabled: true,
+            run: () => a.setPreset(p),
+          })),
+        },
         { id: 'view.toggle-tree', label: 'File Tree', accelerator: 'Ctrl+B', checked: ctx.view.tree, enabled: true, run: a.toggleTree },
         { id: 'view.toggle-preview', label: 'Preview Pane', checked: ctx.view.preview, enabled: true, run: a.togglePreview },
         { id: 'view.toggle-log', label: 'Log Stream', checked: !ctx.logCollapsed, enabled: true, run: a.toggleLog },
