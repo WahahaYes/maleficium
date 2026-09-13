@@ -2,8 +2,8 @@
 //
 // Growth cap: root renders 1 level only (O(depth 1) open); dirs expand via
 // onExpandDir (metadata only); visible-rows paging ("show more", 200/page);
-// filterHidden excludes .git/out/aux/log. Badges MUI Chip size=small, visible
-// rows only. Search filters LOADED rows (substring; full index deferred).
+// filterHidden excludes .git/out/aux/log. Main-file Chip visible rows only.
+// Search filters LOADED rows (substring; full index deferred).
 
 import { useMemo, useState } from 'react';
 import {
@@ -28,7 +28,6 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { TreeEntry } from '../lib/files';
-import type { GitBadge } from '../lib/git';
 
 export interface FileTreeProps {
   tree: TreeEntry[];
@@ -44,34 +43,11 @@ export interface FileTreeProps {
   lazy?: boolean;
   maxDepth?: number;
   filterHidden?: boolean;
-  gitStatus?: Map<string, GitBadge> | Record<string, string>;
 }
 
 const ROW_PAGE = 200;
 
-const badgeColor = (b: string): 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' => {
-  switch (b) {
-    case 'M': return 'warning';
-    case 'A': return 'success';
-    case 'D': return 'error';
-    case 'U': return 'info';
-    case 'R': return 'primary';
-    default: return 'default';
-  }
-};
-
-function badgeFor(gitStatus: FileTreeProps['gitStatus'], path: string, rootPrefix: string): string | null {
-  if (!gitStatus) return null;
-  if (gitStatus instanceof Map) return gitStatus.get(path) ?? null;
-  // Record form may be keyed by repo-relative path — try absolute then relative.
-  const direct = (gitStatus as Record<string, string>)[path];
-  if (direct) return direct;
-  const rel = rootPrefix && path.startsWith(rootPrefix) ? path.slice(rootPrefix.length) : null;
-  if (rel) return (gitStatus as Record<string, string>)[rel] ?? null;
-  return null;
-}
-
-function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, mainFile, maxDepth, gitStatus, rootPrefix } : {
+function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, mainFile, maxDepth } : {
   node: TreeEntry;
   depth: number;
   selected: string | null;
@@ -82,8 +58,6 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
   onExpandDir?: (dirPath: string) => Promise<TreeEntry[]>;
   mainFile?: string | null;
   maxDepth: number;
-  gitStatus: FileTreeProps['gitStatus'];
-  rootPrefix: string;
 }) {
   const [open, setOpen] = useState(depth === 0 && depth < maxDepth);
   const [lazyChildren, setLazyChildren] = useState<TreeEntry[] | null>(null);
@@ -93,7 +67,6 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
   const [nameDraft, setNameDraft] = useState<string | null>(null);
 
   if (node.type === 'file') {
-    const badge = badgeFor(gitStatus, node.path, rootPrefix);
     const isMain = mainFile != null && node.path === mainFile;
     return (
       <>
@@ -112,7 +85,6 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
         </ListItemIcon>
         <Typography variant="body2" noWrap sx={{flex:1}}>{node.name}</Typography>
         {isMain ? <Chip label="main" size="small" color="primary" sx={{ ml: 1, height: 18 }} /> : null}
-        {badge ? <Chip label={badge} size="small" color={badgeColor(badge)} sx={{ ml: 1, height: 18, minWidth: 28 }} /> : null}
       </ListItemButton>
       <Menu open={menu != null} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
         {onRename ? <MenuItem onClick={() => { setMenu(null); setNameDraft(node.name); }}>Rename</MenuItem> : null}
@@ -191,8 +163,6 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
           onExpandDir={onExpandDir}
           mainFile={mainFile}
           maxDepth={maxDepth}
-          gitStatus={gitStatus}
-          rootPrefix={rootPrefix}
         />
       ))}
       <Menu open={menu != null && node.type === 'dir'} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
@@ -212,7 +182,7 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
   );
 }
 
-export default function FileTree({ tree, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true, gitStatus }: FileTreeProps) {
+export default function FileTree({ tree, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true }: FileTreeProps) {
   // NOTE (P-06): `lazy`/`filterHidden` are honored by the DATA layer: App opens
   // with a 1-level root (`listDir1Level`) and expands via `onExpandDir`; legacy
   // callers passing a pre-walked `tree` still render (filtering in `files.ts`).
@@ -303,8 +273,6 @@ export default function FileTree({ tree, selected, onSelect, onDelete, onCreate,
             onExpandDir={onExpandDir}
             mainFile={mainFile}
             maxDepth={maxDepth}
-            gitStatus={gitStatus}
-            rootPrefix=""
           />
         ))}
       </List>

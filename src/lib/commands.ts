@@ -9,8 +9,8 @@
 // Rules: ids `domain.verb-noun`; labels Title Case (`…` iff dialog); every
 // `accelerator` must exist in `lib/keymap.ts` KEYMAP (test asserts parity);
 // destructive commands confirm via MUI dialog (never `window.confirm`);
-// `legacy` marks 05-versioning-owned git UI (audit greps it); `soon` marks
-// honest disabled placeholders (never fake affordances).
+// `legacy` marks removed 05-versioning git UI (audit greps it — must stay
+// empty); `soon` marks honest disabled placeholders (never fake affordances).
 
 export type CommandId =
   | 'file.open-project' | 'file.new-file' | 'file.close-file' | 'file.save'
@@ -22,7 +22,6 @@ export type CommandId =
   | 'view.toggle-tree' | 'view.toggle-preview' | 'view.toggle-log' | 'view.toggle-outline'
   | 'view.theme' | 'view.theme-dark' | 'view.theme-light'
   | 'tools.compile' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
-  | 'tools.git-status' | 'tools.git-show-head'
   | 'help.shortcuts' | 'help.about';
 
 export type ViewPreset = 'both' | 'editor' | 'preview' | 'custom';
@@ -87,8 +86,6 @@ export interface CommandActions {
   cancelCompile: () => void;
   forwardSync: () => void;
   inverseHint: () => void;
-  gitStatus: () => void;
-  gitShowHead: () => void;
   showShortcuts: () => void;
   showAbout: () => void;
 }
@@ -104,7 +101,7 @@ export interface MenuCommand {
   children?: MenuCommand[];
   /** Honest disabled placeholder — title explains itself. */
   soon?: boolean;
-  /** 05-versioning-owned; do not extend. */
+  /** Removed-category marker (git UI cut in 05-versioning V-1); do not extend. */
   legacy?: boolean;
   run?: () => void | Promise<void>;
 }
@@ -202,8 +199,6 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         { id: 'tools.cancel', label: 'Cancel Compile', enabled: ctx.compiling, run: a.cancelCompile },
         { id: 'tools.forward-sync', label: 'Forward SyncTeX', accelerator: 'Ctrl+Shift+F', enabled: ctx.pdfOpen && !ctx.compiling, run: a.forwardSync },
         { id: 'tools.inverse-hint', label: dis('Inverse SyncTeX'), enabled: false, soon: true, run: a.inverseHint },
-        { id: 'tools.git-status', label: 'Git Status', enabled: ctx.hasProject, legacy: true, run: a.gitStatus },
-        { id: 'tools.git-show-head', label: 'HEAD Diff', enabled: ctx.isProjectFile, legacy: true, run: a.gitShowHead },
       ],
     },
     {

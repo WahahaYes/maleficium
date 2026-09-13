@@ -1,7 +1,7 @@
 // LogStream.tsx — the single unified log event stream.
 //
 // Replaces the Problems/Log/Terminal tab trio: every surface (compile errors,
-// file ops, preview, synctex, git) emits to the bus (`lib/events.ts`), and this
+// file ops, preview, synctex) emits to the bus (`lib/events.ts`), and this
 // component renders it. Problem entries carry data {file, line, clickable} and
 // render as click-to-jump rows.
 //

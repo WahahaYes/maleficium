@@ -1,4 +1,4 @@
-// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + git).
+// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main).
 //
 // Growth cap: constant height; scalar props only (mainFile string, phase enum,
 // timer number); no payload. Compile state placed here (01 contract preserved).
@@ -7,10 +7,9 @@ import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
 
-export default function StatusBar({ mainFile, mainFileTitle, gitBranch, phase, timer, message }: {
+export default function StatusBar({ mainFile, mainFileTitle, phase, timer, message }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
-  gitBranch?: string | null;
   phase: string;
   timer: number;
   message: string;
@@ -23,7 +22,6 @@ export default function StatusBar({ mainFile, mainFileTitle, gitBranch, phase, t
         {phase}{phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
       {mainFile ? <Typography variant="caption" noWrap title={mainFileTitle ?? mainFile} sx={{ flexShrink: 0, maxWidth: '30%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mainFile}</Typography> : null}
-      {gitBranch ? <Typography variant="caption" noWrap sx={{ flexShrink: 0 }}>{gitBranch}</Typography> : null}
       {phase === 'compiling' ? <LinearProgress sx={{ width: 120, height: 2, flexShrink: 0 }} /> : null}
     </Box>
   );

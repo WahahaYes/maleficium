@@ -22,7 +22,6 @@ import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
-import { gitStatus, gitStatusState, gitShowHead, type GitBadge } from './lib/git';
 import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
@@ -51,8 +50,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
   const [trash] = useState(() => new FileHistory());
   const [trashMsg, setTrashMsg] = useState('');
-  const [gitBadges, setGitBadges] = useState<Record<string, GitBadge>>({});
-  const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
   const [largeFile, setLargeFile] = useState<string | null>(null);
@@ -150,17 +147,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
 
   useEffect(()=>{ const h=()=>{ cancelCompile().catch(()=>{}); }; window.addEventListener('beforeunload',h); return ()=>window.removeEventListener('beforeunload',h); },[]);
 
-  const refreshGit = useCallback(async (r: string) => {
-    const st = await gitStatusState(r);
-    if (st.ok) {
-      setGitBadges(st.badges);
-      setGitBranch(st.branch);
-    } else {
-      setGitBadges({});
-      setGitBranch(null);
-    }
-  }, []);
-
   const resolveMain = useCallback(async (r: string, opened: string | null) => {
     const res = await resolveMainFileTauri(r, opened);
     setMainFileState(res.mainFile);
@@ -190,7 +176,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       if (cancelled || pending.length === 0) return;
       const batch = coalesceEvents(pending.splice(0));
       void reloadTree(root);
-      void refreshGit(root);
       const now = Date.now();
       for (const ev of batch) {
         // Suppress echoes of our own writes (5s window, pruned here).
@@ -224,7 +209,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       setLog('opened '+r); emit({scope:'fs',kind:'info',message:'opened '+r});
       trash.clear();
       const m = await resolveMain(r, null);
-      await refreshGit(r);
       setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
     }
     else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
@@ -311,7 +295,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       emit({ scope: 'fs', kind: 'warn', message: 'trashed ' + path });
       setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
       await reloadTree(root);
-      await refreshGit(root);
     } else {
       setTrashMsg('delete failed: ' + (r.error ?? '').slice(0, 120));
     }
@@ -356,7 +339,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     setTrashMsg(r.ok ? 'restored' : 'undo failed: ' + (r.error ?? '').slice(0, 120));
     if (r.ok) {
       emit({ scope: 'fs', kind: 'success', message: 'trash undo' });
-      if (root) { await reloadTree(root); await refreshGit(root); }
+      if (root) { await reloadTree(root); }
     }
   }
 
@@ -606,20 +589,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     }
   }
 
-  async function handleGitStatus(){
-    if (!root) return;
-    const result = await gitStatus(root);
-    emit({ scope: 'git', kind: result.ok ? 'info' : 'warn', message: result.ok ? result.text.slice(0, 500) : 'History unavailable' });
-    await refreshGit(root);
-  }
-
-  async function handleGitShowHead() {
-    if (!root || !fileName.includes('/')) return;
-    const rel = fileName.startsWith(root + '/') ? fileName.slice(root.length + 1) : fileName;
-    const r = await gitShowHead(root, rel);
-    emit({ scope: 'git', kind: r.ok ? 'info' : 'warn', message: r.ok ? `HEAD ${rel}:\n${r.text.slice(0, 500)}` : 'History unavailable' });
-  }
-
   function handleJump(absPath: string, line: number){
     loadTex(absPath).then(content => {
       setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, absPath, content); return enforceBufferCap(n); });
@@ -642,15 +611,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   handleSelectRef.current = handleSelect;
 
   const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
-  const gitBadgeMap = useMemo(() => {
-    const m = new Map<string, GitBadge>();
-    if (root) {
-      for (const [rel, badge] of Object.entries(gitBadges)) {
-        m.set(rel.includes('/') || !root ? (rel.startsWith('/') ? rel : root + '/' + rel) : root + '/' + rel, badge);
-      }
-    }
-    return m;
-  }, [gitBadges, root]);
 
   // ---- Shell state: view is explicit booleans (View menu presets own them) ----
   const [treeVisible, setTreeVisible] = useState(true);
@@ -794,8 +754,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     cancelCompile: () => { void cancelCompile().catch((e) => emit({ scope: 'compile', kind: 'error', message: 'cancel failed: ' + String(e).slice(0, 120) })); },
     forwardSync: () => { void forwardSyncRef.current(); },
     inverseHint: () => emit({ scope: 'preview', kind: 'info', message: 'Inverse SyncTeX: click anywhere on the PDF' }),
-    gitStatus: () => { void handleGitStatus(); },
-    gitShowHead: () => { void handleGitShowHead(); },
     showShortcuts: () => setShortcutsOpen(true),
     showAbout: () => setAboutOpen(true),
   };
@@ -810,7 +768,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <Typography variant="caption" sx={{ display: 'block', mb: 1 }} title={fileName}>
-        {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''} · main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
+        {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''} · main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
       <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} />
       {reloadPath ? (
@@ -871,7 +829,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
             {root ? (
               <>
                 <Box sx={{ flexShrink: 0 }}>
-                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden />
                 </Box>
                 {outlineVisible ? (
                   <OutlineView
@@ -976,7 +934,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       <StatusBar
         mainFile={relOf(mainFile)}
         mainFileTitle={mainFile}
-        gitBranch={gitBranch}
         phase={compilePhase}
         timer={compileTimer}
         message={log}

@@ -16,7 +16,7 @@ const actions: CommandActions = {
   deleteActive: noop, selectAll: noop, expandSelection: noop, shrinkSelection: noop,
   goToLine: noop, pickOutlineSection: noop, toggleOutlinePick: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
   toggleOutline: noop, setTheme: noop, compile: noop, cancelCompile: noop, forwardSync: noop,
-  inverseHint: noop, gitStatus: noop, gitShowHead: noop, showShortcuts: noop, showAbout: noop,
+  inverseHint: noop, showShortcuts: noop, showAbout: noop,
 };
 
 describe('command registry', () => {
@@ -36,6 +36,13 @@ describe('command registry', () => {
     // Leaf ids stay unique even counting submenu children (MCP-safe).
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+  it('no git-named command or label survives (05-versioning V-1)', () => {
+    const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
+    for (const c of cmds) {
+      expect(c.id, c.id).not.toMatch(/git/i);
+      expect(c.label, c.label).not.toMatch(/git|HEAD/i);
+    }
   });
   it('ids are unique across sections', () => {
     const ids = buildMenus(baseCtx, actions).flatMap((s) => s.commands.map((c) => c.id));
