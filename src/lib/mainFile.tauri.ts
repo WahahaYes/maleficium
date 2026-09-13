@@ -1,9 +1,10 @@
-// mainFile.tauri.ts — Tauri-backed IO for mainFile resolution + persistence.
+// mainFile.tauri.ts — Tauri-backed IO for mainFile resolution.
 //
 // Growth cap: metadata/paths only; file contents read transiently, never stored.
 
-import { readDir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
+import { getMainFileFor } from './mainFile.store';
 
 async function listTexFilesRecursive(root: string): Promise<string[]> {
   const out: string[] = [];
@@ -34,19 +35,20 @@ export async function resolveMainFileTauri(root: string, openedFile: string | nu
     openedFile,
     readText: (p) => readTextFile(p),
     listTexFiles: listTexFilesRecursive,
+    // App-local store (V-3 clean cut — no in-project file read).
     readConfig: async (r) => {
-      try {
-        return await readTextFile((r.endsWith('/') ? r : r + '/') + '.maleficium.json');
-      } catch {
-        return null;
-      }
+      const rel = getMainFileFor(r);
+      return rel ? JSON.stringify({ mainFile: rel }) : null;
     },
   });
 }
 
-/** Persist explicit user association: `.maleficium.json` `{mainFile: relPath}`. */
+/**
+ * Persist explicit user association to the app-local store.
+ * Takes the project root + the file's path (absolute or rel); stores rel.
+ */
 export async function setMainFile(root: string, absOrRelPath: string): Promise<void> {
+  const { setMainFileFor } = await import('./mainFile.store');
   const rel = absOrRelPath.startsWith(root + '/') ? absOrRelPath.slice(root.length + 1) : absOrRelPath;
-  const cfgPath = (root.endsWith('/') ? root : root + '/') + '.maleficium.json';
-  await writeTextFile(cfgPath, JSON.stringify({ mainFile: rel }, null, 2) + '\n');
+  setMainFileFor(root, rel);
 }

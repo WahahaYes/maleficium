@@ -1,8 +1,8 @@
 // mainFile.ts — resolved LaTeX root document for a project.
 //
 // Growth cap: scalar path reference only, never file payload. Resolution order:
-// explicit `.maleficium.json` → `%!TEX root` magic → `\documentclass` scan
-// (first wins, deterministic) → single-.tex fallback → none. Never throws.
+// explicit association (app-local store) → `%!TEX root` magic → `\documentclass`
+// scan (first wins, deterministic) → single-.tex fallback → none. Never throws.
 
 export type MainFileSource = 'config' | 'magic' | 'scan' | 'single' | 'none';
 
@@ -21,7 +21,7 @@ export interface MainFileDeps {
   readText: (absPath: string) => Promise<string>;
   /** List absolute .tex paths under root (non-recursive walk is fine); injected. */
   listTexFiles: (root: string) => Promise<string[]>;
-  /** Read raw `.maleficium.json` if present; injected. */
+  /** Read raw association JSON from the app-local store; injected. */
   readConfig: (root: string) => Promise<string | null>;
 }
 
