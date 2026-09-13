@@ -7,6 +7,17 @@
   100% { background-color: transparent; }
 }
 
+/* PDF canvas inverse-SyncTeX hit feedback: brief amber outline overlay.
+   (NOT a remount — the old `key={flash}` trick destroyed the canvas bitmap
+   and showed a blank view on every click. State stays in React.) */
+.synctex-canvas {
+  transition: box-shadow 0.15s ease-out;
+}
+
+.synctex-canvas.synctex-hit {
+  box-shadow: 0 0 0 3px rgba(255, 176, 0, 0.8);
+}
+
 .cm-synctex-flash {
   animation: synctex-flash 1.4s ease-out;
 }

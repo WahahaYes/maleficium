@@ -76,7 +76,7 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     let mut sidecar_err: Option<String> = None;
     if let Some(bin) = sidecar_path() {
         match Command::new(&bin)
-            .args(["-X", "compile", &main_file, "--outdir", &outdir_str])
+            .args(["-X", "compile", &main_file, "--outdir", &outdir_str, "--synctex"])
             .current_dir(&dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

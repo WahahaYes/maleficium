@@ -548,20 +548,44 @@ export default function App() {
       return;
     }
     const result = await inverse_sync(pdfUrl, page, x, y);
-    // Rust returns raw `synctex edit` stdout; stub returns {"line":N,"page":P}.
+    // Real `synctex edit` shape:
+    //   Input:/abs/path/hello.tex\nLine:7\n... (stub: {"line":N,"page":P}).
     let line: number | null = null;
+    let hitFile: string | null = null;
     try {
       const j = JSON.parse(result.text) as { line?: unknown };
       if (typeof j.line === 'number') line = j.line;
-    } catch { /* raw synctex output — try File:Line scan */ }
+    } catch { /* raw synctex output — parse below */ }
+    if (line == null) {
+      const lm = result.text.match(/^Line:\s*(\d+)\s*$/m);
+      if (lm) line = parseInt(lm[1], 10);
+      const im = result.text.match(/^Input:\s*(.+?)\s*$/m);
+      if (im) hitFile = im[1].trim();
+    }
+    // Legacy fallback: File:Line scan (never matches real synctex output,
+    // kept for forward-compat with stub shapes).
     if (line == null) {
       const m = result.text.match(/(?:^|\s)([\w\-./]+\.tex):(\d+)/m);
       if (m) line = parseInt(m[2], 10);
     }
     if (line != null) {
+      // Jump the owning file when SyncTeX names one (multi-file projects);
+      // otherwise reveal the line in the current buffer.
+      if (hitFile && hitFile !== fileName) {
+        try {
+          const content = await loadTex(hitFile);
+          setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, hitFile as string, content); return enforceBufferCap(n); });
+          setTex(content);
+          setFileName(hitFile as string);
+          setLargeFile(null);
+          setReloadPath(null);
+        } catch {
+          /* unreadable hit file — still reveal the line number below */
+        }
+      }
       setCurrentLine(line);
       setSynctexFlash((f) => f + 1);
-      emit({ scope: 'preview', kind: 'success', message: `synctex inverse → line ${line}` });
+      emit({ scope: 'preview', kind: 'success', message: `synctex inverse → ${hitFile ?? fileName}:${line}` });
     } else {
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: no match at this position (synctex_no_match)' });
     }

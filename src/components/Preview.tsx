@@ -44,7 +44,6 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState('');
-  const [flash, setFlash] = useState(0);
   const page = Math.min(Math.max(1, pageNumber), numPages);
   // Open pdf.js document ONCE per pdfUrl+stamp (M-4): page turns render from
   // the cached handle instead of re-opening the whole document per click.
@@ -55,9 +54,19 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    setFlash((f) => f + 1);
+    // pdf.js viewport scale (render): CSS px → PDF points. Inverse SyncTeX
+    // wants PDF points, not screen px — unscale here (DPR applied at render).
+    const scaleX = canvas.width / Math.max(1, rect.width);
+    const scaleY = canvas.height / Math.max(1, rect.height);
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    // Hit feedback WITHOUT remount: toggle a class, remove after 300ms.
+    // (The old `key={flash}` trick recreated the canvas and blanked the view.)
+    canvas.classList.remove('synctex-hit');
+    // Force reflow so rapid clicks retrigger the outline.
+    void canvas.offsetWidth;
+    canvas.classList.add('synctex-hit');
+    setTimeout(() => canvas.classList.remove('synctex-hit'), 300);
     onInverse(page, Math.round(x), Math.round(y));
   };
 
@@ -146,8 +155,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
-        className={flash ? 'synctex-flash' : undefined}
-        key={flash}
+        className="synctex-canvas"
         style={{ maxWidth: '100%' }}
         title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
       />
