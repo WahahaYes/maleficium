@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Slide from '@mui/material/Slide';
@@ -48,6 +48,9 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
+  // Ref mirror for the watcher closure (effect is [root]-scoped; fileName would go stale).
+  const fileNameRef = useRef(fileName);
+  fileNameRef.current = fileName;
 
   useEffect(()=>onPdf(setPdfUrl),[]);
 
@@ -89,8 +92,8 @@ export default function App() {
       void reloadTree(root);
       void refreshGit(root);
       for (const ev of batch) {
-        if (ev.path === fileName && ev.kind === 'modify') setReloadPath(ev.path);
-        if (ev.path === fileName && ev.kind === 'delete') {
+        if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
+        if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);
           emit({ scope: 'fs', kind: 'warn', message: 'deleted on disk: ' + ev.path });
         }
@@ -219,8 +222,7 @@ export default function App() {
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  const handleGitStatusClick = () => { void handleGitStatus().then(() => setBottomTab('log')); };
-  void handleGitStatusClick;
+  const handleGitStatusClick = useCallback(() => { void handleGitStatus().then(() => setBottomTab('log')); }, [root]);
 
   const save = useCallback(async ()=>{
     if(fileName.includes('/')){
@@ -395,7 +397,6 @@ export default function App() {
       }
     });
   }, [fileName]);
-  void gitText;
 
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -411,6 +412,7 @@ export default function App() {
         <Button variant="outlined" size="small" onClick={handleSetMain} disabled={!root || !fileName.includes('/')}>Set as main</Button>
         <Button variant="outlined" size="small" onClick={handleUndo}>Undo delete</Button>
         <Button variant="outlined" size="small" onClick={handleGitShowHead}>HEAD diff</Button>
+        <Button variant="outlined" size="small" onClick={handleGitStatusClick}>Git Status</Button>
       </Box>
       {reloadPath ? (
         <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>

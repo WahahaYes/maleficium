@@ -4,7 +4,7 @@
 // default, filterHidden excludes .git/out/aux/log); >300 rows capped with
 // "show more". Badges are MUI Chip size=small on visible rows only.
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -54,7 +54,7 @@ function badgeFor(gitStatus: FileTreeProps['gitStatus'], path: string, rootPrefi
   return null;
 }
 
-function FileNode({ node, depth, selected, onSelect, onDelete, onExpandDir, mainFile, maxDepth, gitStatus, rootPrefix, registerNavigable } : {
+function FileNode({ node, depth, selected, onSelect, onDelete, onExpandDir, mainFile, maxDepth, gitStatus, rootPrefix } : {
   node: TreeEntry;
   depth: number;
   selected: string | null;
@@ -65,12 +65,10 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onExpandDir, main
   maxDepth: number;
   gitStatus: FileTreeProps['gitStatus'];
   rootPrefix: string;
-  registerNavigable: (path: string) => void;
 }) {
   const [open, setOpen] = useState(depth === 0 && depth < maxDepth);
   const [lazyChildren, setLazyChildren] = useState<TreeEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
-  if (node.type === 'file') registerNavigable(node.path);
 
   if (node.type === 'file') {
     const badge = badgeFor(gitStatus, node.path, rootPrefix);
@@ -144,7 +142,6 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onExpandDir, main
           maxDepth={maxDepth}
           gitStatus={gitStatus}
           rootPrefix={rootPrefix}
-          registerNavigable={registerNavigable}
         />
       ))}
     </>
@@ -157,14 +154,20 @@ export default function FileTree({ tree, selected, onSelect, onDelete, onExpandD
   const [limit, setLimit] = useState(ROW_PAGE);
   const [focusIdx, setFocusIdx] = useState(0);
 
-  // Flattened file paths for keyboard nav (registration order = render order).
-  const navPaths: string[] = useMemo(() => [], []);
-  const registerNavigable = useCallback((p: string) => {
-    if (!navPaths.includes(p)) navPaths.push(p);
-  }, [navPaths]);
-
   const topLevel = useMemo(() => tree.slice(0, limit), [tree, limit]);
 
+  // Flat file list for keyboard nav - pure derivation, no render side effects.
+  const navPaths = useMemo(() => {
+    const out: string[] = [];
+    const walk = (nodes: TreeEntry[], depth: number) => {
+      for (const n of nodes) {
+        if (n.type === 'file') out.push(n.path);
+        else if (depth < maxDepth && n.children) walk(n.children, depth + 1);
+      }
+    };
+    walk(topLevel, 0);
+    return out;
+  }, [topLevel, maxDepth]);
   return (
     <Box
       onKeyDown={(e) => {
@@ -198,7 +201,6 @@ export default function FileTree({ tree, selected, onSelect, onDelete, onExpandD
             maxDepth={maxDepth}
             gitStatus={gitStatus}
             rootPrefix=""
-            registerNavigable={registerNavigable}
           />
         ))}
       </List>

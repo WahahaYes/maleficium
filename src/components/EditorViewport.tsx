@@ -23,6 +23,10 @@ export interface EditorViewportProps {
 function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, collapsed }: EditorViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // Last value WE sent downstream (mount doc or external sync). Keystrokes
+  // update this synchronously in the updateListener so the [value] echo-back
+  // from App state never triggers a full-doc replace (cursor jump).
+  const lastSentRef = useRef(value);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
@@ -36,7 +40,10 @@ function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, col
       extensions: [
         basicSetup,
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+          if (u.docChanged) {
+            lastSentRef.current = u.state.doc.toString();
+            onChangeRef.current(lastSentRef.current);
+          }
         }),
         EditorView.domEventHandlers({
           keydown: (e) => {
@@ -66,9 +73,12 @@ function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, col
   }, []);
 
   // External value sync (file switch / reload / jump): replace doc, keep viewport.
+  // Guarded by ref-equality with last-sent value so typing never resets cursor.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    if (lastSentRef.current === value) return;
+    lastSentRef.current = value;
     const cur = view.state.doc.toString();
     if (cur !== value) {
       view.dispatch({ changes: { from: 0, to: cur.length, insert: value } });
