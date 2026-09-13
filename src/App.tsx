@@ -8,7 +8,7 @@ import BufferTabs from './components/BufferTabs';
 import EditorToolbar from './components/EditorToolbar';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
-import BottomPanel, { type BottomTab } from './components/BottomPanel';
+import LogStream from './components/LogStream';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
 import { openProject, listTree, listDir1Level, loadTex, saveTex, saveTexToDisk, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
@@ -18,6 +18,7 @@ import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus, gitStatusState, gitShowHead, type GitBadge } from './lib/git';
 import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
+import { parseLog } from './lib/parseLog';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { moveToTrash, undoTrash } from './lib/trash';
@@ -40,10 +41,7 @@ export default function App() {
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
-  const [logText, setLogText] = useState('');
   const [largeFile, setLargeFile] = useState<string | null>(null);
-  const [gitText, setGitText] = useState('');
-  const [forwardMsg, setForwardMsg] = useState('');
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
@@ -107,13 +105,6 @@ export default function App() {
       setLog('loaded '+path);
       emit({scope:'fs',kind:'success',message:'loaded '+path});
       if (root && path.endsWith('.tex')) void resolveMain(root, path);
-      if (path.endsWith('.tex')) {
-        const logName = path.replace(/\.tex$/, '.log');
-        try {
-          const logContent = await readTextFile(logName);
-          setLogText(logContent);
-        } catch {}
-      }
     } catch (e) {
       setLog('load failed: ' + String(e).slice(0, 120));
       emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
@@ -289,7 +280,10 @@ export default function App() {
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  const handleGitStatusClick = useCallback(() => { void handleGitStatus().then(() => setBottomTab('log')); }, [root]);
+  const handleGitStatusClick = useCallback(() => { setLogCollapsed(false); void handleGitStatus(); }, [root]);
+
+  const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
+  const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
 
   const save = useCallback(async ()=>{
     if (largeFile) {
@@ -323,6 +317,16 @@ export default function App() {
     }, 1200);
     return () => clearTimeout(t);
   }, [tex, fileName, buffers]);
+
+  // Publish engine-log problems as first-class stream events (click-to-jump).
+  const publishProblems = (text: string, base: string, wsRoot: string) => {
+    try {
+      const entries = parseLog(text, wsRoot, base).slice(0, 100);
+      for (const l of entries) {
+        emit({ scope: 'compile', kind: l.clickable ? 'error' : 'warn', message: `${l.file}:${l.line} ${l.msg}`, data: { file: l.file, line: l.line, clickable: l.clickable } });
+      }
+    } catch { /* parse never blocks the stream */ }
+  };
 
   async function compile(){
     const target = mainFile ?? (fileName.includes('/') ? fileName : null);
@@ -373,28 +377,33 @@ export default function App() {
     const main = activeTarget.slice(activeTarget.lastIndexOf('/') + 1);
     const r = await compileTex(activeTarget, workdir!);
     setLog(r.log);
+    const readEngineLog = async (): Promise<string | null> => {
+      try {
+        return await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`);
+      } catch {
+        return null;
+      }
+    };
     if (r.ok && r.pdfPath) {
       setCompilePhase('success'); setCompileStart(null);
-      setBottomTab('log');
+      setLogCollapsed(false);
       emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
       emitPdf(r.pdfPath);
       setPdfStamp(s=>s+1);
       emit({scope:'preview',kind:'success',message:'preview '+String(r.pdfPath)});
-      try {
-        const logContent = await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`);
-        setLogText(logContent);
-      } catch { setLogText(''); }
     } else if (!r.ok && r.log.includes('spawn')) {
       setCompilePhase('failure'); setCompileStart(null);
-      setBottomTab('problems');
+      setLogCollapsed(false);
       setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
-      try { const c = await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
+      const c = await readEngineLog();
+      publishProblems(c ?? r.log, mainDir, root || workdirHint);
     } else if (!r.ok) {
       setCompilePhase('failure'); setCompileStart(null);
-      setBottomTab('problems');
+      setLogCollapsed(false);
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
-      try { const c = await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
+      const c = await readEngineLog();
+      publishProblems(c ?? r.log, mainDir, root || workdirHint);
     }
     clearInterval(hb); try { unlisten(); } catch {}
     probing = false; emit({scope:'compile',kind:'info',message:`main-thread max frame ${Math.round(maxGap)}ms during compile`});
@@ -403,13 +412,12 @@ export default function App() {
   async function handleForwardSync(){
     if (!pdfUrl) return;
     if (compilePhase === 'compiling') {
-      setForwardMsg('SyncTeX unavailable while compiling');
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match: disabled during compile' });
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable while compiling (synctex_no_match)' });
       return;
     }
     const base = fileName.replace(/\.tex$/, '.pdf');
     const result = await forward_sync(pdfUrl, base, currentLine);
-    setForwardMsg(result.text);
+    emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
     if (result.text.includes('no_match') || result.text === '{}') {
       emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
     }
@@ -437,15 +445,14 @@ export default function App() {
       setSynctexFlash((f) => f + 1);
       emit({ scope: 'preview', kind: 'success', message: `synctex inverse → line ${line}` });
     } else {
-      setForwardMsg('SyncTeX: no match at this position');
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: no match at this position (synctex_no_match)' });
     }
   }
 
   async function handleGitStatus(){
     if (!root) return;
     const result = await gitStatus(root);
-    setGitText(result.text);
+    emit({ scope: 'git', kind: result.ok ? 'info' : 'warn', message: result.ok ? result.text.slice(0, 500) : 'History unavailable' });
     await refreshGit(root);
   }
 
@@ -453,7 +460,7 @@ export default function App() {
     if (!root || !fileName.includes('/')) return;
     const rel = fileName.startsWith(root + '/') ? fileName.slice(root.length + 1) : fileName;
     const r = await gitShowHead(root, rel);
-    setGitText(r.ok ? r.text : '(no HEAD version: ' + r.text.slice(0, 80) + ')');
+    emit({ scope: 'git', kind: r.ok ? 'info' : 'warn', message: r.ok ? `HEAD ${rel}:\n${r.text.slice(0, 500)}` : 'History unavailable' });
   }
 
   function handleJump(absPath: string, line: number){
@@ -466,8 +473,6 @@ export default function App() {
     });
   }
 
-  const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
-  const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
   const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
   const gitBadgeMap = useMemo(() => {
     const m = new Map<string, GitBadge>();
@@ -481,8 +486,8 @@ export default function App() {
 
   // ---- Pitch 1 shell state (scalar layout ratios; D.4 density/theme deferred) ----
   const [mode, setMode] = useState<ActivityMode>('file');
-  const [layout, setLayout] = useState({ editorRatio: 0.6, previewRatio: 0.4, bottomHeight: 200 });
-  const [bottomTab, setBottomTab] = useState<BottomTab>('problems');
+  const [layout, setLayout] = useState({ editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 });
+  const [logCollapsed, setLogCollapsed] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const [compilePhase, setCompilePhase] = useState('idle');
   const [compileTimer, setCompileTimer] = useState(0);
@@ -515,7 +520,7 @@ export default function App() {
 
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { setBottomTab('log'); void compile(); }} />
+      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { void compile(); }} />
       <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
         main: {mainFile ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
@@ -555,7 +560,6 @@ export default function App() {
         onInverse={(page, x, y) => { void handleInverseSync(page, x, y); }}
         syncDisabled={compilePhase === 'compiling'}
       />
-      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{forwardMsg}</Typography>
     </Box>
   );
 
@@ -613,19 +617,13 @@ export default function App() {
           </Pane>
         )}
       </Box>
-      <BottomPanel
-        tab={bottomTab}
-        onTab={setBottomTab}
-        problems={{ logText, root: root || workdirHint, base: mainDir, onJump: handleJump }}
-        events={[]}
-        terminalVisible
-        height={layout.bottomHeight}
-        onHeight={(h) => setLayout((l) => ({ ...l, bottomHeight: h }))}
-        mainFile={mainFile}
+      <LogStream
+        height={layout.logHeight}
+        onHeight={(h) => setLayout((l) => ({ ...l, logHeight: h }))}
+        collapsed={logCollapsed}
+        onToggleCollapse={() => setLogCollapsed((c) => !c)}
+        onJump={handleJump}
       />
-      {gitText ? (
-        <Typography component="pre" variant="caption" sx={{ display: 'block', maxHeight: 80, overflow: 'auto', whiteSpace: 'pre-wrap', px: 1 }}>{gitText}</Typography>
-      ) : null}
       <StatusBar
         mainFile={mainFile}
         gitBranch={gitBranch}
