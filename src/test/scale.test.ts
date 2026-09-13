@@ -1,5 +1,5 @@
 import { makeTmpRoot, makeSingle, makeMulti, makeImageDoc } from './fixtures';
-import { parseLog } from '../components/Problems';
+import { parseLog } from '../lib/parseLog';
 import { emit, list, clear } from '../lib/events';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';

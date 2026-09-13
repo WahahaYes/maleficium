@@ -533,6 +533,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     }
     const base = fileName.replace(/\.tex$/, '.pdf');
     const result = await forward_sync(pdfUrl, base, currentLine);
+    if (!result.ok) {
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable: synctex not installed (synctex_no_match)' });
+      return;
+    }
     emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
     if (result.text.includes('no_match') || result.text === '{}') {
       emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
@@ -546,25 +550,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       return;
     }
     const result = await inverse_sync(pdfUrl, page, x, y);
+    if (!result.ok) {
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable: synctex not installed (synctex_no_match)' });
+      return;
+    }
     // Real `synctex edit` shape:
-    //   Input:/abs/path/hello.tex\nLine:7\n... (stub: {"line":N,"page":P}).
+    //   Input:/abs/path/hello.tex\nLine:7\n...
     let line: number | null = null;
     let hitFile: string | null = null;
-    try {
-      const j = JSON.parse(result.text) as { line?: unknown };
-      if (typeof j.line === 'number') line = j.line;
-    } catch { /* raw synctex output — parse below */ }
     if (line == null) {
       const lm = result.text.match(/^Line:\s*(\d+)\s*$/m);
       if (lm) line = parseInt(lm[1], 10);
       const im = result.text.match(/^Input:\s*(.+?)\s*$/m);
       if (im) hitFile = im[1].trim();
-    }
-    // Legacy fallback: File:Line scan (never matches real synctex output,
-    // kept for forward-compat with stub shapes).
-    if (line == null) {
-      const m = result.text.match(/(?:^|\s)([\w\-./]+\.tex):(\d+)/m);
-      if (m) line = parseInt(m[2], 10);
     }
     if (line != null) {
       // Jump the owning file when SyncTeX names one (multi-file projects);

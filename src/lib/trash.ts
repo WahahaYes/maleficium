@@ -8,11 +8,6 @@ import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
 import { appTrashDir } from './paths';
 
-/** In-project trash dir (V-2b removes this — RULES §8, no legacy). */
-export function legacyTrashDir(root: string): string {
-  return (root.endsWith('/') ? root : root + '/') + '.maleficium-trash';
-}
-
 /** App-local trash home for this project (05-versioning V-2). */
 export async function trashDir(root: string): Promise<string> {
   const base = await appDataDir();

@@ -1,19 +1,25 @@
 import { invoke } from '@tauri-apps/api/core';
-import { forwardJump, clickBack } from './synctex-stub';
 export type ForwardResult = { ok: boolean; text: string };
 export type InverseResult = { ok: boolean; text: string };
+/**
+ * SyncTeX failure contract (05-versioning, RULES §8 — no stub fallback):
+ * when the `synctex` binary is missing/unavailable the invoke rejects and we
+ * return `{ok:false}`. Callers surface the honest `synctex_no_match` path —
+ * never a fabricated page/line.
+ */
 export async function forward_sync(pdfPath: string, texPath: string, line: number): Promise<ForwardResult> {
   try {
     const text = await invoke<string>('forward_sync', { pdf: pdfPath, tex: texPath, line });
     return { ok: true, text };
   } catch (e) {
-    return { ok: true, text: JSON.stringify(forwardJump(pdfPath, line)) };
+    return { ok: false, text: String(e) };
   }
 }
 /**
  * Inverse SyncTeX. The Rust side runs `synctex edit` INSIDE the out dir (the
  * tool resolves `<pdf>.synctex.gz` relative to CWD), so callers pass the pdf's
  * absolute path and we split it into (outDir, pdfName) here.
+ * Failure contract: `{ok:false}` — see `forward_sync` above.
  */
 export async function inverse_sync(pdfAbsPath: string, page: number, x = 0, y = 0): Promise<InverseResult> {
   const slash = pdfAbsPath.lastIndexOf('/');
@@ -23,6 +29,6 @@ export async function inverse_sync(pdfAbsPath: string, page: number, x = 0, y = 
     const text = await invoke<string>('inverse_sync', { synctexDir, pdfName, page, x, y });
     return { ok: true, text };
   } catch (e) {
-    return { ok: true, text: JSON.stringify(clickBack(page)) };
+    return { ok: false, text: String(e) };
   }
 }

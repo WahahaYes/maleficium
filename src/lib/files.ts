@@ -54,6 +54,8 @@ export async function removePath(absPath: string): Promise<void> {
   await remove(absPath);
 }
 
+/** Single-level listing for lazy tree expansion (metadata only, sorted). */
+
 /** Full recursive walk — main-file scan + watcher baseline ONLY, never the open path. */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
@@ -79,10 +81,6 @@ export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   }
 }
 
-/** @deprecated use listDir1Level (UI) or listTreeDeep (scan). Kept for compat. */
-export const listTree = listTreeDeep;
-
-/** Single-level listing for lazy tree expansion (metadata only, sorted). */
 export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
   try {
     const entries = await readDir(dir)
@@ -108,14 +106,10 @@ export async function saveTex(path: string, content: string): Promise<void> {
 }
 
 export async function loadTexViaDialog(): Promise<{ name: string; content: string } | null> {
-  try {
-    const path = await openDialog({ filters: [{ name: 'LaTeX', extensions: ['tex'] }] })
-    if (!path) return null
-    const content = await readTextFile(path)
-    return { name: path, content }
-  } catch {
-    return null
-  }
+  const path = await openDialog({ filters: [{ name: 'LaTeX', extensions: ['tex'] }] })
+  if (!path) return null
+  const content = await readTextFile(path)
+  return { name: path, content }
 }
 
 export async function saveTexToDisk(name: string, content: string): Promise<void> {

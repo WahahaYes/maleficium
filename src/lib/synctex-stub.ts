@@ -1,1 +1,0 @@
-export function forwardJump(pdfPath:string,line:number){return {page:1,pdfPath,line}}; export function clickBack(page:number){return {line:1,page}}; // TODO accurate SyncTeX post-POC.

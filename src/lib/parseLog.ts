@@ -1,9 +1,8 @@
 // parseLog.ts — engine-log → clickable file:line entries (rebase-once).
 //
 // Pure function (tested). The producing command's dir is `base`; entries
-// resolving outside workspace `root` are shown, not clickable. Moved here
-// from `components/Problems.tsx` when the Problems/Log/Terminal tabs were
-// unified into the single `LogStream` event stream.
+// resolving outside workspace `root` are shown, not clickable. Consumed by
+// `App.tsx` (Problems click-to-jump) and the `LogStream` event stream.
 
 export interface ParsedLine {
   file: string;
