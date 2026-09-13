@@ -9,8 +9,7 @@
 // Rules: ids `domain.verb-noun`; labels Title Case (`…` iff dialog); every
 // `accelerator` must exist in `lib/keymap.ts` KEYMAP (test asserts parity);
 // destructive commands confirm via MUI dialog (never `window.confirm`);
-// `legacy` marks removed 05-versioning git UI (audit greps it — must stay
-// empty); `soon` marks honest disabled placeholders (never fake affordances).
+// `soon` marks honest disabled placeholders (never fake affordances).
 
 export type CommandId =
   | 'file.open-project' | 'file.new-file' | 'file.close-file' | 'file.save'
@@ -101,8 +100,6 @@ export interface MenuCommand {
   children?: MenuCommand[];
   /** Honest disabled placeholder — title explains itself. */
   soon?: boolean;
-  /** Removed-category marker (git UI cut in 05-versioning V-1); do not extend. */
-  legacy?: boolean;
   run?: () => void | Promise<void>;
 }
 
