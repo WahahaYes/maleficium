@@ -14,13 +14,15 @@ export interface EditorViewportProps {
   onChange: (v: string) => void;
   onSave: () => void;
   line?: number;
+  /** Bumped by inverse SyncTeX: flashes the revealed line amber 1.4s. */
+  flashKey?: number;
   hideChrome?: boolean;
   /** Stub: logs + window.open fallback; Tauri Window plugin is a future session. */
   popout?: boolean;
   collapsed?: boolean;
 }
 
-function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, collapsed }: EditorViewportProps) {
+function EditorViewport({ value, onChange, onSave, line, flashKey, hideChrome, popout, collapsed }: EditorViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Last value WE sent downstream (mount doc or external sync). Keystrokes
@@ -85,7 +87,8 @@ function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, col
     }
   }, [value]);
 
-  // Line reveal (Problems jump / inverse SyncTeX).
+  // Line reveal (Problems jump / inverse SyncTeX) + amber flash on flashKey.
+  const flashKeyRef = useRef(flashKey);
   useEffect(() => {
     const view = viewRef.current;
     if (!view || line == null || line < 1) return;
@@ -94,7 +97,19 @@ function EditorViewport({ value, onChange, onSave, line, hideChrome, popout, col
       view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
       view.focus();
     } catch { /* line out of range — ignore */ }
-  }, [line]);
+    if (flashKeyRef.current !== flashKey) {
+      flashKeyRef.current = flashKey;
+      const dom = view.domAtPos(Math.min(line, view.state.doc.lines) >= 1
+        ? (() => { try { return view.state.doc.line(Math.min(line, view.state.doc.lines)).from; } catch { return 0; } })()
+        : 0);
+      const el = (dom?.node instanceof HTMLElement ? dom.node : dom?.node?.parentElement) as HTMLElement | null;
+      const lineEl = el?.closest?.('.cm-line') as HTMLElement | null;
+      if (lineEl) {
+        lineEl.classList.add('cm-synctex-flash');
+        setTimeout(() => lineEl.classList.remove('cm-synctex-flash'), 1400);
+      }
+    }
+  }, [line, flashKey]);
 
   useEffect(() => {
     if (popout) {

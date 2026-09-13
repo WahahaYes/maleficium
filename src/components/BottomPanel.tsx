@@ -4,13 +4,13 @@
 // slice 100 (01 `5012719` preserved); resizable vertical split via PaneSplitter
 // CSS; popout floats same events reference (stub); collapsed → Drawer temporary.
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import Paper from '@mui/material/Paper';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
-import Problems from './Problems';
+import Problems, { parseLog } from './Problems';
 import EventLog from './EventLog';
 import type { BusEvent } from '../lib/events';
 
@@ -29,7 +29,7 @@ export default function BottomPanel({ tab, onTab, problems, events, terminalVisi
   mainFile?: string | null;
 }) {
   void events;
-  const startDragY: { y: number | null } = { y: null };
+  const dragRef = useRef<{ y: number; height: number } | null>(null);
 
   useEffect(() => {
     if (popout) {
@@ -38,24 +38,29 @@ export default function BottomPanel({ tab, onTab, problems, events, terminalVisi
     }
   }, [popout]);
 
-  const visible = problems.logText
-    ? problems.logText.split('\n').length > 100
-      ? problems.logText.split('\n').slice(0, 100).join('\n')
-      : problems.logText
-    : problems.logText;
+  // Parse first, THEN cap: errors past raw line 100 must still surface.
+  const parseLogEntries = parseLog;
+  const entries = useMemo(
+    () => parseLogEntries(problems.logText, problems.root, problems.base),
+    [parseLogEntries, problems.logText, problems.root, problems.base],
+  );
+  const visibleEntries = entries.slice(0, 100);
 
+  // BottomPanel stays mounted across tab switches so the 100-row EventLog
+  // buffer and Problems parse survive (01 `5012719` preserved).
   const body = (
     <Paper elevation={2} sx={{ height, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Box
         sx={{ height: 6, cursor: 'row-resize', '&:hover': { backgroundColor: 'action.hover' } }}
         onMouseDown={(e) => {
-          startDragY.y = e.clientY;
+          dragRef.current = { y: e.clientY, height };
           const move = (m: MouseEvent) => {
-            if (startDragY.y == null) return;
-            onHeight(Math.max(80, Math.min(window.innerHeight * 0.6, height + (startDragY.y - m.clientY))));
+            const s = dragRef.current;
+            if (!s) return;
+            onHeight(Math.max(80, Math.min(window.innerHeight * 0.6, s.height + (s.y - m.clientY))));
           };
           const up = () => {
-            startDragY.y = null;
+            dragRef.current = null;
             window.removeEventListener('mousemove', move);
             window.removeEventListener('mouseup', up);
           };
@@ -69,18 +74,21 @@ export default function BottomPanel({ tab, onTab, problems, events, terminalVisi
         {terminalVisible ? <Tab value="terminal" label="Terminal" sx={{ minHeight: 36 }} /> : null}
       </Tabs>
       <Box sx={{ flex: 1, overflow: 'auto', display: 'flex' }}>
-        {tab === 'problems' ? (
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            <Problems logText={visible} root={problems.root} base={problems.base} onJump={problems.onJump} />
-          </Box>
-        ) : null}
-        {tab === 'log' ? (
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            <EventLog />
-          </Box>
-        ) : null}
-        {tab === 'terminal' && terminalVisible ? (
-          <Box sx={{ flex: 1, overflow: 'auto', p: 1, fontFamily: 'monospace', fontSize: 12 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', display: tab === 'problems' ? 'block' : 'none' }}>
+          <Problems
+            logText=""
+            root={problems.root}
+            base={problems.base}
+            onJump={problems.onJump}
+            entries={visibleEntries}
+            totalCount={entries.length}
+          />
+        </Box>
+        <Box sx={{ flex: 1, overflow: 'auto', display: tab === 'log' ? 'block' : 'none' }}>
+          <EventLog />
+        </Box>
+        {terminalVisible ? (
+          <Box sx={{ flex: 1, overflow: 'auto', p: 1, fontFamily: 'monospace', fontSize: 12, display: tab === 'terminal' ? 'block' : 'none' }}>
             terminal (shrink — cwd: {problems.base}{mainFile ? ` · main: ${mainFile}` : ''})
           </Box>
         ) : null}

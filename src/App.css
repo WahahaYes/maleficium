@@ -1,3 +1,16 @@
+.synctex-flash {
+  animation: synctex-flash 1.4s ease-out;
+}
+
+@keyframes synctex-flash {
+  0% { background-color: rgba(255, 176, 0, 0.55); }
+  100% { background-color: transparent; }
+}
+
+.cm-synctex-flash {
+  animation: synctex-flash 1.4s ease-out;
+}
+
 .logo.vite:hover {
   filter: drop-shadow(0 0 2em #747bff);
 }

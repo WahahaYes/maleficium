@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Slide from '@mui/material/Slide';
-import Drawer from '@mui/material/Drawer';
 import Typography from '@mui/material/Typography';
 import EditorViewport from './components/EditorViewport';
 import ActivityBar, { type ActivityMode } from './components/ActivityBar';
+import BufferTabs from './components/BufferTabs';
 import EditorToolbar from './components/EditorToolbar';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
@@ -17,7 +16,7 @@ import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import { gitStatus, gitStatusState, gitShowHead, type GitBadge } from './lib/git';
-import { forward_sync } from './lib/synctex';
+import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
@@ -48,11 +47,100 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
+  // Bumped on every inverse SyncTeX hit → EditorViewport flashes the line amber.
+  const [synctexFlash, setSynctexFlash] = useState(0);
   // Ref mirror for the watcher closure (effect is [root]-scoped; fileName would go stale).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
+  // Latest tree selection wins: rapid clicks resolve out of order otherwise.
+  const selectTokenRef = useRef(0);
+  // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
+  // our own writes must not raise the reload banner (M-6). Windowed suppression.
+  const ownWritesRef = useRef<Map<string, number>>(new Map());
+  const markOwnWrite = useCallback((p: string) => {
+    ownWritesRef.current.set(p, Date.now());
+  }, []);
 
   useEffect(()=>onPdf(setPdfUrl),[]);
+
+  const handleSelect = useCallback(async (path: string) => {
+    // Persist current buffer before switching (dirty survives switch via map).
+    if (fileName.includes('/') && path !== fileName) {
+      const cur = buffers.get(fileName);
+      if (cur?.dirty) {
+        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); setBuffers((b) => markSaved(b, fileName)); } catch { /* keep dirty */ }
+      }
+    }
+    const selectToken = ++selectTokenRef.current;
+    // Reuse preserved buffer without re-reading.
+    const kept = buffers.get(path);
+    if (kept) {
+      if (selectToken !== selectTokenRef.current) return; // stale click lost the race
+      setTex(kept.value);
+      setFileName(path);
+      setLargeFile(null);
+      setReloadPath(null);
+      setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
+      emit({ scope: 'fs', kind: 'info', message: 'switched ' + path });
+      if (root && path.endsWith('.tex')) void resolveMain(root, path);
+      return;
+    }
+    emit({scope:'fs',kind:'progress',message:'loading '+path}); setLog('loading '+path);
+    try {
+      const info = await stat(path).catch(() => null);
+      const size = info?.size ?? 0;
+      if (size > LARGE_FILE_BYTES) {
+        if (selectToken !== selectTokenRef.current) return; // stale click lost the race
+        setLargeFile(path);
+        setFileName(path);
+        setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
+        emit({ scope: 'fs', kind: 'warn', message: `large file placeholder ${path} (${size}B)` });
+        return;
+      }
+      setLargeFile(null);
+      const content=await loadTex(path);
+      if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
+      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return n; });
+      setTex(content);
+      setFileName(path);
+      setReloadPath(null);
+      setLog('loaded '+path);
+      emit({scope:'fs',kind:'success',message:'loaded '+path});
+      if (root && path.endsWith('.tex')) void resolveMain(root, path);
+      if (path.endsWith('.tex')) {
+        const logName = path.replace(/\.tex$/, '.log');
+        try {
+          const logContent = await readTextFile(logName);
+          setLogText(logContent);
+        } catch {}
+      }
+    } catch (e) {
+      setLog('load failed: ' + String(e).slice(0, 120));
+      emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
+    }
+    }, [buffers, fileName, root]);
+
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setMode((m) => (m === 'preview' ? 'file' : 'preview'));
+      } else if (mod && e.key === 'Tab') {
+        // Tab cycling is handled by BufferTabs when focused; global fallback:
+        const keys = [...buffers.keys()];
+        if (keys.length > 1) {
+          e.preventDefault();
+          const i = keys.indexOf(fileName);
+          const n = e.shiftKey ? (i - 1 + keys.length) % keys.length : (i + 1) % keys.length;
+          void handleSelect(keys[n]);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [buffers, fileName, root, handleSelect]);
 
   useEffect(()=>{ const h=()=>{ cancelCompile().catch(()=>{}); }; window.addEventListener('beforeunload',h); return ()=>window.removeEventListener('beforeunload',h); },[]);
 
@@ -91,7 +179,12 @@ export default function App() {
       const batch = coalesceEvents(pending.splice(0));
       void reloadTree(root);
       void refreshGit(root);
+      const now = Date.now();
       for (const ev of batch) {
+        // Suppress echoes of our own writes (5s window, pruned here).
+        const own = ownWritesRef.current.get(ev.path);
+        if (own != null && now - own < 5000) continue;
+        if (own != null) ownWritesRef.current.delete(ev.path);
         if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
         if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);
@@ -125,58 +218,7 @@ export default function App() {
     else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
   }
 
-  async function handleSelect(path:string){
-    // Persist current buffer before switching (dirty survives switch via map).
-    if (fileName.includes('/')) {
-      const cur = buffers.get(fileName);
-      if (cur?.dirty) {
-        try { await saveTex(fileName, cur.value); setBuffers((b) => markSaved(b, fileName)); } catch { /* keep dirty */ }
-      }
-    }
-    // Reuse preserved buffer without re-reading.
-    const kept = buffers.get(path);
-    if (kept) {
-      setTex(kept.value);
-      setFileName(path);
-      setLargeFile(null);
-      setReloadPath(null);
-      setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
-      emit({ scope: 'fs', kind: 'info', message: 'switched ' + path });
-      if (root && path.endsWith('.tex')) void resolveMain(root, path);
-      return;
-    }
-    emit({scope:'fs',kind:'progress',message:'loading '+path}); setLog('loading '+path);
-    try {
-      const info = await stat(path).catch(() => null);
-      const size = info?.size ?? 0;
-      if (size > LARGE_FILE_BYTES) {
-        setLargeFile(path);
-        setFileName(path);
-        setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
-        emit({ scope: 'fs', kind: 'warn', message: `large file placeholder ${path} (${size}B)` });
-        return;
-      }
-      setLargeFile(null);
-      const content=await loadTex(path);
-      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return n; });
-      setTex(content);
-      setFileName(path);
-      setReloadPath(null);
-      setLog('loaded '+path);
-      emit({scope:'fs',kind:'success',message:'loaded '+path});
-      if (root && path.endsWith('.tex')) void resolveMain(root, path);
-      if (path.endsWith('.tex')) {
-        const logName = path.replace(/\.tex$/, '.log');
-        try {
-          const logContent = await readTextFile(logName);
-          setLogText(logContent);
-        } catch {}
-      }
-    } catch (e) {
-      setLog('load failed: ' + String(e).slice(0, 120));
-      emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
-    }
-  }
+
 
   async function handleReload() {
     if (!reloadPath) return;
@@ -189,6 +231,31 @@ export default function App() {
     } catch (e) {
       emit({ scope: 'fs', kind: 'error', message: 'reload failed: ' + String(e).slice(0, 120) });
     }
+  }
+
+  async function handleCloseBuffer(path: string) {
+    // Persist-then-evict: close never loses work silently.
+    if (path === fileName && fileName.includes('/')) {
+      const cur = buffers.get(fileName);
+      if (cur?.dirty) {
+        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); } catch { /* keep dirty, still evict? no — stay */ return; }
+      }
+    }
+    setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
+    if (path === fileName) {
+      // Fall through to nearest remaining buffer (keeps editor populated).
+      const rest = [...buffers.keys()].filter((k) => k !== path);
+      if (rest.length > 0) {
+        const next = buffers.get(rest[rest.length - 1]);
+        if (next) {
+          setTex(next.value);
+          setFileName(rest[rest.length - 1]);
+          setLargeFile(null);
+          setReloadPath(null);
+        }
+      }
+    }
+    emit({ scope: 'fs', kind: 'info', message: 'closed ' + path });
   }
 
   async function handleDelete(path: string) {
@@ -225,9 +292,14 @@ export default function App() {
   const handleGitStatusClick = useCallback(() => { void handleGitStatus().then(() => setBottomTab('log')); }, [root]);
 
   const save = useCallback(async ()=>{
+    if (largeFile) {
+      setLog('save blocked: large placeholder file is not loaded');
+      emit({ scope: 'fs', kind: 'warn', message: 'save blocked for large placeholder ' + largeFile });
+      return;
+    }
     if(fileName.includes('/')){
       const cur = buffers.get(fileName);
-      await saveTex(fileName, cur?.value ?? tex);
+      await saveTex(fileName, cur?.value ?? tex); markOwnWrite(fileName);
       setBuffers((b) => markSaved(b, fileName));
       setLog('saved '+fileName);
       emit({scope:'fs',kind:'success',message:'saved '+fileName});
@@ -236,14 +308,14 @@ export default function App() {
       setLog('saved '+fileName);
       emit({scope:'fs',kind:'success',message:'saved '+fileName});
     }
-  }, [fileName, tex, buffers]);
+  }, [fileName, tex, buffers, largeFile]);
 
   useEffect(() => {
     if (!fileName.includes('/')) return;
     const t = setTimeout(() => {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        saveTex(fileName, cur.value).then(() => {
+        markOwnWrite(fileName); saveTex(fileName, cur.value).then(() => {
           setBuffers((b) => markSaved(b, fileName));
           setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
         }).catch(() => {});
@@ -254,6 +326,12 @@ export default function App() {
 
   async function compile(){
     const target = mainFile ?? (fileName.includes('/') ? fileName : null);
+    if (largeFile) {
+      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: large placeholder file selected — open a .tex file' });
+      setCompilePhase('failure');
+      setLog('compile blocked: selected file is a large-file placeholder');
+      return;
+    }
     emit({scope:'compile',kind:'progress',message:'compiling '+(target ?? fileName)});
     setCompilePhase('compiling'); setCompileStart(Date.now()); setCompileTimer(0);
     setLog('compiling...');
@@ -270,21 +348,23 @@ export default function App() {
         // Persist ALL dirty buffers so \input parts compile from disk.
         for (const [p, buf] of buffers) {
           if (buf.dirty) {
-            try { await saveTex(p, buf.value); } catch {}
+            try { await saveTex(p, buf.value); markOwnWrite(p); } catch {}
           }
         }
         setBuffers((b) => { let n = b; for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p); return n; });
         // Also persist the visible editor if it was never buffered (untitled flow).
-        if (!buffers.has(target)) await saveTex(target, tex);
+        if (!buffers.has(target)) { await saveTex(target, tex); markOwnWrite(target); }
         workdir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
       } else {
         workdir = '/tmp/maleficium-untitled';
         await mkdir(workdir, { recursive: true });
         const t2 = workdir + '/' + fileName;
-        await saveTex(t2, tex);
+        await saveTex(t2, tex); markOwnWrite(t2);
         setMainFileState(t2);
       }
     } catch(e){
+      setCompilePhase('failure'); setCompileStart(null);
+      probing = false;
       emit({scope:'compile',kind:'error',message:'save failed: '+String(e).slice(0,200)});
       clearInterval(hb); try{unlisten();}catch{}
       return;
@@ -322,9 +402,44 @@ export default function App() {
 
   async function handleForwardSync(){
     if (!pdfUrl) return;
+    if (compilePhase === 'compiling') {
+      setForwardMsg('SyncTeX unavailable while compiling');
+      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match: disabled during compile' });
+      return;
+    }
     const base = fileName.replace(/\.tex$/, '.pdf');
     const result = await forward_sync(pdfUrl, base, currentLine);
     setForwardMsg(result.text);
+    if (result.text.includes('no_match') || result.text === '{}') {
+      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+    }
+  }
+
+  async function handleInverseSync(page: number, x: number, y: number){
+    if (!pdfUrl) return;
+    if (compilePhase === 'compiling') {
+      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match: disabled during compile' });
+      return;
+    }
+    const result = await inverse_sync(pdfUrl, page, x, y);
+    // Rust returns raw `synctex edit` stdout; stub returns {"line":N,"page":P}.
+    let line: number | null = null;
+    try {
+      const j = JSON.parse(result.text) as { line?: unknown };
+      if (typeof j.line === 'number') line = j.line;
+    } catch { /* raw synctex output — try File:Line scan */ }
+    if (line == null) {
+      const m = result.text.match(/(?:^|\s)([\w\-./]+\.tex):(\d+)/m);
+      if (m) line = parseInt(m[2], 10);
+    }
+    if (line != null) {
+      setCurrentLine(line);
+      setSynctexFlash((f) => f + 1);
+      emit({ scope: 'preview', kind: 'success', message: `synctex inverse → line ${line}` });
+    } else {
+      setForwardMsg('SyncTeX: no match at this position');
+      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+    }
   }
 
   async function handleGitStatus(){
@@ -372,8 +487,8 @@ export default function App() {
   const [compilePhase, setCompilePhase] = useState('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
-  const [fileTreeOpen, setFileTreeOpen] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const fileTreeVisible = mode !== 'preview';
 
   // Mirror compile bus → StatusBar phase/timer (placement only; 01 owns contract).
   useEffect(() => {
@@ -400,14 +515,11 @@ export default function App() {
 
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <Slide direction="down" in={true} mountOnEnter={false} unmountOnExit={false}>
-        <Box>
-          <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { setBottomTab('log'); void compile(); }} />
-        </Box>
-      </Slide>
+      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { setBottomTab('log'); void compile(); }} />
       <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
         main: {mainFile ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
+      <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} />
       <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
         <Button variant="outlined" size="small" onClick={handleSetMain} disabled={!root || !fileName.includes('/')}>Set as main</Button>
         <Button variant="outlined" size="small" onClick={handleUndo}>Undo delete</Button>
@@ -425,7 +537,7 @@ export default function App() {
         <Typography variant="body2" sx={{ mt: 1 }}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
       ) : (
         <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} />
+          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} />
         </Box>
       )}
       <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{log}</Typography>
@@ -434,42 +546,68 @@ export default function App() {
 
   const previewPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <Preview pdfUrl={pdfUrl} stamp={pdfStamp} pageNumber={pageNumber} onPage={setPageNumber} onSync={handleForwardSync} />
+      <Preview
+        pdfUrl={pdfUrl}
+        stamp={pdfStamp}
+        pageNumber={pageNumber}
+        onPage={setPageNumber}
+        onSync={handleForwardSync}
+        onInverse={(page, x, y) => { void handleInverseSync(page, x, y); }}
+        syncDisabled={compilePhase === 'compiling'}
+      />
       <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{forwardMsg}</Typography>
     </Box>
   );
 
+  const previewVisible = mode !== 'project' && !previewCollapsed;
+  const editorVisible = mode !== 'preview';
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <ActivityBar mode={mode} onMode={(m) => { setMode(m); if (m === 'file') setFileTreeOpen((v) => !v); }} />
-        {/* File tree: Drawer overlay (Pitch 3 pattern) + inline when project open */}
-        <Drawer anchor="left" variant="temporary" open={fileTreeOpen} onClose={() => setFileTreeOpen(false)}>
-          <Box sx={{ width: 300, p: 1, overflow: 'auto' }}>
-            <FileTree tree={tree} selected={fileName} onSelect={(p) => { setFileTreeOpen(false); void handleSelect(p); }} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
-          </Box>
-        </Drawer>
-        {(mode === 'file' || root) && (
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
+        <ActivityBar mode={mode} onMode={setMode} />
+        {fileTreeVisible && (
           <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1 }}>
-            <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+            {root ? (
+              <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+            ) : (
+              <Typography variant="body2" color="text.secondary">Open a project to browse files.</Typography>
+            )}
           </Box>
         )}
-        <Pane label="editor" ratio={layout.editorRatio} onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}>
-          {editorPane}
-        </Pane>
-        <PaneSplitter onDrag={(dx) => setLayout((l) => {
-          const w = window.innerWidth || 1000;
-          const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
-          return { ...l, editorRatio: r, previewRatio: 1 - r };
-        })} />
-        {previewCollapsed ? (
+        {editorVisible ? (
+          <Pane label="editor" ratio={layout.editorRatio} onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}>
+            {editorPane}
+          </Pane>
+        ) : null}
+        {editorVisible && previewVisible ? (
+          <PaneSplitter
+            label="Resize editor and preview"
+            onDrag={(dx) => setLayout((l) => {
+              const w = window.innerWidth || 1000;
+              const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
+              return { ...l, editorRatio: r, previewRatio: 1 - r };
+            })}
+            onKeyResize={(dir) => setLayout((l) => {
+              const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dir * 0.05));
+              return { ...l, editorRatio: r, previewRatio: 1 - r };
+            })}
+          />
+        ) : null}
+        {!previewVisible ? (
           <Box sx={{ width: 48, flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pt: 1 }}>
-            <Button size="small" onClick={() => setPreviewCollapsed(false)}>show</Button>
+            <Button
+              size="small"
+              aria-label={mode === 'project' ? 'Show preview (switch mode)' : 'Show preview'}
+              onClick={() => { if (mode === 'project') setMode('file'); setPreviewCollapsed(false); }}
+            >
+              show
+            </Button>
           </Box>
         ) : (
           <Pane label="preview" ratio={layout.previewRatio} onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button size="small" onClick={() => setPreviewCollapsed(true)}>hide</Button>
+              <Button size="small" aria-label="Hide preview" onClick={() => setPreviewCollapsed(true)}>hide</Button>
             </Box>
             {previewPane}
           </Pane>

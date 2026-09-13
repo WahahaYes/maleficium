@@ -37,22 +37,43 @@ export function parseLog(logText: string, root: string, base: string): ParsedLin
   return lines;
 }
 
-export default function Problems({ logText, root, base, onJump }: {
+export default function Problems({ logText, root, base, onJump, entries: entriesProp, totalCount }: {
   logText: string;
   root: string;
   base: string;
   onJump: (absPath: string, line: number) => void;
+  /** Pre-parsed + pre-capped entries (BottomPanel parses once, then caps). */
+  entries?: ParsedLine[];
+  totalCount?: number;
 }) {
-  const lines = parseLog(logText, root, base);
+  const lines = entriesProp ?? parseLog(logText, root, base);
+  const total = totalCount ?? lines.length;
+  if (lines.length === 0) {
+    return (
+      <List dense>
+        <ListItem disablePadding>
+          <ListItemText primary="No problems" secondary="Compile output produced no file:line errors." />
+        </ListItem>
+      </List>
+    );
+  }
   return (
     <List dense>
       {lines.map((l, i) => (
         <ListItem key={i} disablePadding>
-          <ListItemButton onClick={() => l.clickable && onJump(l.file, l.line)}>
-            <ListItemText primary={`${l.file}:${l.line} ${l.msg}`} />
+          <ListItemButton disabled={!l.clickable} onClick={() => l.clickable && onJump(l.file, l.line)}>
+            <ListItemText
+              primary={`${l.file}:${l.line} ${l.msg}`}
+              secondary={l.clickable ? undefined : 'Outside workspace — not clickable'}
+            />
           </ListItemButton>
         </ListItem>
       ))}
+      {total > lines.length ? (
+        <ListItem disablePadding>
+          <ListItemText primary={`… ${total - lines.length} more (showing 100)`} />
+        </ListItem>
+      ) : null}
     </List>
   );
 }

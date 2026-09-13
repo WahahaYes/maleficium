@@ -16,11 +16,11 @@ export default function EditorToolbar({ fileName, dirty, onOpen, onSave, onCompi
   onCompile: () => void;
 }) {
   return (
-    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', minHeight: 48 }}>
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', minHeight: 48, flexWrap: 'wrap' }}>
       <Button variant="outlined" onClick={onOpen}>Open Project</Button>
       <Button variant="outlined" onClick={onSave}>Save</Button>
       <Button variant="contained" onClick={onCompile}>Compile</Button>
-      <Typography variant="body2" sx={{ ml: 1 }} noWrap>{fileName}{dirty ? ' ●' : ''}</Typography>
+      <Typography variant="body2" sx={{ ml: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} noWrap>{fileName}{dirty ? ' ●' : ''}</Typography>
       <CompileStatus />
     </Box>
   );

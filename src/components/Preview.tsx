@@ -20,6 +20,9 @@ interface PreviewProps {
   /** Stub: same pdfUrl reference; Tauri Window plugin deferred. */
   popout?: boolean;
   onSync?: () => void;
+  /** Inverse SyncTeX: canvas click → editor line (disabled while compiling). */
+  onInverse?: (page: number, x: number, y: number) => void;
+  syncDisabled?: boolean;
 }
 
 const LRU_MAX = 5;
@@ -39,12 +42,27 @@ export function touchPageCache(url: string, page: number, handle: unknown): void
   }
 }
 
-export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout, onSync }: PreviewProps) {
+export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout, onSync, onInverse, syncDisabled }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState('');
+  const [flash, setFlash] = useState(0);
   const page = Math.min(Math.max(1, pageNumber), numPages);
+  // Open pdf.js document ONCE per pdfUrl+stamp (M-4): page turns render from
+  // the cached handle instead of re-opening the whole document per click.
+  const docRef = useRef<{ key: string; pdf: unknown } | null>(null);
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (syncDisabled || !onInverse) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setFlash((f) => f + 1);
+    onInverse(page, Math.round(x), Math.round(y));
+  };
 
   useEffect(() => {
     if (popout && pdfUrl) {
@@ -65,16 +83,30 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout,
         setError(null);
         const canvas = canvasRef.current!;
         canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-        setPhase('reading...');
-        const t0 = Date.now();
-        const isRemote = pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://') || pdfUrl.startsWith('asset:');
-        const bytes = isRemote ? null : new Uint8Array(await readFile(pdfUrl));
-        if (isCancelled) return;
-        await yieldUi();
-        setPhase('loading...');
-        const pdf = isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array);
-        if (isCancelled) return;
-        emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
+        const docKey = `${pdfUrl}#${stamp}`;
+        let pdf: {
+          numPages: number;
+          getPage: (n: number) => Promise<{
+            getViewport: (o: { scale: number }) => { height: number; width: number };
+            render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
+          }>;
+        };
+        if (docRef.current?.key === docKey) {
+          setPhase('rendering...');
+          pdf = docRef.current.pdf as typeof pdf;
+        } else {
+          setPhase('reading...');
+          const t0 = Date.now();
+          const isRemote = pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://') || pdfUrl.startsWith('asset:');
+          const bytes = isRemote ? null : new Uint8Array(await readFile(pdfUrl));
+          if (isCancelled) return;
+          await yieldUi();
+          setPhase('loading...');
+          pdf = (isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array)) as typeof pdf;
+          if (isCancelled) return;
+          emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
+          docRef.current = { key: docKey, pdf };
+        }
         await yieldUi();
         setNumPages(pdf.numPages);
         const target = Math.min(Math.max(1, pageNumber), pdf.numPages);
@@ -90,7 +122,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout,
         const t1 = Date.now();
         await pg.render({ canvasContext: ctx, viewport }).promise;
         if (isCancelled) return;
-        touchPageCache(pdfUrl, target, pg);
+        touchPageCache(pdfUrl, target, true); // bounded marker (M-5): render path is single-page; cache tracks recency only
         emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
         setPhase('');
       } catch (e) {
@@ -119,13 +151,22 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout,
         totalPages={numPages}
         onPage={(p) => onPage?.(p)}
         onSync={() => onSync?.()}
+        syncDisabled={syncDisabled}
+        compiling={false}
         onPopout={() => {
           // eslint-disable-next-line no-console
           console.log('popout: preview toolbar (stub)');
         }}
       />
       {phase ? <Typography variant="caption">{phase}</Typography> : null}
-      <canvas ref={canvasRef} onClick={() => onSync?.()} style={{ maxWidth: '100%' }} />
+      <canvas
+        ref={canvasRef}
+        onClick={handleCanvasClick}
+        className={flash ? 'synctex-flash' : undefined}
+        key={flash}
+        style={{ maxWidth: '100%' }}
+        title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
+      />
     </>
   );
 }

@@ -19,13 +19,22 @@ export interface PaneProps {
   label: string;
 }
 
-export function PaneSplitter({ onDrag }: { onDrag: (dx: number) => void }) {
+export function PaneSplitter({ onDrag, onKeyResize, label }: { onDrag: (dx: number) => void; onKeyResize?: (dir: 1 | -1) => void; label?: string }) {
   const startX = useRef(0);
   return (
     <Divider
       orientation="vertical"
       flexItem
-      sx={{ cursor: 'col-resize', width: 8, '&:hover': { backgroundColor: 'action.hover' } }}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label ?? 'Resize panes'}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (!onKeyResize) return;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); onKeyResize(-1); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); onKeyResize(1); }
+      }}
+      sx={{ cursor: 'col-resize', width: 8, '&:hover': { backgroundColor: 'action.hover' }, '&:focus-visible': { backgroundColor: 'action.selected' } }}
       onMouseDown={(e) => {
         startX.current = e.clientX;
         const move = (m: MouseEvent) => {
@@ -63,7 +72,7 @@ export default function Pane({ children, ratio, onRatio, minRatio = 0.2, maxRati
   }
 
   return (
-    <Box sx={{ flex: ratio, minWidth: 200, overflow: 'auto', display: 'flex', flexDirection: 'column' }} data-pane={label}>
+    <Box sx={{ flex: ratio, minWidth: 120, overflow: 'auto', display: 'flex', flexDirection: 'column' }} data-pane={label}>
       {children}
       <Box sx={{ display: 'none' }} data-splitter={label}>
         {/* splitter handle rendered by parent between panes */}
