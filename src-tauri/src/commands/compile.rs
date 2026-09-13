@@ -9,6 +9,24 @@ fn out_pdf(outdir: &Path, main_file: &str) -> PathBuf {
     outdir.join(format!("{}.pdf", stem))
 }
 
+/// djb2 hex (8 chars) — mirrors `src/lib/paths.ts hashRoot` (no new dep).
+/// Same input root → same shard on both sides so the frontend log-read +
+/// Clean target the dir the engine wrote.
+fn hash_root(root: &str) -> String {
+    let mut h: u32 = 5381;
+    for b in root.bytes() {
+        h = h.wrapping_mul(33).wrapping_add(b as u32);
+    }
+    format!("{:08x}", h)
+}
+
+/// App-local compile-output home for one project root (05-versioning V-4,
+/// RULES §8: no legacy — the in-project `<main-dir>/out/` is never used).
+/// Mirrors `src/lib/paths.ts appOutDir`.
+fn out_dir_for(tmp: &Path, root: &str) -> PathBuf {
+    tmp.join("maleficium-out").join(hash_root(root))
+}
+
 /// Triple suffix matching `src-tauri/binaries/tectonic-<triple>` (Tauri externalBin).
 fn sidecar_triple() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -64,7 +82,9 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     } else {
         (PathBuf::from(&workdir), input.clone())
     };
-    let outdir = dir.join("out");
+    // App-local outdir (V-4): shard OS tmp by the main-file dir so NOTHING is
+    // written into the user's project. `compile_tex` signature unchanged.
+    let outdir = out_dir_for(&std::env::temp_dir(), &dir.to_string_lossy());
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
     let _ = app.emit("compile-line", format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()));
@@ -164,6 +184,24 @@ mod tests {
     #[test]
     fn out_pdf_appends_pdf_when_no_tex_suffix() {
         assert_eq!(out_pdf(Path::new("/t/out"), "hello"), Path::new("/t/out/hello.pdf"));
+    }
+
+    #[test]
+    fn hash_root_is_deterministic_8_hex() {
+        assert_eq!(hash_root("/home/u/paper"), hash_root("/home/u/paper"));
+        assert_ne!(hash_root("/home/u/other"), hash_root("/home/u/paper"));
+        let h = hash_root("/home/u/paper");
+        assert_eq!(h.len(), 8);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn out_dir_shards_tmp_per_root() {
+        let a = out_dir_for(Path::new("/tmp"), "/home/u/paper");
+        let b = out_dir_for(Path::new("/tmp"), "/home/u/other");
+        assert_ne!(a, b);
+        assert!(a.starts_with("/tmp/maleficium-out"));
+        assert!(!a.starts_with("/home/u/paper"));
     }
 
     #[test]

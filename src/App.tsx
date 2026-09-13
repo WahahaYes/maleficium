@@ -306,8 +306,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       emit({ scope: 'compile', kind: 'warn', message: 'Clean: nothing to clean (no project file)' });
       return;
     }
+    // App-local outdir (V-4, mirrors Rust `out_dir_for`): clean NEVER touches
+    // the project dir (RULES §8: no legacy).
+    const { tempDir } = await import('@tauri-apps/api/path');
+    const { appOutDir } = await import('./lib/paths');
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
-    const out = dir + '/out';
+    const out = appOutDir(await tempDir(), dir);
     try {
       // Per-entry removal (no recursive-remove capability needed): build
       // artifacts only, never sources. Missing dir = already clean.
@@ -495,7 +499,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     setLog(r.log);
     const readEngineLog = async (): Promise<string | null> => {
       try {
-        return await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`);
+        // App-local outdir (V-4, mirrors Rust `out_dir_for`): the engine log
+        // lives in tmp, never in the project (RULES §8: no legacy).
+        const { tempDir } = await import('@tauri-apps/api/path');
+        const { appOutDir } = await import('./lib/paths');
+        const out = appOutDir(await tempDir(), workdir!);
+        return await readTextFile(`${out}/${main.replace(/\.tex$/, '.log')}`);
       } catch {
         return null;
       }
