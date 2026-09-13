@@ -57,10 +57,12 @@ export default function App() {
 
   async function handleSelect(path:string){ 
     if(path.endsWith('.tex')){
+      emit({scope:'fs',kind:'progress',message:'loading '+path}); setLog('loading '+path);
       const content=await loadTex(path);
       setTex(content);
       setFileName(path);
       setLog('loaded '+path);
+      emit({scope:'fs',kind:'success',message:'loaded '+path});
       const logName = path.replace(/\.tex$/, '.log');
       try {
         const logContent = await readTextFile(logName);
@@ -90,6 +92,9 @@ export default function App() {
     let unlisten: ()=>void = ()=>{};
     try { unlisten = await onCompileLine((line)=>emit({scope:'compile',kind:'progress',message:String(line).slice(0,300)})); } catch {}
     const t0 = Date.now(); const hb = setInterval(()=>emit({scope:'compile',kind:'progress',message:`still compiling ${fileName} (${Math.floor((Date.now()-t0)/1000)}s)`}), 5000);
+    let maxGap = 0; let lastT = performance.now(); let probing = true;
+    const tickProbe = () => { if (!probing) return; const now = performance.now(); maxGap = Math.max(maxGap, now - lastT); lastT = now; requestAnimationFrame(tickProbe); };
+    requestAnimationFrame(tickProbe);
     try {
       if (fileName.includes('/')) {
         await saveTex(fileName, tex);
@@ -127,6 +132,7 @@ export default function App() {
       try { const c = await readTextFile(`${workdir}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     }
     clearInterval(hb); try { unlisten(); } catch {}
+    probing = false; emit({scope:'compile',kind:'info',message:`main-thread max frame ${Math.round(maxGap)}ms during compile`});
   }
 
   async function handleForwardSync(){
