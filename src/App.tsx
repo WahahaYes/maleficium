@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Slide from '@mui/material/Slide';
+import Drawer from '@mui/material/Drawer';
 import Typography from '@mui/material/Typography';
-import CompileStatus from './components/CompileStatus';
-import MainLayout from './components/MainLayout';
-import Editor from './components/Editor';
+import EditorViewport from './components/EditorViewport';
+import ActivityBar, { type ActivityMode } from './components/ActivityBar';
+import EditorToolbar from './components/EditorToolbar';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
-import Problems from './components/Problems';
-import EventLog from './components/EventLog';
+import BottomPanel, { type BottomTab } from './components/BottomPanel';
+import StatusBar from './components/StatusBar';
+import Pane, { PaneSplitter } from './components/Pane';
 import { openProject, listTree, listDir1Level, loadTex, saveTex, saveTexToDisk, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
@@ -216,12 +219,8 @@ export default function App() {
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  function handleTexChange(v: string) {
-    setTex(v);
-    if (fileName.includes('/')) {
-      setBuffers((b) => updateBuffer(b, fileName, v));
-    }
-  }
+  const handleGitStatusClick = () => { void handleGitStatus().then(() => setBottomTab('log')); };
+  void handleGitStatusClick;
 
   const save = useCallback(async ()=>{
     if(fileName.includes('/')){
@@ -254,6 +253,7 @@ export default function App() {
   async function compile(){
     const target = mainFile ?? (fileName.includes('/') ? fileName : null);
     emit({scope:'compile',kind:'progress',message:'compiling '+(target ?? fileName)});
+    setCompilePhase('compiling'); setCompileStart(Date.now()); setCompileTimer(0);
     setLog('compiling...');
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
@@ -292,6 +292,8 @@ export default function App() {
     const r = await compileTex(activeTarget, workdir!);
     setLog(r.log);
     if (r.ok && r.pdfPath) {
+      setCompilePhase('success'); setCompileStart(null);
+      setBottomTab('log');
       emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
       emitPdf(r.pdfPath);
       setPdfStamp(s=>s+1);
@@ -301,10 +303,14 @@ export default function App() {
         setLogText(logContent);
       } catch { setLogText(''); }
     } else if (!r.ok && r.log.includes('spawn')) {
+      setCompilePhase('failure'); setCompileStart(null);
+      setBottomTab('problems');
       setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       try { const c = await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     } else if (!r.ok) {
+      setCompilePhase('failure'); setCompileStart(null);
+      setBottomTab('problems');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       try { const c = await readTextFile(`${workdir!}/out/${main.replace(/\.tex$/, '.log')}`); setLogText(c); } catch { setLogText(r.log); }
     }
@@ -344,6 +350,7 @@ export default function App() {
   }
 
   const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
+  const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
   const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
   const gitBadgeMap = useMemo(() => {
     const m = new Map<string, GitBadge>();
@@ -355,60 +362,137 @@ export default function App() {
     return m;
   }, [gitBadges, root]);
 
+  // ---- Pitch 1 shell state (scalar layout ratios; D.4 density/theme deferred) ----
+  const [mode, setMode] = useState<ActivityMode>('file');
+  const [layout, setLayout] = useState({ editorRatio: 0.6, previewRatio: 0.4, bottomHeight: 200 });
+  const [bottomTab, setBottomTab] = useState<BottomTab>('problems');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [compilePhase, setCompilePhase] = useState('idle');
+  const [compileTimer, setCompileTimer] = useState(0);
+  const [compileStart, setCompileStart] = useState<number | null>(null);
+  const [fileTreeOpen, setFileTreeOpen] = useState(false);
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
+
+  // Mirror compile bus → StatusBar phase/timer (placement only; 01 owns contract).
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (compileStart != null) setCompileTimer(Math.floor((Date.now() - compileStart) / 1000));
+    }, 500);
+    return () => clearInterval(t);
+  }, [compileStart]);
+
+  const handleTexChange = useCallback((v: string) => {
+    const t0 = performance.now();
+    setTex(v);
+    if (fileName.includes('/')) {
+      setBuffers((b) => updateBuffer(b, fileName, v));
+    }
+    // Budget emission: keystroke-to-paint probe (target <50ms at 5MB).
+    requestAnimationFrame(() => {
+      const dt = Math.round(performance.now() - t0);
+      if (v.length > 1_000_000) {
+        emit({ scope: 'app', kind: 'info', message: `editor render ${(v.length / 1_048_576).toFixed(1)}MB file in ${dt}ms` });
+      }
+    });
+  }, [fileName]);
+  void gitText;
+
+  const editorPane = (
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <Slide direction="down" in={true} mountOnEnter={false} unmountOnExit={false}>
+        <Box>
+          <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { setBottomTab('log'); void compile(); }} />
+        </Box>
+      </Slide>
+      <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+        main: {mainFile ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+        <Button variant="outlined" size="small" onClick={handleSetMain} disabled={!root || !fileName.includes('/')}>Set as main</Button>
+        <Button variant="outlined" size="small" onClick={handleUndo}>Undo delete</Button>
+        <Button variant="outlined" size="small" onClick={handleGitShowHead}>HEAD diff</Button>
+      </Box>
+      {reloadPath ? (
+        <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+          <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
+          <Button size="small" variant="outlined" onClick={handleReload}>Reload</Button>
+          <Button size="small" onClick={() => setReloadPath(null)}>Keep mine</Button>
+        </Box>
+      ) : null}
+      {largeFile ? (
+        <Typography variant="body2" sx={{ mt: 1 }}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
+      ) : (
+        <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} />
+        </Box>
+      )}
+      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{log}</Typography>
+    </Box>
+  );
+
+  const previewPane = (
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <Preview pdfUrl={pdfUrl} stamp={pdfStamp} pageNumber={pageNumber} onPage={setPageNumber} onSync={handleForwardSync} />
+      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{forwardMsg}</Typography>
+    </Box>
+  );
+
   return (
-    <MainLayout
-      editor={
-        <Box sx={{p:2}}>
-          <Box sx={{display:'flex',gap:1,mb:1,flexWrap:'wrap',alignItems:'center'}}>
-            <Button variant="outlined" onClick={open}>Open Project</Button>
-            <Button variant="outlined" onClick={save}>Save</Button>
-            <Button variant="contained" onClick={compile}>Compile</Button>
-            <Button variant="outlined" size="small" onClick={handleSetMain} disabled={!root || !fileName.includes('/')}>Set as main</Button>
-            <Button variant="outlined" size="small" onClick={handleUndo}>Undo delete</Button>
-            <Typography variant="body2" sx={{ml:1}}>{fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''}</Typography>
-          <CompileStatus/>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <ActivityBar mode={mode} onMode={(m) => { setMode(m); if (m === 'file') setFileTreeOpen((v) => !v); }} />
+        {/* File tree: Drawer overlay (Pitch 3 pattern) + inline when project open */}
+        <Drawer anchor="left" variant="temporary" open={fileTreeOpen} onClose={() => setFileTreeOpen(false)}>
+          <Box sx={{ width: 300, p: 1, overflow: 'auto' }}>
+            <FileTree tree={tree} selected={fileName} onSelect={(p) => { setFileTreeOpen(false); void handleSelect(p); }} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
           </Box>
-          <Typography variant="caption" sx={{display:'block',mb:1}}>
-            main: {mainFile ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
-          </Typography>
-          {reloadPath ? (
-            <Box sx={{display:'flex',gap:1,mb:1,alignItems:'center'}}>
-              <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
-              <Button size="small" variant="outlined" onClick={handleReload}>Reload</Button>
-              <Button size="small" onClick={() => setReloadPath(null)}>Keep mine</Button>
+        </Drawer>
+        {(mode === 'file' || root) && (
+          <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1 }}>
+            <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+          </Box>
+        )}
+        <Pane label="editor" ratio={layout.editorRatio} onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}>
+          {editorPane}
+        </Pane>
+        <PaneSplitter onDrag={(dx) => setLayout((l) => {
+          const w = window.innerWidth || 1000;
+          const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
+          return { ...l, editorRatio: r, previewRatio: 1 - r };
+        })} />
+        {previewCollapsed ? (
+          <Box sx={{ width: 48, flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pt: 1 }}>
+            <Button size="small" onClick={() => setPreviewCollapsed(false)}>show</Button>
+          </Box>
+        ) : (
+          <Pane label="preview" ratio={layout.previewRatio} onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button size="small" onClick={() => setPreviewCollapsed(true)}>hide</Button>
             </Box>
-          ) : null}
-          {root?<Box sx={{maxHeight:200,overflow:'auto'}}><FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} /></Box>:null}
-          {largeFile ? (
-            <Typography variant="body2" sx={{mt:1}}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
-          ) : (
-            <Editor value={tex} onChange={handleTexChange} onSave={save} />
-          )}
-          <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
-          {logText ? <Problems logText={logText} root={root || workdirHint} base={mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint} onJump={handleJump} /> : null}
-          <EventLog/>
-          <Box sx={{display:'flex',gap:1,mt:1}}>
-            <Button variant="outlined" onClick={handleForwardSync}>Forward SyncTeX</Button>
-            <Button variant="outlined" onClick={handleGitStatus}>Git Status</Button>
-            <Button variant="outlined" onClick={handleGitShowHead}>HEAD diff</Button>
-          </Box>
-          <Typography variant="caption" sx={{display:'block',mt:1}}>{forwardMsg}</Typography>
-          <Typography component="pre" variant="caption" sx={{display:'block',mt:1,whiteSpace:'pre-wrap'}}>{gitText}</Typography>
-        </Box>
-      }
-      preview={
-        <Box sx={{p:2}}>
-          <Preview pdfUrl={pdfUrl} stamp={pdfStamp} />
-          <Typography variant="caption" sx={{display:'block',mt:1}}>{log}</Typography>
-          {logText ? <Problems logText={logText} root={root || workdirHint} base={mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint} onJump={handleJump} /> : null}
-          <Box sx={{display:'flex',gap:1,mt:1}}>
-            <Button variant="outlined" onClick={handleForwardSync}>Forward SyncTeX</Button>
-            <Button variant="outlined" onClick={handleGitStatus}>Git Status</Button>
-          </Box>
-          <Typography variant="caption" sx={{display:'block',mt:1}}>{forwardMsg}</Typography>
-          <Typography component="pre" variant="caption" sx={{display:'block',mt:1,whiteSpace:'pre-wrap'}}>{gitText}</Typography>
-        </Box>
-      }
-    />
+            {previewPane}
+          </Pane>
+        )}
+      </Box>
+      <BottomPanel
+        tab={bottomTab}
+        onTab={setBottomTab}
+        problems={{ logText, root: root || workdirHint, base: mainDir, onJump: handleJump }}
+        events={[]}
+        terminalVisible
+        height={layout.bottomHeight}
+        onHeight={(h) => setLayout((l) => ({ ...l, bottomHeight: h }))}
+        mainFile={mainFile}
+      />
+      {gitText ? (
+        <Typography component="pre" variant="caption" sx={{ display: 'block', maxHeight: 80, overflow: 'auto', whiteSpace: 'pre-wrap', px: 1 }}>{gitText}</Typography>
+      ) : null}
+      <StatusBar
+        mainFile={mainFile}
+        gitBranch={gitBranch}
+        phase={compilePhase}
+        timer={compileTimer}
+        message={log}
+      />
+    </Box>
   );
 }
