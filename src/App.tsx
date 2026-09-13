@@ -55,6 +55,13 @@ export default function App() {
   // Ref mirror for the watcher closure (effect is [root]-scoped; fileName would go stale).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
+  const buffersRef = useRef(buffers);
+  buffersRef.current = buffers;
+  // Latest closures for the global keymap listener (subscribes once, never stale —
+  // untitled typing never touches `buffers`, so dep-driven resubscription misses it).
+  const compileRef = useRef<() => Promise<void>>(async () => {});
+  const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
+  const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
   // P-10: at most 10 open buffers (LRU persist-then-evict; dirty never lost —
@@ -354,15 +361,19 @@ export default function App() {
 
   const handleGitStatusClick = useCallback(() => { setLogCollapsed(false); void handleGitStatus(); }, [root]);
 
+
+  // (B) keymap listener subscribes ONCE and reads via refs (§A below). Adding
+  // a new global chord = extend `lib/keymap.ts` + this listener only (never a
+  // second window listener).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (matchesCompile(e as unknown as KeyboardEvent)) {
         e.preventDefault();
-        void compile();
+        void compileRef.current();
       } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
         e.preventDefault();
-        void handleForwardSync();
+        void forwardSyncRef.current();
       } else if (!mod && e.key === '?') {
         setShortcutsOpen(true);
       } else if (mod && e.key.toLowerCase() === 'b') {
@@ -370,18 +381,18 @@ export default function App() {
         setMode((m) => (m === 'preview' ? 'file' : 'preview'));
       } else if (mod && e.key === 'Tab') {
         // Tab cycling is handled by BufferTabs when focused; global fallback:
-        const keys = [...buffers.keys()];
+        const keys = [...buffersRef.current.keys()];
         if (keys.length > 1) {
           e.preventDefault();
-          const i = keys.indexOf(fileName);
+          const i = keys.indexOf(fileNameRef.current);
           const n = e.shiftKey ? (i - 1 + keys.length) % keys.length : (i + 1) % keys.length;
-          void handleSelect(keys[n]);
+          void handleSelectRef.current(keys[n]);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [buffers, fileName, root, handleSelect]);
+  }, []);
 
   const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
@@ -579,6 +590,17 @@ export default function App() {
       setCurrentLine(line);
     });
   }
+
+  // (A) Latest-closure refs for the subscribe-once keymap listener below.
+  // The listener must never close over render state: assign every render and
+  // call only `*.current()`. Why: typing in an UNTITLED file (`hello.tex`, no
+  // `/`) updates `tex` alone — `buffers`/`fileName`/`root` never change, so a
+  // dep-driven listener never resubscribes and Ctrl+R compiles the mount-time
+  // buffer forever (the stale-compile bug). Placed after `compile` /
+  // `handleForwardSync` declarations so the names resolve.
+  compileRef.current = compile;
+  forwardSyncRef.current = handleForwardSync;
+  handleSelectRef.current = handleSelect;
 
   const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
   const gitBadgeMap = useMemo(() => {
