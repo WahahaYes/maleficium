@@ -1,5 +1,21 @@
 use std::process::Command;
 
+fn git_branch(root: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let b = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if b.is_empty() || b == "HEAD" {
+        None
+    } else {
+        Some(b)
+    }
+}
+
 #[tauri::command]
 pub fn git_status(root: String) -> Result<String, String> {
     let status = Command::new("git")
@@ -24,4 +40,19 @@ pub fn git_status(root: String) -> Result<String, String> {
         format!("{}\n{}", status_str, log_str)
     };
     Ok(result)
+}
+
+/// Working-copy vs HEAD diff for one file (honest empty on non-repo/binary).
+#[tauri::command]
+pub fn git_show_head(root: String, file: String) -> Result<String, String> {
+    let head = Command::new("git")
+        .args(["-C", &root, "show", &format!("HEAD:{}", file)])
+        .output()
+        .map_err(|e| format!("git show failed: {}", e))?;
+    if !head.status.success() {
+        let branch = git_branch(&root);
+        let _ = branch;
+        return Err("not a git repository or file not in HEAD".to_string());
+    }
+    Ok(String::from_utf8_lossy(&head.stdout).to_string())
 }
