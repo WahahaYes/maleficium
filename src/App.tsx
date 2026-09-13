@@ -310,10 +310,25 @@ export default function App() {
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
     const out = dir + '/out';
     try {
-      const { remove } = await import('@tauri-apps/plugin-fs');
-      await remove(out, { recursive: true });
+      // Per-entry removal (no recursive-remove capability needed): build
+      // artifacts only, never sources. Missing dir = already clean.
+      const { readDir, remove } = await import('@tauri-apps/plugin-fs');
+      let entries = [];
+      try {
+        entries = await readDir(out);
+      } catch {
+        emit({ scope: 'compile', kind: 'info', message: 'Clean: already clean' });
+        return;
+      }
+      let n = 0;
+      for (const e of entries) {
+        try {
+          await remove(out + '/' + e.name);
+          n++;
+        } catch { /* keep going — report count at end */ }
+      }
       markOwnWrite(out);
-      emit({ scope: 'compile', kind: 'success', message: 'Cleaned ' + out });
+      emit({ scope: 'compile', kind: 'success', message: `Cleaned ${out} (${n} files)` });
       if (root) await reloadTree(root, false);
     } catch (e) {
       emit({ scope: 'compile', kind: 'error', message: 'Clean failed: ' + String(e).slice(0, 120) });
