@@ -1,10 +1,24 @@
 // trash.ts — Tauri-backed trash moves + undo via FileHistory references.
+//
+// 05-versioning V-2: trash lives APP-LOCAL (`appDataDir/maleficium-trash/<hash>/`),
+// never inside the project. The legacy in-project `.maleficium-trash/` keeps its
+// `files.ts` filter + `mainFile.tauri.ts` scan skip (read-only legacy —
+// never re-created, never deleted automatically).
 
 import { mkdir, rename, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
+import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
+import { appTrashDir } from './paths';
 
-export function trashDir(root: string): string {
+/** Legacy in-project trash (read-only legacy — do not write). */
+export function legacyTrashDir(root: string): string {
   return (root.endsWith('/') ? root : root + '/') + '.maleficium-trash';
+}
+
+/** App-local trash home for this project (05-versioning V-2). */
+export async function trashDir(root: string): Promise<string> {
+  const base = await appDataDir();
+  return appTrashDir(base, root);
 }
 
 export async function moveToTrash(
@@ -12,7 +26,12 @@ export async function moveToTrash(
   root: string,
   absPath: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const dir = trashDir(root);
+  let dir: string;
+  try {
+    dir = await trashDir(root);
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
   try {
     await mkdir(dir, { recursive: true });
   } catch (e) {
