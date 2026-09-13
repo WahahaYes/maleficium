@@ -11,10 +11,6 @@ export interface BufferState {
   version: number;
 }
 
-export function createBuffers(): Map<string, BufferState> {
-  return new Map();
-}
-
 export function getOrCreateBuffer(
   buffers: Map<string, BufferState>,
   path: string,
