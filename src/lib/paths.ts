@@ -1,8 +1,8 @@
 // paths.ts — app-local homes for state that must never litter the project dir.
 //
 // 05-versioning: trash, main-file association cache root, and compile `out/`
-// live OUTSIDE the user's folder. Resolution order per item:
-// explicit app-local path → legacy in-project fallback (read-only, V-2…V-4).
+// live OUTSIDE the user's folder. App-local paths are the ONLY paths — there
+// are no in-project fallbacks (RULES §8: no legacy).
 //
 // Growth cap: path strings + one djb2 hex only; no file contents, no payload.
 
@@ -25,8 +25,8 @@ export function joinPath(...parts: string[]): string {
 
 /**
  * App-local trash home for one project root. Caller creates per-delete
- * subdirs as needed (`mkdir recursive`). Legacy `.maleficium-trash/` inside
- * the project is NEVER written here — it keeps its filter + scan skip.
+ * subdirs as needed (`mkdir recursive`). Nothing is ever written to or read
+ * from the project dir (RULES §8: no legacy).
  */
 export function appTrashDir(appDataDir: string, root: string): string {
   return joinPath(appDataDir, 'maleficium-trash', hashRoot(root));
