@@ -28,11 +28,6 @@ export class FileHistory {
     }
   }
 
-  /** Peek without removing. */
-  peek(): FileHistoryEntry | undefined {
-    return this.stack[this.stack.length - 1];
-  }
-
   pop(): FileHistoryEntry | undefined {
     return this.stack.pop();
   }

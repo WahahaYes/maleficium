@@ -4,11 +4,6 @@ use tauri::Manager;
 
 mod commands;
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -17,7 +12,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::compile::CompileState::default())
         .invoke_handler(tauri::generate_handler![
-            greet,
             commands::compile::compile_tex,
             commands::compile::cancel_compile,
             commands::synctex::forward_sync,
