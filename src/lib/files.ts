@@ -1,5 +1,5 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile, writeFile, readDir, rename, remove } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, writeFile, readDir, rename } from '@tauri-apps/plugin-fs'
 
 export type TreeEntry = { name: string; path: string; type: 'dir' | 'file'; children?: TreeEntry[] }
 
@@ -50,12 +50,7 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
   return full;
 }
 
-export async function removePath(absPath: string): Promise<void> {
-  await remove(absPath);
-}
-
 /** Single-level listing for lazy tree expansion (metadata only, sorted). */
-
 /** Full recursive walk — main-file scan + watcher baseline ONLY, never the open path. */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
@@ -105,13 +100,6 @@ export async function saveTex(path: string, content: string): Promise<void> {
   await writeTextFile(path, content)
 }
 
-export async function loadTexViaDialog(): Promise<{ name: string; content: string } | null> {
-  const path = await openDialog({ filters: [{ name: 'LaTeX', extensions: ['tex'] }] })
-  if (!path) return null
-  const content = await readTextFile(path)
-  return { name: path, content }
-}
-
 export async function saveTexToDisk(name: string, content: string): Promise<void> {
   try {
     const path = await saveDialog({ defaultPath: name, filters: [{ name: 'LaTeX', extensions: ['tex'] }] })
@@ -125,8 +113,4 @@ export async function saveTexToDisk(name: string, content: string): Promise<void
     anchor.click()
     URL.revokeObjectURL(url)
   }
-}
-
-export function helloName(): string {
-  return 'Hello!'
 }

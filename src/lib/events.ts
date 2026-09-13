@@ -1,4 +1,4 @@
-export type EventScope='compile'|'preview'|'fs'|'git'|'app';
+export type EventScope = 'compile' | 'preview' | 'fs' | 'app';
 export type EventKind='info'|'progress'|'success'|'error'|'warn';
 export interface BusEvent{scope:EventScope;kind:EventKind;at:number;message:string;data?:unknown}
 const buf:BusEvent[]=[]; const subs=new Set<(e:BusEvent)=>void>();
