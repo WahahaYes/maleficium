@@ -17,9 +17,10 @@ export type CommandId =
   | 'file.set-main' | 'file.reload' | 'file.keep-mine' | 'file.clean'
   | 'edit.undo-delete' | 'edit.rename' | 'edit.delete'
   | 'selection.select-all' | 'selection.expand' | 'selection.shrink' | 'selection.go-to-line'
+  | 'selection.pick-one' | 'selection.pick-many'
   | 'view.preset-both' | 'view.preset-editor' | 'view.preset-preview'
   | 'view.toggle-tree' | 'view.toggle-preview' | 'view.toggle-log' | 'view.toggle-outline'
-  | 'view.theme-dark' | 'view.theme-light'
+  | 'view.theme' | 'view.theme-dark' | 'view.theme-light'
   | 'tools.compile' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
   | 'tools.git-status' | 'tools.git-show-head'
   | 'help.shortcuts' | 'help.about';
@@ -41,10 +42,16 @@ export interface MenuContext {
   dirty: boolean;
   compiling: boolean;
   pdfOpen: boolean;
+  /** Live editor mounted (viewport bridge assigned) — Selection enabled. */
+  editorReady: boolean;
   view: ViewState;
   preset: ViewPreset;
   logCollapsed: boolean;
   outlineVisible: boolean;
+  /** Outline section lines for the choose-1 / choose-N demo submenus. */
+  outlineLines: { line: number; title: string }[];
+  /** Currently multi-picked outline lines (choose-N state lives in App). */
+  outlinePicks: number[];
   canUndoDelete: boolean;
   reloadPending: boolean;
   theme: 'dark' | 'light';
@@ -66,6 +73,10 @@ export interface CommandActions {
   expandSelection: () => void;
   shrinkSelection: () => void;
   goToLine: () => void;
+  /** Choose-1-from-N: jump to one outline section (P-13 hierarchy demo). */
+  pickOutlineSection: (line: number) => void;
+  /** Choose-N: toggle outline entries as a multi-pick set (demo + future batch ops). */
+  toggleOutlinePick: (line: number) => void;
   setPreset: (p: Exclude<ViewPreset, 'custom'>) => void;
   toggleTree: () => void;
   togglePreview: () => void;
@@ -89,11 +100,13 @@ export interface MenuCommand {
   checked?: boolean;
   enabled: boolean;
   visible?: boolean;
+  /** Nested submenu — renders a flyout instead of running an action. */
+  children?: MenuCommand[];
   /** Honest disabled placeholder — title explains itself. */
   soon?: boolean;
   /** 05-versioning-owned; do not extend. */
   legacy?: boolean;
-  run: () => void | Promise<void>;
+  run?: () => void | Promise<void>;
 }
 
 export interface MenuSection {
@@ -126,10 +139,36 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
     },
     {
       id: 'selection', title: 'Selection', commands: [
-        { id: 'selection.select-all', label: 'Select All', accelerator: 'Ctrl+A', enabled: true, run: a.selectAll },
-        { id: 'selection.expand', label: 'Expand Selection', accelerator: 'Shift+Alt+Right', enabled: true, run: a.expandSelection },
-        { id: 'selection.shrink', label: 'Shrink Selection', accelerator: 'Shift+Alt+Left', enabled: true, run: a.shrinkSelection },
-        { id: 'selection.go-to-line', label: 'Go to Line…', accelerator: 'Ctrl+G', enabled: true, run: a.goToLine },
+        { id: 'selection.select-all', label: 'Select All', accelerator: 'Ctrl+A', enabled: ctx.editorReady, run: a.selectAll },
+        { id: 'selection.expand', label: 'Expand Selection', accelerator: 'Shift+Alt+Right', enabled: ctx.editorReady, run: a.expandSelection },
+        { id: 'selection.shrink', label: 'Shrink Selection', accelerator: 'Shift+Alt+Left', enabled: ctx.editorReady, run: a.shrinkSelection },
+        { id: 'selection.go-to-line', label: 'Go to Line…', accelerator: 'Ctrl+G', enabled: ctx.editorReady, run: a.goToLine },
+        {
+          id: 'selection.pick-one', label: 'Go to Section…', enabled: ctx.editorReady && ctx.outlineLines.length > 0,
+          children: ctx.outlineLines.slice(0, 25).map((o) => ({
+            id: 'selection.pick-one' as const,
+            label: `${o.line}: ${o.title}`.slice(0, 60),
+            enabled: true,
+            run: () => a.pickOutlineSection(o.line),
+          })),
+        },
+        {
+          id: 'selection.pick-many', label: `Pick Sections${ctx.outlinePicks.length > 0 ? ` (${ctx.outlinePicks.length})` : ''}…`, enabled: ctx.editorReady && ctx.outlineLines.length > 0,
+          children: ctx.outlinePicks.length > 0
+            ? ctx.outlineLines.slice(0, 25).map((o) => ({
+                id: 'selection.pick-many' as const,
+                label: `${ctx.outlinePicks.includes(o.line) ? '✓ ' : ''}${o.line}: ${o.title}`.slice(0, 62),
+                checked: ctx.outlinePicks.includes(o.line),
+                enabled: true,
+                run: () => a.toggleOutlinePick(o.line),
+              }))
+            : ctx.outlineLines.slice(0, 25).map((o) => ({
+                id: 'selection.pick-many' as const,
+                label: `${o.line}: ${o.title}`.slice(0, 60),
+                enabled: true,
+                run: () => a.toggleOutlinePick(o.line),
+              })),
+        },
       ],
     },
     {
@@ -141,8 +180,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         { id: 'view.toggle-preview', label: 'Preview Pane', checked: ctx.view.preview, enabled: true, run: a.togglePreview },
         { id: 'view.toggle-log', label: 'Log Stream', checked: !ctx.logCollapsed, enabled: true, run: a.toggleLog },
         { id: 'view.toggle-outline', label: 'Outline', checked: ctx.outlineVisible, enabled: true, run: a.toggleOutline },
-        { id: 'view.theme-dark', label: 'Dark Theme', checked: ctx.theme === 'dark', enabled: true, run: () => a.setTheme('dark') },
-        { id: 'view.theme-light', label: 'Light Theme', checked: ctx.theme === 'light', enabled: true, run: () => a.setTheme('light') },
+        {
+          id: 'view.theme', label: `Theme: ${ctx.theme === 'dark' ? 'Dark' : 'Light'}`, enabled: true,
+          children: [
+            { id: 'view.theme-dark', label: 'Dark', checked: ctx.theme === 'dark', enabled: true, run: () => a.setTheme('dark') },
+            { id: 'view.theme-light', label: 'Light', checked: ctx.theme === 'light', enabled: true, run: () => a.setTheme('light') },
+          ],
+        },
       ],
     },
     {

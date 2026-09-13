@@ -1,8 +1,8 @@
 // MenuBar.tsx — expandable top menus (File/Edit/Selection/View/Tools/Help).
 //
 // Growth cap: renders section titles + open menu only; commands are data from
-// `lib/commands.ts` (no per-command components). Checked radio items for
-// presets/theme; `soon` renders disabled with honest labeling.
+// `lib/commands.ts` (no per-command components). `checked` = radio/toggle
+// state; `children` = nested submenu (one level: pick-1 / pick-N / theme).
 
 import { useState } from 'react';
 import Box from '@mui/material/Box';
@@ -12,7 +12,81 @@ import MenuItem from '@mui/material/MenuItem';
 import ListItemText from '@mui/material/ListItemText';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
-import type { MenuSection } from '../lib/commands';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import type { MenuCommand, MenuSection } from '../lib/commands';
+
+function Row({ c, close }: { c: MenuCommand; close: () => void }) {
+  const [subAnchor, setSubAnchor] = useState<HTMLElement | null>(null);
+  const subOpen = subAnchor != null;
+
+  if (c.children && c.children.length > 0) {
+    return (
+      <>
+        <MenuItem
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={subOpen}
+          disabled={!c.enabled}
+          onClick={(e) => setSubAnchor(e.currentTarget)}
+          onMouseEnter={(e) => {
+            if (c.enabled) setSubAnchor(e.currentTarget);
+          }}
+        >
+          {c.checked != null ? (
+            c.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+          ) : null}
+          <ListItemText>{c.label}</ListItemText>
+          <ChevronRightIcon fontSize="small" color="action" />
+        </MenuItem>
+        <Menu
+          open={subOpen && c.enabled}
+          anchorEl={subAnchor}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          onClose={() => setSubAnchor(null)}
+          slotProps={{ list: { role: 'menu', 'aria-label': c.label } }}
+        >
+          {c.children.map((k, i) => (
+            <MenuItem
+              key={`${k.id}-${i}`}
+              role="menuitemradio"
+              aria-checked={k.checked ?? undefined}
+              disabled={!k.enabled}
+              onClick={() => { setSubAnchor(null); close(); void k.run?.(); }}
+            >
+              {k.checked != null ? (
+                k.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+              ) : null}
+              <ListItemText>{k.label}</ListItemText>
+              {k.accelerator ? (
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 3, fontFamily: 'monospace' }}>
+                  {k.accelerator}
+                </Typography>
+              ) : null}
+            </MenuItem>
+          ))}
+        </Menu>
+      </>
+    );
+  }
+
+  return (
+    <MenuItem
+      role="menuitem"
+      disabled={!c.enabled}
+      onClick={() => { close(); void c.run?.(); }}
+    >
+      {c.checked != null ? (
+        c.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+      ) : null}
+      <ListItemText>{c.label}</ListItemText>
+      {c.accelerator ? (
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 3, fontFamily: 'monospace' }}>
+          {c.accelerator}
+        </Typography>
+      ) : null}
+    </MenuItem>
+  );
+}
 
 export default function MenuBar({ sections, status }: {
   sections: MenuSection[];
@@ -64,22 +138,7 @@ export default function MenuBar({ sections, status }: {
             {s.commands
               .filter((c) => c.visible !== false)
               .map((c) => (
-                <MenuItem
-                  key={c.id}
-                  role="menuitem"
-                  disabled={!c.enabled}
-                  onClick={() => { close(); void c.run(); }}
-                >
-                  {c.checked != null ? (
-                    c.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
-                  ) : null}
-                  <ListItemText>{c.label}</ListItemText>
-                  {c.accelerator ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 3, fontFamily: 'monospace' }}>
-                      {c.accelerator}
-                    </Typography>
-                  ) : null}
-                </MenuItem>
+                <Row key={c.id} c={c} close={close} />
               ))}
           </Menu>
         </Box>

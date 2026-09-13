@@ -4,8 +4,9 @@ import { KEYMAP } from './keymap';
 
 const baseCtx: MenuContext = {
   hasProject: true, isProjectFile: true, dirty: false, compiling: false,
-  pdfOpen: true, view: { tree: true, editor: true, preview: true }, preset: 'both',
-  logCollapsed: false, outlineVisible: true, canUndoDelete: true,
+  pdfOpen: true, editorReady: true,
+  view: { tree: true, editor: true, preview: true }, preset: 'both',
+  logCollapsed: false, outlineVisible: true, outlineLines: [{ line: 3, title: 'Intro' }], outlinePicks: [3], canUndoDelete: true,
   reloadPending: false, theme: 'dark',
 };
 const noop = () => {};
@@ -13,12 +14,21 @@ const actions: CommandActions = {
   openProject: noop, newFile: noop, closeFile: noop, save: noop, setMainFile: noop,
   reloadFromDisk: noop, keepMine: noop, clean: noop, undoDelete: noop, renameActive: noop,
   deleteActive: noop, selectAll: noop, expandSelection: noop, shrinkSelection: noop,
-  goToLine: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
+  goToLine: noop, pickOutlineSection: noop, toggleOutlinePick: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
   toggleOutline: noop, setTheme: noop, compile: noop, cancelCompile: noop, forwardSync: noop,
   inverseHint: noop, gitStatus: noop, gitShowHead: noop, showShortcuts: noop, showAbout: noop,
 };
 
 describe('command registry', () => {
+  it('submenu hierarchy builds (pick-1 / pick-N / theme)', () => {
+    const all = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
+    const pickOne = all.find((c) => c.id === 'selection.pick-one')!;
+    const pickMany = all.find((c) => c.id === 'selection.pick-many')!;
+    const theme = all.find((c) => c.id === 'view.theme')!;
+    expect(pickOne.children?.length).toBe(1);
+    expect(pickMany.children?.[0].checked).toBe(true);
+    expect(theme.children?.map((k) => k.id)).toEqual(['view.theme-dark', 'view.theme-light']);
+  });
   it('ids are unique across sections', () => {
     const ids = buildMenus(baseCtx, actions).flatMap((s) => s.commands.map((c) => c.id));
     expect(new Set(ids).size).toBe(ids.length);

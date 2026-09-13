@@ -686,9 +686,13 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
+  // Viewport bridge is assigned inside EditorViewport via viewportRef prop.
+  // Without it selectAll/expand/shrink/goToLine no-op (the Selection bug).
   const viewportRef = useRef<EditorViewportHandle | null>(null);
   // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
   const [outline, setOutline] = useState<{ title: string; line: number; level: number }[]>([]);
+  // Multi-pick set for Selection > Pick Sections (choose-N demo + future batch ops).
+  const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
   useEffect(() => {
     const t = setTimeout(() => {
       try {
@@ -740,10 +744,13 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     dirty: !!buffers.get(fileName)?.dirty,
     compiling: compilePhase === 'compiling',
     pdfOpen: pdfUrl != null,
+    editorReady: viewportRef.current != null && largeFile == null,
     view: { tree: treeVisible, editor: editorVisible, preview: previewOpen },
     preset: presetOf({ tree: treeVisible, editor: editorVisible, preview: previewOpen }),
     logCollapsed,
     outlineVisible,
+    outlineLines: outline.map((o) => ({ line: o.line, title: o.title })),
+    outlinePicks,
     canUndoDelete: trash.size > 0,
     reloadPending: reloadPath != null,
     theme: themeMode,
@@ -770,6 +777,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     expandSelection: () => viewportRef.current?.expandSelection(),
     shrinkSelection: () => viewportRef.current?.shrinkSelection(),
     goToLine: () => { setGoToDraft(String(currentLine)); setGoToOpen(true); },
+    pickOutlineSection: (line: number) => setCurrentLine(line),
+    toggleOutlinePick: (line: number) =>
+      setOutlinePicks((prev) => (prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line])),
     setPreset: (preset) => {
       if (preset === 'both') { setTreeVisible(true); setEditorVisible(true); setPreviewOpen(true); setPreviewCollapsed(false); }
       else if (preset === 'editor') { setTreeVisible(false); setEditorVisible(true); setPreviewOpen(false); }
@@ -793,7 +803,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   menuActionRef.current = (id: string) => {
     for (const sec of menuSections) {
       const cmd = sec.commands.find((c) => c.id === id);
-      if (cmd && cmd.enabled && cmd.visible !== false) { void cmd.run(); return; }
+      if (cmd && cmd.enabled && cmd.visible !== false) { void cmd.run?.(); return; }
     }
   };
 
@@ -814,7 +824,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         <Typography variant="body2" sx={{ mt: 1 }}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
       ) : (
         <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} />
+          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} viewportRef={viewportRef} />
         </Box>
       )}
       <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{log}</Typography>
