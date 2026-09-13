@@ -7,10 +7,10 @@ import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
 
-export default function StatusBar({ mainFile, gitBranch, ahead, phase, timer, message }: {
+export default function StatusBar({ mainFile, mainFileTitle, gitBranch, phase, timer, message }: {
   mainFile?: string | null;
+  mainFileTitle?: string | null;
   gitBranch?: string | null;
-  ahead?: number | null;
   phase: string;
   timer: number;
   message: string;
@@ -22,8 +22,8 @@ export default function StatusBar({ mainFile, gitBranch, ahead, phase, timer, me
       <Typography variant="caption" noWrap sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {phase}{phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
-      {mainFile ? <Typography variant="caption" noWrap sx={{ flexShrink: 0, maxWidth: '30%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mainFile}</Typography> : null}
-      {gitBranch ? <Typography variant="caption" noWrap sx={{ flexShrink: 0 }}>{gitBranch}{ahead ? ` ↑${ahead}` : ''}</Typography> : null}
+      {mainFile ? <Typography variant="caption" noWrap title={mainFileTitle ?? mainFile} sx={{ flexShrink: 0, maxWidth: '30%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mainFile}</Typography> : null}
+      {gitBranch ? <Typography variant="caption" noWrap sx={{ flexShrink: 0 }}>{gitBranch}</Typography> : null}
       {phase === 'compiling' ? <LinearProgress sx={{ width: 120, height: 2, flexShrink: 0 }} /> : null}
     </Box>
   );

@@ -16,9 +16,6 @@ interface PreviewProps {
   stamp: number;
   pageNumber?: number;
   onPage?: (p: number) => void;
-  collapsible?: boolean;
-  /** Stub: same pdfUrl reference; Tauri Window plugin deferred. */
-  popout?: boolean;
   onSync?: () => void;
   /** Inverse SyncTeX: canvas click → editor line (disabled while compiling). */
   onInverse?: (page: number, x: number, y: number) => void;
@@ -42,7 +39,7 @@ export function touchPageCache(url: string, page: number, handle: unknown): void
   }
 }
 
-export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout, onSync, onInverse, syncDisabled }: PreviewProps) {
+export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync, onInverse, syncDisabled }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -63,14 +60,6 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout,
     setFlash((f) => f + 1);
     onInverse(page, Math.round(x), Math.round(y));
   };
-
-  useEffect(() => {
-    if (popout && pdfUrl) {
-      // eslint-disable-next-line no-console
-      console.log('popout: preview (stub — same pdfUrl reference)');
-      window.open(pdfUrl.startsWith('blob:') ? pdfUrl : undefined, '_blank');
-    }
-  }, [popout, pdfUrl]);
 
   useEffect(() => {
     if (!pdfUrl || !canvasRef.current) return;
@@ -152,11 +141,6 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, popout,
         onPage={(p) => onPage?.(p)}
         onSync={() => onSync?.()}
         syncDisabled={syncDisabled}
-        compiling={false}
-        onPopout={() => {
-          // eslint-disable-next-line no-console
-          console.log('popout: preview toolbar (stub)');
-        }}
       />
       {phase ? <Typography variant="caption">{phase}</Typography> : null}
       <canvas

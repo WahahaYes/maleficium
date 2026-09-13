@@ -1,5 +1,5 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile, readDir } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, writeFile, readDir, rename, remove } from '@tauri-apps/plugin-fs'
 
 export type TreeEntry = { name: string; path: string; type: 'dir' | 'file'; children?: TreeEntry[] }
 
@@ -32,7 +32,30 @@ export async function openProject(): Promise<string | null> {
   return path ?? null
 }
 
-export async function listTree(root: string): Promise<TreeEntry[]> {
+/** Create an empty file (parents must exist); returns the absolute path. */
+export async function createFile(dir: string, name: string): Promise<string> {
+  const clean = name.trim().replace(/\//g, '_') || 'untitled.tex';
+  const full = dir.endsWith('/') ? dir + clean : dir + '/' + clean;
+  await writeFile(full, new Uint8Array());
+  return full;
+}
+
+/** Rename within the same tree; returns the new absolute path. */
+export async function renamePath(oldPath: string, newName: string): Promise<string> {
+  const clean = newName.trim().replace(/\//g, '_');
+  if (!clean) throw new Error('empty name');
+  const dir = oldPath.slice(0, oldPath.lastIndexOf('/'));
+  const full = dir + '/' + clean;
+  await rename(oldPath, full);
+  return full;
+}
+
+export async function removePath(absPath: string): Promise<void> {
+  await remove(absPath);
+}
+
+/** Full recursive walk — main-file scan + watcher baseline ONLY, never the open path. */
+export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
     const entries = await readDir(root)
     const result: TreeEntry[] = []
@@ -43,7 +66,7 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
       const fullPath = root.endsWith('/') ? root + entry.name : root + '/' + entry.name
       const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' }
       if (isDir) {
-        const sub = await listTree(fullPath)
+        const sub = await listTreeDeep(fullPath)
         child.children = sub
         dirs.push(child)
       } else {
@@ -55,6 +78,9 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
     return []
   }
 }
+
+/** @deprecated use listDir1Level (UI) or listTreeDeep (scan). Kept for compat. */
+export const listTree = listTreeDeep;
 
 /** Single-level listing for lazy tree expansion (metadata only, sorted). */
 export async function listDir1Level(dir: string): Promise<TreeEntry[]> {

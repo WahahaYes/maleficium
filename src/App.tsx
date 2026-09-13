@@ -9,9 +9,11 @@ import EditorToolbar from './components/EditorToolbar';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
 import LogStream from './components/LogStream';
+import OutlineView from './components/OutlineView';
+import ShortcutsDialog from './components/ShortcutsDialog';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
-import { openProject, listTree, listDir1Level, loadTex, saveTex, saveTexToDisk, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
+import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile, renamePath, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
@@ -19,6 +21,9 @@ import { gitStatus, gitStatusState, gitShowHead, type GitBadge } from './lib/git
 import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
+import { parseOutline } from './lib/outline';
+import { matchesCompile, matchesForwardSync } from './lib/keymap';
+import { listTreeDeep } from './lib/files';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { moveToTrash, undoTrash } from './lib/trash';
@@ -52,6 +57,21 @@ export default function App() {
   fileNameRef.current = fileName;
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
+  // P-10: at most 10 open buffers (LRU persist-then-evict; dirty never lost —
+  // eviction persists first, so content is always on disk before the drop).
+  const MAX_BUFFERS = 10;
+  const enforceBufferCap = useCallback((m: Map<string, BufferState>): Map<string, BufferState> => {
+    if (m.size <= MAX_BUFFERS) return m;
+    const keys = [...m.keys()];
+    // Evict oldest clean non-active first; active file never evicted.
+    for (const k of keys) {
+      if (m.size <= MAX_BUFFERS) break;
+      if (k === fileNameRef.current) continue;
+      const b = m.get(k);
+      if (b && !b.dirty) m.delete(k);
+    }
+    return m;
+  }, []);
   // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
   // our own writes must not raise the reload banner (M-6). Windowed suppression.
   const ownWritesRef = useRef<Map<string, number>>(new Map());
@@ -98,7 +118,7 @@ export default function App() {
       setLargeFile(null);
       const content=await loadTex(path);
       if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
-      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return n; });
+      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return enforceBufferCap(n); });
       setTex(content);
       setFileName(path);
       setReloadPath(null);
@@ -111,27 +131,6 @@ export default function App() {
     }
     }, [buffers, fileName, root]);
 
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        setMode((m) => (m === 'preview' ? 'file' : 'preview'));
-      } else if (mod && e.key === 'Tab') {
-        // Tab cycling is handled by BufferTabs when focused; global fallback:
-        const keys = [...buffers.keys()];
-        if (keys.length > 1) {
-          e.preventDefault();
-          const i = keys.indexOf(fileName);
-          const n = e.shiftKey ? (i - 1 + keys.length) % keys.length : (i + 1) % keys.length;
-          void handleSelect(keys[n]);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [buffers, fileName, root, handleSelect]);
 
   useEffect(()=>{ const h=()=>{ cancelCompile().catch(()=>{}); }; window.addEventListener('beforeunload',h); return ()=>window.removeEventListener('beforeunload',h); },[]);
 
@@ -153,9 +152,15 @@ export default function App() {
     return res.mainFile;
   }, []);
 
-  const reloadTree = useCallback(async (r: string) => {
-    const t = await listTree(r);
+  // Honest lazy (P-06): UI tree is 1 level + expand-on-demand. The recursive
+  // walk survives ONLY for main-file scan + watcher baseline (off open path).
+  // open timing emission proves O(depth 1) on large projects.
+  const reloadTree = useCallback(async (r: string, deep = false) => {
+    const t0 = performance.now();
+    const t = deep ? await listTreeDeep(r) : await listDir1Level(r);
     setTree(t);
+    const dt = Math.round(performance.now() - t0);
+    emit({ scope: 'fs', kind: 'info', message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms` });
   }, []);
 
   // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
@@ -199,7 +204,7 @@ export default function App() {
     const r=await openProject();
     if(r){
       setRoot(r);
-      const t=await listTree(r);setTree(t);
+      await reloadTree(r, false);
       setLog('opened '+r); emit({scope:'fs',kind:'info',message:'opened '+r});
       trash.clear();
       const m = await resolveMain(r, null);
@@ -207,6 +212,39 @@ export default function App() {
       setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
     }
     else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
+  }
+
+  // Tree CRUD (P-06): create/rename via plugin-fs; own-write marks suppress echoes.
+  async function handleCreate(dirPath: string, name: string) {
+    try {
+      const full = await createFile(dirPath, name);
+      markOwnWrite(full);
+      emit({ scope: 'fs', kind: 'success', message: 'created ' + full });
+      if (root) await reloadTree(root, false);
+      await handleSelect(full);
+    } catch (e) {
+      emit({ scope: 'fs', kind: 'error', message: 'create failed: ' + String(e).slice(0, 120) });
+    }
+  }
+
+  async function handleRename(oldPath: string, newName: string) {
+    try {
+      const full = await renamePath(oldPath, newName);
+      markOwnWrite(oldPath); markOwnWrite(full);
+      setBuffers((b) => {
+        const prev = b.get(oldPath);
+        if (!prev) return b;
+        const n = new Map(b);
+        n.delete(oldPath);
+        n.set(full, prev);
+        return n;
+      });
+      if (fileName === oldPath) { setFileName(full); setReloadPath(null); }
+      emit({ scope: 'fs', kind: 'success', message: `renamed to ${full}` });
+      if (root) await reloadTree(root, false);
+    } catch (e) {
+      emit({ scope: 'fs', kind: 'error', message: 'rename failed: ' + String(e).slice(0, 120) });
+    }
   }
 
 
@@ -263,6 +301,25 @@ export default function App() {
     }
   }
 
+  async function handleClean() {
+    const target = mainFile ?? (fileName.includes('/') ? fileName : null);
+    if (!target || !target.includes('/')) {
+      emit({ scope: 'compile', kind: 'warn', message: 'Clean: nothing to clean (no project file)' });
+      return;
+    }
+    const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
+    const out = dir + '/out';
+    try {
+      const { remove } = await import('@tauri-apps/plugin-fs');
+      await remove(out, { recursive: true });
+      markOwnWrite(out);
+      emit({ scope: 'compile', kind: 'success', message: 'Cleaned ' + out });
+      if (root) await reloadTree(root, false);
+    } catch (e) {
+      emit({ scope: 'compile', kind: 'error', message: 'Clean failed: ' + String(e).slice(0, 120) });
+    }
+  }
+
   async function handleUndo() {
     const r = await undoTrash(trash);
     setTrashMsg(r.ok ? 'restored' : 'undo failed: ' + (r.error ?? '').slice(0, 120));
@@ -282,8 +339,43 @@ export default function App() {
 
   const handleGitStatusClick = useCallback(() => { setLogCollapsed(false); void handleGitStatus(); }, [root]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (matchesCompile(e as unknown as KeyboardEvent)) {
+        e.preventDefault();
+        void compile();
+      } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
+        e.preventDefault();
+        void handleForwardSync();
+      } else if (!mod && e.key === '?') {
+        setShortcutsOpen(true);
+      } else if (mod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setMode((m) => (m === 'preview' ? 'file' : 'preview'));
+      } else if (mod && e.key === 'Tab') {
+        // Tab cycling is handled by BufferTabs when focused; global fallback:
+        const keys = [...buffers.keys()];
+        if (keys.length > 1) {
+          e.preventDefault();
+          const i = keys.indexOf(fileName);
+          const n = e.shiftKey ? (i - 1 + keys.length) % keys.length : (i + 1) % keys.length;
+          void handleSelect(keys[n]);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [buffers, fileName, root, handleSelect]);
+
   const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
+  // Repo-relative for display (absolute kept in tooltips); P-09 plain language.
+  const relOf = (abs: string | null): string | null => {
+    if (!abs) return null;
+    if (root && abs.startsWith(root + '/')) return abs.slice(root.length + 1);
+    return abs;
+  };
 
   const save = useCallback(async ()=>{
     if (largeFile) {
@@ -465,7 +557,7 @@ export default function App() {
 
   function handleJump(absPath: string, line: number){
     loadTex(absPath).then(content => {
-      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, absPath, content); return n; });
+      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, absPath, content); return enforceBufferCap(n); });
       setTex(content);
       setFileName(absPath);
       setLargeFile(null);
@@ -486,14 +578,46 @@ export default function App() {
 
   // ---- Pitch 1 shell state (scalar layout ratios; D.4 density/theme deferred) ----
   const [mode, setMode] = useState<ActivityMode>('file');
-  const [layout, setLayout] = useState({ editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 });
+  const [layout, setLayout] = useState(() => {
+    try {
+      const raw = localStorage.getItem('maleficium.layout');
+      if (raw) {
+        const j = JSON.parse(raw) as Partial<{ editorRatio: number; previewRatio: number; logHeight: number }>;
+        return {
+          editorRatio: typeof j.editorRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.editorRatio)) : 0.6,
+          previewRatio: typeof j.previewRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.previewRatio)) : 0.4,
+          logHeight: typeof j.logHeight === 'number' ? Math.max(80, Math.min(600, j.logHeight)) : 160,
+        };
+      }
+    } catch { /* corrupted prefs — defaults win */ }
+    return { editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 };
+  });
+  useEffect(() => {
+    try { localStorage.setItem('maleficium.layout', JSON.stringify(layout)); } catch { /* private mode — layout just won't persist */ }
+  }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const [compilePhase, setCompilePhase] = useState('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const fileTreeVisible = mode !== 'preview';
+  // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
+  const [outline, setOutline] = useState<{ title: string; line: number; level: number }[]>([]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const t0 = performance.now();
+        const entries = parseOutline(tex).slice(0, 100);
+        setOutline(entries);
+        if (tex.length > 1_000_000) {
+          emit({ scope: 'app', kind: 'info', message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms` });
+        }
+      } catch { /* outline never blocks editing */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [tex, fileName]);
 
   // Mirror compile bus → StatusBar phase/timer (placement only; 01 owns contract).
   useEffect(() => {
@@ -520,9 +644,9 @@ export default function App() {
 
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { void compile(); }} />
+      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { void compile(); }} onClean={() => { void handleClean(); }} onShortcuts={() => setShortcutsOpen(true)} />
       <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
-        main: {mainFile ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
+        main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
       <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} />
       <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
@@ -571,9 +695,18 @@ export default function App() {
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
         <ActivityBar mode={mode} onMode={setMode} />
         {fileTreeVisible && (
-          <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1 }}>
+          <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1, display: 'flex', flexDirection: 'column' }}>
             {root ? (
-              <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onExpandDir={listDir1Level} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+              <>
+                <Box sx={{ flexShrink: 0 }}>
+                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
+                </Box>
+                <OutlineView
+                  entries={outline}
+                  totalShown={outline.length >= 100 ? '100+' : String(outline.length)}
+                  onJump={(line) => setCurrentLine(line)}
+                />
+              </>
             ) : (
               <Typography variant="body2" color="text.secondary">Open a project to browse files.</Typography>
             )}
@@ -624,8 +757,10 @@ export default function App() {
         onToggleCollapse={() => setLogCollapsed((c) => !c)}
         onJump={handleJump}
       />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <StatusBar
-        mainFile={mainFile}
+        mainFile={relOf(mainFile)}
+        mainFileTitle={mainFile}
         gitBranch={gitBranch}
         phase={compilePhase}
         timer={compileTimer}

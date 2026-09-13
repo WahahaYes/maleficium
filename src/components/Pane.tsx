@@ -1,8 +1,7 @@
-// Pane.tsx — modular split wrapper (CSS split, no custom widget library).
+// Pane.tsx — split wrapper (CSS split, no custom widget library).
 //
 // Growth cap: ratios are scalars (editorRatio/previewRatio 0..1); resizing never
-// grows content layers. popout = stub (console.log + optional window.open);
-// collapsed = 48px rail or hidden.
+// grows content layers. (P-08: popout/collapsed stubs cut — dead buttons lie.)
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
@@ -14,8 +13,6 @@ export interface PaneProps {
   onRatio: (r: number) => void;
   minRatio?: number;
   maxRatio?: number;
-  popout?: boolean;
-  collapsed?: boolean | 'rail' | 'hidden';
   label: string;
 }
 
@@ -52,7 +49,7 @@ export function PaneSplitter({ onDrag, onKeyResize, label }: { onDrag: (dx: numb
   );
 }
 
-export default function Pane({ children, ratio, onRatio, minRatio = 0.2, maxRatio = 0.8, popout, collapsed, label }: PaneProps) {
+export default function Pane({ children, ratio, onRatio, minRatio = 0.2, maxRatio = 0.8, label }: PaneProps) {
   const handleDrag = useCallback(
     (dx: number) => {
       const w = window.innerWidth || 1000;
@@ -60,16 +57,6 @@ export default function Pane({ children, ratio, onRatio, minRatio = 0.2, maxRati
     },
     [ratio, onRatio, minRatio, maxRatio],
   );
-
-  if (popout) {
-    // eslint-disable-next-line no-console
-    console.log(`popout: ${label} (stub)`);
-  }
-
-  if (collapsed === true || collapsed === 'hidden') return null;
-  if (collapsed === 'rail') {
-    return <Box sx={{ width: 48, flexShrink: 0, overflow: 'hidden' }}>{children}</Box>;
-  }
 
   return (
     <Box sx={{ flex: ratio, minWidth: 120, overflow: 'auto', display: 'flex', flexDirection: 'column' }} data-pane={label}>

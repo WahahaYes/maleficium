@@ -8,6 +8,7 @@ import { memo, useEffect, useRef } from 'react';
 import Paper from '@mui/material/Paper';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
+import { texMode } from '../lib/texMode';
 
 export interface EditorViewportProps {
   value: string;
@@ -16,13 +17,9 @@ export interface EditorViewportProps {
   line?: number;
   /** Bumped by inverse SyncTeX: flashes the revealed line amber 1.4s. */
   flashKey?: number;
-  hideChrome?: boolean;
-  /** Stub: logs + window.open fallback; Tauri Window plugin is a future session. */
-  popout?: boolean;
-  collapsed?: boolean;
 }
 
-function EditorViewport({ value, onChange, onSave, line, flashKey, hideChrome, popout, collapsed }: EditorViewportProps) {
+function EditorViewport({ value, onChange, onSave, line, flashKey }: EditorViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Last value WE sent downstream (mount doc or external sync). Keystrokes
@@ -41,6 +38,7 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, hideChrome, p
       doc: value,
       extensions: [
         basicSetup,
+        texMode,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
             lastSentRef.current = u.state.doc.toString();
@@ -111,17 +109,8 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, hideChrome, p
     }
   }, [line, flashKey]);
 
-  useEffect(() => {
-    if (popout) {
-      // eslint-disable-next-line no-console
-      console.log('popout: editor (stub — same value reference, Tauri Window deferred)');
-    }
-  }, [popout]);
-
-  if (collapsed) return null;
-
   return (
-    <Paper elevation={0} sx={{ p: hideChrome ? 0 : 1, fontSize: 14, overflow: 'auto' }}>
+    <Paper elevation={0} sx={{ p: 1, fontSize: 14, overflow: 'auto' }}>
       <div ref={hostRef} />
     </Paper>
   );

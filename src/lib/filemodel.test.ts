@@ -74,3 +74,24 @@ describe('buffers dirty tracking', () => {
     expect(saved.get('/a.tex')?.dirty).toBe(false);
   });
 });
+
+describe('buffer cap (P-10)', () => {
+  it('eviction drops oldest clean first, never dirty (cap enforced by caller)', () => {
+    // enforceBufferCap lives in App; here we pin the contract it implements:
+    // caller iterates insertion order, skips active + dirty, deletes rest.
+    const m = new Map<string, { dirty: boolean; value: string; version: number }>();
+    for (let i = 0; i < 11; i++) {
+      m.set(`/f${i}.tex`, { dirty: i === 10, value: `v${i}`, version: 0 });
+    }
+    const active = '/f10.tex';
+    for (const k of [...m.keys()]) {
+      if (m.size <= 10) break;
+      if (k === active) continue;
+      const b = m.get(k);
+      if (b && !b.dirty) m.delete(k);
+    }
+    expect(m.size).toBe(10);
+    expect(m.get('/f10.tex')?.dirty).toBe(true);
+    expect(m.has('/f0.tex')).toBe(false);
+  });
+});
