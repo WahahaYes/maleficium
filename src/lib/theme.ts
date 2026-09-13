@@ -5,6 +5,8 @@
 // never a rewrite. ONE density knob (comfortable/compact) — no per-component
 // density props (ideation-slim §7).
 
+import { createTheme } from '@mui/material';
+
 export type Density = 'comfortable' | 'compact';
 export type ThemeMode = 'dark' | 'light';
 
@@ -21,3 +23,33 @@ export const typeScale = {
   caption: 11,
   editorFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 } as const;
+
+/** App theme factory: mode + density in, MUI theme out. Themes later = new
+ *  palette branch here, never scattered `sx` edits. */
+export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable') {
+  return createTheme({
+    palette: {
+      mode,
+      ...(mode === 'light'
+        ? {
+            primary: { main: '#34548a' },
+            background: { default: '#fafafa', paper: '#ffffff' },
+          }
+        : {
+            primary: { main: '#7aa2f7' },
+            secondary: { main: '#bb9af7' },
+            success: { main: '#9ece6a' },
+            warning: { main: '#e0af68' },
+            error: { main: '#f7768e' },
+            background: { default: '#1a1b26', paper: '#24283b' },
+          }),
+    },
+    typography: { fontSize: 13, fontFamily: 'Inter, system-ui, sans-serif' },
+    spacing: density === 'compact' ? 4 : 8,
+    components: {
+      MuiButton: { defaultProps: { size: 'small' } },
+      MuiChip: { defaultProps: { size: 'small' } },
+      MuiToolbar: { defaultProps: { variant: 'dense' } },
+    },
+  });
+}

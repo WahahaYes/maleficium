@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import EditorViewport from './components/EditorViewport';
-import ActivityBar, { type ActivityMode } from './components/ActivityBar';
+import EditorViewport, { type EditorViewportHandle } from './components/EditorViewport';
 import BufferTabs from './components/BufferTabs';
-import EditorToolbar from './components/EditorToolbar';
+import CompileButton from './components/CompileButton';
+import MenuBar from './components/MenuBar';
 import Preview from './components/Preview';
 import FileTree from './components/FileTree';
 import LogStream from './components/LogStream';
@@ -22,7 +27,8 @@ import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
 import { parseOutline } from './lib/outline';
-import { matchesCompile, matchesForwardSync } from './lib/keymap';
+import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
+import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { listTreeDeep } from './lib/files';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
@@ -32,7 +38,10 @@ import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
-export default function App() {
+export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
+  themeMode?: 'dark' | 'light';
+  onThemeMode?: (m: 'dark' | 'light') => void;
+}) {
   const [tex, setTex] = useState(HELLO);
   const [root, setRoot] = useState<string|null>(null);
   const [tree, setTree] = useState<TreeEntry[]>([]);
@@ -359,12 +368,12 @@ export default function App() {
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  const handleGitStatusClick = useCallback(() => { setLogCollapsed(false); void handleGitStatus(); }, [root]);
-
 
   // (B) keymap listener subscribes ONCE and reads via refs (§A below). Adding
   // a new global chord = extend `lib/keymap.ts` + this listener only (never a
-  // second window listener).
+  // second window listener). Menu chords (Ctrl+O/W/G…) dispatch through the
+  // same command registry refs as MenuBar clicks — one path, no duplicates.
+  const menuActionRef = useRef<(id: string) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -374,11 +383,17 @@ export default function App() {
       } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
         e.preventDefault();
         void forwardSyncRef.current();
+      } else if (matchesMenuChord(e as unknown as KeyboardEvent)) {
+        const id = menuChordId(e as unknown as KeyboardEvent);
+        if (id) {
+          e.preventDefault();
+          menuActionRef.current(id);
+        }
       } else if (!mod && e.key === '?') {
         setShortcutsOpen(true);
       } else if (mod && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setMode((m) => (m === 'preview' ? 'file' : 'preview'));
+        setTreeVisible((v) => !v);
       } else if (mod && e.key === 'Tab') {
         // Tab cycling is handled by BufferTabs when focused; global fallback:
         const keys = [...buffersRef.current.keys()];
@@ -637,8 +652,10 @@ export default function App() {
     return m;
   }, [gitBadges, root]);
 
-  // ---- Pitch 1 shell state (scalar layout ratios; D.4 density/theme deferred) ----
-  const [mode, setMode] = useState<ActivityMode>('file');
+  // ---- Shell state: view is explicit booleans (View menu presets own them) ----
+  const [treeVisible, setTreeVisible] = useState(true);
+  const [editorVisible, setEditorVisible] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(true);
   const [layout, setLayout] = useState(() => {
     try {
       const raw = localStorage.getItem('maleficium.layout');
@@ -663,7 +680,13 @@ export default function App() {
   const [compileStart, setCompileStart] = useState<number | null>(null);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const fileTreeVisible = mode !== 'preview';
+  void previewCollapsed;
+  const fileTreeVisible = treeVisible;
+  const [outlineVisible, setOutlineVisible] = useState(true);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [goToOpen, setGoToOpen] = useState(false);
+  const [goToDraft, setGoToDraft] = useState('');
+  const viewportRef = useRef<EditorViewportHandle | null>(null);
   // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
   const [outline, setOutline] = useState<{ title: string; line: number; level: number }[]>([]);
   useEffect(() => {
@@ -703,19 +726,83 @@ export default function App() {
     });
   }, [fileName]);
 
+  // ---- Command registry binding (source of truth: lib/commands.ts) ----
+  // Menus, icon buttons, chords, and (later) MCP all invoke THESE actions.
+  const compileTarget = mainFile ?? (fileName.includes('/') ? fileName : null);
+  const workingLabel = (() => {
+    const t = compileTarget ?? (largeFile ?? fileName);
+    const base = t.slice(t.lastIndexOf('/') + 1) || t;
+    return relOf(t) === t ? base : `${relOf(t)}`;
+  })();
+  const menuCtx: MenuContext = {
+    hasProject: root != null,
+    isProjectFile: root != null && fileName.includes('/') && fileName.startsWith(root + '/'),
+    dirty: !!buffers.get(fileName)?.dirty,
+    compiling: compilePhase === 'compiling',
+    pdfOpen: pdfUrl != null,
+    view: { tree: treeVisible, editor: editorVisible, preview: previewOpen },
+    preset: presetOf({ tree: treeVisible, editor: editorVisible, preview: previewOpen }),
+    logCollapsed,
+    outlineVisible,
+    canUndoDelete: trash.size > 0,
+    reloadPending: reloadPath != null,
+    theme: themeMode,
+  };
+  const menuActions: CommandActions = {
+    openProject: () => { void open(); },
+    newFile: () => {
+      if (root) void handleCreate(root, 'untitled.tex');
+      else emit({ scope: 'fs', kind: 'warn', message: 'New File needs an open project' });
+    },
+    closeFile: () => { void handleCloseBuffer(fileName); },
+    save: () => { void save(); },
+    setMainFile: () => { void handleSetMain(); },
+    reloadFromDisk: () => { void handleReload(); },
+    keepMine: () => setReloadPath(null),
+    clean: () => { void handleClean(); },
+    undoDelete: () => { void handleUndo(); },
+    renameActive: () => {
+      // Rename flows through the tree row dialog; menu focuses the tree instead.
+      emit({ scope: 'fs', kind: 'info', message: 'Rename: right-click the file in the tree' });
+    },
+    deleteActive: () => { void handleDelete(fileName); },
+    selectAll: () => viewportRef.current?.selectAll(),
+    expandSelection: () => viewportRef.current?.expandSelection(),
+    shrinkSelection: () => viewportRef.current?.shrinkSelection(),
+    goToLine: () => { setGoToDraft(String(currentLine)); setGoToOpen(true); },
+    setPreset: (preset) => {
+      if (preset === 'both') { setTreeVisible(true); setEditorVisible(true); setPreviewOpen(true); setPreviewCollapsed(false); }
+      else if (preset === 'editor') { setTreeVisible(false); setEditorVisible(true); setPreviewOpen(false); }
+      else { setTreeVisible(false); setEditorVisible(false); setPreviewOpen(true); setPreviewCollapsed(false); }
+    },
+    toggleTree: () => setTreeVisible((v) => !v),
+    togglePreview: () => { setPreviewOpen((v) => !v); setPreviewCollapsed(false); },
+    toggleLog: () => setLogCollapsed((c) => !c),
+    toggleOutline: () => setOutlineVisible((v) => !v),
+    setTheme: (m) => onThemeMode(m),
+    compile: () => { void compileRef.current(); },
+    cancelCompile: () => { void cancelCompile().catch((e) => emit({ scope: 'compile', kind: 'error', message: 'cancel failed: ' + String(e).slice(0, 120) })); },
+    forwardSync: () => { void forwardSyncRef.current(); },
+    inverseHint: () => emit({ scope: 'preview', kind: 'info', message: 'Inverse SyncTeX: click anywhere on the PDF' }),
+    gitStatus: () => { void handleGitStatus(); },
+    gitShowHead: () => { void handleGitShowHead(); },
+    showShortcuts: () => setShortcutsOpen(true),
+    showAbout: () => setAboutOpen(true),
+  };
+  const menuSections = buildMenus(menuCtx, menuActions);
+  menuActionRef.current = (id: string) => {
+    for (const sec of menuSections) {
+      const cmd = sec.commands.find((c) => c.id === id);
+      if (cmd && cmd.enabled && cmd.visible !== false) { void cmd.run(); return; }
+    }
+  };
+
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <EditorToolbar fileName={fileName} dirty={!!buffers.get(fileName)?.dirty} onOpen={open} onSave={save} onCompile={() => { void compile(); }} onClean={() => { void handleClean(); }} onShortcuts={() => setShortcutsOpen(true)} />
-      <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
-        main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
+      <Typography variant="caption" sx={{ display: 'block', mb: 1 }} title={fileName}>
+        {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''} · main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{gitBranch ? ` · ${gitBranch}` : ''}{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
       <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} />
-      <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-        <Button variant="outlined" size="small" onClick={handleSetMain} disabled={!root || !fileName.includes('/')}>Set as main</Button>
-        <Button variant="outlined" size="small" onClick={handleUndo}>Undo delete</Button>
-        <Button variant="outlined" size="small" onClick={handleGitShowHead}>HEAD diff</Button>
-        <Button variant="outlined" size="small" onClick={handleGitStatusClick}>Git Status</Button>
-      </Box>
       {reloadPath ? (
         <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
           <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
@@ -748,13 +835,27 @@ export default function App() {
     </Box>
   );
 
-  const previewVisible = mode !== 'project' && !previewCollapsed;
-  const editorVisible = mode !== 'preview';
+  const previewVisible = previewOpen && !previewCollapsed;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <MenuBar
+        sections={menuSections}
+        status={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              {compilePhase === 'compiling' ? `compiling ${compileTimer}s` : compilePhase}
+            </Typography>
+            <CompileButton
+              targetLabel={workingLabel}
+              compiling={compilePhase === 'compiling'}
+              onCompile={() => menuActionRef.current('tools.compile')}
+              onCancel={() => menuActionRef.current('tools.cancel')}
+            />
+          </Box>
+        }
+      />
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
-        <ActivityBar mode={mode} onMode={setMode} />
         {fileTreeVisible && (
           <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1, display: 'flex', flexDirection: 'column' }}>
             {root ? (
@@ -762,11 +863,13 @@ export default function App() {
                 <Box sx={{ flexShrink: 0 }}>
                   <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden gitStatus={gitBadgeMap} />
                 </Box>
-                <OutlineView
-                  entries={outline}
-                  totalShown={outline.length >= 100 ? '100+' : String(outline.length)}
-                  onJump={(line) => setCurrentLine(line)}
-                />
+                {outlineVisible ? (
+                  <OutlineView
+                    entries={outline}
+                    totalShown={outline.length >= 100 ? '100+' : String(outline.length)}
+                    onJump={(line) => setCurrentLine(line)}
+                  />
+                ) : null}
               </>
             ) : (
               <Typography variant="body2" color="text.secondary">Open a project to browse files.</Typography>
@@ -796,8 +899,8 @@ export default function App() {
           <Box sx={{ width: 48, flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pt: 1 }}>
             <Button
               size="small"
-              aria-label={mode === 'project' ? 'Show preview (switch mode)' : 'Show preview'}
-              onClick={() => { if (mode === 'project') setMode('file'); setPreviewCollapsed(false); }}
+              aria-label="Show preview"
+              onClick={() => { setPreviewOpen(true); setPreviewCollapsed(false); }}
             >
               show
             </Button>
@@ -819,6 +922,47 @@ export default function App() {
         onJump={handleJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <Dialog open={goToOpen} onClose={() => setGoToOpen(false)} maxWidth="xs">
+        <DialogTitle>Go to Line</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus fullWidth size="small" aria-label="Line number"
+            value={goToDraft}
+            onChange={(e) => setGoToDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const n = parseInt(goToDraft, 10);
+                if (Number.isFinite(n)) viewportRef.current?.goToLine(n);
+                setGoToOpen(false);
+              }
+            }}
+            slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setGoToOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const n = parseInt(goToDraft, 10);
+              if (Number.isFinite(n)) viewportRef.current?.goToLine(n);
+              setGoToOpen(false);
+            }}
+          >
+            Go
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={aboutOpen} onClose={() => setAboutOpen(false)} maxWidth="xs">
+        <DialogTitle>About Maleficium</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Version 0.1.0 · offline-first · Linux-first.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setAboutOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
       <StatusBar
         mainFile={relOf(mainFile)}
         mainFileTitle={mainFile}

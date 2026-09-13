@@ -7,7 +7,7 @@
 import { memo, useEffect, useRef } from 'react';
 import Paper from '@mui/material/Paper';
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
+import { EditorState, EditorSelection } from '@codemirror/state';
 import { texMode } from '../lib/texMode';
 
 export interface EditorViewportProps {
@@ -19,7 +19,19 @@ export interface EditorViewportProps {
   flashKey?: number;
 }
 
-function EditorViewport({ value, onChange, onSave, line, flashKey }: EditorViewportProps) {
+/** Minimal viewport bridge (Selection menu + Go to Line). No editor fork:
+ *  thin wrappers over the live CodeMirror view; no-ops when unmounted. */
+export interface EditorViewportHandle {
+  selectAll: () => void;
+  expandSelection: () => void;
+  shrinkSelection: () => void;
+  goToLine: (line: number) => void;
+}
+
+function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef }: EditorViewportProps & {
+  /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
+  viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Last value WE sent downstream (mount doc or external sync). Keystrokes
@@ -108,6 +120,43 @@ function EditorViewport({ value, onChange, onSave, line, flashKey }: EditorViewp
       }
     }
   }, [line, flashKey]);
+
+  // Viewport bridge: Selection menu drives the LIVE view (no-ops unmounted).
+  useEffect(() => {
+    if (!viewportRef) return;
+    const stepOut = (dir: 1 | -1) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const sel = view.state.selection.main;
+      const line = view.state.doc.lineAt(sel.head);
+      const target = view.state.doc.line(Math.min(view.state.doc.lines, Math.max(1, line.number + dir)));
+      view.dispatch({
+        selection: EditorSelection.range(sel.anchor, dir > 0 ? target.to : target.from),
+        scrollIntoView: true,
+      });
+      view.focus();
+    };
+    viewportRef.current = {
+      selectAll: () => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length }, scrollIntoView: true });
+        view.focus();
+      },
+      expandSelection: () => stepOut(1),
+      shrinkSelection: () => stepOut(-1),
+      goToLine: (n: number) => {
+        const view = viewRef.current;
+        if (!view) return;
+        try {
+          const ln = view.state.doc.line(Math.min(Math.max(1, n), view.state.doc.lines));
+          view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
+          view.focus();
+        } catch { /* out of range — ignore */ }
+      },
+    };
+    return () => { viewportRef.current = null; };
+  }, [viewportRef]);
 
   return (
     <Paper elevation={0} sx={{ p: 1, fontSize: 14, overflow: 'auto' }}>
