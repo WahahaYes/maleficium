@@ -75,7 +75,7 @@ describe('buffers dirty tracking', () => {
   });
 });
 
-describe('buffer cap (P-10)', () => {
+describe('buffer cap', () => {
   it('eviction drops oldest clean first, never dirty (cap enforced by caller)', () => {
     // enforceBufferCap lives in App; here we pin the contract it implements:
     // caller iterates insertion order, skips active + dirty, deletes rest.

@@ -6,12 +6,12 @@ derivations — it never ships in the product bundle.
 
 ## Contents
 
-- `v5-footprint.sh` — V-5 Level 1 static footprint audit (no window needed).
+- `project-footprint.sh` — static project-footprint audit (no window needed).
   Copies `playground/` (repo-relative `../../playground`) to a scratch git
   repo, mirrors `hashRoot`/`appTrashDir`/`appOutDir`/`out_dir_for`, and
-  asserts porcelain discipline at every step. Run: `./e2e/v5-footprint.sh`
-  from `maleficium/`. Green 2026-09-14.
-  (Full writeup: `notes/08-devloop/2026-09-14-v5-harness.md`.)
+  asserts porcelain discipline at every step. Run:
+  `./e2e/project-footprint.sh` from `maleficium/`. Green 2026-09-14.
+  (Full writeup: `notes/08-devloop/2026-09-14-footprint-harness.md`.)
 
 ## Conventions
 
@@ -19,7 +19,9 @@ derivations — it never ships in the product bundle.
   no hardcoded absolute paths, no writes outside OS tmp.
 - Never commit fixtures with megabytes: reuse `playground/` (small sources)
   or generate into tmp at runtime (per `04-scale` policy).
-- Level 2 (live IPC/WebDriver drive) lands here next — see the 08-devloop
-  plan. Embedded provider (`@wdio/tauri-service`, no external driver) is
-  the chosen route; standalone `tauri-driver` is blocked (no
-  `webkit2gtk-driver` in Ubuntu resolute).
+- Name tests for the functionality, never the session or slice
+  (no `v5-`/`P-10`/`M-4` in filenames, describes, or messages).
+- Driver-driven runs land here next — see the 08-devloop plan. Embedded
+  provider (`@wdio/tauri-service`, no external driver) is the chosen route;
+  standalone `tauri-driver` is blocked (no `webkit2gtk-driver` in Ubuntu
+  resolute).

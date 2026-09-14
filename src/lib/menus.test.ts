@@ -37,7 +37,7 @@ describe('command registry', () => {
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
   });
-  it('no git-named command or label survives (05-versioning V-1)', () => {
+  it('no git-named command or label survives', () => {
     const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
     for (const c of cmds) {
       expect(c.id, c.id).not.toMatch(/git/i);

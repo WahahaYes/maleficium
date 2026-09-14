@@ -1,26 +1,24 @@
 #!/bin/bash
-# V-5 footprint proof harness — Level 1: static audit (no window needed).
-# Run with: ./harness-v5-footprint.sh
+# Project-footprint proof harness — static audit (no window needed).
+# Run with: ./e2e/project-footprint.sh (from maleficium/).
 #
-# What it proves (05-versioning acceptance #1 + #3 footprint halves):
-# the app's post-05 file operations CANNOT litter the project dir, because
-# every app-local derivation resolves outside it. It replicates each derivation
-# in bash (same algorithms, documented line-refs) against a scratch copy of
-# playground/, then asserts `git status --porcelain` stays clean and the
-# computed homes land in app-data/tmp — never under the project root.
+# What it proves: the app's file operations CANNOT litter the project dir,
+# because every app-local derivation resolves outside it. It replicates each
+# derivation in bash (same algorithms, documented line-refs) against a scratch
+# copy of playground/, then asserts `git status --porcelain` stays clean and
+# the computed homes land in app-data/tmp — never under the project root.
 #
-# What it does NOT prove (needs the live app → Level 2 / 07-verify eyes):
+# What it does NOT prove (needs the live app → driver-driven run / eyes):
 # that the running Tauri commands actually CALL these derivations with the
 # right arguments (open → setMain → compile → delete → undo through IPC).
-# Level 2 waits on a debug-only IPC/test hook (specified in §Level 2 below).
 #
-# RULES §8: no legacy — asserts also cover that NO legacy path is re-created
-# (.maleficium-trash/, .maleficium.json, in-project out/).
+# No-legacy rule (RULES §8): asserts also cover that NO legacy path is
+# re-created (.maleficium-trash/, .maleficium.json, in-project out/).
 
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRATCH="$(mktemp -d /tmp/maleficium-v5-XXXXXX)"
+SCRATCH="$(mktemp -d /tmp/maleficium-footprint-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 APPSRC="$DEVROOT/maleficium/src"
 
@@ -49,17 +47,17 @@ HASH="$(djb2 "$ROOT")"
 [[ "$HASH" =~ ^[0-9a-f]{8}$ ]] || fail "hash not 8-hex: $HASH"
 pass "hashRoot($ROOT) = $HASH (8-hex, deterministic)"
 
-# --- V-2: trash home — src/lib/paths.ts appTrashDir ---------------------------
-APPDATA="${XDG_DATA_HOME:-$HOME/.local/share}/maleficium-test-harness"
+# --- trash home — src/lib/paths.ts appTrashDir ---------------------------------
+APPDATA="${XDG_DATA_HOME:-$HOME/.local/share}/maleficium-footprint-check"
 TRASH="$APPDATA/maleficium-trash/$HASH"
 [[ "$TRASH" == "$ROOT"* ]] && fail "trash home inside project: $TRASH"
 pass "trash home outside project: $TRASH"
 # simulate one delete→undo cycle THROUGH the derived home (rename semantics)
 mkdir -p "$TRASH"
 mv chapters/method.tex "$TRASH/method.tex.ts-test.trashed"
-# A real delete LEGITIMATELY shows as ` D <file>` (user's file trashed).
-# V-5 forbids OUR footprint appearing — assert exactly that: only the
-# expected deletion, no .maleficium-trash/, no .maleficium.json, no out/.
+# A real delete LEGITIMATELY shows as a deletion entry (user's file trashed).
+# The footprint rule forbids OUR artifacts appearing — assert exactly that:
+# only the expected deletion, no .maleficium-trash/, no .maleficium.json, no out/.
 PORC="$(porcelain)"
 echo "$PORC" | grep -q " D chapters/method.tex" || fail "expected deletion missing: $PORC"
 if echo "$PORC" | grep -q ".maleficium-trash"; then fail "legacy trash dir appeared in project"; fi
@@ -72,7 +70,7 @@ pass "delete-undo round-trips through app-data (only legit deletion mid-cycle)"
 # legacy path must NOT be re-created
 [[ -e "$ROOT/.maleficium-trash" ]] && fail "legacy .maleficium-trash re-created"
 
-# --- V-3: main-file association — src/lib/mainFile.store.ts (localStorage) ---
+# --- main-file association — src/lib/mainFile.store.ts (localStorage) -----------
 # localStorage lives in the webview profile, never the project: assert NO
 # .maleficium.json write-site remains in src (besides test/comment mentions).
 if grep -rn "writeTextFile.*maleficium.json\|maleficium.json.*write" \
@@ -86,7 +84,7 @@ fi
 [[ -e "$ROOT/.maleficium.json" ]] && fail "legacy .maleficium.json re-created"
 pass "no .maleficium.json write-site in src; none in project (association is localStorage-only)"
 
-# --- V-4: compile out/ — compile.rs out_dir_for + paths.ts appOutDir ---------
+# --- compile out/ — compile.rs out_dir_for + paths.ts appOutDir ----------------
 OUT="/tmp/maleficium-out/$HASH"
 [[ "$OUT" == "$ROOT"* ]] && fail "out dir inside project: $OUT"
 pass "compile out dir outside project: $OUT"
@@ -99,9 +97,9 @@ pass "compile artifacts land in tmp shard, porcelain clean, no in-project out/"
 # --- final sweep ---------------------------------------------------------------
 [[ -z "$(porcelain)" ]] || fail "final porcelain not clean: $(porcelain)"
 echo ""
-echo "V-5 LEVEL 1 COMPLETE: footprint proofs green (static audit)."
+echo "FOOTPRINT PROOFS COMPLETE: static audit green."
 echo "  root:   $ROOT"
 echo "  hash:   $HASH"
 echo "  trash:  $TRASH"
 echo "  out:    $OUT"
-echo "  Level 2 (live IPC drive) still open — see harness note §Level 2."
+echo "  Live driver-driven run still open — see 08-devloop plan."

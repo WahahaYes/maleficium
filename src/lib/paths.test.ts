@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { hashRoot, joinPath, appTrashDir, appOutDir } from './paths';
 
-describe('app-local paths (05-versioning)', () => {
+describe('app-local paths', () => {
   it('hashRoot is deterministic 8-hex', () => {
     expect(hashRoot('/home/u/paper')).toBe(hashRoot('/home/u/paper'));
     expect(hashRoot('/home/u/paper')).toMatch(/^[0-9a-f]{8}$/);
