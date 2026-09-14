@@ -226,6 +226,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       trash.clear();
       const m = await resolveMain(r, null);
       setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
+      // Open the main file on project select (data-loss guard 2026-09-14:
+      // the editor must never sit on stale untitled content while the tree
+      // shows a project — a compile from that state wrote the HELLO stub
+      // over the real main file). No main → keep the current editor as-is.
+      if (m) await handleSelect(m);
     }
     else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
   }
@@ -556,6 +561,23 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     let maxGap = 0; let lastT = performance.now(); let probing = true;
     const tickProbe = () => { if (!probing) return; const now = performance.now(); maxGap = Math.max(maxGap, now - lastT); lastT = now; requestAnimationFrame(tickProbe); };
     requestAnimationFrame(tickProbe);
+    // DEFENSE IN DEPTH against clobbering (2026-09-14 data-loss bug): the
+    // persist step below writes editor content to `target`. Two invariants
+    // make that safe: (1) the visible editor must actually OWN `target`
+    // (buffered, or the untitled flow); (2) `target` must be a contained
+    // project file or an explicit one-off .tex — never a bare untitled name
+    // resolved against a project dir. Violations abort BEFORE any write.
+    const ownsTarget =
+      target == null || buffers.has(target) || target === fileName ||
+      (!target.includes('/') && !fileName.includes('/'));
+    if (target != null && target.includes('/') && !ownsTarget) {
+      setCompilePhase('failure'); setCompileStart(null);
+      probing = false;
+      emit({scope:'compile',kind:'error',message:`compile refused: editor does not own ${target} (open it first)`});
+      setLog(`compile refused: editor does not own ${target}`);
+      clearInterval(hb); try{unlisten();}catch{}
+      return;
+    }
     try {
       if (target && target.includes('/')) {
         // Persist ALL dirty buffers so \input parts compile from disk.
