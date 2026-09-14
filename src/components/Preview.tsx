@@ -51,6 +51,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // cached handle instead of re-opening the whole document per page.
   const docRef = useRef<{ key: string; pdf: PdfDoc } | null>(null);
   // Windowed pages around the current page; clamped to the document.
+  // Sized so the scroll position is STABLE across re-renders: canvases only
+  // ever mount below the current offset, never above it.
   const lo = Math.max(1, page - WINDOW_ABOVE);
   const hi = Math.min(numPages, page + WINDOW_BELOW);
   const pages: number[] = [];
@@ -143,6 +145,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   }, [pdfUrl, stamp]);
 
   // Render the windowed pages once their canvases mount + on page change.
+  // Scroll position is preserved across re-renders: new canvases mount below
+  // the current scroll offset (never above it), so the viewport never jumps.
   useEffect(() => {
     const pdf = docRef.current?.pdf;
     if (!pdf || !docKey) return;
@@ -150,7 +154,9 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     setPhase('rendering...');
     void (async () => {
       try {
-        for (const n of pages) {
+        // Render the current page FIRST (snappy pager jumps), then neighbors.
+        const ordered = [page, ...pages.filter((n) => n !== page)];
+        for (const n of ordered) {
           if (isCancelled) break;
           // eslint-disable-next-line no-await-in-loop
           await renderPage(pdf, `${docKey}#${n}`, n, () => isCancelled);
@@ -165,14 +171,19 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, page, numPages, renderPage]);
 
-  // Pager jump → scroll the target canvas into view (scroll-driven moves
-  // report back through onPage below, so the two stay in sync).
+  // Pager jump → scroll the target canvas into view. Scroll-driven moves
+  // report back through handleScroll, which clamps to mounted canvases;
+  // programmatic jumps set state directly, so the two never fight: without
+  // this split the scroll effect fires before the target canvas mounts,
+  // nearest-mounted wins, and edge pages become unreachable.
   useEffect(() => {
     const el = canvasRefs.current.get(page);
     el?.scrollIntoView({ block: 'start' });
   }, [page, docKey]);
 
-  // Scroll → nearest page becomes current (pager follows for free).
+  // Scroll → nearest MOUNTED page becomes current (pager follows for free).
+  // Unmounted pages can never win: the window only ever contains pages
+  // around the current one, so clamping to mounted canvases is exact.
   const handleScroll = useCallback(() => {
     const box = scrollRef.current;
     if (!box || !onPage) return;
@@ -180,7 +191,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     let best = page;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const [n, el] of canvasRefs.current) {
-      const d = Math.abs(el.offsetTop - box.clientHeight / 2 - top);
+      if (!pages.includes(n)) continue;
+      const d = Math.abs(el.offsetTop - top);
       if (d < bestDist) {
         bestDist = d;
         best = n;
@@ -188,7 +200,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     }
     if (best !== page) onPage(best);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onPage, page]);
+  }, [onPage, page, lo, hi]);
 
   const setCanvasRef = useCallback((n: number) => (el: HTMLCanvasElement | null) => {
     if (el) canvasRefs.current.set(n, el);

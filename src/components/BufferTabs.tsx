@@ -5,15 +5,23 @@
 
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import CloseIcon from '@mui/icons-material/Close';
+import { useState } from 'react';
 
-export default function BufferTabs({ buffers, active, onSelect, onClose }: {
+export default function BufferTabs({ buffers, active, onSelect, onClose, onCloseOthers, onCloseAll }: {
   buffers: Map<string, { dirty: boolean }>;
   active: string;
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
+  onCloseOthers?: (keep: string) => void;
+  onCloseAll?: () => void;
 }) {
   if (buffers.size === 0) return null;
   const base = (p: string) => p.slice(p.lastIndexOf('/') + 1) || p;
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   // Stable order: insertion order of the Map (open order).
   return (
     <Box
@@ -47,6 +55,41 @@ export default function BufferTabs({ buffers, active, onSelect, onClose }: {
           />
         );
       })}
+      {buffers.size > 1 && (onCloseOthers || onCloseAll) ? (
+        <>
+          <IconButton
+            size="small"
+            aria-label="Close tabs menu"
+            title="Close tabs…"
+            onClick={(e) => setMenuAnchor(e.currentTarget)}
+            sx={{ flexShrink: 0 }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+          <Menu open={menuAnchor != null} anchorEl={menuAnchor} onClose={() => setMenuAnchor(null)}>
+            {onCloseOthers ? (
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onCloseOthers(active);
+                }}
+              >
+                Close others
+              </MenuItem>
+            ) : null}
+            {onCloseAll ? (
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onCloseAll();
+                }}
+              >
+                Close all
+              </MenuItem>
+            ) : null}
+          </Menu>
+        </>
+      ) : null}
     </Box>
   );
 }

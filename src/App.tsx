@@ -286,6 +286,18 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         try { await saveTex(fileName, cur.value); markOwnWrite(fileName); } catch { /* keep dirty, still evict? no — stay */ return; }
       }
     }
+    await closeBufferQuiet(path);
+    emit({ scope: 'fs', kind: 'info', message: 'closed ' + path });
+  }
+
+  // Close without emitting (batch callers emit once for the batch).
+  async function closeBufferQuiet(path: string): Promise<boolean> {
+    if (path === fileName && fileName.includes('/')) {
+      const cur = buffers.get(fileName);
+      if (cur?.dirty) {
+        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); } catch { return false; }
+      }
+    }
     setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
     if (path === fileName) {
       // Fall through to nearest remaining buffer (keeps editor populated).
@@ -305,7 +317,31 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     } else if (previewFile === path) {
       setPreviewFile(null);
     }
-    emit({ scope: 'fs', kind: 'info', message: 'closed ' + path });
+    return true;
+  }
+
+  // Close-all / close-others (persist-then-evict per file; dirty-never-lost:
+  // a file that fails to persist stays open and aborts the batch).
+  async function handleCloseOthers(keep: string) {
+    const paths = [...buffers.keys()].filter((k) => k !== keep);
+    let n = 0;
+    for (const p of paths) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await closeBufferQuiet(p)) n++;
+      else break;
+    }
+    emit({ scope: 'fs', kind: 'info', message: `closed ${n} other file${n === 1 ? '' : 's'}` });
+  }
+
+  async function handleCloseAll() {
+    const paths = [...buffers.keys()];
+    let n = 0;
+    for (const p of paths) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await closeBufferQuiet(p)) n++;
+      else break;
+    }
+    emit({ scope: 'fs', kind: 'info', message: `closed ${n} file${n === 1 ? '' : 's'}` });
   }
 
   async function handleDelete(path: string) {
@@ -387,22 +423,28 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  // One-off compile of the active file (bypasses the main-file target).
-  // Persists dirty buffers first so \input parts compile from disk.
+  // One-off compile of a tree-selected file. This is EXPECTED to fail for
+  // fragments (a chapter without \documentclass cannot build alone) — the
+  // engine error is the honest answer, surfaced through the normal failure
+  // path (phase + stream + click-to-jump rows).
   async function handleCompileFile(path: string) {
     if (!path.endsWith('.tex')) {
       emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
       return;
     }
+    emit({ scope: 'compile', kind: 'info', message: `compiling ${path} directly (one-off, not the main file)` });
     await runCompile(path);
   }
 
 
-  // (B) keymap listener subscribes ONCE and reads via refs (§A below). Adding
+  // (B) keymap listener subscribes ONCE and reads via refs. Adding
   // a new global chord = extend `lib/keymap.ts` + this listener only (never a
   // second window listener). Menu chords (Ctrl+O/W/G…) dispatch through the
   // same command registry refs as MenuBar clicks — one path, no duplicates.
+  // Double-click in the editor = forward SyncTeX from the caret line
+  // (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
+  const forwardSyncLineRef = useRef<(line: number) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -498,9 +540,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   // one-off file (compile-from-this-file bypasses the main association).
   async function runCompile(target: string | null){
     if (largeFile || previewFile) {
-      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: selected file is a large-file placeholder — open a .tex file' });
+      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
       setCompilePhase('failure');
-      setLog('compile blocked: selected file is a large-file placeholder');
+      setLog('compile blocked: open a .tex file first');
       return;
     }
     emit({scope:'compile',kind:'progress',message:'compiling '+(target ?? fileName)});
@@ -593,9 +635,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
       return;
     }
-    emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
     if (result.text.includes('no_match') || result.text === '{}') {
       emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+      return;
+    }
+    // Forward SyncTeX is bidirectional now: parse the Page:/x:/y: rect and
+    // jump the preview there (same-page flash when already viewing it).
+    const pm = result.text.match(/^Page:\s*(\d+)\s*$/m);
+    if (pm) {
+      const target = Math.max(1, parseInt(pm[1], 10));
+      setPageNumber(target);
+      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
+    } else {
+      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
     }
   }
 
@@ -665,6 +717,25 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   compileRef.current = compile;
   forwardSyncRef.current = handleForwardSync;
   handleSelectRef.current = handleSelect;
+  // Forward SyncTeX from an explicit line (editor double-click). Shares the
+  // request path with handleForwardSync; the parse-and-jump tail is factored
+  // so both callers land the preview identically.
+  forwardSyncLineRef.current = (line: number) => {
+    if (!pdfUrl || compilePhase === 'compiling') return;
+    const base = fileName.replace(/\.tex$/, '.pdf');
+    void forward_sync(pdfUrl, base, line).then((result) => {
+      if (!result.ok || result.text.includes('no_match') || result.text === '{}') {
+        emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+        return;
+      }
+      const pm = result.text.match(/^Page:\s*(\d+)\s*$/m);
+      if (pm) {
+        const target = Math.max(1, parseInt(pm[1], 10));
+        setPageNumber(target);
+        emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
+      }
+    });
+  };
 
   const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
 
@@ -827,7 +898,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       <Typography variant="caption" sx={{ display: 'block', mb: 1 }} title={fileName}>
         {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''} · main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{trashMsg ? ` · ${trashMsg}` : ''}
       </Typography>
-      <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} />
+      <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} onCloseOthers={(k) => { void handleCloseOthers(k); }} onCloseAll={() => { void handleCloseAll(); }} />
       {reloadPath ? (
         <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
           <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
@@ -843,7 +914,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         </Box>
       ) : (
         <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} viewportRef={viewportRef} />
+          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} viewportRef={viewportRef} onDoubleClickRef={forwardSyncLineRef} />
         </Box>
       )}
       <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{log}</Typography>

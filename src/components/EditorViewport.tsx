@@ -19,18 +19,21 @@ export interface EditorViewportProps {
   flashKey?: number;
 }
 
-/** Minimal viewport bridge (Selection menu + Go to Line). No editor fork:
- *  thin wrappers over the live CodeMirror view; no-ops when unmounted. */
+/** Minimal viewport bridge (Selection menu + Go to Line + forward SyncTeX). */
 export interface EditorViewportHandle {
   selectAll: () => void;
   expandSelection: () => void;
   shrinkSelection: () => void;
   goToLine: (line: number) => void;
+  /** Current caret line (1-based) — drives double-click forward SyncTeX. */
+  caretLine: () => number;
 }
 
-function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef }: EditorViewportProps & {
+function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, onDoubleClickRef }: EditorViewportProps & {
   /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
+  /** Double-click line → App runs forward SyncTeX (no editor fork). */
+  onDoubleClickRef?: React.MutableRefObject<((line: number) => void) | null>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -64,6 +67,15 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef }
               onSaveRef.current();
               return true;
             }
+            return false;
+          },
+          // Double-click = forward SyncTeX from the caret line. Single click
+          // stays caret-only; the PDF canvas owns single-click inverse.
+          dblclick: (_e, view) => {
+            try {
+              const head = view.state.selection.main.head;
+              onDoubleClickRef?.current?.(view.state.doc.lineAt(head).number);
+            } catch { /* no selection — ignore */ }
             return false;
           },
         }),
@@ -122,6 +134,7 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef }
   }, [line, flashKey]);
 
   // Viewport bridge: Selection menu drives the LIVE view (no-ops unmounted).
+  // App also wires double-click → forward SyncTeX via onDoubleClickRef.
   useEffect(() => {
     if (!viewportRef) return;
     const stepOut = (dir: 1 | -1) => {
@@ -153,6 +166,15 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef }
           view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
           view.focus();
         } catch { /* out of range — ignore */ }
+      },
+      caretLine: () => {
+        const view = viewRef.current;
+        if (!view) return 1;
+        try {
+          return view.state.doc.lineAt(view.state.selection.main.head).number;
+        } catch {
+          return 1;
+        }
       },
     };
     return () => { viewportRef.current = null; };
