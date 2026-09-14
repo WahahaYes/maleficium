@@ -28,6 +28,15 @@ export function sortTreeEntries<T extends { name: string; type: string }>(entrie
 }
 
 export async function openProject(): Promise<string | null> {
+  // Dev-loop hook: `?project=/abs/dir` (or `#project=…`) preselects the root
+  // without a dialog (headless `tauri dev`, screenshots, scripted runs).
+  // Production path unchanged — dialog when no param is present.
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const h = window.location.hash.match(/project=([^&]+)/);
+    const preset = q.get('project') ?? (h ? decodeURIComponent(h[1]) : null);
+    if (preset) return preset;
+  } catch { /* non-browser/test env — fall through to dialog */ }
   const path = await openDialog({ directory: true })
   return path ?? null
 }
