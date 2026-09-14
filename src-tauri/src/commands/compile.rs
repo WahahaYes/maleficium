@@ -27,8 +27,9 @@ fn out_dir_for(tmp: &Path, root: &str) -> PathBuf {
     tmp.join("maleficium-out").join(hash_root(root))
 }
 
-/// Triple suffix matching `src-tauri/binaries/tectonic-<triple>` (Tauri externalBin).
-fn sidecar_triple() -> &'static str {
+/// Triple suffix matching `src-tauri/binaries/<name>-<triple>` (Tauri externalBin).
+/// Shared by the tectonic + synctex sidecars.
+pub fn sidecar_triple() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
         ("linux", "aarch64") => "aarch64-unknown-linux-musl",
@@ -39,15 +40,15 @@ fn sidecar_triple() -> &'static str {
     }
 }
 
-/// Locate the bundled Tectonic sidecar:
+/// Locate a bundled sidecar binary by name:
 /// 1) next to the running exe (release bundle via externalBin),
 /// 2) `src-tauri/binaries/` in dev (CARGO_MANIFEST_DIR).
-fn sidecar_path() -> Option<PathBuf> {
+fn sidecar_path_for(name: &str) -> Option<PathBuf> {
     let triple = sidecar_triple();
     let exe_name = if cfg!(windows) {
-        format!("tectonic-{}.exe", triple)
+        format!("{}-{}.exe", name, triple)
     } else {
-        format!("tectonic-{}", triple)
+        format!("{}-{}", name, triple)
     };
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -62,6 +63,18 @@ fn sidecar_path() -> Option<PathBuf> {
         return Some(dev);
     }
     None
+}
+
+/// Locate the bundled Tectonic sidecar (see `sidecar_path_for`).
+fn sidecar_path() -> Option<PathBuf> {
+    sidecar_path_for("tectonic")
+}
+
+/// Locate the bundled SyncTeX sidecar (built from `jlaurens/synctex`, MIT —
+/// credit in About; see `notes/07-verify/2026-09-14-synctex-researcher.md`).
+/// No PATH fallback (offline-first: the tool ships with the app).
+pub fn synctex_path() -> Option<PathBuf> {
+    sidecar_path_for("synctex")
 }
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);

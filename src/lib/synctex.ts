@@ -2,10 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 export type ForwardResult = { ok: boolean; text: string };
 export type InverseResult = { ok: boolean; text: string };
 /**
- * SyncTeX failure contract (05-versioning, RULES §8 — no stub fallback):
- * when the `synctex` binary is missing/unavailable the invoke rejects and we
- * return `{ok:false}`. Callers surface the honest `synctex_no_match` path —
- * never a fabricated page/line.
+ * SyncTeX via the bundled sidecar (`src-tauri/binaries/synctex-<triple>`,
+ * built from `jlaurens/synctex` MIT — credit in About). The tool ships with
+ * the app: no PATH lookup, no "not installed" branch. `{ok:false}` now means
+ * only a genuine query failure (missing `.synctex.gz`, corrupt output).
  */
 export async function forward_sync(pdfPath: string, texPath: string, line: number): Promise<ForwardResult> {
   try {

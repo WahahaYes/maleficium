@@ -543,7 +543,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     const base = fileName.replace(/\.tex$/, '.pdf');
     const result = await forward_sync(pdfUrl, base, currentLine);
     if (!result.ok) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable: synctex not installed (synctex_no_match)' });
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
       return;
     }
     emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
@@ -560,7 +560,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     }
     const result = await inverse_sync(pdfUrl, page, x, y);
     if (!result.ok) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable: synctex not installed (synctex_no_match)' });
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
       return;
     }
     // Real `synctex edit` shape:
@@ -933,6 +933,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         <DialogContent>
           <Typography variant="body2">Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Version 0.1.0 · offline-first · Linux-first.</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>SyncTeX navigation by Jérôme Laurens (MIT) — bundled sidecar.</Typography>
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={() => setAboutOpen(false)}>Close</Button>
