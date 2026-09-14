@@ -12,13 +12,14 @@ import BufferTabs from './components/BufferTabs';
 import CompileButton from './components/CompileButton';
 import MenuBar from './components/MenuBar';
 import Preview from './components/Preview';
+import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream from './components/LogStream';
 import OutlineView from './components/OutlineView';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
-import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile, renamePath, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
+import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile, renamePath, isPreviewable, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
@@ -53,6 +54,8 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
   const [largeFile, setLargeFile] = useState<string | null>(null);
+  // Non-text selection (image/video/pdf/binary): rich preview, never the editor.
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
@@ -103,12 +106,24 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       }
     }
     const selectToken = ++selectTokenRef.current;
+    // Non-text files never enter the editor: rich preview surface instead.
+    if (isPreviewable(path)) {
+      if (selectToken !== selectTokenRef.current) return; // stale click lost the race
+      setPreviewFile(path);
+      setFileName(path);
+      setLargeFile(null);
+      setReloadPath(null);
+      setLog('previewing ' + path);
+      emit({ scope: 'fs', kind: 'info', message: 'previewing ' + path });
+      return;
+    }
     // Reuse preserved buffer without re-reading.
     const kept = buffers.get(path);
     if (kept) {
       if (selectToken !== selectTokenRef.current) return; // stale click lost the race
       setTex(kept.value);
       setFileName(path);
+      setPreviewFile(null);
       setLargeFile(null);
       setReloadPath(null);
       setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
@@ -129,6 +144,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         return;
       }
       setLargeFile(null);
+      setPreviewFile(null);
       const content=await loadTex(path);
       if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
       setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return enforceBufferCap(n); });
@@ -279,10 +295,15 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         if (next) {
           setTex(next.value);
           setFileName(rest[rest.length - 1]);
+          setPreviewFile(null);
           setLargeFile(null);
           setReloadPath(null);
         }
+      } else if (previewFile === path) {
+        setPreviewFile(null);
       }
+    } else if (previewFile === path) {
+      setPreviewFile(null);
     }
     emit({ scope: 'fs', kind: 'info', message: 'closed ' + path });
   }
@@ -294,6 +315,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       setTrashMsg(`deleted ${path} (undo available)`);
       emit({ scope: 'fs', kind: 'warn', message: 'trashed ' + path });
       setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
+      if (previewFile === path) setPreviewFile(null);
       await reloadTree(root);
     } else {
       setTrashMsg('delete failed: ' + (r.error ?? '').slice(0, 120));
@@ -353,6 +375,26 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     const m = await resolveMain(root, fileName);
     setLog('main file: ' + (m ?? '(none)'));
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
+  }
+
+  // Tree-driven main association (double-click / context menu on a .tex row).
+  async function handleSetMainPath(path: string) {
+    if (!root) return;
+    await handleSelect(path);
+    await setMainFile(root, path);
+    const m = await resolveMain(root, path);
+    setLog('main file: ' + (m ?? '(none)'));
+    emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
+  }
+
+  // One-off compile of the active file (bypasses the main-file target).
+  // Persists dirty buffers first so \input parts compile from disk.
+  async function handleCompileFile(path: string) {
+    if (!path.endsWith('.tex')) {
+      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
+      return;
+    }
+    await runCompile(path);
   }
 
 
@@ -449,9 +491,14 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   };
 
   async function compile(){
-    const target = mainFile ?? (fileName.includes('/') ? fileName : null);
-    if (largeFile) {
-      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: large placeholder file selected — open a .tex file' });
+    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null));
+  }
+
+  // Shared compile runner: `target` is the main-file target, or an explicit
+  // one-off file (compile-from-this-file bypasses the main association).
+  async function runCompile(target: string | null){
+    if (largeFile || previewFile) {
+      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: selected file is a large-file placeholder — open a .tex file' });
       setCompilePhase('failure');
       setLog('compile blocked: selected file is a large-file placeholder');
       return;
@@ -493,7 +540,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       clearInterval(hb); try{unlisten();}catch{}
       return;
     }
-    const activeTarget = mainFile ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
+    const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
     const main = activeTarget.slice(activeTarget.lastIndexOf('/') + 1);
     const r = await compileTex(activeTarget, workdir!);
     setLog(r.log);
@@ -582,6 +629,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
           setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, hitFile as string, content); return enforceBufferCap(n); });
           setTex(content);
           setFileName(hitFile as string);
+          setPreviewFile(null);
           setLargeFile(null);
           setReloadPath(null);
         } catch {
@@ -601,6 +649,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, absPath, content); return enforceBufferCap(n); });
       setTex(content);
       setFileName(absPath);
+      setPreviewFile(null);
       setLargeFile(null);
       setCurrentLine(line);
     });
@@ -758,6 +807,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     toggleOutline: () => setOutlineVisible((v) => !v),
     setTheme: (m) => onThemeMode(m),
     compile: () => { void compileRef.current(); },
+    compileFile: () => { void handleCompileFile(fileName); },
     cancelCompile: () => { void cancelCompile().catch((e) => emit({ scope: 'compile', kind: 'error', message: 'cancel failed: ' + String(e).slice(0, 120) })); },
     forwardSync: () => { void forwardSyncRef.current(); },
     inverseHint: () => emit({ scope: 'preview', kind: 'info', message: 'Inverse SyncTeX: click anywhere on the PDF' }),
@@ -787,6 +837,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       ) : null}
       {largeFile ? (
         <Typography variant="body2" sx={{ mt: 1 }}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
+      ) : previewFile ? (
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <BinaryPreview key={previewFile} path={previewFile} />
+        </Box>
       ) : (
         <Box sx={{ flex: 1, overflow: 'auto' }}>
           <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} viewportRef={viewportRef} />
@@ -797,7 +851,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   );
 
   const previewPane = (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       <Preview
         pdfUrl={pdfUrl}
         stamp={pdfStamp}
@@ -836,7 +890,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
             {root ? (
               <>
                 <Box sx={{ flexShrink: 0 }}>
-                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDelete={handleDelete} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden />
+                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDoubleClick={(p) => { if (p.endsWith('.tex')) void handleSetMainPath(p); }} onDelete={handleDelete} onSetMain={(p) => { void handleSetMainPath(p); }} onCompileFile={(p) => { void handleCompileFile(p); }} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden />
                 </Box>
                 {outlineVisible ? (
                   <OutlineView

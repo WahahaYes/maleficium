@@ -33,7 +33,10 @@ export interface FileTreeProps {
   tree: TreeEntry[];
   selected: string | null;
   onSelect: (path: string) => void;
+  onDoubleClick?: (path: string) => void;
   onDelete?: (path: string) => void;
+  onSetMain?: (path: string) => void;
+  onCompileFile?: (path: string) => void;
   onCreate?: (dirPath: string, name: string) => void;
   onRename?: (path: string, newName: string) => void;
   onExpandDir?: (dirPath: string) => Promise<TreeEntry[]>;
@@ -47,12 +50,15 @@ export interface FileTreeProps {
 
 const ROW_PAGE = 200;
 
-function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, mainFile, maxDepth } : {
+function FileNode({ node, depth, selected, onSelect, onDoubleClick, onDelete, onSetMain, onCompileFile, onCreate, onRename, onExpandDir, mainFile, maxDepth } : {
   node: TreeEntry;
   depth: number;
   selected: string | null;
   onSelect: (path: string) => void;
+  onDoubleClick?: (path: string) => void;
   onDelete?: (path: string) => void;
+  onSetMain?: (path: string) => void;
+  onCompileFile?: (path: string) => void;
   onCreate?: (dirPath: string, name: string) => void;
   onRename?: (path: string, newName: string) => void;
   onExpandDir?: (dirPath: string) => Promise<TreeEntry[]>;
@@ -74,6 +80,7 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
         data-path={node.path}
         selected={selected === node.path}
         onClick={() => onSelect(node.path)}
+        onDoubleClick={() => onDoubleClick?.(node.path)}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY });
@@ -88,6 +95,8 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
       </ListItemButton>
       <Menu open={menu != null} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
         {onRename ? <MenuItem onClick={() => { setMenu(null); setNameDraft(node.name); }}>Rename</MenuItem> : null}
+        {onSetMain && node.path.endsWith('.tex') ? <MenuItem onClick={() => { setMenu(null); onSetMain(node.path); }}>Set as main</MenuItem> : null}
+        {onCompileFile && node.path.endsWith('.tex') ? <MenuItem onClick={() => { setMenu(null); onCompileFile(node.path); }}>Compile this file</MenuItem> : null}
         {onDelete ? <MenuItem onClick={() => { setMenu(null); setConfirmDelete(true); }}>Delete</MenuItem> : null}
       </Menu>
       <Dialog open={nameDraft != null} onClose={() => setNameDraft(null)} maxWidth="xs" fullWidth>
@@ -157,7 +166,10 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
           depth={depth + 1}
           selected={selected}
           onSelect={onSelect}
+          onDoubleClick={onDoubleClick}
           onDelete={onDelete}
+          onSetMain={onSetMain}
+          onCompileFile={onCompileFile}
           onCreate={onCreate}
           onRename={onRename}
           onExpandDir={onExpandDir}
@@ -182,7 +194,7 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
   );
 }
 
-export default function FileTree({ tree, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true }: FileTreeProps) {
+export default function FileTree({ tree, selected, onSelect, onDoubleClick, onDelete, onSetMain, onCompileFile, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true }: FileTreeProps) {
   // NOTE: `lazy`/`filterHidden` are honored by the DATA layer: App opens
   // with a 1-level root (`listDir1Level`) and expands via `onExpandDir`
   // (filtering in `files.ts`).
@@ -267,7 +279,10 @@ export default function FileTree({ tree, selected, onSelect, onDelete, onCreate,
             depth={0}
             selected={selected}
             onSelect={onSelect}
+            onDoubleClick={onDoubleClick}
             onDelete={onDelete}
+            onSetMain={onSetMain}
+            onCompileFile={onCompileFile}
             onCreate={onCreate}
             onRename={onRename}
             onExpandDir={onExpandDir}

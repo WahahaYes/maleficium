@@ -15,7 +15,7 @@ const actions: CommandActions = {
   reloadFromDisk: noop, keepMine: noop, clean: noop, undoDelete: noop, renameActive: noop,
   deleteActive: noop, selectAll: noop, expandSelection: noop, shrinkSelection: noop,
   goToLine: noop, pickOutlineSection: noop, toggleOutlinePick: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
-  toggleOutline: noop, setTheme: noop, compile: noop, cancelCompile: noop, forwardSync: noop,
+  toggleOutline: noop, setTheme: noop, compile: noop, compileFile: noop, cancelCompile: noop, forwardSync: noop,
   inverseHint: noop, showShortcuts: noop, showAbout: noop,
 };
 

@@ -20,7 +20,7 @@ export type CommandId =
   | 'view.layout' | 'view.preset-both' | 'view.preset-editor' | 'view.preset-preview'
   | 'view.toggle-tree' | 'view.toggle-preview' | 'view.toggle-log' | 'view.toggle-outline'
   | 'view.theme' | 'view.theme-dark' | 'view.theme-light'
-  | 'tools.compile' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
+  | 'tools.compile' | 'tools.compile-file' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
   | 'help.shortcuts' | 'help.about';
 
 export type ViewPreset = 'both' | 'editor' | 'preview' | 'custom';
@@ -82,6 +82,7 @@ export interface CommandActions {
   toggleOutline: () => void;
   setTheme: (m: 'dark' | 'light') => void;
   compile: () => void;
+  compileFile: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   inverseHint: () => void;
@@ -193,6 +194,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
     {
       id: 'tools', title: 'Tools', commands: [
         { id: 'tools.compile', label: 'Compile', accelerator: 'Ctrl+R', enabled: !ctx.compiling, run: a.compile },
+        { id: 'tools.compile-file', label: 'Compile This File', enabled: !ctx.compiling && ctx.isProjectFile, run: a.compileFile },
         { id: 'tools.cancel', label: 'Cancel Compile', enabled: ctx.compiling, run: a.cancelCompile },
         { id: 'tools.forward-sync', label: 'Forward SyncTeX', accelerator: 'Ctrl+Shift+F', enabled: ctx.pdfOpen && !ctx.compiling, run: a.forwardSync },
         { id: 'tools.inverse-hint', label: dis('Inverse SyncTeX'), enabled: false, soon: true, run: a.inverseHint },
