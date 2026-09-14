@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { hashRoot, joinPath, appTrashDir, appOutDir } from './paths';
+import { previewKindFor, isPreviewable } from './files';
 
 describe('app-local paths', () => {
   it('hashRoot is deterministic 8-hex', () => {
@@ -21,5 +22,23 @@ describe('app-local paths', () => {
   });
   it('joinPath collapses duplicate slashes', () => {
     expect(joinPath('/a/', '/b', 'c')).toBe('/a/b/c');
+  });
+});
+
+describe('preview classification', () => {
+  it('routes images, video, pdf away from the editor', () => {
+    expect(previewKindFor('/r/figs/diagram.png')).toBe('image');
+    expect(previewKindFor('/r/clip.MP4')).toBe('video');
+    expect(previewKindFor('/r/paper.pdf')).toBe('pdf');
+    expect(isPreviewable('/r/figs/diagram.png')).toBe(true);
+  });
+  it('keeps text editable, unknowns honest binary', () => {
+    expect(previewKindFor('/r/main.tex')).toBe('text');
+    expect(isPreviewable('/r/main.tex')).toBe(false);
+    expect(previewKindFor('/r/refs.bib')).toBe('text');
+    expect(previewKindFor('/r/notes.xyz')).toBe('binary');
+    expect(isPreviewable('/r/notes.xyz')).toBe(true);
+    expect(previewKindFor('/r/noext')).toBe('text');
+    expect(isPreviewable('/r/noext')).toBe(false);
   });
 });

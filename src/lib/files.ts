@@ -1,7 +1,43 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile, writeFile, readDir, rename } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, writeFile, readDir, rename, readFile } from '@tauri-apps/plugin-fs'
 
 export type TreeEntry = { name: string; path: string; type: 'dir' | 'file'; children?: TreeEntry[] }
+
+/** Lowercased extensions that get a rich preview instead of the text editor. */
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']);
+const VIDEO_EXT = new Set(['.mp4', '.webm', '.ogv', '.mov', '.mkv']);
+const PDF_EXT = new Set(['.pdf']);
+
+export type PreviewKind = 'text' | 'image' | 'video' | 'pdf' | 'binary';
+
+/** Extensions that open as editable text (everything else previews). */
+const TEXT_EXT = new Set([
+  '.tex', '.bib', '.sty', '.cls', '.md', '.markdown', '.txt', '.log', '.aux',
+  '.toc', '.lof', '.lot', '.out', '.fls', '.json', '.yaml', '.yml', '.toml',
+  '.xml', '.html', '.htm', '.css', '.js', '.ts', '.tsx', '.jsx', '.py',
+  '.sh', '.csv', '.r', '.jl',
+]);
+
+/** Classify a path for the editor-vs-preview decision (extension only, cheap). */
+export function previewKindFor(path: string): PreviewKind {
+  const dot = path.lastIndexOf('.');
+  const ext = dot >= 0 ? path.slice(dot).toLowerCase() : '';
+  if (IMAGE_EXT.has(ext)) return 'image';
+  if (VIDEO_EXT.has(ext)) return 'video';
+  if (PDF_EXT.has(ext)) return 'pdf';
+  if (!ext || TEXT_EXT.has(ext)) return 'text';
+  return 'binary';
+}
+
+/** True when the path should open in a preview surface, not the text editor. */
+export function isPreviewable(path: string): boolean {
+  return previewKindFor(path) !== 'text';
+}
+
+/** Read a file as bytes for object-URL previews (images/video/pdf). */
+export async function loadPreviewBytes(path: string): Promise<Uint8Array> {
+  return await readFile(path);
+}
 
 /** Files/dirs never shown when `filterHidden` is on (build artifacts + trash). */
 const HIDDEN_EXACT = new Set(['.git', '.maleficium-trash', 'out']);

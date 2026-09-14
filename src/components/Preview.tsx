@@ -1,11 +1,13 @@
-// Preview paginated body — visible page only + LRU 5-page cache.
+// Preview continuous-scroll body — windowed page rendering + pager sync.
 //
-// Growth cap: single canvas + at most 5 cached page bitmaps; stale canvas
-// cleared before render; devicePixelRatio capped at 2. Emits
-// `pdf loaded N pages in Xms` + `page N rendered in Xms`.
+// Growth cap: renders a small window of pages around the current page
+// (O(window), never O(document)); off-window canvases unmount. Scrolling
+// moves through pages; the pager follows and still jumps directly.
+// devicePixelRatio capped at 2. Emits `pdf loaded N pages in Xms` +
+// `page N rendered in Xms`.
 
-import { Typography } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import { Box, Typography } from '@mui/material';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { openPdf, openPdfFromBytes } from '../lib/pdfjs';
 import { emit } from '../lib/events';
 import { readFile } from '@tauri-apps/plugin-fs';
@@ -22,37 +24,61 @@ interface PreviewProps {
   syncDisabled?: boolean;
 }
 
-const LRU_MAX = 5;
-const pageCache = new Map<string, unknown[]>();
-
-function cacheKey(url: string, page: number): string {
-  return `${url}#${page}`;
+interface PdfPage {
+  getViewport: (o: { scale: number }) => { height: number; width: number };
+  render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
 }
 
-export function touchPageCache(url: string, page: number, handle: unknown): void {
-  const k = cacheKey(url, page);
-  pageCache.delete(k);
-  pageCache.set(k, [handle]);
-  while (pageCache.size > LRU_MAX) {
-    const oldest = pageCache.keys().next().value as string;
-    pageCache.delete(oldest);
-  }
+interface PdfDoc {
+  numPages: number;
+  getPage: (n: number) => Promise<PdfPage>;
 }
+
+/** Pages rendered around the current page (above + below). */
+const WINDOW_ABOVE = 1;
+const WINDOW_BELOW = 2;
 
 export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync, onInverse, syncDisabled }: PreviewProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
+  const renderedRef = useRef(new Map<string, number>());
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState('');
+  const [docKey, setDocKey] = useState('');
   const page = Math.min(Math.max(1, pageNumber), numPages);
-  // Open pdf.js document ONCE per pdfUrl+stamp: page turns render from
-  // the cached handle instead of re-opening the whole document per click.
-  const docRef = useRef<{ key: string; pdf: unknown } | null>(null);
+  // Open pdf.js document ONCE per pdfUrl+stamp: renders serve from the
+  // cached handle instead of re-opening the whole document per page.
+  const docRef = useRef<{ key: string; pdf: PdfDoc } | null>(null);
+  // Windowed pages around the current page; clamped to the document.
+  const lo = Math.max(1, page - WINDOW_ABOVE);
+  const hi = Math.min(numPages, page + WINDOW_BELOW);
+  const pages: number[] = [];
+  for (let n = lo; n <= hi; n++) pages.push(n);
+
+  const renderPage = useCallback(async (pdf: PdfDoc, key: string, target: number, isCancelled: () => boolean) => {
+    if (renderedRef.current.get(key) === target) return;
+    const canvas = canvasRefs.current.get(target);
+    if (!canvas) return;
+    const pg = await pdf.getPage(target);
+    if (isCancelled()) return;
+    const scale = Math.min(window.devicePixelRatio || 1, 2) * 1.0;
+    const viewport = pg.getViewport({ scale });
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2d context unavailable');
+    const t1 = Date.now();
+    await pg.render({ canvasContext: ctx, viewport }).promise;
+    if (isCancelled()) return;
+    renderedRef.current.set(key, target);
+    emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
+  }, []);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (syncDisabled || !onInverse) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const canvas = e.currentTarget;
+    const hit = Number(canvas.dataset.page ?? page);
     const rect = canvas.getBoundingClientRect();
     // pdf.js viewport scale (render): CSS px → PDF points. Inverse SyncTeX
     // wants PDF points, not screen px — unscale here (DPR applied at render).
@@ -67,31 +93,23 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     void canvas.offsetWidth;
     canvas.classList.add('synctex-hit');
     setTimeout(() => canvas.classList.remove('synctex-hit'), 300);
-    onInverse(page, Math.round(x), Math.round(y));
+    onInverse(hit, Math.round(x), Math.round(y));
   };
 
+  // Document open (per pdfUrl+stamp) + current-page render.
   useEffect(() => {
-    if (!pdfUrl || !canvasRef.current) return;
-
+    if (!pdfUrl) return;
     let isCancelled = false;
     const yieldUi = () => new Promise<void>((r) => setTimeout(r, 0));
 
-    const loadImage = async () => {
+    const load = async () => {
       try {
         setError(null);
-        const canvas = canvasRef.current!;
-        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-        const docKey = `${pdfUrl}#${stamp}`;
-        let pdf: {
-          numPages: number;
-          getPage: (n: number) => Promise<{
-            getViewport: (o: { scale: number }) => { height: number; width: number };
-            render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
-          }>;
-        };
-        if (docRef.current?.key === docKey) {
+        const key = `${pdfUrl}#${stamp}`;
+        let pdf: PdfDoc;
+        if (docRef.current?.key === key) {
           setPhase('rendering...');
-          pdf = docRef.current.pdf as typeof pdf;
+          pdf = docRef.current.pdf;
         } else {
           setPhase('reading...');
           const t0 = Date.now();
@@ -100,28 +118,14 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
           if (isCancelled) return;
           await yieldUi();
           setPhase('loading...');
-          pdf = (isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array)) as typeof pdf;
+          pdf = (isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array)) as unknown as PdfDoc;
           if (isCancelled) return;
           emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
-          docRef.current = { key: docKey, pdf };
+          docRef.current = { key, pdf };
         }
         await yieldUi();
         setNumPages(pdf.numPages);
-        const target = Math.min(Math.max(1, pageNumber), pdf.numPages);
-        const pg = await pdf.getPage(target);
-        const scale = Math.min(window.devicePixelRatio || 1, 2) * 1.0;
-        const viewport = pg.getViewport({ scale });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('2d context unavailable');
-        setPhase('rendering...');
-        await yieldUi();
-        const t1 = Date.now();
-        await pg.render({ canvasContext: ctx, viewport }).promise;
-        if (isCancelled) return;
-        touchPageCache(pdfUrl, target, true); // bounded recency marker: render path is single-page; cache tracks recency only
-        emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
+        setDocKey(key);
         setPhase('');
       } catch (e) {
         if (!isCancelled) {
@@ -130,20 +134,73 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         }
       }
     };
-    loadImage();
+    void load();
 
     return () => {
       isCancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfUrl, stamp, pageNumber]);
+  }, [pdfUrl, stamp]);
+
+  // Render the windowed pages once their canvases mount + on page change.
+  useEffect(() => {
+    const pdf = docRef.current?.pdf;
+    if (!pdf || !docKey) return;
+    let isCancelled = false;
+    setPhase('rendering...');
+    void (async () => {
+      try {
+        for (const n of pages) {
+          if (isCancelled) break;
+          // eslint-disable-next-line no-await-in-loop
+          await renderPage(pdf, `${docKey}#${n}`, n, () => isCancelled);
+        }
+      } finally {
+        if (!isCancelled) setPhase('');
+      }
+    })();
+    return () => {
+      isCancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docKey, page, numPages, renderPage]);
+
+  // Pager jump → scroll the target canvas into view (scroll-driven moves
+  // report back through onPage below, so the two stay in sync).
+  useEffect(() => {
+    const el = canvasRefs.current.get(page);
+    el?.scrollIntoView({ block: 'start' });
+  }, [page, docKey]);
+
+  // Scroll → nearest page becomes current (pager follows for free).
+  const handleScroll = useCallback(() => {
+    const box = scrollRef.current;
+    if (!box || !onPage) return;
+    const top = box.scrollTop;
+    let best = page;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const [n, el] of canvasRefs.current) {
+      const d = Math.abs(el.offsetTop - box.clientHeight / 2 - top);
+      if (d < bestDist) {
+        bestDist = d;
+        best = n;
+      }
+    }
+    if (best !== page) onPage(best);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onPage, page]);
+
+  const setCanvasRef = useCallback((n: number) => (el: HTMLCanvasElement | null) => {
+    if (el) canvasRefs.current.set(n, el);
+    else canvasRefs.current.delete(n);
+  }, []);
 
   if (!pdfUrl) return <Typography variant="body1">No PDF yet</Typography>;
 
   if (error) return <Typography variant="body1" color="error">{error}</Typography>;
 
   return (
-    <>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       <PreviewToolbar
         pageNumber={page}
         totalPages={numPages}
@@ -152,13 +209,23 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         syncDisabled={syncDisabled}
       />
       {phase ? <Typography variant="caption">{phase}</Typography> : null}
-      <canvas
-        ref={canvasRef}
-        onClick={handleCanvasClick}
-        className="synctex-canvas"
-        style={{ maxWidth: '100%' }}
-        title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
-      />
-    </>
+      <Box
+        ref={scrollRef}
+        onScroll={handleScroll}
+        sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, py: 1 }}
+      >
+        {pages.map((n) => (
+          <canvas
+            key={`${docKey}#${n}`}
+            ref={setCanvasRef(n)}
+            data-page={n}
+            onClick={handleCanvasClick}
+            className="synctex-canvas"
+            style={{ maxWidth: '100%', flexShrink: 0 }}
+            title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
+          />
+        ))}
+      </Box>
+    </Box>
   );
 }
