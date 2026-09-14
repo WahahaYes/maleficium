@@ -85,6 +85,45 @@ impl Default for CompileState {
     }
 }
 
+/// How the engine child resolved: exited (with status), killed after the
+/// hang-guard timeout, or taken by cancel_compile before the wait.
+enum WaitOutcome {
+    Exited(std::process::ExitStatus),
+    TimedOut,
+    Cancelled,
+}
+
+/// Own the child end-to-end: block on exit, but kill + reap after `timeout`.
+/// Cancel races through the state slot: cancel_compile takes the child and
+/// kills it (this waiter then never starts — the take above yields None).
+/// Otherwise this waiter SOLELY owns the child: it kills on timeout and
+/// reaps exactly once. No second waiter ever exists, so no double-wait.
+fn wait_child(mut child: std::process::Child, timeout_secs: u64) -> WaitOutcome {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        match child.try_wait() {
+            Ok(Some(s)) => return WaitOutcome::Exited(s),
+            Ok(None) => {}
+            Err(_) => return WaitOutcome::TimedOut,
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            match child.wait() {
+                Ok(s) => {
+                    // Killed by us, but confirm: a success here would mean the
+                    // child exited on its own in the same instant — honor it.
+                    if s.success() {
+                        return WaitOutcome::Exited(s);
+                    }
+                    return WaitOutcome::TimedOut;
+                }
+                Err(_) => return WaitOutcome::TimedOut,
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 #[tauri::command]
 pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String, workdir: String) -> Result<String, String> {
     let (dir, main_file) = if Path::new(&input).is_absolute() {
@@ -105,6 +144,15 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     // 1) Bundled sidecar (externalBin `binaries/tectonic`), resolved without new deps.
     // Its stderr is the most relevant failure (the file was actually processed),
     // so it wins over PATH-missing noise below when everything fails.
+    //
+    // Hang guard (2026-09-14: playground main.tex wedged the UI on `compiling`
+    // for 1–2min with zero output after a binary change): stderr drains on the
+    // command thread while stdout pumps on a spawned thread, but a child that
+    // NEVER exits would wedge this command forever. The wait below polls with
+    // a timeout — on expiry the child is killed, reaped, and reported as a
+    // failure the user can retry. Ownership is decided by ONE take() before
+    // the waiter starts (empty = cancel won, full = waiter solely owns).
+    const COMPILE_TIMEOUT_SECS: u64 = 120;
     let mut last_err = String::from("no latex engine succeeded");
     let mut sidecar_err: Option<String> = None;
     if let Some(bin) = sidecar_path() {
@@ -119,6 +167,7 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
                 let mut child = child;
                 let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
                     let _ = child.kill();
+                    let _ = child.wait();
                     return Err(String::from("sidecar pipes unavailable"));
                 };
                 state.0.lock().unwrap().replace(child);
@@ -132,7 +181,7 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
                         }
                     }
                 });
-                
+
                 let mut collected: Vec<String> = Vec::new();
                 let stderr_reader = BufReader::new(stderr);
                 for line in stderr_reader.lines() {
@@ -141,22 +190,43 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
                         collected.push(line);
                     }
                 }
-                
+
                 let _ = stdout_handle.join();
-                match state.0.lock().unwrap().take() {
-                    None => return Err(String::from("compile cancelled")),
-                    Some(mut c) => match c.wait() {
-                        Ok(s) if s.success() => {
-                            let pdf = out_pdf(&outdir, &main_file);
-                            return Ok(pdf.to_string_lossy().to_string());
-                        }
-                        _ => {
-                            let tail = collected.join("\n");
-                            let t = &tail[..500.min(tail.len())];
-                            sidecar_err = Some(format!("bundled tectonic failed: {}", t));
-                            last_err = sidecar_err.clone().unwrap();
-                        }
-                    },
+                // Hang-guard wait: ownership decided by ONE take() before the
+                // waiter starts (empty = cancel won → report cancelled; full
+                // = this waiter solely owns the child from here on, Cancel
+                // finds nothing afterwards). Exactly one owner reaps.
+                let outcome = match state.0.lock().unwrap().take() {
+                    None => WaitOutcome::Cancelled,
+                    Some(c) => {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            tx.send(wait_child(c, COMPILE_TIMEOUT_SECS)).ok();
+                        });
+                        rx.recv().unwrap_or(WaitOutcome::Cancelled)
+                    }
+                };
+                match outcome {
+                    WaitOutcome::Cancelled => {
+                        return Err(String::from("compile cancelled"))
+                    }
+                    WaitOutcome::TimedOut => {
+                        sidecar_err = Some(format!(
+                            "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
+                            COMPILE_TIMEOUT_SECS
+                        ));
+                        last_err = sidecar_err.clone().unwrap();
+                    }
+                    WaitOutcome::Exited(s) if s.success() => {
+                        let pdf = out_pdf(&outdir, &main_file);
+                        return Ok(pdf.to_string_lossy().to_string());
+                    }
+                    WaitOutcome::Exited(_) => {
+                        let tail = collected.join("\n");
+                        let t = &tail[..500.min(tail.len())];
+                        sidecar_err = Some(format!("bundled tectonic failed: {}", t));
+                        last_err = sidecar_err.clone().unwrap();
+                    }
                 }
             }
             Err(e) => {
@@ -220,5 +290,44 @@ mod tests {
     #[test]
     fn sidecar_triple_returns_non_empty() {
         assert!(!sidecar_triple().is_empty());
+    }
+
+    #[test]
+    fn wait_child_reaps_fast_exit() {
+        // `true` exits at once: the waiter must report the status, not time out.
+        let child = std::process::Command::new("true")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn true");
+        match wait_child(child, 10) {
+            WaitOutcome::Exited(s) => assert!(s.success()),
+            other => panic!("expected exit, got {}", outcome_name(&other)),
+        }
+    }
+
+    #[test]
+    fn wait_child_kills_stall() {
+        // `sleep 30` with a 1s guard: must be killed + reaped, never hang.
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        let t0 = std::time::Instant::now();
+        match wait_child(child, 1) {
+            WaitOutcome::TimedOut => assert!(t0.elapsed() < std::time::Duration::from_secs(10)),
+            other => panic!("expected timeout, got {}", outcome_name(&other)),
+        }
+    }
+
+    #[cfg(test)]
+    fn outcome_name(o: &WaitOutcome) -> &'static str {
+        match o {
+            WaitOutcome::Exited(_) => "exited",
+            WaitOutcome::TimedOut => "timed-out",
+            WaitOutcome::Cancelled => "cancelled",
+        }
     }
 }
