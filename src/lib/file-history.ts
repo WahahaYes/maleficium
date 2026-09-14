@@ -2,7 +2,7 @@
 //
 // Growth cap: 50-entry memory stack of path references only, never file bytes.
 // Inverse of every op is a move: delete MOVES to the app-local trash home
-// (`lib/paths.ts appTrashDir` — 05-versioning V-2; RULES §8: no legacy).
+// (`lib/paths.ts appTrashDir`; RULES §8: no legacy).
 
 export interface FileHistoryEntry {
   /** Original absolute path before the op. */

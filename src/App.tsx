@@ -70,7 +70,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
-  // P-10: at most 10 open buffers (LRU persist-then-evict; dirty never lost —
+  // At most 10 open buffers (LRU persist-then-evict; dirty never lost —
   // eviction persists first, so content is always on disk before the drop).
   const MAX_BUFFERS = 10;
   const enforceBufferCap = useCallback((m: Map<string, BufferState>): Map<string, BufferState> => {
@@ -86,7 +86,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     return m;
   }, []);
   // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
-  // our own writes must not raise the reload banner (M-6). Windowed suppression.
+  // our own writes must not raise the reload banner. Windowed suppression.
   const ownWritesRef = useRef<Map<string, number>>(new Map());
   const markOwnWrite = useCallback((p: string) => {
     ownWritesRef.current.set(p, Date.now());
@@ -154,7 +154,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     return res.mainFile;
   }, []);
 
-  // Honest lazy (P-06): UI tree is 1 level + expand-on-demand. The recursive
+  // UI tree is 1 level + expand-on-demand. The recursive
   // walk survives ONLY for main-file scan + watcher baseline (off open path).
   // open timing emission proves O(depth 1) on large projects.
   const reloadTree = useCallback(async (r: string, deep = false) => {
@@ -214,7 +214,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
   }
 
-  // Tree CRUD (P-06): create/rename via plugin-fs; own-write marks suppress echoes.
+  // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
   async function handleCreate(dirPath: string, name: string) {
     try {
       const full = await createFile(dirPath, name);
@@ -398,7 +398,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
 
   const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
-  // Repo-relative for display (absolute kept in tooltips); P-09 plain language.
+  // Repo-relative for display (absolute kept in tooltips); plain language.
   const relOf = (abs: string | null): string | null => {
     if (!abs) return null;
     if (root && abs.startsWith(root + '/')) return abs.slice(root.length + 1);

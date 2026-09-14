@@ -183,7 +183,7 @@ function FileNode({ node, depth, selected, onSelect, onDelete, onCreate, onRenam
 }
 
 export default function FileTree({ tree, selected, onSelect, onDelete, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true }: FileTreeProps) {
-  // NOTE (P-06): `lazy`/`filterHidden` are honored by the DATA layer: App opens
+  // NOTE: `lazy`/`filterHidden` are honored by the DATA layer: App opens
   // with a 1-level root (`listDir1Level`) and expands via `onExpandDir`
   // (filtering in `files.ts`).
   void lazy;

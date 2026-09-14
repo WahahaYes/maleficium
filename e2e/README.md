@@ -20,7 +20,7 @@ derivations — it never ships in the product bundle.
 - Never commit fixtures with megabytes: reuse `playground/` (small sources)
   or generate into tmp at runtime (per `04-scale` policy).
 - Name tests for the functionality, never the session or slice
-  (no `v5-`/`P-10`/`M-4` in filenames, describes, or messages).
+  (no stage tags in filenames, describes, or messages).
 - Driver-driven runs land here next — see the 08-devloop plan. Embedded
   provider (`@wdio/tauri-service`, no external driver) is the chosen route;
   standalone `tauri-driver` is blocked (no `webkit2gtk-driver` in Ubuntu

@@ -1,7 +1,7 @@
 // StatusBar.tsx — fixed 32px bottom bar (phase + timer + main).
 //
 // Growth cap: constant height; scalar props only (mainFile string, phase enum,
-// timer number); no payload. Compile state placed here (01 contract preserved).
+// timer number); no payload. Compile state placed here (contract preserved).
 
 import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';

@@ -1,7 +1,7 @@
 // paths.ts — app-local homes for state that must never litter the project dir.
 //
-// 05-versioning: trash, main-file association cache root, and compile `out/`
-// live OUTSIDE the user's folder. App-local paths are the ONLY paths — there
+// Trash, main-file association cache root, and compile `out/` live OUTSIDE
+// the user's folder. App-local paths are the ONLY paths — there
 // are no in-project fallbacks (RULES §8: no legacy).
 //
 // Growth cap: path strings + one djb2 hex only; no file contents, no payload.

@@ -2,7 +2,7 @@
 //
 // Growth cap: single canvas + at most 5 cached page bitmaps; stale canvas
 // cleared before render; devicePixelRatio capped at 2. Emits
-// `pdf loaded N pages in Xms` + `page N rendered in Xms` (01 handoff template).
+// `pdf loaded N pages in Xms` + `page N rendered in Xms`.
 
 import { Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
@@ -45,7 +45,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState('');
   const page = Math.min(Math.max(1, pageNumber), numPages);
-  // Open pdf.js document ONCE per pdfUrl+stamp (M-4): page turns render from
+  // Open pdf.js document ONCE per pdfUrl+stamp: page turns render from
   // the cached handle instead of re-opening the whole document per click.
   const docRef = useRef<{ key: string; pdf: unknown } | null>(null);
 
@@ -120,7 +120,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         const t1 = Date.now();
         await pg.render({ canvasContext: ctx, viewport }).promise;
         if (isCancelled) return;
-        touchPageCache(pdfUrl, target, true); // bounded marker (M-5): render path is single-page; cache tracks recency only
+        touchPageCache(pdfUrl, target, true); // bounded recency marker: render path is single-page; cache tracks recency only
         emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
         setPhase('');
       } catch (e) {

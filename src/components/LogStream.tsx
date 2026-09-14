@@ -5,7 +5,7 @@
 // component renders it. Problem entries carry data {file, line, clickable} and
 // render as click-to-jump rows.
 //
-// Growth cap: bus cap 500 + 4Hz flush + render slice 100 (01 `5012719` preserved).
+// Growth cap: bus cap 500 + 4Hz flush + render slice 100.
 
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';

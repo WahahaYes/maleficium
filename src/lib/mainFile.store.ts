@@ -1,4 +1,4 @@
-// mainFile.store.ts — app-local main-file association (05-versioning V-3).
+// mainFile.store.ts — app-local main-file association.
 //
 // Clean cut per RULES §8: the explicit user association lives ONLY here
 // (`localStorage` map `maleficium.mainFile.v1`: project root → rel path).

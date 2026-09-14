@@ -71,7 +71,7 @@ export interface CommandActions {
   expandSelection: () => void;
   shrinkSelection: () => void;
   goToLine: () => void;
-  /** Choose-1-from-N: jump to one outline section (P-13 hierarchy demo). */
+  /** Choose-1-from-N: jump to one outline section. */
   pickOutlineSection: (line: number) => void;
   /** Choose-N: toggle outline entries as a multi-pick set (demo + future batch ops). */
   toggleOutlinePick: (line: number) => void;
