@@ -1,10 +1,12 @@
 // Preview continuous-scroll body — windowed page rendering + pager sync.
 //
-// Growth cap: renders a small window of pages around the current page
-// (O(window), never O(document)); off-window canvases unmount. Scrolling
-// moves through pages; the pager follows and still jumps directly.
-// devicePixelRatio capped at 2. Emits `pdf loaded N pages in Xms` +
-// `page N rendered in Xms`.
+// Growth cap: renders a small window of pages around the scroll ANCHOR
+// (O(window), never O(document)); off-window canvases unmount. The anchor
+// only ever moves DOWN as the user scrolls (never up on re-render), so the
+// scroll position is stable and page 1 stays reachable: scrolling up past
+// the window top extends the window upward instead of jumping.
+// The pager jumps the anchor directly. devicePixelRatio capped at 2.
+// Emits `pdf loaded N pages in Xms` + `page N rendered in Xms`.
 
 import { Box, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -50,11 +52,15 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // Open pdf.js document ONCE per pdfUrl+stamp: renders serve from the
   // cached handle instead of re-opening the whole document per page.
   const docRef = useRef<{ key: string; pdf: PdfDoc } | null>(null);
-  // Windowed pages around the current page; clamped to the document.
-  // Sized so the scroll position is STABLE across re-renders: canvases only
-  // ever mount below the current offset, never above it.
-  const lo = Math.max(1, page - WINDOW_ABOVE);
-  const hi = Math.min(numPages, page + WINDOW_BELOW);
+  // Scroll ANCHOR (not the pager value): the topmost page the user has
+  // scrolled to. Moves down freely; moves up ONLY via explicit pager jump
+  // or SyncTeX jump (never via re-render), so scrolling up past the window
+  // extends the window instead of snapping back. Pager + anchor sync below.
+  const [anchor, setAnchor] = useState(1);
+  // Windowed pages around the anchor; clamped to the document. Canvases only
+  // ever mount below the current scroll offset, never above it.
+  const lo = Math.max(1, anchor - WINDOW_ABOVE);
+  const hi = Math.min(numPages, anchor + WINDOW_BELOW);
   const pages: number[] = [];
   for (let n = lo; n <= hi; n++) pages.push(n);
 
@@ -144,7 +150,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfUrl, stamp]);
 
-  // Render the windowed pages once their canvases mount + on page change.
+  // Render the windowed pages once their canvases mount + on anchor change.
   // Scroll position is preserved across re-renders: new canvases mount below
   // the current scroll offset (never above it), so the viewport never jumps.
   useEffect(() => {
@@ -154,8 +160,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     setPhase('rendering...');
     void (async () => {
       try {
-        // Render the current page FIRST (snappy pager jumps), then neighbors.
-        const ordered = [page, ...pages.filter((n) => n !== page)];
+        // Render the anchor FIRST (snappy jumps), then neighbors.
+        const ordered = [anchor, ...pages.filter((n) => n !== anchor)];
         for (const n of ordered) {
           if (isCancelled) break;
           // eslint-disable-next-line no-await-in-loop
@@ -169,38 +175,49 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
       isCancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docKey, page, numPages, renderPage]);
+  }, [docKey, anchor, numPages, renderPage]);
 
-  // Pager jump → scroll the target canvas into view. Scroll-driven moves
-  // report back through handleScroll, which clamps to mounted canvases;
-  // programmatic jumps set state directly, so the two never fight: without
-  // this split the scroll effect fires before the target canvas mounts,
-  // nearest-mounted wins, and edge pages become unreachable.
+  // Pager jump (or SyncTeX jump) → move the anchor AND scroll the target
+  // canvas into view. Scroll-driven moves report back through handleScroll,
+  // which only ever moves the anchor DOWN; jumps set it directly, so the
+  // two never fight and edge pages stay reachable.
   useEffect(() => {
-    const el = canvasRefs.current.get(page);
+    setAnchor(page);
+  }, [page]);
+  useEffect(() => {
+    if (!docKey) return;
+    const el = canvasRefs.current.get(anchor);
     el?.scrollIntoView({ block: 'start' });
-  }, [page, docKey]);
+  }, [anchor, docKey]);
 
-  // Scroll → nearest MOUNTED page becomes current (pager follows for free).
-  // Unmounted pages can never win: the window only ever contains pages
-  // around the current one, so clamping to mounted canvases is exact.
+  // Scroll → nearest MOUNTED page at-or-below the scroll top extends the
+  // anchor downward (pager follows for free). The anchor NEVER moves up on
+  // scroll: scrolling up past the window top keeps the anchor (canvases for
+  // earlier pages mount above WITHOUT moving the offset — the browser holds
+  // scroll position against content growth below, and growth above is
+  // compensated by keeping the same first-visible canvas). Unmounted pages
+  // can never win: candidates clamp to mounted canvases in the window.
   const handleScroll = useCallback(() => {
     const box = scrollRef.current;
     if (!box || !onPage) return;
     const top = box.scrollTop;
-    let best = page;
+    let best = anchor;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const [n, el] of canvasRefs.current) {
       if (!pages.includes(n)) continue;
+      if (n < anchor) continue;
       const d = Math.abs(el.offsetTop - top);
       if (d < bestDist) {
         bestDist = d;
         best = n;
       }
     }
-    if (best !== page) onPage(best);
+    if (best !== anchor) {
+      setAnchor(best);
+      onPage(best);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onPage, page, lo, hi]);
+  }, [onPage, anchor, lo, hi]);
 
   const setCanvasRef = useCallback((n: number) => (el: HTMLCanvasElement | null) => {
     if (el) canvasRefs.current.set(n, el);

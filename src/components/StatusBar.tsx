@@ -1,15 +1,18 @@
-// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main).
+// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + history).
 //
 // Growth cap: constant height; scalar props only (mainFile string, phase enum,
-// timer number); no payload. Compile state placed here (contract preserved).
+// timer number, history count); no payload. Compile state placed here
+// (contract preserved).
 
 import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
 
-export default function StatusBar({ mainFile, mainFileTitle, phase, timer, message }: {
+export default function StatusBar({ mainFile, mainFileTitle, historyCount, phase, timer, message }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
+  /** Undoable file-op depth (trash history size) — the visible version story. */
+  historyCount?: number;
   phase: string;
   timer: number;
   message: string;
@@ -22,6 +25,11 @@ export default function StatusBar({ mainFile, mainFileTitle, phase, timer, messa
         {phase}{phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
       {mainFile ? <Typography variant="caption" noWrap title={mainFileTitle ?? mainFile} sx={{ flexShrink: 0, maxWidth: '30%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mainFile}</Typography> : null}
+      {historyCount != null && historyCount > 0 ? (
+        <Typography variant="caption" noWrap title={`${historyCount} deleted file${historyCount === 1 ? '' : 's'} restorable (Edit → Undo Delete)`} sx={{ flexShrink: 0 }}>
+          ↩ {historyCount}
+        </Typography>
+      ) : null}
       {phase === 'compiling' ? <LinearProgress sx={{ width: 120, height: 2, flexShrink: 0 }} /> : null}
     </Box>
   );

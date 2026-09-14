@@ -1067,6 +1067,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
       <StatusBar
         mainFile={relOf(mainFile)}
         mainFileTitle={mainFile}
+        historyCount={trash.size}
         phase={compilePhase}
         timer={compileTimer}
         message={log}
