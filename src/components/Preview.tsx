@@ -73,9 +73,12 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
-  // Bitmap identity is per document revision: cleared on every doc change so
-  // entries can never accumulate across recompiles (bounded by the window).
+  // Bitmap identity is per document revision AND page: cleared on every doc
+  // change so entries can never accumulate across recompiles (bounded by the
+  // window). Keyed (page -> docKey) so the eviction pass can never clear a
+  // NEWER document's bitmaps when a stale generation finishes late.
   const renderedRef = useRef(new Set<string>());
+  const renderedKeys = useRef(new Map<number, string>());
   const dimsRef = useRef(new Map<number, { w: number; h: number }>());
   const [numPages, setNumPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -112,23 +115,52 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
 
-  const renderPage = useCallback(async (pdf: PdfDoc, key: string, target: number, isCancelled: () => boolean) => {
-    if (renderedRef.current.has(key)) return;
-    const canvas = canvasRefs.current.get(target);
-    if (!canvas) return;
+  // Render pdf.js pixels for one page onto a DETACHED canvas. Awaiting this
+  // never touches mounted DOM: the caller commits via commitBitmap only when
+  // the generation is still current and the page still in-window. Skips
+  // pdf.js work entirely when this revision already holds the page.
+  const renderBitmap = useCallback(async (
+    pdf: PdfDoc,
+    key: string,
+    target: number,
+    isCancelled: () => boolean,
+  ): Promise<HTMLCanvasElement | null> => {
+    if (renderedRef.current.has(key)) return canvasRefs.current.get(target) ?? null;
     const pg = await pdf.getPage(target);
-    if (isCancelled()) return;
+    if (isCancelled()) return null;
     const scale = Math.min(window.devicePixelRatio || 1, 2);
     const viewport = pg.getViewport({ scale });
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    const ctx = canvas.getContext('2d');
+    const off = document.createElement('canvas');
+    off.height = viewport.height;
+    off.width = viewport.width;
+    const ctx = off.getContext('2d');
     if (!ctx) throw new Error('2d context unavailable');
     const t1 = Date.now();
     await pg.render({ canvasContext: ctx, viewport }).promise;
-    if (isCancelled()) return;
-    renderedRef.current.add(key);
+    if (isCancelled()) return null;
     emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
+    return off;
+  }, []);
+
+  // Commit a rendered bitmap into the mounted shell canvas (drawImage — no
+  // re-layout, no blank flash). Already-rendered pages commit WITHOUT
+  // re-rendering: renderBitmap returns the mounted canvas itself, and the
+  // drawImage below self-copies harmlessly. Records identity AFTER pixels
+  // land, so a commit can never mark a page rendered that isn't.
+  const commitBitmap = useCallback((target: number, key: string, off: HTMLCanvasElement | null) => {
+    const canvas = canvasRefs.current.get(target);
+    if (!canvas || !off) return;
+    if (off !== canvas) {
+      if (canvas.width !== off.width || canvas.height !== off.height) {
+        canvas.width = off.width;
+        canvas.height = off.height;
+      }
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(off, 0, 0);
+    }
+    renderedRef.current.add(key);
+    renderedKeys.current.set(target, key);
   }, []);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -321,26 +353,40 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
 
   // Render the bitmap window: visible page immediately, neighbors idle.
   // The jump scroll fires once the TARGET bitmap lands (not after the whole
-  // window), so pager jumps stick without waiting on neighbors.
+  // window), so pager jumps stick without waiting on neighbors. Awaited work
+  // NEVER touches canvas identity: render pixels offscreen, then commit —
+  // clearing a canvas whose bitmap is still referenced (same pass, other
+  // window) is what blanked every page but the window on large documents.
   useEffect(() => {
     const pdf = docRef.current?.pdf;
     if (!pdf || !docKey) return;
+    const key = docKey;
+    const target = visible;
+    const total = numPages;
     const gen = ++renderGenRef.current;
     const isCancelled = () => gen !== renderGenRef.current || !mountedRef.current;
-    const win = windowFor(visible, numPages);
+    const win = windowFor(target, total);
     const offsets: number[] = [0];
     const maxD = Math.max(WINDOW_ABOVE, WINDOW_BELOW);
     for (let d = 1; d <= maxD; d++) {
       if (d <= WINDOW_BELOW) offsets.push(d);
       if (d <= WINDOW_ABOVE) offsets.push(-d);
     }
-    const ordered = offsets.map((o) => visible + o).filter((n) => n >= win.lo && n <= win.hi);
+    const ordered = offsets.map((o) => target + o).filter((n) => n >= win.lo && n <= win.hi);
     const inWindow = new Set(ordered);
     setPhase('rendering...');
     void (async () => {
       try {
         if (isCancelled()) return;
-        await renderPage(pdf, `${docKey}#${visible}`, visible, isCancelled);
+        // Render the target to an offscreen canvas FIRST: the commit below
+        // swaps it in only if this generation is still current AND the page
+        // is still the visible one (a fast scroll-away cancels the swap
+        // instead of painting a stale bitmap over the new window).
+        const pageKey = `${key}#${target}`;
+        const nodes = await renderBitmap(pdf, pageKey, target, isCancelled);
+        if (isCancelled()) return;
+        if (!inWindow.has(target) || visibleRef.current !== target) return;
+        commitBitmap(target, pageKey, nodes);
         if (!isCancelled() && pendingScrollRef.current != null) scrollToShell(pendingScrollRef.current);
         for (const n of ordered.slice(1)) {
           if (isCancelled()) break;
@@ -348,14 +394,21 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
           await idle();
           if (isCancelled()) break;
           // eslint-disable-next-line no-await-in-loop
-          await renderPage(pdf, `${docKey}#${n}`, n, isCancelled);
+          const nb = await renderBitmap(pdf, `${key}#${n}`, n, isCancelled);
+          if (isCancelled()) break;
+          // Same guard per neighbor: skip the commit when the window moved
+          // on while this bitmap was rendering.
+          if (visibleRef.current !== target) break;
+          commitBitmap(n, `${key}#${n}`, nb);
         }
         if (!isCancelled()) {
           // Memory contract: shells stay for scroll height, but bitmaps
-          // outside the window are freed (canvas backing cleared).
+          // outside the window are freed (canvas backing cleared). Keyed by
+          // the captured doc identity so a newer document's bitmaps (same
+          // page numbers, different key) are never touched.
           for (const [n, canvas] of canvasRefs.current) {
-            if (inWindow.has(n)) continue;
-            renderedRef.current.delete(`${docKey}#${n}`);
+            if (renderedKeys.current.get(n) !== key || inWindow.has(n)) continue;
+            renderedKeys.current.delete(n);
             canvas.width = 0;
             canvas.height = 0;
           }
@@ -364,7 +417,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         if (!isCancelled()) setPhase('');
       }
     })();
-  }, [docKey, visible, numPages, renderEpoch, renderPage, scrollToShell]);
+  }, [docKey, visible, numPages, renderEpoch, scrollToShell]);
 
   // Pager/SyncTeX jump: a prop page that differs from the visible page is an
   // EXTERNAL jump (our own scroll reports echo back equal and no-op here).
