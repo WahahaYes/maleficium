@@ -1,7 +1,8 @@
 // PreviewToolbar.tsx — toolbar pager (prev/jump/total/next + sync).
 //
-// Growth cap: constant height; pagination (NOT infinite scroll) is the memory
-// contract — 1 visible page in Preview body.
+// Growth cap: constant height; the Preview body owns the scroll contract
+// (all shells mounted, windowed bitmaps). Pager jumps drive the body target;
+// the body scrolls AFTER the target bitmap lands (never onto blank shells).
 
 import Toolbar from '@mui/material/Toolbar';
 import ButtonGroup from '@mui/material/ButtonGroup';
