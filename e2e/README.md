@@ -1,0 +1,25 @@
+# e2e/ — committed proof harnesses + driver configs (product test code)
+
+Admitted by RULES §4 (user decision 2026-09-14). Clearly separated from
+`src/` and `src-tauri/`: this folder drives the built app or replicates its
+derivations — it never ships in the product bundle.
+
+## Contents
+
+- `v5-footprint.sh` — V-5 Level 1 static footprint audit (no window needed).
+  Copies `playground/` (repo-relative `../../playground`) to a scratch git
+  repo, mirrors `hashRoot`/`appTrashDir`/`appOutDir`/`out_dir_for`, and
+  asserts porcelain discipline at every step. Run: `./e2e/v5-footprint.sh`
+  from `maleficium/`. Green 2026-09-14.
+  (Full writeup: `notes/08-devloop/2026-09-14-v5-harness.md`.)
+
+## Conventions
+
+- Harnesses resolve the dev root from their own path (`DEVROOT=…/../..`) —
+  no hardcoded absolute paths, no writes outside OS tmp.
+- Never commit fixtures with megabytes: reuse `playground/` (small sources)
+  or generate into tmp at runtime (per `04-scale` policy).
+- Level 2 (live IPC/WebDriver drive) lands here next — see the 08-devloop
+  plan. Embedded provider (`@wdio/tauri-service`, no external driver) is
+  the chosen route; standalone `tauri-driver` is blocked (no
+  `webkit2gtk-driver` in Ubuntu resolute).
