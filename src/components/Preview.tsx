@@ -49,11 +49,24 @@ interface PreviewProps {
 interface PdfPage {
   getViewport: (o: { scale: number }) => { height: number; width: number };
   render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
+  getTextContent: () => Promise<any>;
 }
 
 interface PdfDoc {
   numPages: number;
   getPage: (n: number) => Promise<PdfPage>;
+}
+
+interface PdfJsApi {
+  TextLayer: new (o: { textContentSource: any; container: HTMLElement; viewport: any }) => { render: () => Promise<void> };
+}
+
+/** Live pdf.js module for text-layer construction (set once in `lib/pdfjs`). */
+let textLayerCtor: PdfJsApi['TextLayer'] | null = null;
+
+/** Registered by `lib/pdfjs` after import — Preview never imports pdf.js directly. */
+export function registerTextLayer(ctor: any) {
+  textLayerCtor = (ctor ?? null) as PdfJsApi['TextLayer'] | null;
 }
 
 /** Top padding of the scroll container (matches py:1) for jump math. */
@@ -73,6 +86,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
+  const textRefs = useRef(new Map<number, HTMLDivElement>());
   // Bitmap identity is per document revision AND page: cleared on every doc
   // change so entries can never accumulate across recompiles (bounded by the
   // window). Keyed (page -> docKey) so the eviction pass can never clear a
@@ -127,45 +141,76 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // by TOKEN, not generation: each render call takes its own `alive()` that
   // is false only when its own document was superseded or a newer render of
   // the SAME page started — never when an unrelated page renders.
+  //
+  // VECTOR, not raster: the canvas carries the exact vector rasterization
+  // (scale = CSS px per PDF point, so 1 backing px per CSS px — no upscale
+  // blur), and the SELECTABLE TEXT comes from a pdf.js TextLayer (real DOM
+  // spans over the canvas, transparent, positioned by pdf.js itself). The
+  // canvas is paint; the text div is the document: zooming re-renders the
+  // vector at the new scale (never stretches pixels), and copy/paste +
+  // find-in-page work because the glyphs are DOM. There is no raster
+  // fallback — canvas + text layer is the single path (the SVG backend was
+  // removed upstream in pdf.js 4.0, and a second renderer would be legacy
+  // per RULES §8).
   const renderBitmap = useCallback(async (
     pdf: PdfDoc,
     key: string,
     target: number,
     alive: () => boolean,
-  ): Promise<HTMLCanvasElement | null> => {
-    if (renderedRef.current.has(key)) return canvasRefs.current.get(target) ?? null;
+  ): Promise<{ canvas: HTMLCanvasElement; textContent: any; viewport: any } | null> => {
+    if (renderedRef.current.has(key)) return null;
     const pg = await pdf.getPage(target);
     if (!alive()) return null;
-    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const shell = shellRefs.current.get(target);
+    const cssWidth = shell ? Math.max(1, shell.clientWidth) : 820;
+    // Scale = CSS px per PDF point AT the shell's laid-out width: the canvas
+    // backing matches displayed size 1:1 (DPR-folded), so no upscale blur and
+    // no wasted pixels. Text layer shares the SAME viewport object, so spans
+    // land exactly on glyphs (one viewport, two consumers — never two scales).
+    const probe = pg.getViewport({ scale: 1 });
+    const scale = (cssWidth / Math.max(1, probe.width)) * dpr;
     const viewport = pg.getViewport({ scale });
     const off = document.createElement('canvas');
-    off.height = viewport.height;
-    off.width = viewport.width;
+    off.height = Math.floor(viewport.height);
+    off.width = Math.floor(viewport.width);
     const ctx = off.getContext('2d');
     if (!ctx) throw new Error('2d context unavailable');
     const t1 = Date.now();
     await pg.render({ canvasContext: ctx, viewport }).promise;
     if (!alive()) return null;
+    const textContent = await pg.getTextContent();
+    if (!alive()) return null;
     emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
-    return off;
+    return { canvas: off, textContent, viewport };
   }, []);
 
-  // Commit a rendered bitmap into the mounted shell canvas (drawImage — no
-  // re-layout, no blank flash). Already-rendered pages commit WITHOUT
-  // re-rendering: renderBitmap returns the mounted canvas itself, and the
-  // drawImage below self-copies harmlessly. Records identity AFTER pixels
-  // land, so a commit can never mark a page rendered that isn't.
-  const commitBitmap = useCallback((target: number, key: string, off: HTMLCanvasElement | null) => {
+  // Commit a rendered page into its shell: canvas paint + text layer.
+  // drawImage commits pixels with no re-layout and no blank flash; the text
+  // div is rebuilt by pdf.js (spans positioned from the SAME viewport, so
+  // selection lands on glyphs). Records identity AFTER pixels land, so a
+  // commit can never mark a page rendered that isn't. A null bitmap (already
+  // rendered, or lost its liveness race) commits nothing.
+  const commitBitmap = useCallback((target: number, key: string, done: { canvas: HTMLCanvasElement; textContent: any; viewport: any } | null) => {
+    if (!done) return;
     const canvas = canvasRefs.current.get(target);
-    if (!canvas || !off) return;
-    if (off !== canvas) {
-      if (canvas.width !== off.width || canvas.height !== off.height) {
-        canvas.width = off.width;
-        canvas.height = off.height;
+    const layer = textRefs.current.get(target);
+    if (!canvas) return;
+    const { canvas: off, textContent, viewport } = done;
+    if (canvas.width !== off.width || canvas.height !== off.height) {
+      canvas.width = off.width;
+      canvas.height = off.height;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(off, 0, 0);
+    if (layer && textLayerCtor) {
+      layer.replaceChildren();
+      try {
+        void new textLayerCtor({ textContentSource: textContent, container: layer, viewport }).render();
+      } catch {
+        /* text layer never blocks paint — canvas already committed */
       }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(off, 0, 0);
     }
     renderedRef.current.add(key);
     renderedKeys.current.set(target, key);
@@ -534,24 +579,36 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     }
   }, [dimsVersion, scrollToShell]);
 
-  // Re-render bitmaps when the backing scale changes (e.g. the window moved
-  // across monitors). Plain width changes only re-scale CSS — no re-render.
+  // Re-render vector pages when the LAYOUT scale changes (shell width via
+  // pane resize, or DPR across monitors): zoom re-renders the vector at the
+  // new scale, never stretches pixels. Observed via ResizeObserver on the
+  // scroll container (fires on pane drags AND window zooms) + DPR polling
+  // folded into the same epoch. Plain scroll never re-renders.
   useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const onResize = () => {
+    let lastWidth = box.clientWidth;
+    const kick = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         const dpr = window.devicePixelRatio || 1;
-        if (dpr !== dprRef.current) {
+        const w = box.clientWidth;
+        if (dpr !== dprRef.current || Math.abs(w - lastWidth) > 1) {
           dprRef.current = dpr;
+          lastWidth = w;
           renderedRef.current.clear();
+          renderedKeys.current.clear();
           setRenderEpoch((e) => e + 1);
         }
       }, 300);
     };
-    window.addEventListener('resize', onResize);
+    const ro = new ResizeObserver(kick);
+    ro.observe(box);
+    window.addEventListener('resize', kick);
     return () => {
-      window.removeEventListener('resize', onResize);
+      ro.disconnect();
+      window.removeEventListener('resize', kick);
       if (timer) clearTimeout(timer);
     };
   }, []);
@@ -578,6 +635,11 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const setCanvasRef = useCallback((n: number) => (el: HTMLCanvasElement | null) => {
     if (el) canvasRefs.current.set(n, el);
     else canvasRefs.current.delete(n);
+  }, []);
+
+  const setTextRef = useCallback((n: number) => (el: HTMLDivElement | null) => {
+    if (el) textRefs.current.set(n, el);
+    else textRefs.current.delete(n);
   }, []);
 
   // Every page owns a shell (stable scroll height from the probed aspect);
@@ -628,6 +690,12 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
               className="synctex-canvas"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
               title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
+            />
+            <div
+              ref={setTextRef(n)}
+              className="textLayer"
+              data-page={n}
+              style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}
             />
           </div>
         ))}

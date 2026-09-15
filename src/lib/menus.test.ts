@@ -8,7 +8,7 @@ const baseCtx: MenuContext = {
   pdfOpen: true, editorReady: true,
   view: { tree: true, editor: true, preview: true }, preset: 'both',
   logCollapsed: false, outlineVisible: true, outlineLines: [{ line: 3, title: 'Intro' }], outlinePicks: [3], canUndoDelete: true,
-  reloadPending: false, theme: 'dark', density: 'comfortable',
+  reloadPending: false, theme: 'dark', density: 'comfortable', recentProjects: [],
 };
 const noop = () => {};
 const actions: CommandActions = {
@@ -16,7 +16,7 @@ const actions: CommandActions = {
   reloadFromDisk: noop, keepMine: noop, clean: noop, undoDelete: noop, renameActive: noop,
   deleteActive: noop, selectAll: noop, expandSelection: noop, shrinkSelection: noop,
   goToLine: noop, pickOutlineSection: noop, toggleOutlinePick: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
-  toggleOutline: noop, setTheme: noop, setDensity: noop, compile: noop, compileFile: noop, cancelCompile: noop, forwardSync: noop,
+  toggleOutline: noop, setTheme: noop, setDensity: noop, openRecent: noop, clearRecents: noop, compile: noop, compileFile: noop, cancelCompile: noop, forwardSync: noop,
   showShortcuts: noop, showAbout: noop,
 };
 
@@ -44,14 +44,15 @@ describe('command registry', () => {
     expect(new Set(leafIds).size).toBe(leafIds.length);
   });
   it('no dead placeholder rows survive (every visible row is real)', () => {
-    // Context-gated rows (Cancel while idle, Reload with nothing pending)
-    // are honest state, not placeholders: they run when their context holds.
-    // This pin only forbids PERMANENTLY dead rows (no run, `soon` label).
+    // Context-gated rows (Cancel while idle, Reload with nothing pending,
+    // Open Recent with no recents) are honest state, not placeholders: they
+    // run when their context holds. This pin only forbids PERMANENTLY dead
+    // rows (no run in ANY context, `soon` label).
     const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
     for (const c of cmds) {
       expect(c.label, c.id).not.toMatch(/soon/i);
       expect((c as { soon?: boolean }).soon ?? false, c.id).toBe(false);
-      if (c.visible !== false && (!c.children || c.children.length === 0)) {
+      if (c.visible !== false && (!c.children || c.children.length === 0) && c.id !== 'file.recent') {
         expect(typeof c.run, c.id).toBe('function');
       }
       for (const k of c.children ?? []) {
@@ -63,11 +64,13 @@ describe('command registry', () => {
       [{ ...baseCtx, compiling: true }, 'tools.cancel'],
       [{ ...baseCtx, reloadPending: true }, 'file.reload'],
       [{ ...baseCtx, reloadPending: true }, 'file.keep-mine'],
+      [{ ...baseCtx, recentProjects: ['/a/paper'] }, 'file.recent'],
     ];
     for (const [ctx, id] of gated) {
       const found = buildMenus(ctx, actions).flatMap((s) => s.commands).find((c) => c.id === id)!;
       expect(found.enabled, id).toBe(true);
-      expect(typeof found.run, id).toBe('function');
+      const runs = (found.children ?? [found]).map((k) => typeof k.run);
+      expect(runs.every((t) => t === 'function'), id).toBe(true);
     }
   });
   it('no git-named command or label survives', () => {
@@ -75,6 +78,17 @@ describe('command registry', () => {
     for (const c of cmds) {
       expect(c.id, c.id).not.toMatch(/git/i);
       expect(c.label, c.label).not.toMatch(/git|HEAD/i);
+    }
+  });
+  it('recent projects submenu lists recents, disabled when empty', () => {
+    const all = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
+    expect(all.find((c) => c.id === 'file.recent')!.enabled).toBe(false);
+    const withRecents = buildMenus({ ...baseCtx, recentProjects: ['/b/thesis', '/a/paper'] }, actions)
+      .flatMap((s) => s.commands).find((c) => c.id === 'file.recent')!;
+    expect(withRecents.enabled).toBe(true);
+    expect(withRecents.children?.map((k) => k.label)).toEqual(['thesis', 'paper']);
+    for (const k of withRecents.children ?? []) {
+      expect(typeof k.run, k.label).toBe('function');
     }
   });
   it('ids are unique across sections', () => {

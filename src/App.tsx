@@ -35,6 +35,7 @@ import { buildMenus, presetOf, type CommandActions, type MenuContext } from './l
 import { listTreeDeep } from './lib/files';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
+import { getRecentProjects, touchRecentProject, pruneRecentProjects } from './lib/recentProjects';
 import { moveToTrash, undoTrash } from './lib/trash';
 import { watch, readTextFile, mkdir, stat } from '@tauri-apps/plugin-fs';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
@@ -223,23 +224,63 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);
 
-  async function open(){
-    const r=await openProject();
-    if(r){
-      setRoot(r);
-      await reloadTree(r, false);
-      setLog('opened '+r); emit({scope:'fs',kind:'info',message:'opened '+r});
-      trash.clear();
-      const m = await resolveMain(r, null);
-      setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
-      // Open the main file on project select (data-loss guard 2026-09-14:
-      // the editor must never sit on stale untitled content while the tree
-      // shows a project — a compile from that state wrote the HELLO stub
-      // over the real main file). No main → keep the current editor as-is.
-      if (m) await handleSelect(m);
-    }
-    else {setLog('open cancelled'); emit({scope:'fs',kind:'warn',message:'cancelled'});}
+  // Recents for File > Open Recent: state (not derive-per-render — the menu
+  // reads it, openRoot writes it). Restored entries re-validate via stat.
+  const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
+  async function openRoot(r: string) {
+    setRoot(r);
+    setRecentProjects(touchRecentProject(r));
+    await reloadTree(r, false);
+    setLog('opened ' + r); emit({ scope: 'fs', kind: 'info', message: 'opened ' + r });
+    trash.clear();
+    const m = await resolveMain(r, null);
+    setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
+    // Open the main file on project select (data-loss guard 2026-09-14:
+    // the editor must never sit on stale untitled content while the tree
+    // shows a project — a compile from that state wrote the HELLO stub
+    // over the real main file). No main → keep the current editor as-is.
+    if (m) await handleSelect(m);
   }
+
+  async function open() {
+    const r = await openProject();
+    if (r) {
+      await openRoot(r);
+    }
+    else { setLog('open cancelled'); emit({ scope: 'fs', kind: 'warn', message: 'cancelled' }); }
+  }
+
+  // Restore-on-launch: the dev-loop `?project=` preset wins (scripted runs),
+  // else the most recent project that still resolves, else the Hello sample
+  // (current untitled state — no project forced). Runs once; only roots that
+  // ALL fail validation are pruned (a transient stat failure keeps entries).
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    void (async () => {
+      try {
+        const q = new URLSearchParams(window.location.search);
+        const h = window.location.hash.match(/project=([^&]+)/);
+        if (q.get('project') || h) return; // openProject() preset path owns it
+      } catch { /* non-browser — fall through to recents */ }
+      const recents = getRecentProjects();
+      const stale: string[] = [];
+      for (const r of recents) {
+        try {
+          await stat(r);
+          await openRoot(r);
+          return;
+        } catch {
+          stale.push(r);
+        }
+      }
+      if (stale.length > 0 && stale.length === recents.length) {
+        setRecentProjects(pruneRecentProjects((kept) => !stale.includes(kept)));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
   async function handleCreate(dirPath: string, name: string) {
@@ -893,9 +934,15 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     reloadPending: reloadPath != null,
     theme: themeMode,
     density,
+    recentProjects,
   };
   const menuActions: CommandActions = {
     openProject: () => { void open(); },
+    openRecent: (r) => { void openRoot(r); },
+    clearRecents: () => {
+      pruneRecentProjects(() => false);
+      setRecentProjects([]);
+    },
     newFile: () => {
       if (root) void handleCreate(root, 'untitled.tex');
       else emit({ scope: 'fs', kind: 'warn', message: 'New File needs an open project' });

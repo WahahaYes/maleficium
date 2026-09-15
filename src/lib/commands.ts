@@ -15,6 +15,7 @@
 export type CommandId =
   | 'file.open-project' | 'file.new-file' | 'file.close-file' | 'file.save'
   | 'file.set-main' | 'file.reload' | 'file.keep-mine' | 'file.clean'
+  | 'file.recent' | 'file.recent-clear'
   | 'edit.undo-delete' | 'edit.rename' | 'edit.delete'
   | 'selection.select-all' | 'selection.expand' | 'selection.shrink' | 'selection.go-to-line'
   | 'selection.pick-one' | 'selection.pick-many'
@@ -57,6 +58,8 @@ export interface MenuContext {
   reloadPending: boolean;
   theme: 'dark' | 'light';
   density: Density;
+  /** Most-recent-first project roots for File > Open Recent (validated by App). */
+  recentProjects: string[];
 }
 
 export interface CommandActions {
@@ -86,6 +89,8 @@ export interface CommandActions {
   toggleOutline: () => void;
   setTheme: (m: 'dark' | 'light') => void;
   setDensity: (d: Density) => void;
+  openRecent: (root: string) => void;
+  clearRecents: () => void;
   compile: () => void;
   compileFile: () => void;
   cancelCompile: () => void;
@@ -121,6 +126,15 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
     {
       id: 'file', title: 'File', commands: [
         { id: 'file.open-project', label: 'Open Project…', accelerator: 'Ctrl+O', enabled: true, run: a.openProject },
+        {
+          id: 'file.recent', label: 'Open Recent', enabled: ctx.recentProjects.length > 0,
+          children: ctx.recentProjects.map((r) => ({
+            id: 'file.recent' as const,
+            label: r.split('/').pop() || r,
+            enabled: true,
+            run: () => a.openRecent(r),
+          })),
+        },
         { id: 'file.new-file', label: 'New File…', enabled: ctx.hasProject, run: a.newFile },
         { id: 'file.close-file', label: 'Close File', accelerator: 'Ctrl+W', enabled: ctx.dirty || ctx.hasProject, run: a.closeFile },
         { id: 'file.save', label: 'Save', accelerator: 'Ctrl+S', enabled: true, run: a.save },

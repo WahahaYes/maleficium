@@ -1,3 +1,10 @@
+// pdfjs.ts — single pdf.js entry: worker setup + TextLayer handoff.
+//
+// Preview never imports pdf.js directly: this module owns the import (one
+// renderer, not two) and hands Preview the TextLayer constructor for the
+// selectable-text overlay. Canvas is paint, DOM spans are the document.
+import 'pdfjs-dist/web/pdf_viewer.css';
+
 let cachedPdfJs: any = null;
 
 async function getPdfJs(): Promise<any> {
@@ -10,6 +17,14 @@ async function getPdfJs(): Promise<any> {
   );
   GlobalWorkerOptions.workerPort = worker;
   cachedPdfJs = pdfJs;
+  // Hand the TextLayer constructor to Preview (single path — Preview never
+  // imports pdf.js directly, so the viewer stays one renderer, not two).
+  try {
+    const { registerTextLayer } = await import('../components/Preview');
+    registerTextLayer(pdfJs.TextLayer ?? null);
+  } catch {
+    /* headless/test env — canvas paint still commits without text */
+  }
   return cachedPdfJs;
 }
 
