@@ -1,7 +1,9 @@
 // OutlineView.tsx — document outline in the tree column.
 //
-// Growth cap: entries from `parseOutline` (capped 1000) over the ACTIVE buffer
-// only; debounced 500ms upstream via `sourceVersion`. Click → line reveal.
+// Growth cap: entries from `parseOutline` (DATA cap 1000) sliced to a VIEW
+// cap of 100 rows here; the `100+` count line keeps the cut honest, and the
+// remainder stays reachable via Selection > Go to Section… (25-row window
+// over the same list). Click → line reveal.
 
 import Box from '@mui/material/Box';
 import List from '@mui/material/List';

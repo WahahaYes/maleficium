@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import EditorViewport, { type EditorViewportHandle } from './components/EditorViewport';
@@ -50,9 +53,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const [fileName, setFileName] = useState('hello.tex');
   const [mainFile, setMainFileState] = useState<string | null>(null);
   const [mainSource, setMainSource] = useState('');
+  const [mainCandidates, setMainCandidates] = useState<string[]>([]);
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
   const [trash] = useState(() => new FileHistory());
-  const [trashMsg, setTrashMsg] = useState('');
   const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
   const [largeFile, setLargeFile] = useState<string | null>(null);
@@ -168,7 +171,8 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const resolveMain = useCallback(async (r: string, opened: string | null) => {
     const res = await resolveMainFileTauri(r, opened);
     setMainFileState(res.mainFile);
-    setMainSource(res.source + (res.candidates.length > 1 ? ` (${res.candidates.length} candidates, first wins)` : ''));
+    setMainSource(res.source);
+    setMainCandidates(res.candidates);
     return res.mainFile;
   }, []);
 
@@ -355,13 +359,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     if (!root) return;
     const r = await moveToTrash(trash, root, path);
     if (r.ok) {
-      setTrashMsg(`deleted ${path} (undo available)`);
-      emit({ scope: 'fs', kind: 'warn', message: 'trashed ' + path });
+      emit({ scope: 'fs', kind: 'success', message: `deleted ${path} (Edit → Undo Delete restores it)` });
       setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
       if (previewFile === path) setPreviewFile(null);
       await reloadTree(root);
     } else {
-      setTrashMsg('delete failed: ' + (r.error ?? '').slice(0, 120));
+      emit({ scope: 'fs', kind: 'error', message: 'delete failed: ' + (r.error ?? '').slice(0, 120) });
     }
   }
 
@@ -405,10 +408,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
 
   async function handleUndo() {
     const r = await undoTrash(trash);
-    setTrashMsg(r.ok ? 'restored' : 'undo failed: ' + (r.error ?? '').slice(0, 120));
     if (r.ok) {
-      emit({ scope: 'fs', kind: 'success', message: 'trash undo' });
+      emit({ scope: 'fs', kind: 'success', message: 'restored from trash' });
       if (root) { await reloadTree(root); }
+    } else {
+      emit({ scope: 'fs', kind: 'error', message: 'undo failed: ' + (r.error ?? '').slice(0, 120) });
     }
   }
 
@@ -418,6 +422,17 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const m = await resolveMain(root, fileName);
     setLog('main file: ' + (m ?? '(none)'));
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
+  }
+
+  // Main-file tie-break (D-7): the scan found >1 `\documentclass` and picked
+  // the first. Choosing here writes the explicit association (same path as
+  // Set as Main File), so the tie never reappears for this project.
+  async function handlePickMain(path: string) {
+    if (!root) return;
+    await setMainFile(root, path);
+    await resolveMain(root, path);
+    setMainAnchor(null);
+    emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + path });
   }
 
   // Tree-driven main association (double-click / context menu on a .tex row).
@@ -761,8 +776,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     });
   };
 
-  const dirtyCount = useMemo(() => [...buffers.values()].filter((b) => b.dirty).length, [buffers]);
-
   // ---- Shell state: view is explicit booleans (View menu presets own them) ----
   const [treeVisible, setTreeVisible] = useState(true);
   const [editorVisible, setEditorVisible] = useState(true);
@@ -797,6 +810,8 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
+  // Anchor for the main-file tie-break menu (D-7): which element it opens from.
+  const [mainAnchor, setMainAnchor] = useState<HTMLElement | null>(null);
   // Rename dialog for the ACTIVE file (D-5): same persist-then-select path as
   // the tree row dialog — the menu command opens it, the tree owns nothing.
   const [renameOpen, setRenameOpen] = useState(false);
@@ -931,11 +946,51 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
   };
 
+  // Quiet caption (D-6): the editor header names the file + its main file and
+  // nothing else. Buffer counts live on the tabs, trash depth on the StatusBar
+  // `↩ N`, transient outcomes in the LogStream — the caption never carries them.
+  const mainLabel = relOf(mainFile) ?? '(none)';
+  const mainTip = mainFile == null
+    ? 'No main file detected'
+    : mainSource === 'config' ? `Main file (your choice): ${mainFile}`
+    : mainSource === 'magic' ? `Main file (from %!TEX root): ${mainFile}`
+    : mainSource === 'scan' ? `Main file (auto-detected): ${mainFile}`
+    : mainSource === 'single' ? `Main file (only .tex file): ${mainFile}`
+    : `Main file: ${mainFile}`;
   const editorPane = (
     <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <Typography variant="caption" sx={{ display: 'block', mb: 1 }} title={fileName}>
-        {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''} · main: {relOf(mainFile) ?? '(none)'} {mainSource ? `(${mainSource})` : ''} · {buffers.size} open · {dirtyCount} unsaved{trashMsg ? ` · ${trashMsg}` : ''}
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, minWidth: 0 }}>
+        <Typography variant="caption" noWrap sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} title={fileName}>
+          {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''}
+        </Typography>
+        <Chip
+          size="small"
+          label={`main: ${mainLabel}`}
+          title={mainTip}
+          onClick={mainCandidates.length > 1 ? (e) => setMainAnchor(e.currentTarget) : undefined}
+          sx={{ height: 18, maxWidth: 220 }}
+        />
+        {mainCandidates.length > 1 ? (
+          <Menu
+            open={mainAnchor != null}
+            anchorEl={mainAnchor}
+            onClose={() => setMainAnchor(null)}
+            slotProps={{ list: { 'aria-label': 'Choose main file' } }}
+          >
+            {mainCandidates.map((c) => (
+              <MenuItem
+                key={c}
+                selected={c === mainFile}
+                onClick={() => { void handlePickMain(c); }}
+              >
+                <Typography variant="body2" noWrap>
+                  {relOf(c) ?? c}
+                </Typography>
+              </MenuItem>
+            ))}
+          </Menu>
+        ) : null}
+      </Box>
       <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} onCloseOthers={(k) => { void handleCloseOthers(k); }} onCloseAll={() => { void handleCloseAll(); }} />
       {reloadPath ? (
         <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>

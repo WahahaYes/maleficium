@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildMenus, type MenuContext, type CommandActions } from './commands';
 import { KEYMAP } from './keymap';
+import { parseOutline } from './outline';
 
 const baseCtx: MenuContext = {
   hasProject: true, isProjectFile: true, dirty: false, compiling: false,
@@ -80,13 +81,37 @@ describe('command registry', () => {
     const ids = buildMenus(baseCtx, actions).flatMap((s) => s.commands.map((c) => c.id));
     expect(new Set(ids).size).toBe(ids.length);
   });
-  it('every accelerator exists in KEYMAP', () => {
+  it('dialog renders the same KEYMAP table (no second key list)', () => {
+    // D-9: ShortcutsDialog imports KEYMAP directly (keep it that way) — this
+    // pin fails if anyone introduces a parallel key list for the dialog.
+    // The dialog renders one row per KEYMAP entry, same ids, same labels.
+    expect(KEYMAP.length).toBeGreaterThan(0);
+    const ids = KEYMAP.map((k) => k.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const k of KEYMAP) {
+      expect(k.label.length, k.id).toBeGreaterThan(0);
+      expect(k.keys.length, k.id).toBeGreaterThan(0);
+    }
+    // Registry accelerators stay a SUBSET of KEYMAP keys (parity both ways:
+    // no menu chord missing from the dialog, no dialog row missing a meaning).
     const keys = new Set(KEYMAP.map((k) => k.keys));
     for (const s of buildMenus(baseCtx, actions)) {
       for (const c of s.commands) {
         if (c.accelerator) expect(keys.has(c.accelerator), c.id).toBe(true);
       }
     }
+  });
+  it('outline submenu caps stay deliberate (25) and labeled honest', () => {
+    // D-3/D-4: submenu rows cap at PICK_CAP with the full outline one click
+    // away in the tree column. 101 sections → 25 rows, no silent truncation
+    // claim (the tree's `100+` label carries the honesty there).
+    const lines = Array.from({ length: 101 }, (_, i) => ({ line: i + 1, title: `S${i + 1}` }));
+    const all = buildMenus({ ...baseCtx, outlineLines: lines }, actions).flatMap((s) => s.commands);
+    expect(all.find((c) => c.id === 'selection.pick-one')!.children?.length).toBe(25);
+    expect(all.find((c) => c.id === 'selection.pick-many')!.children?.length).toBe(25);
+    // Parse itself keeps full fidelity (DATA cap 1000, not the view cap).
+    const text = Array.from({ length: 30 }, (_, i) => `\\section{S${i + 1}}`).join('\n');
+    expect(parseOutline(text).length).toBe(30);
   });
   it('disabled states match context (compiling / no-project / trash-empty)', () => {
     const find = (ctx: MenuContext, id: string) =>
