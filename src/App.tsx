@@ -227,7 +227,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // Recents for File > Open Recent: state (not derive-per-render — the menu
   // reads it, openRoot writes it). Restored entries re-validate via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
-  async function openRoot(r: string) {
+  async function openRoot(r: string, opts?: { warm?: boolean }) {
     setRoot(r);
     setRecentProjects(touchRecentProject(r));
     await reloadTree(r, false);
@@ -240,12 +240,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     // shows a project — a compile from that state wrote the HELLO stub
     // over the real main file). No main → keep the current editor as-is.
     if (m) await handleSelect(m);
+    // Cache-warm on open (user decision): a background compile starts AFTER
+    // the editor is populated — but ONLY when the engine cache is usable
+    // (previous output present). No cache → no surprise build; the preview
+    // waits for the user's explicit Ctrl+R. runCompile is reentrancy-safe
+    // (phase-ref gate) and reports through the normal stream — open never
+    // fails because warm failed.
+    if (opts?.warm && m) void warmCompile(m);
   }
 
   async function open() {
     const r = await openProject();
     if (r) {
-      await openRoot(r);
+      await openRoot(r, { warm: true });
     }
     else { setLog('open cancelled'); emit({ scope: 'fs', kind: 'warn', message: 'cancelled' }); }
   }
@@ -269,7 +276,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       for (const r of recents) {
         try {
           await stat(r);
-          await openRoot(r);
+          await openRoot(r, { warm: true });
           return;
         } catch {
           stale.push(r);
@@ -601,15 +608,27 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
 
   // Shared compile runner: `target` is the main-file target, or an explicit
   // one-off file (compile-from-this-file bypasses the main association).
-  async function runCompile(target: string | null){
+  // Reentrancy: a second call while `compiling` is a no-op returning false
+  // (warm-on-open and double-Ctrl+R collapse into one run — never two
+  // engine children). Returns true when THIS call owned the run. The gate
+  // reads a REF (not state) so a warm run racing a user Ctrl+R in the same
+  // tick still collapses — state would be stale for both.
+  const phaseRef = useRef('idle');
+  async function runCompile(target: string | null): Promise<boolean> {
+    if (phaseRef.current === 'compiling') return false;
+    phaseRef.current = 'compiling';
+    const finish = (phase: string) => {
+      phaseRef.current = phase;
+      setCompilePhase(phase);
+    };
     if (largeFile || previewFile) {
       emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
-      setCompilePhase('failure');
+      finish('failure');
       setLog('compile blocked: open a .tex file first');
-      return;
+      return false;
     }
     emit({scope:'compile',kind:'progress',message:'compiling '+(target ?? fileName)});
-    setCompilePhase('compiling'); setCompileStart(Date.now()); setCompileTimer(0);
+    finish('compiling'); setCompileStart(Date.now()); setCompileTimer(0);
     setLog('compiling...');
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
@@ -629,12 +648,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       target == null || buffers.has(target) || target === fileName ||
       (!target.includes('/') && !fileName.includes('/'));
     if (target != null && target.includes('/') && !ownsTarget) {
-      setCompilePhase('failure'); setCompileStart(null);
+      finish('failure'); setCompileStart(null);
       probing = false;
       emit({scope:'compile',kind:'error',message:`compile refused: editor does not own ${target} (open it first)`});
       setLog(`compile refused: editor does not own ${target}`);
       clearInterval(hb); try{unlisten();}catch{}
-      return;
+      return false;
     }
     try {
       if (target && target.includes('/')) {
@@ -656,11 +675,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         setMainFileState(t2);
       }
     } catch(e){
-      setCompilePhase('failure'); setCompileStart(null);
+      finish('failure'); setCompileStart(null);
       probing = false;
       emit({scope:'compile',kind:'error',message:'save failed: '+String(e).slice(0,200)});
       clearInterval(hb); try{unlisten();}catch{}
-      return;
+      return false;
     }
     const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
     const main = activeTarget.slice(activeTarget.lastIndexOf('/') + 1);
@@ -679,21 +698,21 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       }
     };
     if (r.ok && r.pdfPath) {
-      setCompilePhase('success'); setCompileStart(null);
+      finish('success'); setCompileStart(null);
       setLogCollapsed(false);
       emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
       emitPdf(r.pdfPath);
       setPdfStamp(s=>s+1);
       emit({scope:'preview',kind:'success',message:'preview '+String(r.pdfPath)});
     } else if (!r.ok && r.log.includes('spawn')) {
-      setCompilePhase('failure'); setCompileStart(null);
+      finish('failure'); setCompileStart(null);
       setLogCollapsed(false);
       setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
     } else if (!r.ok) {
-      setCompilePhase('failure'); setCompileStart(null);
+      finish('failure'); setCompileStart(null);
       setLogCollapsed(false);
       emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
       const c = await readEngineLog();
@@ -701,6 +720,47 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
     clearInterval(hb); try { unlisten(); } catch {}
     probing = false; emit({scope:'compile',kind:'info',message:`main-thread max frame ${Math.round(maxGap)}ms during compile`});
+    return true;
+  }
+
+  // Cache-warm on open: a background compile of a freshly opened project's
+  // main file, AFTER the editor is populated (openRoot awaits handleSelect
+  // first). NOT a second code path — the same runCompile with the same
+  // stream, same phase, same clobber guard. Two honesty rules: (1) this runs
+  // only when the engine CACHE is usable — no cache entry means a full cold
+  // build, which is the user's explicit Ctrl+R to pay for, not open's;
+  // (2) a warm FAILURE is quiet (debug line only) — open must never look
+  // broken because a background guess failed; the user's explicit Ctrl+R
+  // reports loudly through the normal path.
+  async function warmCompile(mainAbsPath: string) {
+    const usable = await engineCacheUsable(mainAbsPath).catch(() => false);
+    if (!usable) {
+      emit({ scope: 'compile', kind: 'info', message: 'preview will build on first Compile (no cached output)' });
+      return;
+    }
+    emit({ scope: 'compile', kind: 'info', message: 'warming preview for ' + mainAbsPath });
+    await runCompile(mainAbsPath);
+    // Not owned (user raced us) → their stream wins; nothing to report.
+  }
+
+  // True when the app-local outdir already holds this target's engine output
+  // (pdf + log from a previous successful run): the warm compile then only
+  // verifies freshness (~free when tectonic skips work) instead of paying a
+  // full cold build on every open. Best-effort stat only — never throws.
+  async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
+    try {
+      const { tempDir } = await import('@tauri-apps/api/path');
+      const { appOutDir } = await import('./lib/paths');
+      const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
+      const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
+      const out = appOutDir(await tempDir(), dir);
+      const { stat: statFile } = await import('@tauri-apps/plugin-fs');
+      await statFile(`${out}/${stem}.pdf`);
+      await statFile(`${out}/${stem}.log`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function handleForwardSync(){
@@ -938,7 +998,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   };
   const menuActions: CommandActions = {
     openProject: () => { void open(); },
-    openRecent: (r) => { void openRoot(r); },
+    openRecent: (r) => { void openRoot(r, { warm: true }); },
     clearRecents: () => {
       pruneRecentProjects(() => false);
       setRecentProjects([]);
