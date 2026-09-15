@@ -29,7 +29,7 @@ import { emitPdf, onPdf } from './lib/preview-bus';
 import { forward_sync, inverse_sync } from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
-import { parseOutline } from './lib/outline';
+import { parseOutline, type OutlineEntry } from './lib/outline';
 import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { listTreeDeep } from './lib/files';
@@ -820,16 +820,17 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // Without it selectAll/expand/shrink/goToLine no-op (the Selection bug).
   const viewportRef = useRef<EditorViewportHandle | null>(null);
   // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
-  // VIEW cap 100 (the parse DATA cap is 1000 in lib/outline.ts — different
-  // owner, see the growth-cap note there). The `100+` label keeps it honest.
-  const [outline, setOutline] = useState<{ title: string; line: number; level: number }[]>([]);
+  // Full-fidelity entries (parse DATA cap 1000); the VIEW slices to 100 per
+  // filter INSIDE OutlineView (filter-first, cap-second). Sections-only rows
+  // feed the Selection submenus (unchanged contract: sections navigate).
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
   // Multi-pick set for Selection > Pick Sections (choose-N demo + future batch ops).
   const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
   useEffect(() => {
     const t = setTimeout(() => {
       try {
         const t0 = performance.now();
-        const entries = parseOutline(tex).slice(0, 100);
+        const entries = parseOutline(tex);
         setOutline(entries);
         if (tex.length > 1_000_000) {
           emit({ scope: 'app', kind: 'info', message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms` });
@@ -884,7 +885,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     preset: presetOf({ tree: treeVisible, editor: editorVisible, preview: previewOpen }),
     logCollapsed,
     outlineVisible,
-    outlineLines: outline.map((o) => ({ line: o.line, title: o.title })),
+    // Selection submenus navigate SECTIONS (markers live in the outline view
+    // filter, not in menus — menus stay jump-targets, the view stays the map).
+    outlineLines: outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
     outlinePicks,
     canUndoDelete: trash.size > 0,
     reloadPending: reloadPath != null,
@@ -1059,7 +1062,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
                 {outlineVisible ? (
                   <OutlineView
                     entries={outline}
-                    totalShown={outline.length >= 100 ? '100+' : String(outline.length)}
                     onJump={(line) => setCurrentLine(line)}
                   />
                 ) : null}
