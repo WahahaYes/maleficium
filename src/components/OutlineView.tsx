@@ -1,32 +1,37 @@
-// OutlineView.tsx — document outline in the tree column.
+// OutlineView.tsx — document outline, one visual section in the side column.
 //
-// Growth cap: entries from `parseOutline` (DATA cap 1000) sliced to a VIEW
-// cap of 100 rows AFTER filtering (the filter segments, the cap bounds the
-// list — filtering first keeps each segment useful, capping second keeps
-// rows O(visible)). The `100+` count line keeps the cut honest, and the
-// remainder stays reachable via Selection > Go to Section… (25-row window
-// over the same list). Click → line reveal.
+// NOT a nested sidebar: no panel chrome of its own (no card, no divider, no
+// header icon) — just a caption line, a search field, and rows in the same
+// List language as the file tree above it. The tree filters files; this
+// filters symbols; both read as one column with two finders, not panels
+// inside panels.
+//
+// Growth cap: entries from `parseOutline` (DATA cap 1000) searched, then
+// filtered by kind segment, then sliced to a VIEW cap of 100 rows (search
+// narrows first so the cap never eats the match). The `100+` count line
+// keeps the cut honest; the remainder stays reachable via Selection > Go to
+// Section… (25-row window over the same list). Click → line reveal.
 //
 // D-12 design: sections own the indent hierarchy; labels / floats / inputs
 // ride along as marker rows with a kind glyph + muted meta. Markers never
 // change a section's level (the parse guarantees it), so the indent column
-// stays a pure section tree and the filter segments stay truthful.
+// stays a pure section tree and the kind segments stay truthful.
 
 import { useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import ButtonGroup from '@mui/material/ButtonGroup';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
+import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import TagIcon from '@mui/icons-material/Tag';
 import ImageIcon from '@mui/icons-material/Image';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import InputIcon from '@mui/icons-material/Input';
 import type { OutlineEntry, OutlineFilter, OutlineKind } from '../lib/outline';
-import { filterOutline } from '../lib/outline';
+import { filterOutline, searchOutline } from '../lib/outline';
 
 const VIEW_CAP = 100;
 
@@ -59,10 +64,10 @@ function RowMeta({ entry }: { entry: OutlineEntry }) {
 
 const SEGMENTS: { id: OutlineFilter; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'sections', label: 'Sections' },
-  { id: 'labels', label: 'Labels' },
-  { id: 'figures', label: 'Figures' },
-  { id: 'inputs', label: 'Inputs' },
+  { id: 'sections', label: '§' },
+  { id: 'labels', label: '#' },
+  { id: 'figures', label: 'Fig' },
+  { id: 'inputs', label: 'In' },
 ];
 
 export default function OutlineView({ entries, onJump }: {
@@ -70,31 +75,44 @@ export default function OutlineView({ entries, onJump }: {
   onJump: (line: number) => void;
 }) {
   const [filter, setFilter] = useState<OutlineFilter>('all');
-  const filtered = filterOutline(entries, filter);
+  const [query, setQuery] = useState('');
+  const searched = searchOutline(entries, query);
+  const filtered = filterOutline(searched, filter);
   const shown = filtered.slice(0, VIEW_CAP);
   const totalLabel = filtered.length > VIEW_CAP ? `${VIEW_CAP}+` : String(filtered.length);
   return (
     <Box sx={{ mt: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5 }}>
-        <FormatListBulletedIcon fontSize="small" color="action" />
-        <Typography variant="caption" color="text.secondary">Outline ({totalLabel})</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, pb: 0.5 }}>
+        Outline ({totalLabel})
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5, px: 1, pb: 0.5 }}>
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="Filter symbols"
+          aria-label="Filter symbols"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+        />
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={filter}
+          onChange={(_, v: OutlineFilter | null) => { if (v) setFilter(v); }}
+          aria-label="Symbol kind"
+          sx={{ flexShrink: 0, '& .MuiToggleButton-root': { px: 0.75, py: 0.5, fontSize: 11 } }}
+        >
+          {SEGMENTS.map((s) => (
+            <ToggleButton key={s.id} value={s.id} aria-label={s.id} title={s.id}>
+              {s.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
       </Box>
-      <ButtonGroup size="small" sx={{ px: 1, pb: 0.5 }} aria-label="Outline filter">
-        {SEGMENTS.map((s) => (
-          <Button
-            key={s.id}
-            variant={filter === s.id ? 'contained' : 'outlined'}
-            aria-pressed={filter === s.id}
-            onClick={() => setFilter(s.id)}
-            sx={{ minWidth: 0, px: 1, fontSize: 11 }}
-          >
-            {s.label}
-          </Button>
-        ))}
-      </ButtonGroup>
       {shown.length === 0 ? (
         <Typography variant="caption" color="text.secondary" sx={{ px: 2 }}>
-          {entries.length === 0 ? 'No sections in this file.' : `No ${filter} in this file.`}
+          {entries.length === 0 ? 'No sections in this file.' : 'No matches.'}
         </Typography>
       ) : (
         <List dense disablePadding>

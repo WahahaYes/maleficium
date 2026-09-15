@@ -28,6 +28,15 @@ export interface OutlineEntry {
 /** Filter segments for the outline view (All = interleaved, document order). */
 export type OutlineFilter = 'all' | 'sections' | 'labels' | 'figures' | 'inputs';
 
+/** Text search over outline rows (title + detail, case-insensitive). Pure. */
+export function searchOutline(entries: OutlineEntry[], query: string): OutlineEntry[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return entries;
+  return entries.filter((e) =>
+    e.title.toLowerCase().includes(q) || (e.detail ?? '').toLowerCase().includes(q),
+  );
+}
+
 export function filterOutline(entries: OutlineEntry[], filter: OutlineFilter): OutlineEntry[] {
   switch (filter) {
     case 'sections': return entries.filter((e) => e.kind === 'section');

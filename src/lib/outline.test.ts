@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseOutline, filterOutline } from './outline';
+import { parseOutline, filterOutline, searchOutline } from './outline';
 
 describe('parseOutline sections', () => {
   it('finds section hierarchy with line numbers', () => {
@@ -87,5 +87,16 @@ describe('filterOutline', () => {
     console.log(`outline 3000 sections: ${ms}ms, ${rows.length} rows`);
     expect(rows.length).toBe(1000);
     expect(ms).toBeLessThan(2000);
+  });
+});
+
+describe('searchOutline', () => {
+  it('matches titles and details, case-insensitive', () => {
+    const all = parseOutline('\\section{Intro}\n\\label{sec:intro}\n\\begin{figure}\n\\caption{A diagram.}\n\\end{figure}\n');
+    expect(searchOutline(all, '').length).toBe(3);
+    expect(searchOutline(all, 'intro').map((e) => e.kind)).toEqual(['section', 'label']);
+    expect(searchOutline(all, 'SEC:INTRO').length).toBe(1);
+    expect(searchOutline(all, 'diagram').map((e) => e.kind)).toEqual(['figure']);
+    expect(searchOutline(all, 'nothing-here').length).toBe(0);
   });
 });
