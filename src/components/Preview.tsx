@@ -102,32 +102,40 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const programmaticRef = useRef(false);
   const pickRafRef = useRef<number | null>(null);
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const renderGenRef = useRef(0);
-  const mountedRef = useRef(true);
   const dprRef = useRef(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
   const compRef = useRef<{ page: number; delta: number } | null>(null);
 
   useEffect(() => () => {
-    mountedRef.current = false;
     if (pickRafRef.current != null) cancelAnimationFrame(pickRafRef.current);
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
   }, []);
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
 
+  // Probe + render orchestration WITHOUT generation counters: every async
+  // task re-validates the exact thing it is about to touch (doc identity,
+  // page membership, mount state) instead of racing a shared counter. A
+  // counter is a single global loser-flag — ANY new effect run (StrictMode
+  // double-mount, probe batch, neighbor idle-callback) invalidates EVERY
+  // in-flight render, and on a real document the losers always outnumber
+  // the winners: perpetual `rendering...`, zero stuck pixels.
+
   // Render pdf.js pixels for one page onto a DETACHED canvas. Awaiting this
   // never touches mounted DOM: the caller commits via commitBitmap only when
-  // the generation is still current and the page still in-window. Skips
-  // pdf.js work entirely when this revision already holds the page.
+  // the page still belongs to the live document and window. Skips pdf.js
+  // work entirely when this revision already holds the page. Cancellation is
+  // by TOKEN, not generation: each render call takes its own `alive()` that
+  // is false only when its own document was superseded or a newer render of
+  // the SAME page started — never when an unrelated page renders.
   const renderBitmap = useCallback(async (
     pdf: PdfDoc,
     key: string,
     target: number,
-    isCancelled: () => boolean,
+    alive: () => boolean,
   ): Promise<HTMLCanvasElement | null> => {
     if (renderedRef.current.has(key)) return canvasRefs.current.get(target) ?? null;
     const pg = await pdf.getPage(target);
-    if (isCancelled()) return null;
+    if (!alive()) return null;
     const scale = Math.min(window.devicePixelRatio || 1, 2);
     const viewport = pg.getViewport({ scale });
     const off = document.createElement('canvas');
@@ -137,7 +145,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     if (!ctx) throw new Error('2d context unavailable');
     const t1 = Date.now();
     await pg.render({ canvasContext: ctx, viewport }).promise;
-    if (isCancelled()) return null;
+    if (!alive()) return null;
     emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
     return off;
   }, []);
@@ -240,7 +248,10 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // assumed for the whole document (uniform docs settle in one layout pass);
   // later batches publish ONLY when a page differs from the assumption, with
   // an anchor snapshot each time so the viewport can be re-anchored below.
-  const probeDims = useCallback(async (pdf: PdfDoc, total: number, isCancelled: () => boolean) => {
+  // Cancellation is per-DOCUMENT (docKey match): a newer document supersedes
+  // the probe, but nothing else does — there is no shared generation for a
+  // re-render or a neighbor pass to trip over.
+  const probeDims = useCallback(async (pdf: PdfDoc, total: number, alive: () => boolean) => {
     const snapAnchor = () => {
       const box = scrollRef.current;
       const anchorPage = visibleRef.current;
@@ -253,7 +264,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
       Math.abs(a.w - b.w) / Math.max(1, b.w) > 0.005 || Math.abs(a.h - b.h) / Math.max(1, b.h) > 0.005;
     try {
       const first = await pdf.getPage(1);
-      if (isCancelled()) return;
+      if (!alive()) return;
       const v1 = first.getViewport({ scale: 1 });
       const base = { w: v1.width, h: v1.height };
       const dims = new Map<number, { w: number; h: number }>();
@@ -262,16 +273,16 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
       snapAnchor();
       bumpDims();
       for (let n = 2; n <= total; n++) {
-        if (isCancelled()) return;
+        if (!alive()) return;
         // eslint-disable-next-line no-await-in-loop
         const pg = await pdf.getPage(n);
-        if (isCancelled()) return;
+        if (!alive()) return;
         const v = pg.getViewport({ scale: 1 });
         const next = { w: v.width, h: v.height };
         if (!differs(next, dims.get(n) as { w: number; h: number })) continue;
         dims.set(n, next);
         if (n % 10 === 0 || n === total) {
-          if (isCancelled()) return;
+          if (!alive()) return;
           dimsRef.current = new Map(dims);
           snapAnchor();
           bumpDims();
@@ -286,10 +297,9 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
 
   // Document open (per pdfUrl+stamp) + canonical reset to the pager page.
   // Section-count state (numPages) commits TOGETHER with the doc identity so
-  // the shell list and the observer mount in the same pass. A resolve
-  // generation cancels the previous document's probe without touching the
-  // render generation (renders are keyed by docKey and self-isolate).
-  const resolveGenRef = useRef(0);
+  // the shell list and the observer mount in the same pass. Per-task liveness
+  // (not a shared generation): a superseding document cancels the probe via
+  // docKey match; the load's own unmount cancels via the local flag.
   useEffect(() => {
     if (!pdfUrl) return;
     let cancelled = false;
@@ -321,6 +331,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         if (cancelled) return;
         // Fresh identity per revision: bitmaps, ratios, and aspects restart.
         renderedRef.current.clear();
+        renderedKeys.current.clear();
+        inFlightRef.current.clear();
         ratiosRef.current.clear();
         dimsRef.current = new Map();
         bumpDims();
@@ -335,8 +347,9 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
           setNumPages(pdf.numPages);
           setDocKey(key);
         }
-        const myResolve = ++resolveGenRef.current;
-        void probeDims(pdf, pdf.numPages, () => cancelled || myResolve !== resolveGenRef.current);
+        // Probe liveness is per-document: superseded only when a NEWER docKey
+        // commits (docRef moves on), never by renders or re-mounts.
+        void probeDims(pdf, pdf.numPages, () => !cancelled && docRef.current?.key === key);
       } catch (e) {
         if (!cancelled) {
           setError(`Failed to load PDF: ${String(e)}`);
@@ -357,14 +370,29 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // NEVER touches canvas identity: render pixels offscreen, then commit —
   // clearing a canvas whose bitmap is still referenced (same pass, other
   // window) is what blanked every page but the window on large documents.
+  // Liveness is per-PAGE (inFlight token): a newer render of the SAME page
+  // supersedes the old one, but renders of OTHER pages never cancel each
+  // other — the generation-counter version of this effect starved itself on
+  // every StrictMode remount and every neighbor pass.
+  const inFlightRef = useRef(new Map<string, number>());
+  // Phase is a COUNT of outstanding window renders, not a boolean: two
+  // overlapping passes (StrictMode remount, fast scroll) must not let the
+  // loser clear the winner's `rendering...` line while pixels are in flight.
+  const phaseCountRef = useRef(0);
+  const beginPhase = useCallback(() => {
+    phaseCountRef.current++;
+    setPhase('rendering...');
+  }, []);
+  const endPhase = useCallback(() => {
+    phaseCountRef.current = Math.max(0, phaseCountRef.current - 1);
+    if (phaseCountRef.current === 0) setPhase('');
+  }, []);
   useEffect(() => {
     const pdf = docRef.current?.pdf;
     if (!pdf || !docKey) return;
     const key = docKey;
     const target = visible;
     const total = numPages;
-    const gen = ++renderGenRef.current;
-    const isCancelled = () => gen !== renderGenRef.current || !mountedRef.current;
     const win = windowFor(target, total);
     const offsets: number[] = [0];
     const maxD = Math.max(WINDOW_ABOVE, WINDOW_BELOW);
@@ -374,50 +402,62 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     }
     const ordered = offsets.map((o) => target + o).filter((n) => n >= win.lo && n <= win.hi);
     const inWindow = new Set(ordered);
-    setPhase('rendering...');
+    // Claim one in-flight token PER page: a newer pass for the same page
+    // supersedes the older one; other pages are unaffected.
+    const myTokens = new Map<string, number>();
+    for (const n of ordered) {
+      const k = `${key}#${n}`;
+      const t = (inFlightRef.current.get(k) ?? 0) + 1;
+      inFlightRef.current.set(k, t);
+      myTokens.set(k, t);
+    }
+    const alivePage = (k: string) =>
+      docRef.current?.key === key && inFlightRef.current.get(k) === myTokens.get(k);
+    beginPhase();
     void (async () => {
       try {
-        if (isCancelled()) return;
         // Render the target to an offscreen canvas FIRST: the commit below
-        // swaps it in only if this generation is still current AND the page
-        // is still the visible one (a fast scroll-away cancels the swap
-        // instead of painting a stale bitmap over the new window).
+        // swaps it in only if this pass still owns the page AND the page is
+        // still the visible one (a fast scroll-away cancels the swap instead
+        // of painting a stale bitmap over the new window).
         const pageKey = `${key}#${target}`;
-        const nodes = await renderBitmap(pdf, pageKey, target, isCancelled);
-        if (isCancelled()) return;
+        const nodes = await renderBitmap(pdf, pageKey, target, () => alivePage(pageKey));
+        if (!alivePage(pageKey)) return;
         if (!inWindow.has(target) || visibleRef.current !== target) return;
         commitBitmap(target, pageKey, nodes);
-        if (!isCancelled() && pendingScrollRef.current != null) scrollToShell(pendingScrollRef.current);
+        if (pendingScrollRef.current != null) scrollToShell(pendingScrollRef.current);
         for (const n of ordered.slice(1)) {
-          if (isCancelled()) break;
+          const nk = `${key}#${n}`;
+          if (!alivePage(nk)) continue;
           // eslint-disable-next-line no-await-in-loop
           await idle();
-          if (isCancelled()) break;
+          if (!alivePage(nk)) continue;
           // eslint-disable-next-line no-await-in-loop
-          const nb = await renderBitmap(pdf, `${key}#${n}`, n, isCancelled);
-          if (isCancelled()) break;
+          const nb = await renderBitmap(pdf, nk, n, () => alivePage(nk));
+          if (!alivePage(nk)) continue;
           // Same guard per neighbor: skip the commit when the window moved
           // on while this bitmap was rendering.
           if (visibleRef.current !== target) break;
-          commitBitmap(n, `${key}#${n}`, nb);
+          commitBitmap(n, nk, nb);
         }
-        if (!isCancelled()) {
-          // Memory contract: shells stay for scroll height, but bitmaps
-          // outside the window are freed (canvas backing cleared). Keyed by
-          // the captured doc identity so a newer document's bitmaps (same
-          // page numbers, different key) are never touched.
-          for (const [n, canvas] of canvasRefs.current) {
-            if (renderedKeys.current.get(n) !== key || inWindow.has(n)) continue;
-            renderedKeys.current.delete(n);
-            canvas.width = 0;
-            canvas.height = 0;
-          }
+        // Memory contract: shells stay for scroll height, but bitmaps
+        // outside the window are freed (canvas backing cleared). Keyed by
+        // the captured doc identity so a newer document's bitmaps (same
+        // page numbers, different key) are never touched — and a page with
+        // a NEWER in-flight token is never evicted (its pixels are coming).
+        for (const [n, canvas] of canvasRefs.current) {
+          if (renderedKeys.current.get(n) !== key || inWindow.has(n)) continue;
+          if (inFlightRef.current.get(`${key}#${n}`) !== myTokens.get(`${key}#${n}`) && inFlightRef.current.has(`${key}#${n}`)) continue;
+          renderedKeys.current.delete(n);
+          renderedRef.current.delete(`${key}#${n}`);
+          canvas.width = 0;
+          canvas.height = 0;
         }
       } finally {
-        if (!isCancelled()) setPhase('');
+        endPhase();
       }
     })();
-  }, [docKey, visible, numPages, renderEpoch, scrollToShell]);
+  }, [docKey, visible, numPages, renderEpoch, scrollToShell, beginPhase, endPhase, commitBitmap, renderBitmap]);
 
   // Pager/SyncTeX jump: a prop page that differs from the visible page is an
   // EXTERNAL jump (our own scroll reports echo back equal and no-op here).
