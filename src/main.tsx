@@ -13,7 +13,16 @@ function Root() {
       return 'dark';
     }
   });
-  const theme = React.useMemo(() => createAppTheme(mode), [mode]);
+  // D-11: the density knob `createAppTheme(mode, density)` shipped without UI.
+  // Persisted like the theme; the View > Density submenu owns it now.
+  const [density, setDensity] = React.useState<'comfortable' | 'compact'>(() => {
+    try {
+      return localStorage.getItem('maleficium.density') === 'compact' ? 'compact' : 'comfortable';
+    } catch {
+      return 'comfortable';
+    }
+  });
+  const theme = React.useMemo(() => createAppTheme(mode, density), [mode, density]);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -23,6 +32,13 @@ function Root() {
           setMode(m);
           try {
             localStorage.setItem('maleficium.theme', m);
+          } catch { /* private mode */ }
+        }}
+        density={density}
+        onDensityMode={(d) => {
+          setDensity(d);
+          try {
+            localStorage.setItem('maleficium.density', d);
           } catch { /* private mode */ }
         }}
       />

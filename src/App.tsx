@@ -38,9 +38,11 @@ import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
-export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
+export default function App({ themeMode = 'dark', onThemeMode = () => {}, density = 'comfortable', onDensityMode = () => {} }: {
   themeMode?: 'dark' | 'light';
   onThemeMode?: (m: 'dark' | 'light') => void;
+  density?: 'comfortable' | 'compact';
+  onDensityMode?: (d: 'comfortable' | 'compact') => void;
 }) {
   const [tex, setTex] = useState(HELLO);
   const [root, setRoot] = useState<string|null>(null);
@@ -795,10 +797,16 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
+  // Rename dialog for the ACTIVE file (D-5): same persist-then-select path as
+  // the tree row dialog — the menu command opens it, the tree owns nothing.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
   // Viewport bridge is assigned inside EditorViewport via viewportRef prop.
   // Without it selectAll/expand/shrink/goToLine no-op (the Selection bug).
   const viewportRef = useRef<EditorViewportHandle | null>(null);
   // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
+  // VIEW cap 100 (the parse DATA cap is 1000 in lib/outline.ts — different
+  // owner, see the growth-cap note there). The `100+` label keeps it honest.
   const [outline, setOutline] = useState<{ title: string; line: number; level: number }[]>([]);
   // Multi-pick set for Selection > Pick Sections (choose-N demo + future batch ops).
   const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
@@ -841,6 +849,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
 
   // ---- Command registry binding (source of truth: lib/commands.ts) ----
   // Menus, icon buttons, chords, and (later) MCP all invoke THESE actions.
+  // Rename needs the SAME project-file predicate the registry gates on —
+  // factored here so the menu action and buildMenus can't drift apart.
+  const isProjectFile = (p: string) => root != null && p.includes('/') && p.startsWith(root + '/');
   const compileTarget = mainFile ?? (fileName.includes('/') ? fileName : null);
   const workingLabel = (() => {
     const t = compileTarget ?? (largeFile ?? fileName);
@@ -849,7 +860,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
   })();
   const menuCtx: MenuContext = {
     hasProject: root != null,
-    isProjectFile: root != null && fileName.includes('/') && fileName.startsWith(root + '/'),
+    isProjectFile: isProjectFile(fileName),
     dirty: !!buffers.get(fileName)?.dirty,
     compiling: compilePhase === 'compiling',
     pdfOpen: pdfUrl != null,
@@ -863,6 +874,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     canUndoDelete: trash.size > 0,
     reloadPending: reloadPath != null,
     theme: themeMode,
+    density,
   };
   const menuActions: CommandActions = {
     openProject: () => { void open(); },
@@ -878,8 +890,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     clean: () => { void handleClean(); },
     undoDelete: () => { void handleUndo(); },
     renameActive: () => {
-      // Rename flows through the tree row dialog; menu focuses the tree instead.
-      emit({ scope: 'fs', kind: 'info', message: 'Rename: right-click the file in the tree' });
+      if (!isProjectFile(fileName)) {
+        emit({ scope: 'fs', kind: 'warn', message: 'Rename needs a project file (open one first)' });
+        return;
+      }
+      setRenameDraft(fileName.slice(fileName.lastIndexOf('/') + 1));
+      setRenameOpen(true);
     },
     deleteActive: () => { void handleDelete(fileName); },
     selectAll: () => viewportRef.current?.selectAll(),
@@ -899,11 +915,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
     toggleLog: () => setLogCollapsed((c) => !c),
     toggleOutline: () => setOutlineVisible((v) => !v),
     setTheme: (m) => onThemeMode(m),
+    setDensity: (d) => onDensityMode(d),
     compile: () => { void compileRef.current(); },
     compileFile: () => { void handleCompileFile(fileName); },
     cancelCompile: () => { void cancelCompile().catch((e) => emit({ scope: 'compile', kind: 'error', message: 'cancel failed: ' + String(e).slice(0, 120) })); },
     forwardSync: () => { void forwardSyncRef.current(); },
-    inverseHint: () => emit({ scope: 'preview', kind: 'info', message: 'Inverse SyncTeX: click anywhere on the PDF' }),
     showShortcuts: () => setShortcutsOpen(true),
     showAbout: () => setAboutOpen(true),
   };
@@ -1044,6 +1060,35 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {} }: {
         onJump={handleJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Rename {fileName.slice(fileName.lastIndexOf('/') + 1) || fileName}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus fullWidth size="small" aria-label="New file name"
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && renameDraft.trim()) {
+                setRenameOpen(false);
+                void handleRename(fileName, renameDraft.trim());
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!renameDraft.trim()}
+            onClick={() => {
+              setRenameOpen(false);
+              if (renameDraft.trim()) void handleRename(fileName, renameDraft.trim());
+            }}
+          >
+            Rename
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={goToOpen} onClose={() => setGoToOpen(false)} maxWidth="xs">
         <DialogTitle>Go to Line</DialogTitle>
         <DialogContent>

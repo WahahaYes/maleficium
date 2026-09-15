@@ -7,7 +7,7 @@ const baseCtx: MenuContext = {
   pdfOpen: true, editorReady: true,
   view: { tree: true, editor: true, preview: true }, preset: 'both',
   logCollapsed: false, outlineVisible: true, outlineLines: [{ line: 3, title: 'Intro' }], outlinePicks: [3], canUndoDelete: true,
-  reloadPending: false, theme: 'dark',
+  reloadPending: false, theme: 'dark', density: 'comfortable',
 };
 const noop = () => {};
 const actions: CommandActions = {
@@ -15,8 +15,8 @@ const actions: CommandActions = {
   reloadFromDisk: noop, keepMine: noop, clean: noop, undoDelete: noop, renameActive: noop,
   deleteActive: noop, selectAll: noop, expandSelection: noop, shrinkSelection: noop,
   goToLine: noop, pickOutlineSection: noop, toggleOutlinePick: noop, setPreset: noop, toggleTree: noop, togglePreview: noop, toggleLog: noop,
-  toggleOutline: noop, setTheme: noop, compile: noop, compileFile: noop, cancelCompile: noop, forwardSync: noop,
-  inverseHint: noop, showShortcuts: noop, showAbout: noop,
+  toggleOutline: noop, setTheme: noop, setDensity: noop, compile: noop, compileFile: noop, cancelCompile: noop, forwardSync: noop,
+  showShortcuts: noop, showAbout: noop,
 };
 
 describe('command registry', () => {
@@ -29,6 +29,11 @@ describe('command registry', () => {
     expect(pickOne.children?.length).toBe(1);
     expect(pickMany.children?.[0].checked).toBe(true);
     expect(theme.children?.map((k) => k.id)).toEqual(['view.theme-dark', 'view.theme-light']);
+    // Density submenu mirrors theme: choose-1-of-N, label echoes choice.
+    const density = all.find((c) => c.id === 'view.density')!;
+    expect(density.label).toBe('Density: Comfortable');
+    expect(density.children?.map((k) => k.id)).toEqual(['view.density-comfortable', 'view.density-compact']);
+    expect(density.children?.filter((k) => k.checked).length).toBe(1);
     // Layout is choose-1-of-N: exactly one child checked, label echoes choice.
     expect(layout.label).toBe('Layout: Editor + Preview');
     expect(layout.children?.map((k) => k.id)).toEqual(['view.preset-both', 'view.preset-editor', 'view.preset-preview']);
@@ -36,6 +41,33 @@ describe('command registry', () => {
     // Leaf ids stay unique even counting submenu children (MCP-safe).
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+  it('no dead placeholder rows survive (every visible row is real)', () => {
+    // Context-gated rows (Cancel while idle, Reload with nothing pending)
+    // are honest state, not placeholders: they run when their context holds.
+    // This pin only forbids PERMANENTLY dead rows (no run, `soon` label).
+    const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
+    for (const c of cmds) {
+      expect(c.label, c.id).not.toMatch(/soon/i);
+      expect((c as { soon?: boolean }).soon ?? false, c.id).toBe(false);
+      if (c.visible !== false && (!c.children || c.children.length === 0)) {
+        expect(typeof c.run, c.id).toBe('function');
+      }
+      for (const k of c.children ?? []) {
+        expect(typeof k.run, `${c.id}>${k.id}`).toBe('function');
+      }
+    }
+    // ...and every gated row enables in SOME context (no always-disabled).
+    const gated: [MenuContext, string][] = [
+      [{ ...baseCtx, compiling: true }, 'tools.cancel'],
+      [{ ...baseCtx, reloadPending: true }, 'file.reload'],
+      [{ ...baseCtx, reloadPending: true }, 'file.keep-mine'],
+    ];
+    for (const [ctx, id] of gated) {
+      const found = buildMenus(ctx, actions).flatMap((s) => s.commands).find((c) => c.id === id)!;
+      expect(found.enabled, id).toBe(true);
+      expect(typeof found.run, id).toBe('function');
+    }
   });
   it('no git-named command or label survives', () => {
     const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);

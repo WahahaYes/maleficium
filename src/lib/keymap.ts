@@ -19,7 +19,7 @@ export const KEYMAP: KeyChord[] = [
   { id: 'next-buffer', label: 'Next open file', keys: 'Ctrl+Tab' },
   { id: 'prev-buffer', label: 'Previous open file', keys: 'Ctrl+Shift+Tab' },
   { id: 'forward-sync', label: 'SyncTeX: editor → PDF', keys: 'Ctrl+Shift+F' },
-  { id: 'inverse-sync-hint', label: 'SyncTeX: PDF → editor (click PDF)', keys: 'Click' },
+  { id: 'inverse-sync', label: 'SyncTeX: PDF → editor (click PDF)', keys: 'Click' },
   { id: 'resize-pane', label: 'Resize editor/preview (splitter focused)', keys: '← / →' },
   { id: 'select-all', label: 'Select All', keys: 'Ctrl+A' },
   { id: 'expand-selection', label: 'Expand Selection', keys: 'Shift+Alt+Right' },

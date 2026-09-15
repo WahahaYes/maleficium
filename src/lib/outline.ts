@@ -1,8 +1,12 @@
 // outline.ts — document outline from the ACTIVE buffer only.
 //
-// Growth cap: O(buffer) scan, debounced by the caller (500ms), capped entries.
-// Own parse (ideas-only from StructureTreeView shape): sectioning commands →
-// {level, title, line}. Never per keystroke (scale law #3).
+// Growth cap: O(buffer) scan, debounced by the caller (500ms). Two caps with
+// different owners, stated together so the next reader doesn't "fix" one:
+// parse caps at 1000 (the DATA bound — full fidelity for search/next
+// surfaces); the VIEW + Selection submenus cap at 100/25 (visible rows stay
+// O(visible); the counted label makes the remainder honest, not hidden).
+// Raising the submenu caps means paging or filtering them — never dumping
+// unbounded rows into a menu (scale law #2).
 
 export interface OutlineEntry {
   level: number;

@@ -9,7 +9,8 @@
 // Rules: ids `domain.verb-noun`; labels Title Case (`…` iff dialog); every
 // `accelerator` must exist in `lib/keymap.ts` KEYMAP (test asserts parity);
 // destructive commands confirm via MUI dialog (never `window.confirm`);
-// `soon` marks honest disabled placeholders (never fake affordances).
+// no disabled placeholders: every visible row runs (dead rows are deleted,
+// not dimmed — the inverse-hint row was cut for exactly this reason).
 
 export type CommandId =
   | 'file.open-project' | 'file.new-file' | 'file.close-file' | 'file.save'
@@ -19,8 +20,8 @@ export type CommandId =
   | 'selection.pick-one' | 'selection.pick-many'
   | 'view.layout' | 'view.preset-both' | 'view.preset-editor' | 'view.preset-preview'
   | 'view.toggle-tree' | 'view.toggle-preview' | 'view.toggle-log' | 'view.toggle-outline'
-  | 'view.theme' | 'view.theme-dark' | 'view.theme-light'
-  | 'tools.compile' | 'tools.compile-file' | 'tools.cancel' | 'tools.forward-sync' | 'tools.inverse-hint'
+  | 'view.theme' | 'view.theme-dark' | 'view.theme-light' | 'view.density' | 'view.density-comfortable' | 'view.density-compact'
+  | 'tools.compile' | 'tools.compile-file' | 'tools.cancel' | 'tools.forward-sync'
   | 'help.shortcuts' | 'help.about';
 
 export type ViewPreset = 'both' | 'editor' | 'preview' | 'custom';
@@ -32,6 +33,8 @@ export function presetOf(v: ViewState): ViewPreset {
   if (!v.tree && !v.editor && v.preview) return 'preview';
   return 'custom';
 }
+
+import type { Density } from './theme';
 
 export interface MenuContext {
   hasProject: boolean;
@@ -53,6 +56,7 @@ export interface MenuContext {
   canUndoDelete: boolean;
   reloadPending: boolean;
   theme: 'dark' | 'light';
+  density: Density;
 }
 
 export interface CommandActions {
@@ -81,11 +85,11 @@ export interface CommandActions {
   toggleLog: () => void;
   toggleOutline: () => void;
   setTheme: (m: 'dark' | 'light') => void;
+  setDensity: (d: Density) => void;
   compile: () => void;
   compileFile: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
-  inverseHint: () => void;
   showShortcuts: () => void;
   showAbout: () => void;
 }
@@ -99,8 +103,6 @@ export interface MenuCommand {
   visible?: boolean;
   /** Nested submenu — renders a flyout instead of running an action. */
   children?: MenuCommand[];
-  /** Honest disabled placeholder — title explains itself. */
-  soon?: boolean;
   run?: () => void | Promise<void>;
 }
 
@@ -111,7 +113,10 @@ export interface MenuSection {
 }
 
 export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
-  const dis = (label: string) => `${label} (soon)`;
+  // Outline submenus cap at 25 rows: a deliberate choice, not a stub — the
+  // full outline stays one click away in the tree column, and search-in-menu
+  // arrives with full-project search (closeout §C-3, still a non-goal).
+  const PICK_CAP = 25;
   return [
     {
       id: 'file', title: 'File', commands: [
@@ -140,7 +145,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         { id: 'selection.go-to-line', label: 'Go to Line…', accelerator: 'Ctrl+G', enabled: ctx.editorReady, run: a.goToLine },
         {
           id: 'selection.pick-one', label: 'Go to Section…', enabled: ctx.editorReady && ctx.outlineLines.length > 0,
-          children: ctx.outlineLines.slice(0, 25).map((o) => ({
+          children: ctx.outlineLines.slice(0, PICK_CAP).map((o) => ({
             id: 'selection.pick-one' as const,
             label: `${o.line}: ${o.title}`.slice(0, 60),
             enabled: true,
@@ -150,14 +155,14 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         {
           id: 'selection.pick-many', label: `Pick Sections${ctx.outlinePicks.length > 0 ? ` (${ctx.outlinePicks.length})` : ''}…`, enabled: ctx.editorReady && ctx.outlineLines.length > 0,
           children: ctx.outlinePicks.length > 0
-            ? ctx.outlineLines.slice(0, 25).map((o) => ({
+            ? ctx.outlineLines.slice(0, PICK_CAP).map((o) => ({
                 id: 'selection.pick-many' as const,
                 label: `${ctx.outlinePicks.includes(o.line) ? '✓ ' : ''}${o.line}: ${o.title}`.slice(0, 62),
                 checked: ctx.outlinePicks.includes(o.line),
                 enabled: true,
                 run: () => a.toggleOutlinePick(o.line),
               }))
-            : ctx.outlineLines.slice(0, 25).map((o) => ({
+            : ctx.outlineLines.slice(0, PICK_CAP).map((o) => ({
                 id: 'selection.pick-many' as const,
                 label: `${o.line}: ${o.title}`.slice(0, 60),
                 enabled: true,
@@ -189,6 +194,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
             { id: 'view.theme-light', label: 'Light', checked: ctx.theme === 'light', enabled: true, run: () => a.setTheme('light') },
           ],
         },
+        {
+          id: 'view.density', label: `Density: ${ctx.density === 'compact' ? 'Compact' : 'Comfortable'}`, enabled: true,
+          children: [
+            { id: 'view.density-comfortable', label: 'Comfortable', checked: ctx.density === 'comfortable', enabled: true, run: () => a.setDensity('comfortable') },
+            { id: 'view.density-compact', label: 'Compact', checked: ctx.density === 'compact', enabled: true, run: () => a.setDensity('compact') },
+          ],
+        },
       ],
     },
     {
@@ -197,7 +209,6 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         { id: 'tools.compile-file', label: 'Compile This File', enabled: !ctx.compiling && ctx.isProjectFile, run: a.compileFile },
         { id: 'tools.cancel', label: 'Cancel Compile', enabled: ctx.compiling, run: a.cancelCompile },
         { id: 'tools.forward-sync', label: 'Forward SyncTeX', accelerator: 'Ctrl+Shift+F', enabled: ctx.pdfOpen && !ctx.compiling, run: a.forwardSync },
-        { id: 'tools.inverse-hint', label: dis('Inverse SyncTeX'), enabled: false, soon: true, run: a.inverseHint },
       ],
     },
     {
