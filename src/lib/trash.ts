@@ -3,7 +3,7 @@
 // Trash lives APP-LOCAL (`appDataDir/maleficium-trash/<hash>/`), never inside
 // the project. No in-project fallback (RULES §8: no legacy).
 
-import { mkdir, rename, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
+import { mkdir, rename, readFile, writeFile, remove } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
 import { appTrashDir } from './paths';
@@ -36,8 +36,8 @@ export async function moveToTrash(
   } catch {
     // Cross-device fallback: copy bytes then delete.
     try {
-      const bytes = await readTextFile(absPath);
-      await writeTextFile(dest, bytes);
+      const bytes = await readFile(absPath);
+      await writeFile(dest, bytes);
       await remove(absPath);
     } catch (e) {
       return { ok: false, error: String(e) };
