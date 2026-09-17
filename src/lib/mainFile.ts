@@ -4,6 +4,8 @@
 // explicit association (app-local store) → `%!TEX root` magic → `\documentclass`
 // scan (first wins, deterministic) → single-.tex fallback → none. Never throws.
 
+import { joinPath } from './paths';
+
 export type MainFileSource = 'config' | 'magic' | 'scan' | 'single' | 'none';
 
 export interface MainFileResolution {
@@ -39,17 +41,13 @@ export function hasDocumentclass(content: string): boolean {
   return DOCUMENTCLASS_RE.test(content);
 }
 
-function joinRoot(root: string, rel: string): string {
-  if (rel.startsWith('/')) return rel;
-  return root.endsWith('/') ? root + rel : root + '/' + rel;
-}
-
 function parseConfigMain(raw: string | null, root: string): string | null {
   if (!raw) return null;
   try {
     const j = JSON.parse(raw) as { mainFile?: unknown };
     if (typeof j.mainFile === 'string' && j.mainFile.trim()) {
-      return joinRoot(root, j.mainFile.trim());
+      const v = j.mainFile.trim();
+      return v.startsWith('/') ? v : joinPath(root, v);
     }
   } catch {
     /* malformed config is not fatal — fall through */
@@ -73,7 +71,8 @@ export async function resolveMainFile(deps: MainFileDeps): Promise<MainFileResol
         const magic = parseMagicComment(content);
         if (magic) {
           const base = openedFile.slice(0, openedFile.lastIndexOf('/'));
-          return { mainFile: joinRoot(base || root, magic), source: 'magic', candidates: [] };
+          const resolved = magic.startsWith('/') ? magic : joinPath(base || root, magic);
+          return { mainFile: resolved, source: 'magic', candidates: [] };
         }
       } catch {
         /* unreadable opened file — fall through to scan */

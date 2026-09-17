@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import { loadPreviewBytes, previewKindFor } from '../lib/files';
+import { loadPreviewBytes, previewKindFor, extOf, mimeFor } from '../lib/files';
 import Preview from './Preview';
 
 export default function BinaryPreview({ path }: { path: string }) {
@@ -75,28 +75,4 @@ export default function BinaryPreview({ path }: { path: string }) {
       </Typography>
     </Box>
   );
-}
-
-function extOf(path: string): string {
-  const dot = path.lastIndexOf('.');
-  return dot >= 0 ? path.slice(dot).toLowerCase() : '';
-}
-
-function mimeFor(path: string): string {
-  switch (extOf(path)) {
-    case '.png': return 'image/png';
-    case '.jpg':
-    case '.jpeg': return 'image/jpeg';
-    case '.gif': return 'image/gif';
-    case '.bmp': return 'image/bmp';
-    case '.webp': return 'image/webp';
-    case '.svg': return 'image/svg+xml';
-    case '.mp4': return 'video/mp4';
-    case '.webm': return 'video/webm';
-    case '.ogv':
-    case '.ogg': return 'video/ogg';
-    case '.mov': return 'video/quicktime';
-    case '.mkv': return 'video/x-matroska';
-    default: return 'application/octet-stream';
-  }
 }

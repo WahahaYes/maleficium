@@ -5,6 +5,7 @@
 import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
 import { getMainFileFor } from './mainFile.store';
+import { joinPath } from './paths';
 
 async function listTexFilesRecursive(root: string): Promise<string[]> {
   const out: string[] = [];
@@ -16,7 +17,7 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
       return;
     }
     for (const e of entries) {
-      const full = dir.endsWith('/') ? dir + e.name : dir + '/' + e.name;
+      const full = joinPath(dir, e.name);
       if (e.isDirectory) {
         if (e.name === '.git' || e.name === 'out' || e.name === '.maleficium-trash') continue;
         await walk(full);

@@ -4,16 +4,13 @@
 // resolving outside workspace `root` are shown, not clickable. Consumed by
 // `App.tsx` (Problems click-to-jump) and the `LogStream` event stream.
 
+import { joinPath } from './paths';
+
 export interface ParsedLine {
   file: string;
   line: number;
   msg: string;
   clickable: boolean;
-}
-
-function joinPath(base: string, file: string): string {
-  if (!base.endsWith('/')) base += '/';
-  return base + file;
 }
 
 function resolvePath(p: string): string {

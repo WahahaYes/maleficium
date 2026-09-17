@@ -1,5 +1,6 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile, writeFile, readDir, rename, readFile } from '@tauri-apps/plugin-fs'
+import { joinPath } from './paths'
 
 export type TreeEntry = { name: string; path: string; type: 'dir' | 'file'; children?: TreeEntry[] }
 
@@ -19,9 +20,36 @@ const TEXT_EXT = new Set([
 ]);
 
 /** Classify a path for the editor-vs-preview decision (extension only, cheap). */
-export function previewKindFor(path: string): PreviewKind {
+export function extOf(path: string): string {
   const dot = path.lastIndexOf('.');
-  const ext = dot >= 0 ? path.slice(dot).toLowerCase() : '';
+  return dot >= 0 ? path.slice(dot).toLowerCase() : '';
+}
+
+/** MIME type for object-URL previews. Single ext→mime table (F-09). */
+const MIME_FOR_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
+  '.ogg': 'video/ogg',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska',
+};
+
+/** MIME type for a path; unknown → application/octet-stream. */
+export function mimeFor(path: string): string {
+  return MIME_FOR_EXT[extOf(path)] ?? 'application/octet-stream';
+}
+
+/** Classify a path for the editor-vs-preview decision (extension only, cheap). */
+export function previewKindFor(path: string): PreviewKind {
+  const ext = extOf(path);
   if (IMAGE_EXT.has(ext)) return 'image';
   if (VIDEO_EXT.has(ext)) return 'video';
   if (PDF_EXT.has(ext)) return 'pdf';
@@ -80,7 +108,7 @@ export async function openProject(): Promise<string | null> {
 /** Create an empty file (parents must exist); returns the absolute path. */
 export async function createFile(dir: string, name: string): Promise<string> {
   const clean = name.trim().replace(/\//g, '_') || 'untitled.tex';
-  const full = dir.endsWith('/') ? dir + clean : dir + '/' + clean;
+  const full = joinPath(dir, clean);
   await writeFile(full, new Uint8Array());
   return full;
 }
@@ -105,7 +133,7 @@ export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
     for (const entry of entries) {
       if (isHiddenName(entry.name)) continue;
       const isDir = 'children' in entry ? !!entry.children : entry.isDirectory
-      const fullPath = root.endsWith('/') ? root + entry.name : root + '/' + entry.name
+      const fullPath = joinPath(root, entry.name)
       const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' }
       if (isDir) {
         const sub = await listTreeDeep(fullPath)
@@ -128,7 +156,7 @@ export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
     for (const entry of entries) {
       if (isHiddenName(entry.name)) continue;
       const isDir = 'children' in entry ? !!entry.children : entry.isDirectory
-      const fullPath = dir.endsWith('/') ? dir + entry.name : dir + '/' + entry.name
+      const fullPath = joinPath(dir, entry.name)
       out.push({ name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' });
     }
     return sortTreeEntries(out);
