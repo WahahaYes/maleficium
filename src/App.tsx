@@ -26,7 +26,7 @@ import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
-import { forward_sync, inverse_sync } from './lib/synctex';
+import { forward_sync, inverse_sync, isForwardNoMatch, parseForwardSync, parseInverseSync } from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
 import { parseOutline, type OutlineEntry } from './lib/outline';
@@ -684,7 +684,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
     const main = activeTarget.slice(activeTarget.lastIndexOf('/') + 1);
     const r = await compileTex(activeTarget, workdir!);
-    setLog(r.log);
+    // `compile_tex` returns the pdf path on success, empty error string;
+    // the status line shows the pdf path or the failure message.
+    setLog(r.ok ? (r.pdfPath ?? '') : r.log);
     const readEngineLog = async (): Promise<string | null> => {
       try {
         // App-local outdir (V-4, mirrors Rust `out_dir_for`): the engine log
@@ -769,21 +771,24 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable while compiling (synctex_no_match)' });
       return;
     }
-    const base = fileName.replace(/\.tex$/, '.pdf');
-    const result = await forward_sync(pdfUrl, base, currentLine);
+    // Forward SyncTeX needs the ABSOLUTE path of the VISIBLE file: the gz
+    // stores absolute Input paths per file, so a pdf basename never matches
+    // and the main file would resolve the wrong line table for chapters.
+    // Bare untitled names resolve against the untitled workdir.
+    const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
+    const result = await forward_sync(pdfUrl, texPath, currentLine);
     if (!result.ok) {
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
       return;
     }
-    if (result.text.includes('no_match') || result.text === '{}') {
+    if (isForwardNoMatch(result.text)) {
       emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
       return;
     }
     // Forward SyncTeX is bidirectional now: parse the Page:/x:/y: rect and
     // jump the preview there (same-page flash when already viewing it).
-    const pm = result.text.match(/^Page:\s*(\d+)\s*$/m);
-    if (pm) {
-      const target = Math.max(1, parseInt(pm[1], 10));
+    const target = parseForwardSync(result.text);
+    if (target != null) {
       setPageNumber(target);
       emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
     } else {
@@ -804,14 +809,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
     // Real `synctex edit` shape:
     //   Input:/abs/path/hello.tex\nLine:7\n...
-    let line: number | null = null;
-    let hitFile: string | null = null;
-    if (line == null) {
-      const lm = result.text.match(/^Line:\s*(\d+)\s*$/m);
-      if (lm) line = parseInt(lm[1], 10);
-      const im = result.text.match(/^Input:\s*(.+?)\s*$/m);
-      if (im) hitFile = im[1].trim();
-    }
+    const { line, hitFile } = parseInverseSync(result.text);
     if (line != null) {
       // Jump the owning file when SyncTeX names one (multi-file projects);
       // otherwise reveal the line in the current buffer.
@@ -862,15 +860,17 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // so both callers land the preview identically.
   forwardSyncLineRef.current = (line: number) => {
     if (!pdfUrl || compilePhase === 'compiling') return;
-    const base = fileName.replace(/\.tex$/, '.pdf');
-    void forward_sync(pdfUrl, base, line).then((result) => {
-      if (!result.ok || result.text.includes('no_match') || result.text === '{}') {
+    // Explicit-line forward shares handleForwardSync's tex-path rule, but
+    // targets the line the user named (e.g. editor double-click) rather
+    // than the caret — the visible file owns the line the user pointed at.
+    const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
+    void forward_sync(pdfUrl, texPath, line).then((result) => {
+      if (!result.ok || isForwardNoMatch(result.text)) {
         emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
         return;
       }
-      const pm = result.text.match(/^Page:\s*(\d+)\s*$/m);
-      if (pm) {
-        const target = Math.max(1, parseInt(pm[1], 10));
+      const target = parseForwardSync(result.text);
+      if (target != null) {
         setPageNumber(target);
         emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
       }

@@ -1,0 +1,47 @@
+import { describe, it, expect } from 'vitest';
+import { parseForwardSync, parseInverseSync, isForwardNoMatch } from './synctex';
+
+describe('parseForwardSync', () => {
+  it('extracts the Page: number from synctex view output', () => {
+    expect(parseForwardSync('SyncTeX result begin\nPage:3\nx:100\ny:200\nSyncTeX result end')).toBe(3);
+  });
+  it('clamps Page:0 up to page 1', () => {
+    expect(parseForwardSync('Page:0')).toBe(1);
+  });
+  it('returns null when no Page: line is present', () => {
+    expect(parseForwardSync('SyncTeX result begin\nx:1\n')).toBe(null);
+  });
+  it('returns null for empty output', () => {
+    expect(parseForwardSync('')).toBe(null);
+  });
+});
+
+describe('isForwardNoMatch', () => {
+  it('flags the no_match token', () => {
+    expect(isForwardNoMatch('SyncTeX result begin\nno_match\nSyncTeX result end')).toBe(true);
+  });
+  it('flags the bare {} response', () => {
+    expect(isForwardNoMatch('{}')).toBe(true);
+  });
+  it('passes real output through', () => {
+    expect(isForwardNoMatch('SyncTeX result begin\nPage:1\nSyncTeX result end')).toBe(false);
+  });
+});
+
+describe('parseInverseSync', () => {
+  it('extracts Input: and Line: from synctex edit output', () => {
+    const r = parseInverseSync('SyncTeX result begin\nInput:/proj/hello.tex\nLine:7\nColumn:0\nSyncTeX result end');
+    expect(r).toEqual({ line: 7, hitFile: '/proj/hello.tex' });
+  });
+  it('returns null line when Line: is missing', () => {
+    const r = parseInverseSync('SyncTeX result begin\nInput:/proj/hello.tex\nSyncTeX result end');
+    expect(r).toEqual({ line: null, hitFile: '/proj/hello.tex' });
+  });
+  it('returns null hitFile when Input: is missing', () => {
+    const r = parseInverseSync('SyncTeX result begin\nLine:12\nSyncTeX result end');
+    expect(r).toEqual({ line: 12, hitFile: null });
+  });
+  it('returns nulls for empty output', () => {
+    expect(parseInverseSync('')).toEqual({ line: null, hitFile: null });
+  });
+});
