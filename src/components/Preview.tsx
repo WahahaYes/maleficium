@@ -22,9 +22,8 @@
 
 import { Box, Typography } from '@mui/material';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { openPdf, openPdfFromBytes } from '../lib/pdfjs';
+import { getPdfJs, openPdfSource } from '../lib/pdfjs';
 import { emit } from '../lib/events';
-import { readFile } from '@tauri-apps/plugin-fs';
 import PreviewToolbar from './PreviewToolbar';
 import {
   WINDOW_ABOVE,
@@ -59,14 +58,6 @@ interface PdfDoc {
 
 interface PdfJsApi {
   TextLayer: new (o: { textContentSource: any; container: HTMLElement; viewport: any }) => { render: () => Promise<void> };
-}
-
-/** Live pdf.js module for text-layer construction (set once in `lib/pdfjs`). */
-let textLayerCtor: PdfJsApi['TextLayer'] | null = null;
-
-/** Registered by `lib/pdfjs` after import — Preview never imports pdf.js directly. */
-export function registerTextLayer(ctor: any) {
-  textLayerCtor = (ctor ?? null) as PdfJsApi['TextLayer'] | null;
 }
 
 /** Top padding of the scroll container (matches py:1) for jump math. */
@@ -118,6 +109,10 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dprRef = useRef(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
   const compRef = useRef<{ page: number; delta: number } | null>(null);
+  // TextLayer constructor owned by `lib/pdfjs` (resolved per document open,
+  // so lib never imports this component back). Instance-scoped, not module
+  // state: no cross-instance bleed, no mutable global.
+  const textLayerRef = useRef<PdfJsApi['TextLayer'] | null>(null);
 
   useEffect(() => () => {
     if (pickRafRef.current != null) cancelAnimationFrame(pickRafRef.current);
@@ -204,10 +199,11 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(off, 0, 0);
-    if (layer && textLayerCtor) {
+    const ctor = textLayerRef.current;
+    if (layer && ctor) {
       layer.replaceChildren();
       try {
-        void new textLayerCtor({ textContentSource: textContent, container: layer, viewport }).render();
+        void new ctor({ textContentSource: textContent, container: layer, viewport }).render();
       } catch {
         /* text layer never blocks paint — canvas already committed */
       }
@@ -353,6 +349,13 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     const load = async () => {
       try {
         setError(null);
+        try {
+          if (!textLayerRef.current) {
+            textLayerRef.current = ((await getPdfJs()).TextLayer ?? null) as PdfJsApi['TextLayer'] | null;
+          }
+        } catch {
+          /* headless/test env — canvas paint still commits without text */
+        }
         const key = `${pdfUrl}#${stamp}`;
         let pdf: PdfDoc;
         if (docRef.current?.key === key) {
@@ -361,12 +364,9 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         } else {
           setPhase('reading...');
           const t0 = Date.now();
-          const isRemote = pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://') || pdfUrl.startsWith('asset:');
-          const bytes = isRemote ? null : new Uint8Array(await readFile(pdfUrl));
-          if (cancelled) return;
           await yieldUi();
           setPhase('loading...');
-          pdf = (isRemote ? await openPdf(pdfUrl) : await openPdfFromBytes(bytes as Uint8Array)) as unknown as PdfDoc;
+          pdf = (await openPdfSource(pdfUrl)) as unknown as PdfDoc;
           if (cancelled) return;
           emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
           docRef.current = { key, pdf };
