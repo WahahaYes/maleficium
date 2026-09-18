@@ -11,10 +11,10 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-        # Release sidecars and template svg/tex assets are bytes, not text.
-        exclude: ^(src-tauri/binaries/|public/|src/assets/)
+      # New-lines only: trailing-whitespace and end-of-file checks stay OFF.
+      # The tree predates them (missing final newlines, trailing spaces in
+      # fixtures) and S0.2/S1.5 normalize that deliberately — a hook that
+      # rewrites unrelated files on every commit is worse than no hook.
       - id: check-yaml
       - id: check-json
         # Tauri config + capability files predate strict JSON (comments and

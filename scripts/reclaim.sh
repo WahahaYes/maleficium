@@ -8,7 +8,7 @@
 # port fails loudly at bind time with the hint below, never by surprise.
 set -eu
 unset CDPATH
-ROOT=$(cd -- "$(dirname -- "$0")" && pwd -P)
+ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
