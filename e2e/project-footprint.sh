@@ -5,7 +5,7 @@
 # What it proves: the app's file operations CANNOT litter the project dir,
 # because every app-local derivation resolves outside it. It replicates each
 # derivation in bash (same algorithms, documented line-refs) against a scratch
-# copy of playground/, then asserts `git status --porcelain` stays clean and
+# copy of playground/simple/, then asserts `git status --porcelain` stays clean and
 # the computed homes land in app-data/tmp — never under the project root.
 #
 # What it does NOT prove (needs the live app → driver-driven run / eyes):
@@ -17,16 +17,17 @@
 
 set -euo pipefail
 
-DEVROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH="$(mktemp -d /tmp/maleficium-footprint-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
-APPSRC="$DEVROOT/maleficium/src"
+APPSRC="$DEVROOT/src"
+FIXTURE="$DEVROOT/playground/simple"
 
 fail() { echo "FAIL: $1"; exit 1; }
 pass() { echo "ok: $1"; }
 
-# --- fixture: scratch copy of playground/ as a git repo -----------------------
-cp -r "$DEVROOT/playground" "$SCRATCH/proj"
+# --- fixture: scratch copy of playground/simple/ as a git repo ---------------
+cp -r "$FIXTURE" "$SCRATCH/proj"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -97,8 +98,8 @@ pass "compile artifacts land in tmp shard, porcelain clean, no in-project out/"
 # --- trust boundary pins — 11-audit design §3/§6 (static, no window) ---------
 # The tightening must never silently regress: static scope stays off $HOME,
 # CSP stays an enforced object, opener stays fully removed (lockfiles too).
-CAPDIR="$DEVROOT/maleficium/src-tauri/capabilities"
-TAURICONF="$DEVROOT/maleficium/src-tauri/tauri.conf.json"
+CAPDIR="$DEVROOT/src-tauri/capabilities"
+TAURICONF="$DEVROOT/src-tauri/tauri.conf.json"
 HOMEHITS="$(grep -rnF '$HOME' "$CAPDIR" 2>/dev/null || true)"
 [[ -z "$HOMEHITS" ]] || fail "static capability went home-wide again: $HOMEHITS"
 pass "no home-wide static scope in capabilities"
@@ -107,11 +108,11 @@ CSPKIND="$(python3 -c "import json,sys; c=json.load(open(sys.argv[1]))['app']['s
 pass "security.csp is an enforced object"
 for f in \
     "$CAPDIR/default.json" \
-    "$DEVROOT/maleficium/src-tauri/src/lib.rs" \
-    "$DEVROOT/maleficium/src-tauri/Cargo.toml" \
-    "$DEVROOT/maleficium/package.json" \
-    "$DEVROOT/maleficium/src-tauri/Cargo.lock" \
-    "$DEVROOT/maleficium/package-lock.json"; do
+    "$DEVROOT/src-tauri/src/lib.rs" \
+    "$DEVROOT/src-tauri/Cargo.toml" \
+    "$DEVROOT/package.json" \
+    "$DEVROOT/src-tauri/Cargo.lock" \
+    "$DEVROOT/package-lock.json"; do
     [ -f "$f" ] || fail "opener pin cannot find watched file: $f"
     if grep -q "opener" "$f"; then
         fail "opener reappeared in $f"

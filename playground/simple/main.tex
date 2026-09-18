@@ -1,0 +1,46 @@
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\title{Playground Paper}
+\author{Maleficium Test Author}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A realistic playground project for exercising the Maleficium editor:
+multi-file input, bibliography, figures, labels, and a stress document.
+\end{abstract}
+
+
+
+\section{Introduction}
+\label{sec:intro}
+Background appears in \input{chapters/background} and the method in
+\cite{knuth1984texbook}. See Figure~\ref{fig:diagram} and
+Section~\ref{sec:results}.
+
+\input{chapters/background}
+\input{chapters/method}
+
+\section{Results}
+\label{sec:results}
+The diagram in Figure~\ref{fig:diagram} summarizes the outcome, alongside
+prior art \cite{lamport1994latex,mittelbach2004latex}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\textwidth]{figs/diagram}
+\caption{A generated test diagram.}
+\label{fig:diagram}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.4\textwidth]{figs/photo}
+\caption{A second generated test figure.}
+\label{fig:photo}
+\end{figure}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}
