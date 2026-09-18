@@ -12,6 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::compile::CompileState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::guard::grant_project_access,
             commands::compile::compile_tex,
             commands::compile::cancel_compile,
             commands::synctex::forward_sync,

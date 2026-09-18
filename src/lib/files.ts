@@ -101,7 +101,7 @@ export async function openProject(): Promise<string | null> {
     const preset = q.get('project') ?? (h ? decodeURIComponent(h[1]) : null);
     if (preset) return preset;
   } catch { /* non-browser/test env — fall through to dialog */ }
-  const path = await openDialog({ directory: true })
+  const path = await openDialog({ directory: true, recursive: true })
   return path ?? null
 }
 

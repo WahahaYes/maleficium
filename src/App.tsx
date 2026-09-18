@@ -37,6 +37,7 @@ import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { getRecentProjects, touchRecentProject, pruneRecentProjects } from './lib/recentProjects';
 import { moveToTrash, undoTrash } from './lib/trash';
+import { grantProjectAccess } from './lib/projectAccess';
 import { watch, readTextFile, mkdir, stat } from '@tauri-apps/plugin-fs';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
@@ -228,13 +229,25 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // reads it, openRoot writes it). Restored entries re-validate via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
   async function openRoot(r: string, opts?: { warm?: boolean }) {
-    setRoot(r);
-    setRecentProjects(touchRecentProject(r));
-    await reloadTree(r, false);
-    setLog('opened ' + r); emit({ scope: 'fs', kind: 'info', message: 'opened ' + r });
+    // Trust-boundary Slice A: the runtime scope grant comes FIRST — under
+    // least-privilege static caps every fs call below (tree, stat, watch,
+    // main-file scan) resolves through this grant. The backend fails closed
+    // on invalid roots (empty/NUL/relative/missing/non-dir); a failed grant
+    // leaves the current project untouched (fail closed on the frontend too).
+    const grant = await grantProjectAccess(r);
+    if (!grant.ok || !grant.path) {
+      const msg = 'open refused: ' + (grant.error ?? 'grant failed').slice(0, 200);
+      setLog(msg); emit({ scope: 'fs', kind: 'error', message: msg });
+      return;
+    }
+    const canon = grant.path;
+    setRoot(canon);
+    setRecentProjects(touchRecentProject(canon));
+    await reloadTree(canon, false);
+    setLog('opened ' + canon); emit({ scope: 'fs', kind: 'info', message: 'opened ' + canon });
     trash.clear();
-    const m = await resolveMain(r, null);
-    setLog(m ? `opened ${r} (main: ${m})` : `opened ${r} (no main file found)`);
+    const m = await resolveMain(canon, null);
+    setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
     // Open the main file on project select (data-loss guard 2026-09-14:
     // the editor must never sit on stale untitled content while the tree
     // shows a project — a compile from that state wrote the HELLO stub
@@ -275,8 +288,14 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       const stale: string[] = [];
       for (const r of recents) {
         try {
-          await stat(r);
-          await openRoot(r, { warm: true });
+          // Grant FIRST (design §4): under least-privilege static caps the
+          // validation stat below resolves only through the runtime grant.
+          // The grant fails closed on missing roots, so unreachable entries
+          // land in `stale` here — one grant-first path, no special cases.
+          const grant = await grantProjectAccess(r);
+          if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
+          await stat(grant.path);
+          await openRoot(grant.path, { warm: true });
           return;
         } catch {
           stale.push(r);
