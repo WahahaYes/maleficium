@@ -54,6 +54,8 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
       extensions: [
         basicSetup,
         texMode,
+        // Wrap long lines instead of horizontal scroll.
+        EditorView.lineWrapping,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
             lastSentRef.current = u.state.doc.toString();
