@@ -21,13 +21,18 @@ describe('watcher coalesce+debounce', () => {
       { kind: 'modify', path: '/b' },
       { kind: 'delete', path: '/a' },
     ]);
-    expect(out).toEqual([{ kind: 'delete', path: '/a' }, { kind: 'modify', path: '/b' }]);
+    expect(out).toEqual([
+      { kind: 'delete', path: '/a' },
+      { kind: 'modify', path: '/b' },
+    ]);
   });
   it('debounces bursts', () => {
     vi.useFakeTimers();
     const fn = vi.fn();
     const d = debounce(fn, 250);
-    d(); d(); d();
+    d();
+    d();
+    d();
     expect(fn).not.toHaveBeenCalled();
     vi.advanceTimersByTime(250);
     expect(fn).toHaveBeenCalledTimes(1);
@@ -37,7 +42,9 @@ describe('watcher coalesce+debounce', () => {
 
 describe('git porcelain badges', () => {
   it('maps M/A/D/U/R + ?? and branch', () => {
-    const { badges, branch } = parseGitPorcelain('## main...origin/main\n M a.tex\n?? b.tex\nUU c.tex\nR  d.tex -> e.tex\n');
+    const { badges, branch } = parseGitPorcelain(
+      '## main...origin/main\n M a.tex\n?? b.tex\nUU c.tex\nR  d.tex -> e.tex\n',
+    );
     expect(branch).toBe('main');
     expect(badges).toMatchObject({ 'a.tex': 'M', 'b.tex': 'A', 'c.tex': 'U', 'e.tex': 'R' });
   });

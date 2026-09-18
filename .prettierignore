@@ -1,0 +1,9 @@
+dist
+node_modules
+src-tauri/target
+src-tauri/gen
+src-tauri/binaries
+playground/simple/figs
+public/*.svg
+src/assets/*.svg
+*.log

@@ -39,11 +39,16 @@ function KindGlyph({ kind }: { kind: OutlineKind }) {
   // Sections need no glyph (indent IS their signal); markers get one small
   // muted icon so a scan reads kind before text.
   switch (kind) {
-    case 'label': return <TagIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
-    case 'figure': return <ImageIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
-    case 'table': return <TableChartIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
-    case 'input': return <InputIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
-    default: return null;
+    case 'label':
+      return <TagIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
+    case 'figure':
+      return <ImageIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
+    case 'table':
+      return <TableChartIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
+    case 'input':
+      return <InputIcon fontSize="small" color="action" sx={{ fontSize: 14 }} />;
+    default:
+      return null;
   }
 }
 
@@ -51,12 +56,16 @@ function RowMeta({ entry }: { entry: OutlineEntry }) {
   // One muted word per marker: label key / file path / input path. Sections
   // show nothing (their title is the whole row — minimal, sleek).
   if (entry.kind === 'section') return null;
-  const meta = entry.kind === 'label' ? entry.detail
-    : entry.kind === 'input' ? entry.detail
-    : entry.detail;
+  const meta =
+    entry.kind === 'label' ? entry.detail : entry.kind === 'input' ? entry.detail : entry.detail;
   if (!meta || meta === entry.title) return null;
   return (
-    <Typography variant="caption" color="text.secondary" noWrap sx={{ ml: 1, flexShrink: 0, maxWidth: '40%' }}>
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      noWrap
+      sx={{ ml: 1, flexShrink: 0, maxWidth: '40%' }}
+    >
       {meta}
     </Typography>
   );
@@ -70,7 +79,10 @@ const SEGMENTS: { id: OutlineFilter; label: string }[] = [
   { id: 'inputs', label: 'In' },
 ];
 
-export default function OutlineView({ entries, onJump }: {
+export default function OutlineView({
+  entries,
+  onJump,
+}: {
   entries: OutlineEntry[];
   onJump: (line: number) => void;
 }) {
@@ -82,7 +94,11 @@ export default function OutlineView({ entries, onJump }: {
   const totalLabel = filtered.length > VIEW_CAP ? `${VIEW_CAP}+` : String(filtered.length);
   return (
     <Box sx={{ mt: 1 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, pb: 0.5 }}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: 'block', px: 1, pb: 0.5 }}
+      >
         Outline ({totalLabel})
       </Typography>
       <Box sx={{ display: 'flex', gap: 0.5, px: 1, pb: 0.5 }}>
@@ -99,7 +115,9 @@ export default function OutlineView({ entries, onJump }: {
           size="small"
           exclusive
           value={filter}
-          onChange={(_, v: OutlineFilter | null) => { if (v) setFilter(v); }}
+          onChange={(_, v: OutlineFilter | null) => {
+            if (v) setFilter(v);
+          }}
           aria-label="Symbol kind"
           sx={{ flexShrink: 0, '& .MuiToggleButton-root': { px: 0.75, py: 0.5, fontSize: 11 } }}
         >

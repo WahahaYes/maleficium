@@ -30,7 +30,10 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
   return out;
 }
 
-export async function resolveMainFileTauri(root: string, openedFile: string | null): Promise<MainFileResolution> {
+export async function resolveMainFileTauri(
+  root: string,
+  openedFile: string | null,
+): Promise<MainFileResolution> {
   return resolveMainFile({
     root,
     openedFile,
@@ -50,6 +53,8 @@ export async function resolveMainFileTauri(root: string, openedFile: string | nu
  */
 export async function setMainFile(root: string, absOrRelPath: string): Promise<void> {
   const { setMainFileFor } = await import('./mainFile.store');
-  const rel = absOrRelPath.startsWith(root + '/') ? absOrRelPath.slice(root.length + 1) : absOrRelPath;
+  const rel = absOrRelPath.startsWith(root + '/')
+    ? absOrRelPath.slice(root.length + 1)
+    : absOrRelPath;
   setMainFileFor(root, rel);
 }

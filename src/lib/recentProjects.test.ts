@@ -1,11 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getRecentProjects, touchRecentProject, pruneRecentProjects, MAX_RECENT_PROJECTS } from './recentProjects';
+import {
+  getRecentProjects,
+  touchRecentProject,
+  pruneRecentProjects,
+  MAX_RECENT_PROJECTS,
+} from './recentProjects';
 
 const store: Record<string, string> = {};
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => store[k] ?? null,
-  setItem: (k: string, v: string) => { store[k] = v; },
-  removeItem: (k: string) => { delete store[k]; },
+  setItem: (k: string, v: string) => {
+    store[k] = v;
+  },
+  removeItem: (k: string) => {
+    delete store[k];
+  },
 });
 
 beforeEach(() => {

@@ -31,10 +31,14 @@ function problemRefOf(e: BusEvent): ProblemRef | null {
 
 function kindColor(kind: BusEvent['kind']): string {
   switch (kind) {
-    case 'error': return 'error.main';
-    case 'warn': return 'warning.main';
-    case 'success': return 'success.main';
-    default: return 'text.primary';
+    case 'error':
+      return 'error.main';
+    case 'warn':
+      return 'warning.main';
+    case 'success':
+      return 'success.main';
+    default:
+      return 'text.primary';
   }
 }
 
@@ -42,14 +46,25 @@ function RowText({ e }: { e: BusEvent }) {
   return (
     <Typography
       variant="body2"
-      sx={{ fontFamily: 'monospace', fontSize: 12, color: kindColor(e.kind), overflowWrap: 'anywhere' }}
+      sx={{
+        fontFamily: 'monospace',
+        fontSize: 12,
+        color: kindColor(e.kind),
+        overflowWrap: 'anywhere',
+      }}
     >
       {new Date(e.at).toLocaleTimeString()} {e.message}
     </Typography>
   );
 }
 
-export default function LogStream({ height, onHeight, collapsed, onToggleCollapse, onJump }: {
+export default function LogStream({
+  height,
+  onHeight,
+  collapsed,
+  onToggleCollapse,
+  onJump,
+}: {
   height: number;
   onHeight: (h: number) => void;
   collapsed: boolean;
@@ -61,10 +76,19 @@ export default function LogStream({ height, onHeight, collapsed, onToggleCollaps
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ y: number; height: number } | null>(null);
 
-  useEffect(() => subscribe(() => { dirty.current = true; }), []);
+  useEffect(
+    () =>
+      subscribe(() => {
+        dirty.current = true;
+      }),
+    [],
+  );
   useEffect(() => {
     const t = setInterval(() => {
-      if (dirty.current) { dirty.current = false; setEvts(list()); }
+      if (dirty.current) {
+        dirty.current = false;
+        setEvts(list());
+      }
     }, 250);
     return () => clearInterval(t);
   }, []);
@@ -77,24 +101,54 @@ export default function LogStream({ height, onHeight, collapsed, onToggleCollaps
 
   if (collapsed) {
     return (
-      <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1, px: 1, height: 32, borderTop: 1, borderColor: 'divider' }}>
+      <Box
+        sx={{
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1,
+          height: 32,
+          borderTop: 1,
+          borderColor: 'divider',
+        }}
+      >
         <Typography variant="caption">Log ({evts.length})</Typography>
         <Box sx={{ flex: 1 }} />
-        <Button size="small" aria-label="Expand log" onClick={onToggleCollapse}>show</Button>
+        <Button size="small" aria-label="Expand log" onClick={onToggleCollapse}>
+          show
+        </Button>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderTop: 1, borderColor: 'divider', height, minHeight: 0 }}>
+    <Box
+      sx={{
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderTop: 1,
+        borderColor: 'divider',
+        height,
+        minHeight: 0,
+      }}
+    >
       <Box
-        sx={{ height: 6, flexShrink: 0, cursor: 'row-resize', '&:hover': { backgroundColor: 'action.hover' } }}
+        sx={{
+          height: 6,
+          flexShrink: 0,
+          cursor: 'row-resize',
+          '&:hover': { backgroundColor: 'action.hover' },
+        }}
         onMouseDown={(e) => {
           dragRef.current = { y: e.clientY, height };
           const move = (m: MouseEvent) => {
             const s = dragRef.current;
             if (!s) return;
-            onHeight(Math.max(80, Math.min(window.innerHeight * 0.6, s.height + (s.y - m.clientY))));
+            onHeight(
+              Math.max(80, Math.min(window.innerHeight * 0.6, s.height + (s.y - m.clientY))),
+            );
           };
           const up = () => {
             dragRef.current = null;
@@ -106,10 +160,22 @@ export default function LogStream({ height, onHeight, collapsed, onToggleCollaps
         }}
       />
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, flexShrink: 0 }}>
-        <Typography variant="caption">Log ({tail.length}/{evts.length}){evts.length > tail.length ? ' (last 100)' : ''}</Typography>
+        <Typography variant="caption">
+          Log ({tail.length}/{evts.length}){evts.length > tail.length ? ' (last 100)' : ''}
+        </Typography>
         <Box sx={{ flex: 1 }} />
-        <Button size="small" onClick={() => { clear(); setEvts([]); }}>Clear</Button>
-        <Button size="small" aria-label="Collapse log" onClick={onToggleCollapse}>hide</Button>
+        <Button
+          size="small"
+          onClick={() => {
+            clear();
+            setEvts([]);
+          }}
+        >
+          Clear
+        </Button>
+        <Button size="small" aria-label="Collapse log" onClick={onToggleCollapse}>
+          hide
+        </Button>
       </Box>
       <Box ref={scrollRef} sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <List dense>
@@ -119,23 +185,28 @@ export default function LogStream({ height, onHeight, collapsed, onToggleCollaps
                 No events yet — compile or open a project.
               </Typography>
             </ListItem>
-          ) : tail.map((e, i) => {
-            const jump = problemRefOf(e);
-            if (jump) {
+          ) : (
+            tail.map((e, i) => {
+              const jump = problemRefOf(e);
+              if (jump) {
+                return (
+                  <ListItem key={i} disablePadding>
+                    <ListItemButton
+                      onClick={() => onJump(jump.file, jump.line)}
+                      title={`Jump to ${jump.file}:${jump.line}`}
+                    >
+                      <RowText e={e} />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              }
               return (
-                <ListItem key={i} disablePadding>
-                  <ListItemButton onClick={() => onJump(jump.file, jump.line)} title={`Jump to ${jump.file}:${jump.line}`}>
-                    <RowText e={e} />
-                  </ListItemButton>
+                <ListItem key={i} disablePadding sx={{ px: 2 }}>
+                  <RowText e={e} />
                 </ListItem>
               );
-            }
-            return (
-              <ListItem key={i} disablePadding sx={{ px: 2 }}>
-                <RowText e={e} />
-              </ListItem>
-            );
-          })}
+            })
+          )}
         </List>
       </Box>
     </Box>

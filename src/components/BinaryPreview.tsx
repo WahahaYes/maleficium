@@ -47,12 +47,31 @@ export default function BinaryPreview({ path }: { path: string }) {
     return <Preview pdfUrl={path} stamp={0} />;
   }
 
-  if (error) return <Typography variant="body2" color="error">{error}</Typography>;
-  if (!url) return <Typography variant="body2" color="text.secondary">Loading preview…</Typography>;
+  if (error)
+    return (
+      <Typography variant="body2" color="error">
+        {error}
+      </Typography>
+    );
+  if (!url)
+    return (
+      <Typography variant="body2" color="text.secondary">
+        Loading preview…
+      </Typography>
+    );
 
   if (kind === 'image') {
     return (
-      <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', p: 1 }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          p: 1,
+        }}
+      >
         <Box component="img" src={url} alt={path} sx={{ maxWidth: '100%' }} />
       </Box>
     );
@@ -60,7 +79,16 @@ export default function BinaryPreview({ path }: { path: string }) {
 
   if (kind === 'video') {
     return (
-      <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', p: 1 }}>
+      <Box
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          p: 1,
+        }}
+      >
         <Box component="video" src={url} controls sx={{ maxWidth: '100%' }} />
       </Box>
     );
@@ -69,7 +97,9 @@ export default function BinaryPreview({ path }: { path: string }) {
   // Fallback: unknown binary. Honest, never raw bytes in the editor.
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="body2">Binary file — no preview for this type ({extOf(path) || 'unknown'}).</Typography>
+      <Typography variant="body2">
+        Binary file — no preview for this type ({extOf(path) || 'unknown'}).
+      </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
         Open externally to view. Path: {path}
       </Typography>

@@ -15,7 +15,11 @@ export type InverseResult = { ok: boolean; text: string };
  * -i <line>:1:<tex>`) — the gz stores absolute Input paths per file, so
  * callers pass the file the line belongs to, not the project main file.
  */
-export async function forward_sync(pdfPath: string, texPath: string, line: number): Promise<ForwardResult> {
+export async function forward_sync(
+  pdfPath: string,
+  texPath: string,
+  line: number,
+): Promise<ForwardResult> {
   try {
     const text = await invoke<string>('forward_sync', { pdf: pdfPath, tex: texPath, line });
     return { ok: true, text };
@@ -57,7 +61,12 @@ export function parseInverseSync(text: string): { line: number | null; hitFile: 
  * absolute path and we split it into (outDir, pdfName) here.
  * Failure contract: `{ok:false}` — see `forward_sync` above.
  */
-export async function inverse_sync(pdfAbsPath: string, page: number, x = 0, y = 0): Promise<InverseResult> {
+export async function inverse_sync(
+  pdfAbsPath: string,
+  page: number,
+  x = 0,
+  y = 0,
+): Promise<InverseResult> {
   const slash = pdfAbsPath.lastIndexOf('/');
   const synctexDir = slash > 0 ? pdfAbsPath.slice(0, slash) : '.';
   const pdfName = slash >= 0 ? pdfAbsPath.slice(slash + 1) : pdfAbsPath;

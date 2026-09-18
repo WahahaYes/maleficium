@@ -22,11 +22,28 @@ import OutlineView from './components/OutlineView';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
-import { openProject, listDir1Level, loadTex, saveTex, saveTexToDisk, createFile, renamePath, isPreviewable, LARGE_FILE_BYTES, TreeEntry } from './lib/files';
+import {
+  openProject,
+  listDir1Level,
+  loadTex,
+  saveTex,
+  saveTexToDisk,
+  createFile,
+  renamePath,
+  isPreviewable,
+  LARGE_FILE_BYTES,
+  TreeEntry,
+} from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
-import { forward_sync, inverse_sync, isForwardNoMatch, parseForwardSync, parseInverseSync } from './lib/synctex';
+import {
+  forward_sync,
+  inverse_sync,
+  isForwardNoMatch,
+  parseForwardSync,
+  parseInverseSync,
+} from './lib/synctex';
 import { emit } from './lib/events';
 import { parseLog } from './lib/parseLog';
 import { parseOutline, type OutlineEntry } from './lib/outline';
@@ -43,14 +60,19 @@ import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
-export default function App({ themeMode = 'dark', onThemeMode = () => {}, density = 'comfortable', onDensityMode = () => {} }: {
+export default function App({
+  themeMode = 'dark',
+  onThemeMode = () => {},
+  density = 'comfortable',
+  onDensityMode = () => {},
+}: {
   themeMode?: 'dark' | 'light';
   onThemeMode?: (m: 'dark' | 'light') => void;
   density?: 'comfortable' | 'compact';
   onDensityMode?: (d: 'comfortable' | 'compact') => void;
 }) {
   const [tex, setTex] = useState(HELLO);
-  const [root, setRoot] = useState<string|null>(null);
+  const [root, setRoot] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [fileName, setFileName] = useState('hello.tex');
   const [mainFile, setMainFileState] = useState<string | null>(null);
@@ -63,7 +85,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const [largeFile, setLargeFile] = useState<string | null>(null);
   // Non-text selection (image/video/pdf/binary): rich preview, never the editor.
   const [previewFile, setPreviewFile] = useState<string | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string|null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
   // Ref mirror: forward SyncTeX reads via forwardSyncRef (subscribe-once
@@ -106,73 +128,94 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     ownWritesRef.current.set(p, Date.now());
   }, []);
 
-  useEffect(()=>onPdf(setPdfUrl),[]);
+  useEffect(() => onPdf(setPdfUrl), []);
 
-  const handleSelect = useCallback(async (path: string) => {
-    // Persist current buffer before switching (dirty survives switch via map).
-    if (fileName.includes('/') && path !== fileName) {
-      const cur = buffers.get(fileName);
-      if (cur?.dirty) {
-        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); setBuffers((b) => markSaved(b, fileName)); } catch { /* keep dirty */ }
+  const handleSelect = useCallback(
+    async (path: string) => {
+      // Persist current buffer before switching (dirty survives switch via map).
+      if (fileName.includes('/') && path !== fileName) {
+        const cur = buffers.get(fileName);
+        if (cur?.dirty) {
+          try {
+            await saveTex(fileName, cur.value);
+            markOwnWrite(fileName);
+            setBuffers((b) => markSaved(b, fileName));
+          } catch {
+            /* keep dirty */
+          }
+        }
       }
-    }
-    const selectToken = ++selectTokenRef.current;
-    // Non-text files never enter the editor: rich preview surface instead.
-    if (isPreviewable(path)) {
-      if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-      setPreviewFile(path);
-      setFileName(path);
-      setLargeFile(null);
-      setReloadPath(null);
-      setLog('previewing ' + path);
-      emit({ scope: 'fs', kind: 'info', message: 'previewing ' + path });
-      return;
-    }
-    // Reuse preserved buffer without re-reading.
-    const kept = buffers.get(path);
-    if (kept) {
-      if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-      setTex(kept.value);
-      setFileName(path);
-      setPreviewFile(null);
-      setLargeFile(null);
-      setReloadPath(null);
-      setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
-      emit({ scope: 'fs', kind: 'info', message: 'switched ' + path });
-      if (root && path.endsWith('.tex')) void resolveMain(root, path);
-      return;
-    }
-    emit({scope:'fs',kind:'progress',message:'loading '+path}); setLog('loading '+path);
-    try {
-      const info = await stat(path).catch(() => null);
-      const size = info?.size ?? 0;
-      if (size > LARGE_FILE_BYTES) {
+      const selectToken = ++selectTokenRef.current;
+      // Non-text files never enter the editor: rich preview surface instead.
+      if (isPreviewable(path)) {
         if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-        setLargeFile(path);
+        setPreviewFile(path);
         setFileName(path);
-        setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
-        emit({ scope: 'fs', kind: 'warn', message: `large file placeholder ${path} (${size}B)` });
+        setLargeFile(null);
+        setReloadPath(null);
+        setLog('previewing ' + path);
+        emit({ scope: 'fs', kind: 'info', message: 'previewing ' + path });
         return;
       }
-      setLargeFile(null);
-      setPreviewFile(null);
-      const content=await loadTex(path);
-      if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
-      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, path, content); return enforceBufferCap(n); });
-      setTex(content);
-      setFileName(path);
-      setReloadPath(null);
-      setLog('loaded '+path);
-      emit({scope:'fs',kind:'success',message:'loaded '+path});
-      if (root && path.endsWith('.tex')) void resolveMain(root, path);
-    } catch (e) {
-      setLog('load failed: ' + String(e).slice(0, 120));
-      emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
-    }
-    }, [buffers, fileName, root]);
+      // Reuse preserved buffer without re-reading.
+      const kept = buffers.get(path);
+      if (kept) {
+        if (selectToken !== selectTokenRef.current) return; // stale click lost the race
+        setTex(kept.value);
+        setFileName(path);
+        setPreviewFile(null);
+        setLargeFile(null);
+        setReloadPath(null);
+        setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
+        emit({ scope: 'fs', kind: 'info', message: 'switched ' + path });
+        if (root && path.endsWith('.tex')) void resolveMain(root, path);
+        return;
+      }
+      emit({ scope: 'fs', kind: 'progress', message: 'loading ' + path });
+      setLog('loading ' + path);
+      try {
+        const info = await stat(path).catch(() => null);
+        const size = info?.size ?? 0;
+        if (size > LARGE_FILE_BYTES) {
+          if (selectToken !== selectTokenRef.current) return; // stale click lost the race
+          setLargeFile(path);
+          setFileName(path);
+          setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
+          emit({ scope: 'fs', kind: 'warn', message: `large file placeholder ${path} (${size}B)` });
+          return;
+        }
+        setLargeFile(null);
+        setPreviewFile(null);
+        const content = await loadTex(path);
+        if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
+        setBuffers((b) => {
+          const n = new Map(b);
+          getOrCreateBuffer(n, path, content);
+          return enforceBufferCap(n);
+        });
+        setTex(content);
+        setFileName(path);
+        setReloadPath(null);
+        setLog('loaded ' + path);
+        emit({ scope: 'fs', kind: 'success', message: 'loaded ' + path });
+        if (root && path.endsWith('.tex')) void resolveMain(root, path);
+      } catch (e) {
+        setLog('load failed: ' + String(e).slice(0, 120));
+        emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
+      }
+    },
+    [buffers, fileName, root],
+  );
 
-
-  useEffect(()=>{ const h=()=>{ cancelCompile().catch(()=>{}); }; window.addEventListener('beforeunload',h); return ()=>window.removeEventListener('beforeunload',h); },[]);
+  useEffect(() => {
+    const h = () => {
+      cancelCompile().catch(() => {
+        /* exiting — nothing to report */
+      });
+    };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, []);
 
   const resolveMain = useCallback(async (r: string, opened: string | null) => {
     const res = await resolveMainFileTauri(r, opened);
@@ -190,7 +233,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const t = deep ? await listTreeDeep(r) : await listDir1Level(r);
     setTree(t);
     const dt = Math.round(performance.now() - t0);
-    emit({ scope: 'fs', kind: 'info', message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms` });
+    emit({
+      scope: 'fs',
+      kind: 'info',
+      message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms`,
+    });
   }, []);
 
   // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
@@ -218,14 +265,26 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         emit({ scope: 'fs', kind: 'info', message: `external ${ev.kind} ${ev.path}` });
       }
     }, 250);
-    watch(root, (ev) => {
-      for (const c of classifyTauriEvent(ev)) pending.push(c);
-      flush();
-    }, { recursive: true, delayMs: 250 }).then(
-      (u) => { if (!cancelled) unwatch = u; else u(); },
-      () => { /* watcher unavailable (web fallback) — tree still works via manual reload */ },
+    watch(
+      root,
+      (ev) => {
+        for (const c of classifyTauriEvent(ev)) pending.push(c);
+        flush();
+      },
+      { recursive: true, delayMs: 250 },
+    ).then(
+      (u) => {
+        if (!cancelled) unwatch = u;
+        else u();
+      },
+      () => {
+        /* watcher unavailable (web fallback) — tree still works via manual reload */
+      },
     );
-    return () => { cancelled = true; if (unwatch) unwatch(); };
+    return () => {
+      cancelled = true;
+      if (unwatch) unwatch();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);
 
@@ -241,14 +300,16 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const grant = await grantProjectAccess(r);
     if (!grant.ok || !grant.path) {
       const msg = 'open refused: ' + (grant.error ?? 'grant failed').slice(0, 200);
-      setLog(msg); emit({ scope: 'fs', kind: 'error', message: msg });
+      setLog(msg);
+      emit({ scope: 'fs', kind: 'error', message: msg });
       return;
     }
     const canon = grant.path;
     setRoot(canon);
     setRecentProjects(touchRecentProject(canon));
     await reloadTree(canon, false);
-    setLog('opened ' + canon); emit({ scope: 'fs', kind: 'info', message: 'opened ' + canon });
+    setLog('opened ' + canon);
+    emit({ scope: 'fs', kind: 'info', message: 'opened ' + canon });
     trash.clear();
     const m = await resolveMain(canon, null);
     setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
@@ -270,8 +331,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const r = await openProject();
     if (r) {
       await openRoot(r, { warm: true });
+    } else {
+      setLog('open cancelled');
+      emit({ scope: 'fs', kind: 'warn', message: 'cancelled' });
     }
-    else { setLog('open cancelled'); emit({ scope: 'fs', kind: 'warn', message: 'cancelled' }); }
   }
 
   // Restore-on-launch: the dev-loop `?project=` preset wins (scripted runs),
@@ -287,7 +350,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         const q = new URLSearchParams(window.location.search);
         const h = window.location.hash.match(/project=([^&]+)/);
         if (q.get('project') || h) return; // openProject() preset path owns it
-      } catch { /* non-browser — fall through to recents */ }
+      } catch {
+        /* non-browser — fall through to recents */
+      }
       const recents = getRecentProjects();
       const stale: string[] = [];
       for (const r of recents) {
@@ -328,7 +393,8 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   async function handleRename(oldPath: string, newName: string) {
     try {
       const full = await renamePath(oldPath, newName);
-      markOwnWrite(oldPath); markOwnWrite(full);
+      markOwnWrite(oldPath);
+      markOwnWrite(full);
       setBuffers((b) => {
         const prev = b.get(oldPath);
         if (!prev) return b;
@@ -337,7 +403,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         n.set(full, prev);
         return n;
       });
-      if (fileName === oldPath) { setFileName(full); setReloadPath(null); }
+      if (fileName === oldPath) {
+        setFileName(full);
+        setReloadPath(null);
+      }
       emit({ scope: 'fs', kind: 'success', message: `renamed to ${full}` });
       if (root) await reloadTree(root, false);
     } catch (e) {
@@ -345,13 +414,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
   }
 
-
-
   async function handleReload() {
     if (!reloadPath) return;
     try {
       const content = await loadTex(reloadPath);
-      setBuffers((b) => { const n = new Map(b); n.set(reloadPath, { value: content, dirty: false, version: (n.get(reloadPath)?.version ?? 0) + 1 }); return n; });
+      setBuffers((b) => {
+        const n = new Map(b);
+        n.set(reloadPath, {
+          value: content,
+          dirty: false,
+          version: (n.get(reloadPath)?.version ?? 0) + 1,
+        });
+        return n;
+      });
       if (reloadPath === fileName) setTex(content);
       setReloadPath(null);
       emit({ scope: 'fs', kind: 'success', message: 'reloaded ' + reloadPath });
@@ -365,7 +440,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     if (path === fileName && fileName.includes('/')) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); } catch { /* keep dirty, still evict? no — stay */ return; }
+        try {
+          await saveTex(fileName, cur.value);
+          markOwnWrite(fileName);
+        } catch {
+          /* keep dirty, still evict? no — stay */ return;
+        }
       }
     }
     await closeBufferQuiet(path);
@@ -377,10 +457,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     if (path === fileName && fileName.includes('/')) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        try { await saveTex(fileName, cur.value); markOwnWrite(fileName); } catch { return false; }
+        try {
+          await saveTex(fileName, cur.value);
+          markOwnWrite(fileName);
+        } catch {
+          /* persist failed — stay open */ return false;
+        }
       }
     }
-    setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
+    setBuffers((b) => {
+      const n = new Map(b);
+      n.delete(path);
+      return n;
+    });
     if (path === fileName) {
       // Fall through to nearest remaining buffer (keeps editor populated).
       const rest = [...buffers.keys()].filter((k) => k !== path);
@@ -408,7 +497,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const paths = [...buffers.keys()].filter((k) => k !== keep);
     let n = 0;
     for (const p of paths) {
-      // eslint-disable-next-line no-await-in-loop
       if (await closeBufferQuiet(p)) n++;
       else break;
     }
@@ -419,7 +507,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const paths = [...buffers.keys()];
     let n = 0;
     for (const p of paths) {
-      // eslint-disable-next-line no-await-in-loop
       if (await closeBufferQuiet(p)) n++;
       else break;
     }
@@ -430,19 +517,35 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     if (!root) return;
     const r = await moveToTrash(trash, root, path);
     if (r.ok) {
-      emit({ scope: 'fs', kind: 'success', message: `deleted ${path} (Edit → Undo Delete restores it)` });
-      setBuffers((b) => { const n = new Map(b); n.delete(path); return n; });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: `deleted ${path} (Edit → Undo Delete restores it)`,
+      });
+      setBuffers((b) => {
+        const n = new Map(b);
+        n.delete(path);
+        return n;
+      });
       if (previewFile === path) setPreviewFile(null);
       await reloadTree(root);
     } else {
-      emit({ scope: 'fs', kind: 'error', message: 'delete failed: ' + (r.error ?? '').slice(0, 120) });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: 'delete failed: ' + (r.error ?? '').slice(0, 120),
+      });
     }
   }
 
   async function handleClean() {
     const target = mainFile ?? (fileName.includes('/') ? fileName : null);
     if (!target || !target.includes('/')) {
-      emit({ scope: 'compile', kind: 'warn', message: 'Clean: nothing to clean (no project file)' });
+      emit({
+        scope: 'compile',
+        kind: 'warn',
+        message: 'Clean: nothing to clean (no project file)',
+      });
       return;
     }
     // App-local outdir (V-4, mirrors Rust `out_dir_for`): clean NEVER touches
@@ -467,13 +570,19 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         try {
           await remove(out + '/' + e.name);
           n++;
-        } catch { /* keep going — report count at end */ }
+        } catch {
+          /* keep going — report count at end */
+        }
       }
       markOwnWrite(out);
       emit({ scope: 'compile', kind: 'success', message: `Cleaned ${out} (${n} files)` });
       if (root) await reloadTree(root, false);
     } catch (e) {
-      emit({ scope: 'compile', kind: 'error', message: 'Clean failed: ' + String(e).slice(0, 120) });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: 'Clean failed: ' + String(e).slice(0, 120),
+      });
     }
   }
 
@@ -481,9 +590,15 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     const r = await undoTrash(trash);
     if (r.ok) {
       emit({ scope: 'fs', kind: 'success', message: 'restored from trash' });
-      if (root) { await reloadTree(root); }
+      if (root) {
+        await reloadTree(root);
+      }
     } else {
-      emit({ scope: 'fs', kind: 'error', message: 'undo failed: ' + (r.error ?? '').slice(0, 120) });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: 'undo failed: ' + (r.error ?? '').slice(0, 120),
+      });
     }
   }
 
@@ -525,10 +640,13 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
       return;
     }
-    emit({ scope: 'compile', kind: 'info', message: `compiling ${path} directly (one-off, not the main file)` });
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      message: `compiling ${path} directly (one-off, not the main file)`,
+    });
     await runCompile(path);
   }
-
 
   // (B) keymap listener subscribes ONCE and reads via refs. Adding
   // a new global chord = extend `lib/keymap.ts` + this listener only (never a
@@ -573,7 +691,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const workdirHint = fileName.includes('/') ? fileName.slice(0,fileName.lastIndexOf('/')) : '/tmp/maleficium-untitled';
+  const workdirHint = fileName.includes('/')
+    ? fileName.slice(0, fileName.lastIndexOf('/'))
+    : '/tmp/maleficium-untitled';
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
   // Repo-relative for display (absolute kept in tooltips); plain language.
   const relOf = (abs: string | null): string | null => {
@@ -582,50 +702,67 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     return abs;
   };
 
-  const save = useCallback(async ()=>{
+  const save = useCallback(async () => {
     if (largeFile) {
       setLog('save blocked: large placeholder file is not loaded');
-      emit({ scope: 'fs', kind: 'warn', message: 'save blocked for large placeholder ' + largeFile });
+      emit({
+        scope: 'fs',
+        kind: 'warn',
+        message: 'save blocked for large placeholder ' + largeFile,
+      });
       return;
     }
-    if(fileName.includes('/')){
+    if (fileName.includes('/')) {
       const cur = buffers.get(fileName);
-      await saveTex(fileName, cur?.value ?? tex); markOwnWrite(fileName);
+      await saveTex(fileName, cur?.value ?? tex);
+      markOwnWrite(fileName);
       setBuffers((b) => markSaved(b, fileName));
-      setLog('saved '+fileName);
-      emit({scope:'fs',kind:'success',message:'saved '+fileName});
+      setLog('saved ' + fileName);
+      emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
     } else {
-      await saveTexToDisk(fileName,tex);
-      setLog('saved '+fileName);
-      emit({scope:'fs',kind:'success',message:'saved '+fileName});
+      await saveTexToDisk(fileName, tex);
+      setLog('saved ' + fileName);
+      emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
     }
-  }, [fileName, tex, buffers, largeFile]);
+  }, [fileName, tex, buffers, largeFile, markOwnWrite]);
 
   useEffect(() => {
     if (!fileName.includes('/')) return;
     const t = setTimeout(() => {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        markOwnWrite(fileName); saveTex(fileName, cur.value).then(() => {
-          setBuffers((b) => markSaved(b, fileName));
-          setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
-        }).catch(() => {});
+        markOwnWrite(fileName);
+        saveTex(fileName, cur.value)
+          .then(() => {
+            setBuffers((b) => markSaved(b, fileName));
+            setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
+          })
+          .catch(() => {
+            /* autosave best-effort — dirty flag stays */
+          });
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers]);
+  }, [tex, fileName, buffers, markOwnWrite]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   const publishProblems = (text: string, base: string, wsRoot: string) => {
     try {
       const entries = parseLog(text, wsRoot, base).slice(0, 100);
       for (const l of entries) {
-        emit({ scope: 'compile', kind: l.clickable ? 'error' : 'warn', message: `${l.file}:${l.line} ${l.msg}`, data: { file: l.file, line: l.line, clickable: l.clickable } });
+        emit({
+          scope: 'compile',
+          kind: l.clickable ? 'error' : 'warn',
+          message: `${l.file}:${l.line} ${l.msg}`,
+          data: { file: l.file, line: l.line, clickable: l.clickable },
+        });
       }
-    } catch { /* parse never blocks the stream */ }
+    } catch {
+      /* parse never blocks the stream */
+    }
   };
 
-  async function compile(){
+  async function compile() {
     await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null));
   }
 
@@ -650,23 +787,51 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       setLog('compile blocked: open a .tex file first');
       return false;
     }
-    emit({scope:'compile',kind:'progress',message:'compiling '+(target ?? fileName)});
-    finish('compiling'); setCompileStart(Date.now()); setCompileTimer(0);
+    emit({ scope: 'compile', kind: 'progress', message: 'compiling ' + (target ?? fileName) });
+    finish('compiling');
+    setCompileStart(Date.now());
+    setCompileTimer(0);
     setLog('compiling...');
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
-    let unlisten: ()=>void = ()=>{};
+    let unlisten: () => void = () => {};
     // `note: downloading <pkg>` lines get their own download-wait signal
     // so a long first build reads as network-wait, not an engine hang.
     const isDownloadLine = (l: string) => /(^|\s)downloading\s/i.test(l);
-    try { unlisten = await onCompileLine((line)=>{
-      const s = String(line);
-      if (isDownloadLine(s)) emit({scope:'compile',kind:'info',message:'downloading '+s.replace(/^.*downloading\s+/i,'').slice(0,120)});
-      else emit({scope:'compile',kind:'progress',message:s.slice(0,300)});
-    }); } catch {}
-    const t0 = Date.now(); const hb = setInterval(()=>emit({scope:'compile',kind:'progress',message:`still compiling ${target ?? fileName} (${Math.floor((Date.now()-t0)/1000)}s)`}), 5000);
-    let maxGap = 0; let lastT = performance.now(); let probing = true;
-    const tickProbe = () => { if (!probing) return; const now = performance.now(); maxGap = Math.max(maxGap, now - lastT); lastT = now; requestAnimationFrame(tickProbe); };
+    try {
+      unlisten = await onCompileLine((line) => {
+        const s = String(line);
+        if (isDownloadLine(s))
+          emit({
+            scope: 'compile',
+            kind: 'info',
+            message: 'downloading ' + s.replace(/^.*downloading\s+/i, '').slice(0, 120),
+          });
+        else emit({ scope: 'compile', kind: 'progress', message: s.slice(0, 300) });
+      });
+    } catch {
+      /* listener attach best-effort — compile proceeds without live lines */
+    }
+    const t0 = Date.now();
+    const hb = setInterval(
+      () =>
+        emit({
+          scope: 'compile',
+          kind: 'progress',
+          message: `still compiling ${target ?? fileName} (${Math.floor((Date.now() - t0) / 1000)}s)`,
+        }),
+      5000,
+    );
+    let maxGap = 0;
+    let lastT = performance.now();
+    let probing = true;
+    const tickProbe = () => {
+      if (!probing) return;
+      const now = performance.now();
+      maxGap = Math.max(maxGap, now - lastT);
+      lastT = now;
+      requestAnimationFrame(tickProbe);
+    };
     requestAnimationFrame(tickProbe);
     // DEFENSE IN DEPTH against clobbering (2026-09-14 data-loss bug): the
     // persist step below writes editor content to `target`. Two invariants
@@ -675,14 +840,26 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     // project file or an explicit one-off .tex — never a bare untitled name
     // resolved against a project dir. Violations abort BEFORE any write.
     const ownsTarget =
-      target == null || buffers.has(target) || target === fileName ||
+      target == null ||
+      buffers.has(target) ||
+      target === fileName ||
       (!target.includes('/') && !fileName.includes('/'));
     if (target != null && target.includes('/') && !ownsTarget) {
-      finish('failure'); setCompileStart(null);
+      finish('failure');
+      setCompileStart(null);
       probing = false;
-      emit({scope:'compile',kind:'error',message:`compile refused: editor does not own ${target} (open it first)`});
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: `compile refused: editor does not own ${target} (open it first)`,
+      });
       setLog(`compile refused: editor does not own ${target}`);
-      clearInterval(hb); try{unlisten();}catch{}
+      clearInterval(hb);
+      try {
+        unlisten();
+      } catch {
+        /* already detached */
+      }
       return false;
     }
     try {
@@ -690,25 +867,44 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         // Persist ALL dirty buffers so \input parts compile from disk.
         for (const [p, buf] of buffers) {
           if (buf.dirty) {
-            try { await saveTex(p, buf.value); markOwnWrite(p); } catch {}
+            try {
+              await saveTex(p, buf.value);
+              markOwnWrite(p);
+            } catch {
+              /* keep dirty, reported at finish */
+            }
           }
         }
-        setBuffers((b) => { let n = b; for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p); return n; });
+        setBuffers((b) => {
+          let n = b;
+          for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p);
+          return n;
+        });
         // Also persist the visible editor if it was never buffered (untitled flow).
-        if (!buffers.has(target)) { await saveTex(target, tex); markOwnWrite(target); }
+        if (!buffers.has(target)) {
+          await saveTex(target, tex);
+          markOwnWrite(target);
+        }
         workdir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
       } else {
         workdir = '/tmp/maleficium-untitled';
         await mkdir(workdir, { recursive: true });
         const t2 = workdir + '/' + fileName;
-        await saveTex(t2, tex); markOwnWrite(t2);
+        await saveTex(t2, tex);
+        markOwnWrite(t2);
         setMainFileState(t2);
       }
-    } catch(e){
-      finish('failure'); setCompileStart(null);
+    } catch (e) {
+      finish('failure');
+      setCompileStart(null);
       probing = false;
-      emit({scope:'compile',kind:'error',message:'save failed: '+String(e).slice(0,200)});
-      clearInterval(hb); try{unlisten();}catch{}
+      emit({ scope: 'compile', kind: 'error', message: 'save failed: ' + String(e).slice(0, 200) });
+      clearInterval(hb);
+      try {
+        unlisten();
+      } catch {
+        /* already detached */
+      }
       return false;
     }
     const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
@@ -730,28 +926,41 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       }
     };
     if (r.ok && r.pdfPath) {
-      finish('success'); setCompileStart(null);
+      finish('success');
+      setCompileStart(null);
       setLogCollapsed(false);
-      emit({scope:'compile',kind:'success',message:'compiled '+String(r.pdfPath)});
+      emit({ scope: 'compile', kind: 'success', message: 'compiled ' + String(r.pdfPath) });
       emitPdf(r.pdfPath);
-      setPdfStamp(s=>s+1);
-      emit({scope:'preview',kind:'success',message:'preview '+String(r.pdfPath)});
+      setPdfStamp((s) => s + 1);
+      emit({ scope: 'preview', kind: 'success', message: 'preview ' + String(r.pdfPath) });
     } else if (!r.ok && r.log.includes('spawn')) {
-      finish('failure'); setCompileStart(null);
+      finish('failure');
+      setCompileStart(null);
       setLogCollapsed(false);
       setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
-      emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
+      emit({ scope: 'compile', kind: 'error', message: String(r.log).slice(0, 300) });
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
     } else if (!r.ok) {
-      finish('failure'); setCompileStart(null);
+      finish('failure');
+      setCompileStart(null);
       setLogCollapsed(false);
-      emit({scope:'compile',kind:'error',message:String(r.log).slice(0,300)});
+      emit({ scope: 'compile', kind: 'error', message: String(r.log).slice(0, 300) });
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
     }
-    clearInterval(hb); try { unlisten(); } catch {}
-    probing = false; emit({scope:'compile',kind:'info',message:`main-thread max frame ${Math.round(maxGap)}ms during compile`});
+    clearInterval(hb);
+    try {
+      unlisten();
+    } catch {
+      /* already detached */
+    }
+    probing = false;
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      message: `main-thread max frame ${Math.round(maxGap)}ms during compile`,
+    });
     return true;
   }
 
@@ -767,7 +976,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   async function warmCompile(mainAbsPath: string) {
     const usable = await engineCacheUsable(mainAbsPath).catch(() => false);
     if (!usable) {
-      emit({ scope: 'compile', kind: 'info', message: 'preview will build on first Compile (no cached output)' });
+      emit({
+        scope: 'compile',
+        kind: 'info',
+        message: 'preview will build on first Compile (no cached output)',
+      });
       return;
     }
     emit({ scope: 'compile', kind: 'info', message: 'warming preview for ' + mainAbsPath });
@@ -795,10 +1008,14 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
   }
 
-  async function handleForwardSync(){
+  async function handleForwardSync() {
     if (!pdfUrl) return;
     if (compilePhase === 'compiling') {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable while compiling (synctex_no_match)' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: 'SyncTeX unavailable while compiling (synctex_no_match)',
+      });
       return;
     }
     // The caret may have moved since the last jump: read the live line from
@@ -817,7 +1034,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     }
     const target = parseForwardSync(result.text);
     if (target == null) {
-      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
+      emit({
+        scope: 'preview',
+        kind: 'info',
+        message: `forward SyncTeX → ${result.text.slice(0, 120)}`,
+      });
       return;
     }
     // Preamble/untagged lines resolve to a same-page rect with no movement:
@@ -827,10 +1048,14 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
   }
 
-  async function handleInverseSync(page: number, x: number, y: number){
+  async function handleInverseSync(page: number, x: number, y: number) {
     if (!pdfUrl) return;
     if (compilePhase === 'compiling') {
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match: disabled during compile' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: 'synctex_no_match: disabled during compile',
+      });
       return;
     }
     const result = await inverse_sync(pdfUrl, page, x, y);
@@ -847,7 +1072,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       if (hitFile && hitFile !== fileName) {
         try {
           const content = await loadTex(hitFile);
-          setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, hitFile as string, content); return enforceBufferCap(n); });
+          setBuffers((b) => {
+            const n = new Map(b);
+            getOrCreateBuffer(n, hitFile as string, content);
+            return enforceBufferCap(n);
+          });
           setTex(content);
           setFileName(hitFile as string);
           setPreviewFile(null);
@@ -859,15 +1088,27 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       }
       setCurrentLine(line);
       setSynctexFlash((f) => f + 1);
-      emit({ scope: 'preview', kind: 'success', message: `synctex inverse → ${hitFile ?? fileName}:${line}` });
+      emit({
+        scope: 'preview',
+        kind: 'success',
+        message: `synctex inverse → ${hitFile ?? fileName}:${line}`,
+      });
     } else {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: no match at this position (synctex_no_match)' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: 'SyncTeX: no match at this position (synctex_no_match)',
+      });
     }
   }
 
-  function handleJump(absPath: string, line: number){
-    loadTex(absPath).then(content => {
-      setBuffers((b) => { const n = new Map(b); getOrCreateBuffer(n, absPath, content); return enforceBufferCap(n); });
+  function handleJump(absPath: string, line: number) {
+    loadTex(absPath).then((content) => {
+      setBuffers((b) => {
+        const n = new Map(b);
+        getOrCreateBuffer(n, absPath, content);
+        return enforceBufferCap(n);
+      });
       setTex(content);
       setFileName(absPath);
       setPreviewFile(null);
@@ -912,18 +1153,31 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     try {
       const raw = localStorage.getItem('maleficium.layout');
       if (raw) {
-        const j = JSON.parse(raw) as Partial<{ editorRatio: number; previewRatio: number; logHeight: number }>;
+        const j = JSON.parse(raw) as Partial<{
+          editorRatio: number;
+          previewRatio: number;
+          logHeight: number;
+        }>;
         return {
-          editorRatio: typeof j.editorRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.editorRatio)) : 0.6,
-          previewRatio: typeof j.previewRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.previewRatio)) : 0.4,
-          logHeight: typeof j.logHeight === 'number' ? Math.max(80, Math.min(600, j.logHeight)) : 160,
+          editorRatio:
+            typeof j.editorRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.editorRatio)) : 0.6,
+          previewRatio:
+            typeof j.previewRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.previewRatio)) : 0.4,
+          logHeight:
+            typeof j.logHeight === 'number' ? Math.max(80, Math.min(600, j.logHeight)) : 160,
         };
       }
-    } catch { /* corrupted prefs — defaults win */ }
+    } catch {
+      /* corrupted prefs — defaults win */
+    }
     return { editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 };
   });
   useEffect(() => {
-    try { localStorage.setItem('maleficium.layout', JSON.stringify(layout)); } catch { /* private mode — layout just won't persist */ }
+    try {
+      localStorage.setItem('maleficium.layout', JSON.stringify(layout));
+    } catch {
+      /* private mode — layout just won't persist */
+    }
   }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
@@ -963,9 +1217,15 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         const entries = parseOutline(tex);
         setOutline(entries);
         if (tex.length > 1_000_000) {
-          emit({ scope: 'app', kind: 'info', message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms` });
+          emit({
+            scope: 'app',
+            kind: 'info',
+            message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms`,
+          });
         }
-      } catch { /* outline never blocks editing */ }
+      } catch {
+        /* outline never blocks editing */
+      }
     }, 500);
     return () => clearTimeout(t);
   }, [tex, fileName]);
@@ -978,20 +1238,27 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     return () => clearInterval(t);
   }, [compileStart]);
 
-  const handleTexChange = useCallback((v: string) => {
-    const t0 = performance.now();
-    setTex(v);
-    if (fileName.includes('/')) {
-      setBuffers((b) => updateBuffer(b, fileName, v));
-    }
-    // Budget emission: keystroke-to-paint probe (target <50ms at 5MB).
-    requestAnimationFrame(() => {
-      const dt = Math.round(performance.now() - t0);
-      if (v.length > 1_000_000) {
-        emit({ scope: 'app', kind: 'info', message: `editor render ${(v.length / 1_048_576).toFixed(1)}MB file in ${dt}ms` });
+  const handleTexChange = useCallback(
+    (v: string) => {
+      const t0 = performance.now();
+      setTex(v);
+      if (fileName.includes('/')) {
+        setBuffers((b) => updateBuffer(b, fileName, v));
       }
-    });
-  }, [fileName]);
+      // Budget emission: keystroke-to-paint probe (target <50ms at 5MB).
+      requestAnimationFrame(() => {
+        const dt = Math.round(performance.now() - t0);
+        if (v.length > 1_000_000) {
+          emit({
+            scope: 'app',
+            kind: 'info',
+            message: `editor render ${(v.length / 1_048_576).toFixed(1)}MB file in ${dt}ms`,
+          });
+        }
+      });
+    },
+    [fileName],
+  );
 
   // ---- Command registry binding (source of truth: lib/commands.ts) ----
   // Menus, icon buttons, chords, and (later) MCP all invoke THESE actions.
@@ -1000,7 +1267,7 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const isProjectFile = (p: string) => root != null && p.includes('/') && p.startsWith(root + '/');
   const compileTarget = mainFile ?? (fileName.includes('/') ? fileName : null);
   const workingLabel = (() => {
-    const t = compileTarget ?? (largeFile ?? fileName);
+    const t = compileTarget ?? largeFile ?? fileName;
     const base = t.slice(t.lastIndexOf('/') + 1) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
@@ -1017,7 +1284,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     outlineVisible,
     // Selection submenus navigate SECTIONS (markers live in the outline view
     // filter, not in menus — menus stay jump-targets, the view stays the map).
-    outlineLines: outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
+    outlineLines: outline
+      .filter((o) => o.kind === 'section')
+      .map((o) => ({ line: o.line, title: o.title })),
     outlinePicks,
     canUndoDelete: trash.size > 0,
     reloadPending: reloadPath != null,
@@ -1026,8 +1295,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     recentProjects,
   };
   const menuActions: CommandActions = {
-    openProject: () => { void open(); },
-    openRecent: (r) => { void openRoot(r, { warm: true }); },
+    openProject: () => {
+      void open();
+    },
+    openRecent: (r) => {
+      void openRoot(r, { warm: true });
+    },
     clearRecents: () => {
       pruneRecentProjects(() => false);
       setRecentProjects([]);
@@ -1036,44 +1309,96 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       if (root) void handleCreate(root, 'untitled.tex');
       else emit({ scope: 'fs', kind: 'warn', message: 'New File needs an open project' });
     },
-    closeFile: () => { void handleCloseBuffer(fileName); },
-    save: () => { void save(); },
-    setMainFile: () => { void handleSetMain(); },
-    reloadFromDisk: () => { void handleReload(); },
+    closeFile: () => {
+      void handleCloseBuffer(fileName);
+    },
+    save: () => {
+      void save();
+    },
+    setMainFile: () => {
+      void handleSetMain();
+    },
+    reloadFromDisk: () => {
+      void handleReload();
+    },
     keepMine: () => setReloadPath(null),
-    clean: () => { void handleClean(); },
-    undoDelete: () => { void handleUndo(); },
+    clean: () => {
+      void handleClean();
+    },
+    undoDelete: () => {
+      void handleUndo();
+    },
     renameActive: () => {
       if (!isProjectFile(fileName)) {
-        emit({ scope: 'fs', kind: 'warn', message: 'Rename needs a project file (open one first)' });
+        emit({
+          scope: 'fs',
+          kind: 'warn',
+          message: 'Rename needs a project file (open one first)',
+        });
         return;
       }
       setRenameDraft(fileName.slice(fileName.lastIndexOf('/') + 1));
       setRenameOpen(true);
     },
-    deleteActive: () => { void handleDelete(fileName); },
+    deleteActive: () => {
+      void handleDelete(fileName);
+    },
     selectAll: () => viewportRef.current?.selectAll(),
     expandSelection: () => viewportRef.current?.expandSelection(),
     shrinkSelection: () => viewportRef.current?.shrinkSelection(),
-    goToLine: () => { setGoToDraft(String(currentLine)); setGoToOpen(true); },
+    goToLine: () => {
+      setGoToDraft(String(currentLine));
+      setGoToOpen(true);
+    },
     pickOutlineSection: (line: number) => setCurrentLine(line),
     toggleOutlinePick: (line: number) =>
-      setOutlinePicks((prev) => (prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line])),
+      setOutlinePicks((prev) =>
+        prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line],
+      ),
     setPreset: (preset) => {
-      if (preset === 'both') { setTreeVisible(true); setEditorVisible(true); setPreviewOpen(true); setPreviewCollapsed(false); }
-      else if (preset === 'editor') { setTreeVisible(false); setEditorVisible(true); setPreviewOpen(false); }
-      else { setTreeVisible(false); setEditorVisible(false); setPreviewOpen(true); setPreviewCollapsed(false); }
+      if (preset === 'both') {
+        setTreeVisible(true);
+        setEditorVisible(true);
+        setPreviewOpen(true);
+        setPreviewCollapsed(false);
+      } else if (preset === 'editor') {
+        setTreeVisible(false);
+        setEditorVisible(true);
+        setPreviewOpen(false);
+      } else {
+        setTreeVisible(false);
+        setEditorVisible(false);
+        setPreviewOpen(true);
+        setPreviewCollapsed(false);
+      }
     },
     toggleTree: () => setTreeVisible((v) => !v),
-    togglePreview: () => { setPreviewOpen((v) => !v); setPreviewCollapsed(false); },
+    togglePreview: () => {
+      setPreviewOpen((v) => !v);
+      setPreviewCollapsed(false);
+    },
     toggleLog: () => setLogCollapsed((c) => !c),
     toggleOutline: () => setOutlineVisible((v) => !v),
     setTheme: (m) => onThemeMode(m),
     setDensity: (d) => onDensityMode(d),
-    compile: () => { void compileRef.current(); },
-    compileFile: () => { void handleCompileFile(fileName); },
-    cancelCompile: () => { void cancelCompile().catch((e) => emit({ scope: 'compile', kind: 'error', message: 'cancel failed: ' + String(e).slice(0, 120) })); },
-    forwardSync: () => { void forwardSyncRef.current(); },
+    compile: () => {
+      void compileRef.current();
+    },
+    compileFile: () => {
+      void handleCompileFile(fileName);
+    },
+    cancelCompile: () => {
+      void cancelCompile().catch((e) =>
+        emit({
+          scope: 'compile',
+          kind: 'error',
+          message: 'cancel failed: ' + String(e).slice(0, 120),
+        }),
+      );
+    },
+    forwardSync: () => {
+      void forwardSyncRef.current();
+    },
     showShortcuts: () => setShortcutsOpen(true),
     showAbout: () => setAboutOpen(true),
   };
@@ -1081,7 +1406,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   menuActionRef.current = (id: string) => {
     for (const sec of menuSections) {
       const cmd = sec.commands.find((c) => c.id === id);
-      if (cmd && cmd.enabled && cmd.visible !== false) { void cmd.run?.(); return; }
+      if (cmd && cmd.enabled && cmd.visible !== false) {
+        void cmd.run?.();
+        return;
+      }
     }
   };
 
@@ -1089,18 +1417,31 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // nothing else. Buffer counts live on the tabs, trash depth on the StatusBar
   // `↩ N`, transient outcomes in the LogStream — the caption never carries them.
   const mainLabel = relOf(mainFile) ?? '(none)';
-  const mainTip = mainFile == null
-    ? 'No main file detected'
-    : mainSource === 'config' ? `Main file (your choice): ${mainFile}`
-    : mainSource === 'magic' ? `Main file (from %!TEX root): ${mainFile}`
-    : mainSource === 'scan' ? `Main file (auto-detected): ${mainFile}`
-    : mainSource === 'single' ? `Main file (only .tex file): ${mainFile}`
-    : `Main file: ${mainFile}`;
+  const mainTip =
+    mainFile == null
+      ? 'No main file detected'
+      : mainSource === 'config'
+        ? `Main file (your choice): ${mainFile}`
+        : mainSource === 'magic'
+          ? `Main file (from %!TEX root): ${mainFile}`
+          : mainSource === 'scan'
+            ? `Main file (auto-detected): ${mainFile}`
+            : mainSource === 'single'
+              ? `Main file (only .tex file): ${mainFile}`
+              : `Main file: ${mainFile}`;
   const editorPane = (
-    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <Box
+      sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+    >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, minWidth: 0 }}>
-        <Typography variant="caption" noWrap sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} title={fileName}>
-          {relOf(fileName) ?? fileName}{buffers.get(fileName)?.dirty ? ' ●' : ''}
+        <Typography
+          variant="caption"
+          noWrap
+          sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+          title={fileName}
+        >
+          {relOf(fileName) ?? fileName}
+          {buffers.get(fileName)?.dirty ? ' ●' : ''}
         </Typography>
         <Chip
           size="small"
@@ -1120,7 +1461,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
               <MenuItem
                 key={c}
                 selected={c === mainFile}
-                onClick={() => { void handlePickMain(c); }}
+                onClick={() => {
+                  void handlePickMain(c);
+                }}
               >
                 <Typography variant="body2" noWrap>
                   {relOf(c) ?? c}
@@ -1130,38 +1473,87 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
           </Menu>
         ) : null}
       </Box>
-      <BufferTabs buffers={buffers} active={fileName} onSelect={(p) => { void handleSelect(p); }} onClose={(p) => { void handleCloseBuffer(p); }} onCloseOthers={(k) => { void handleCloseOthers(k); }} onCloseAll={() => { void handleCloseAll(); }} />
+      <BufferTabs
+        buffers={buffers}
+        active={fileName}
+        onSelect={(p) => {
+          void handleSelect(p);
+        }}
+        onClose={(p) => {
+          void handleCloseBuffer(p);
+        }}
+        onCloseOthers={(k) => {
+          void handleCloseOthers(k);
+        }}
+        onCloseAll={() => {
+          void handleCloseAll();
+        }}
+      />
       {reloadPath ? (
         <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
           <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
-          <Button size="small" variant="outlined" onClick={handleReload}>Reload</Button>
-          <Button size="small" onClick={() => setReloadPath(null)}>Keep mine</Button>
+          <Button size="small" variant="outlined" onClick={handleReload}>
+            Reload
+          </Button>
+          <Button size="small" onClick={() => setReloadPath(null)}>
+            Keep mine
+          </Button>
         </Box>
       ) : null}
       {largeFile ? (
-        <Typography variant="body2" sx={{ mt: 1 }}>Large file — not loaded into the editor ({largeFile}). Open externally to edit.</Typography>
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          Large file — not loaded into the editor ({largeFile}). Open externally to edit.
+        </Typography>
       ) : previewFile ? (
-        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
           <BinaryPreview key={previewFile} path={previewFile} />
         </Box>
       ) : (
         <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <EditorViewport value={tex} onChange={handleTexChange} onSave={save} line={currentLine} flashKey={synctexFlash} viewportRef={viewportRef} onDoubleClickRef={forwardSyncLineRef} />
+          <EditorViewport
+            value={tex}
+            onChange={handleTexChange}
+            onSave={save}
+            line={currentLine}
+            flashKey={synctexFlash}
+            viewportRef={viewportRef}
+            onDoubleClickRef={forwardSyncLineRef}
+          />
         </Box>
       )}
-      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>{log}</Typography>
+      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+        {log}
+      </Typography>
     </Box>
   );
 
   const previewPane = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <Preview
         pdfUrl={pdfUrl}
         stamp={pdfStamp}
         pageNumber={pageNumber}
         onPage={setPageNumber}
         onSync={handleForwardSync}
-        onInverse={(page, x, y) => { void handleInverseSync(page, x, y); }}
+        onInverse={(page, x, y) => {
+          void handleInverseSync(page, x, y);
+        }}
         syncDisabled={compilePhase === 'compiling'}
       />
     </Box>
@@ -1189,57 +1581,119 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       />
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
         {fileTreeVisible && (
-          <Box sx={{ width: 260, flexShrink: 0, overflow: 'auto', borderRight: 1, borderColor: 'divider', p: 1, display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              width: 260,
+              flexShrink: 0,
+              overflow: 'auto',
+              borderRight: 1,
+              borderColor: 'divider',
+              p: 1,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             {root ? (
               <>
                 <Box sx={{ flexShrink: 0 }}>
-                  <FileTree tree={tree} selected={fileName} onSelect={handleSelect} onDoubleClick={(p) => { if (p.endsWith('.tex')) void handleSetMainPath(p); }} onDelete={handleDelete} onSetMain={(p) => { void handleSetMainPath(p); }} onCompileFile={(p) => { void handleCompileFile(p); }} onCreate={handleCreate} onRename={handleRename} onExpandDir={listDir1Level} rootDir={root} mainFile={mainFile} lazy maxDepth={2} filterHidden />
+                  <FileTree
+                    tree={tree}
+                    selected={fileName}
+                    onSelect={handleSelect}
+                    onDoubleClick={(p) => {
+                      if (p.endsWith('.tex')) void handleSetMainPath(p);
+                    }}
+                    onDelete={handleDelete}
+                    onSetMain={(p) => {
+                      void handleSetMainPath(p);
+                    }}
+                    onCompileFile={(p) => {
+                      void handleCompileFile(p);
+                    }}
+                    onCreate={handleCreate}
+                    onRename={handleRename}
+                    onExpandDir={listDir1Level}
+                    rootDir={root}
+                    mainFile={mainFile}
+                    lazy
+                    maxDepth={2}
+                    filterHidden
+                  />
                 </Box>
                 {outlineVisible ? (
-                  <OutlineView
-                    entries={outline}
-                    onJump={(line) => setCurrentLine(line)}
-                  />
+                  <OutlineView entries={outline} onJump={(line) => setCurrentLine(line)} />
                 ) : null}
               </>
             ) : (
-              <Typography variant="body2" color="text.secondary">Open a project to browse files.</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Open a project to browse files.
+              </Typography>
             )}
           </Box>
         )}
         {editorVisible ? (
-          <Pane label="editor" ratio={layout.editorRatio} onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}>
+          <Pane
+            label="editor"
+            ratio={layout.editorRatio}
+            onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}
+          >
             {editorPane}
           </Pane>
         ) : null}
         {editorVisible && previewVisible ? (
           <PaneSplitter
             label="Resize editor and preview"
-            onDrag={(dx) => setLayout((l) => {
-              const w = window.innerWidth || 1000;
-              const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
-              return { ...l, editorRatio: r, previewRatio: 1 - r };
-            })}
-            onKeyResize={(dir) => setLayout((l) => {
-              const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dir * 0.05));
-              return { ...l, editorRatio: r, previewRatio: 1 - r };
-            })}
+            onDrag={(dx) =>
+              setLayout((l) => {
+                const w = window.innerWidth || 1000;
+                const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
+                return { ...l, editorRatio: r, previewRatio: 1 - r };
+              })
+            }
+            onKeyResize={(dir) =>
+              setLayout((l) => {
+                const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dir * 0.05));
+                return { ...l, editorRatio: r, previewRatio: 1 - r };
+              })
+            }
           />
         ) : null}
         {!previewVisible ? (
-          <Box sx={{ width: 48, flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pt: 1 }}>
+          <Box
+            sx={{
+              width: 48,
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              pt: 1,
+            }}
+          >
             <Button
               size="small"
               aria-label="Show preview"
-              onClick={() => { setPreviewOpen(true); setPreviewCollapsed(false); }}
+              onClick={() => {
+                setPreviewOpen(true);
+                setPreviewCollapsed(false);
+              }}
             >
               show
             </Button>
           </Box>
         ) : (
-          <Pane label="preview" ratio={layout.previewRatio} onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}>
+          <Pane
+            label="preview"
+            ratio={layout.previewRatio}
+            onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}
+          >
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button size="small" aria-label="Hide preview" onClick={() => setPreviewCollapsed(true)}>hide</Button>
+              <Button
+                size="small"
+                aria-label="Hide preview"
+                onClick={() => setPreviewCollapsed(true)}
+              >
+                hide
+              </Button>
             </Box>
             {previewPane}
           </Pane>
@@ -1254,10 +1708,15 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Rename {fileName.slice(fileName.lastIndexOf('/') + 1) || fileName}</DialogTitle>
+        <DialogTitle>
+          Rename {fileName.slice(fileName.lastIndexOf('/') + 1) || fileName}
+        </DialogTitle>
         <DialogContent>
           <TextField
-            autoFocus fullWidth size="small" aria-label="New file name"
+            autoFocus
+            fullWidth
+            size="small"
+            aria-label="New file name"
             value={renameDraft}
             onChange={(e) => setRenameDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -1286,7 +1745,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         <DialogTitle>Go to Line</DialogTitle>
         <DialogContent>
           <TextField
-            autoFocus fullWidth size="small" aria-label="Line number"
+            autoFocus
+            fullWidth
+            size="small"
+            aria-label="Line number"
             value={goToDraft}
             onChange={(e) => setGoToDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -1316,12 +1778,20 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       <Dialog open={aboutOpen} onClose={() => setAboutOpen(false)} maxWidth="xs">
         <DialogTitle>About Maleficium</DialogTitle>
         <DialogContent>
-          <Typography variant="body2">Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Version 0.1.0 · offline-first · Linux-first.</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>SyncTeX navigation by Jérôme Laurens (MIT) — bundled sidecar.</Typography>
+          <Typography variant="body2">
+            Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            Version 0.1.0 · offline-first · Linux-first.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            SyncTeX navigation by Jérôme Laurens (MIT) — bundled sidecar.
+          </Typography>
         </DialogContent>
         <DialogActions>
-          <Button variant="contained" onClick={() => setAboutOpen(false)}>Close</Button>
+          <Button variant="contained" onClick={() => setAboutOpen(false)}>
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
       <StatusBar

@@ -32,18 +32,23 @@ export type OutlineFilter = 'all' | 'sections' | 'labels' | 'figures' | 'inputs'
 export function searchOutline(entries: OutlineEntry[], query: string): OutlineEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return entries;
-  return entries.filter((e) =>
-    e.title.toLowerCase().includes(q) || (e.detail ?? '').toLowerCase().includes(q),
+  return entries.filter(
+    (e) => e.title.toLowerCase().includes(q) || (e.detail ?? '').toLowerCase().includes(q),
   );
 }
 
 export function filterOutline(entries: OutlineEntry[], filter: OutlineFilter): OutlineEntry[] {
   switch (filter) {
-    case 'sections': return entries.filter((e) => e.kind === 'section');
-    case 'labels': return entries.filter((e) => e.kind === 'label');
-    case 'figures': return entries.filter((e) => e.kind === 'figure' || e.kind === 'table');
-    case 'inputs': return entries.filter((e) => e.kind === 'input');
-    default: return entries;
+    case 'sections':
+      return entries.filter((e) => e.kind === 'section');
+    case 'labels':
+      return entries.filter((e) => e.kind === 'label');
+    case 'figures':
+      return entries.filter((e) => e.kind === 'figure' || e.kind === 'table');
+    case 'inputs':
+      return entries.filter((e) => e.kind === 'input');
+    default:
+      return entries;
   }
 }
 
@@ -116,11 +121,22 @@ export function parseOutline(text: string): OutlineEntry[] {
   SECTION_RE.lastIndex = 0;
   while ((m = SECTION_RE.exec(stripped)) !== null) {
     const title = cleanTitle(m[2]) || '(untitled)';
-    raws.push({ offset: m.index, entry: { level: LEVEL[m[1]] ?? 1, title, line: lineOf(m.index), kind: 'section' } });
+    raws.push({
+      offset: m.index,
+      entry: { level: LEVEL[m[1]] ?? 1, title, line: lineOf(m.index), kind: 'section' },
+    });
   }
   LABEL_RE.lastIndex = 0;
   while ((m = LABEL_RE.exec(stripped)) !== null) {
-    raws.push({ offset: m.index, entry: { title: m[1].trim() || '(unlabeled)', line: lineOf(m.index), kind: 'label', detail: m[1].trim() } });
+    raws.push({
+      offset: m.index,
+      entry: {
+        title: m[1].trim() || '(unlabeled)',
+        line: lineOf(m.index),
+        kind: 'label',
+        detail: m[1].trim(),
+      },
+    });
   }
   FLOAT_RE.lastIndex = 0;
   while ((m = FLOAT_RE.exec(stripped)) !== null) {
@@ -135,7 +151,10 @@ export function parseOutline(text: string): OutlineEntry[] {
   INPUT_RE.lastIndex = 0;
   while ((m = INPUT_RE.exec(stripped)) !== null) {
     const rel = m[1].trim();
-    raws.push({ offset: m.index, entry: { title: baseName(rel), line: lineOf(m.index), kind: 'input', detail: rel } });
+    raws.push({
+      offset: m.index,
+      entry: { title: baseName(rel), line: lineOf(m.index), kind: 'input', detail: rel },
+    });
   }
   // Float-body labels were claimed by their float: drop label raws whose
   // offset falls inside a float span (they'd double-list the same key).

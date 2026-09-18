@@ -3,7 +3,8 @@ import { parseOutline, filterOutline, searchOutline } from './outline';
 
 describe('parseOutline sections', () => {
   it('finds section hierarchy with line numbers', () => {
-    const text = '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nHi\n\\subsection{Bits}\nX\n\\end{document}\n';
+    const text =
+      '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nHi\n\\subsection{Bits}\nX\n\\end{document}\n';
     expect(parseOutline(text)).toEqual([
       { level: 1, title: 'Intro', line: 3, kind: 'section' },
       { level: 2, title: 'Bits', line: 5, kind: 'section' },
@@ -28,7 +29,8 @@ describe('parseOutline symbols', () => {
     ]);
   });
   it('prefers float captions, falls back to file name', () => {
-    const text = '\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.5\\textwidth]{figs/diagram}\n\\caption{A diagram.}\n\\label{fig:diagram}\n\\end{figure}\n';
+    const text =
+      '\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.5\\textwidth]{figs/diagram}\n\\caption{A diagram.}\n\\label{fig:diagram}\n\\end{figure}\n';
     const rows = parseOutline(text);
     expect(rows.length).toBe(1);
     expect(rows[0]).toMatchObject({ kind: 'figure', title: 'A diagram.', detail: 'figs/diagram' });
@@ -61,7 +63,8 @@ describe('parseOutline symbols', () => {
 
 describe('filterOutline', () => {
   it('segments by kind, all stays document order', () => {
-    const text = '\\section{A}\n\\label{a}\n\\begin{figure}\n\\caption{C}\n\\end{figure}\n\\input{ch/b}\n';
+    const text =
+      '\\section{A}\n\\label{a}\n\\begin{figure}\n\\caption{C}\n\\end{figure}\n\\input{ch/b}\n';
     const all = parseOutline(text);
     expect(all.map((e) => e.kind)).toEqual(['section', 'label', 'figure', 'input']);
     expect(filterOutline(all, 'sections').map((e) => e.kind)).toEqual(['section']);
@@ -92,7 +95,9 @@ describe('filterOutline', () => {
 
 describe('searchOutline', () => {
   it('matches titles and details, case-insensitive', () => {
-    const all = parseOutline('\\section{Intro}\n\\label{sec:intro}\n\\begin{figure}\n\\caption{A diagram.}\n\\end{figure}\n');
+    const all = parseOutline(
+      '\\section{Intro}\n\\label{sec:intro}\n\\begin{figure}\n\\caption{A diagram.}\n\\end{figure}\n',
+    );
     expect(searchOutline(all, '').length).toBe(3);
     expect(searchOutline(all, 'intro').map((e) => e.kind)).toEqual(['section', 'label']);
     expect(searchOutline(all, 'SEC:INTRO').length).toBe(1);

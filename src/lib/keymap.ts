@@ -37,8 +37,13 @@ export function matchesForwardSync(e: KeyboardEvent): boolean {
 }
 
 export type MenuChordId =
-  | 'file.open-project' | 'file.close-file' | 'file.save'
-  | 'selection.select-all' | 'selection.expand' | 'selection.shrink' | 'selection.go-to-line';
+  | 'file.open-project'
+  | 'file.close-file'
+  | 'file.save'
+  | 'selection.select-all'
+  | 'selection.expand'
+  | 'selection.shrink'
+  | 'selection.go-to-line';
 
 /** Menu-owned chords. Returns the registry id, or null. CodeMirror text inputs
  *  keep Ctrl+A (native select-all) — the menu command and the native behavior

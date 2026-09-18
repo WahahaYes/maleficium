@@ -23,6 +23,8 @@
 import { Box, Typography } from '@mui/material';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getPdfJs, openPdfSource } from '../lib/pdfjs';
+import type { PdfTextContent, PdfViewport } from '../lib/pdfjs';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/types/src/pdf';
 import { emit } from '../lib/events';
 import PreviewToolbar from './PreviewToolbar';
 import {
@@ -47,19 +49,27 @@ interface PreviewProps {
   syncDisabled?: boolean;
 }
 
-interface PdfPage {
-  getViewport: (o: { scale: number }) => { height: number; width: number };
-  render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
-  getTextContent: () => Promise<any>;
+interface LocalPdfPage {
+  getViewport: (o: { scale: number }) => PdfViewport;
+  render: (o: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: PdfViewport;
+    canvas?: HTMLCanvasElement | null;
+  }) => {
+    promise: Promise<void>;
+  };
+  getTextContent: () => Promise<PdfTextContent>;
 }
 
-interface PdfDoc {
-  numPages: number;
-  getPage: (n: number) => Promise<PdfPage>;
-}
+type PageLike = PDFPageProxy | LocalPdfPage;
+type DocLike = PDFDocumentProxy | { numPages: number; getPage: (n: number) => Promise<PageLike> };
 
 interface PdfJsApi {
-  TextLayer: new (o: { textContentSource: any; container: HTMLElement; viewport: any }) => { render: () => Promise<void> };
+  TextLayer: new (o: {
+    textContentSource: PdfTextContent;
+    container: HTMLElement;
+    viewport: PdfViewport;
+  }) => { render: () => Promise<void> };
 }
 
 /** Top padding of the scroll container (matches py:1) for jump math. */
@@ -69,13 +79,23 @@ const SCROLL_PAD_TOP = 8;
 const JUMP_LOCK_MS = 1500;
 
 /** Idle wait: the current page renders immediately, neighbors yield first. */
-const idle = () => new Promise<void>((resolve) => {
-  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
-  if (typeof ric === 'function') ric(() => resolve());
-  else setTimeout(() => resolve(), 0);
-});
+const idle = () =>
+  new Promise<void>((resolve) => {
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void })
+      .requestIdleCallback;
+    if (typeof ric === 'function') ric(() => resolve());
+    else setTimeout(() => resolve(), 0);
+  });
 
-export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync, onInverse, syncDisabled }: PreviewProps) {
+export default function Preview({
+  pdfUrl,
+  stamp,
+  pageNumber = 1,
+  onPage,
+  onSync,
+  onInverse,
+  syncDisabled,
+}: PreviewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
@@ -97,7 +117,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   const page = clampPage(pageNumber, numPages);
   // Open pdf.js document ONCE per pdfUrl+stamp: renders serve from the
   // cached handle instead of re-opening the whole document per page.
-  const docRef = useRef<{ key: string; pdf: PdfDoc } | null>(null);
+  const docRef = useRef<{ key: string; pdf: DocLike } | null>(null);
   const visibleRef = useRef(1);
   const pageRef = useRef(page);
   pageRef.current = page;
@@ -116,10 +136,13 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // state: no cross-instance bleed, no mutable global.
   const textLayerRef = useRef<PdfJsApi['TextLayer'] | null>(null);
 
-  useEffect(() => () => {
-    if (pickRafRef.current != null) cancelAnimationFrame(pickRafRef.current);
-    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (pickRafRef.current != null) cancelAnimationFrame(pickRafRef.current);
+      if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    },
+    [],
+  );
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
 
@@ -149,38 +172,49 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // fallback — canvas + text layer is the single path (the SVG backend was
   // removed upstream in pdf.js 4.0, and a second renderer would be legacy
   // per RULES §8).
-  const renderBitmap = useCallback(async (
-    pdf: PdfDoc,
-    key: string,
-    target: number,
-    alive: () => boolean,
-  ): Promise<{ canvas: HTMLCanvasElement; textContent: any; viewport: any } | null> => {
-    if (renderedRef.current.has(key)) return null;
-    const pg = await pdf.getPage(target);
-    if (!alive()) return null;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const shell = shellRefs.current.get(target);
-    const cssWidth = shell ? Math.max(1, shell.clientWidth) : 820;
-    // Scale = CSS px per PDF point AT the shell's laid-out width: the canvas
-    // backing matches displayed size 1:1 (DPR-folded), so no upscale blur and
-    // no wasted pixels. Text layer shares the SAME viewport object, so spans
-    // land exactly on glyphs (one viewport, two consumers — never two scales).
-    const probe = pg.getViewport({ scale: 1 });
-    const scale = (cssWidth / Math.max(1, probe.width)) * dpr;
-    const viewport = pg.getViewport({ scale });
-    const off = document.createElement('canvas');
-    off.height = Math.floor(viewport.height);
-    off.width = Math.floor(viewport.width);
-    const ctx = off.getContext('2d');
-    if (!ctx) throw new Error('2d context unavailable');
-    const t1 = Date.now();
-    await pg.render({ canvasContext: ctx, viewport }).promise;
-    if (!alive()) return null;
-    const textContent = await pg.getTextContent();
-    if (!alive()) return null;
-    emit({ scope: 'preview', kind: 'progress', message: `page ${target} rendered in ${Date.now() - t1}ms` });
-    return { canvas: off, textContent, viewport };
-  }, []);
+  const renderBitmap = useCallback(
+    async (
+      pdf: DocLike,
+      key: string,
+      target: number,
+      alive: () => boolean,
+    ): Promise<{
+      canvas: HTMLCanvasElement;
+      textContent: PdfTextContent;
+      viewport: PdfViewport;
+    } | null> => {
+      if (renderedRef.current.has(key)) return null;
+      const pg = await pdf.getPage(target);
+      if (!alive()) return null;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const shell = shellRefs.current.get(target);
+      const cssWidth = shell ? Math.max(1, shell.clientWidth) : 820;
+      // Scale = CSS px per PDF point AT the shell's laid-out width: the canvas
+      // backing matches displayed size 1:1 (DPR-folded), so no upscale blur and
+      // no wasted pixels. Text layer shares the SAME viewport object, so spans
+      // land exactly on glyphs (one viewport, two consumers — never two scales).
+      const probe = pg.getViewport({ scale: 1 });
+      const scale = (cssWidth / Math.max(1, probe.width)) * dpr;
+      const viewport = pg.getViewport({ scale });
+      const off = document.createElement('canvas');
+      off.height = Math.floor(viewport.height);
+      off.width = Math.floor(viewport.width);
+      const ctx = off.getContext('2d');
+      if (!ctx) throw new Error('2d context unavailable');
+      const t1 = Date.now();
+      await pg.render({ canvasContext: ctx, canvas: off, viewport }).promise;
+      if (!alive()) return null;
+      const textContent = await pg.getTextContent();
+      if (!alive()) return null;
+      emit({
+        scope: 'preview',
+        kind: 'progress',
+        message: `page ${target} rendered in ${Date.now() - t1}ms`,
+      });
+      return { canvas: off, textContent, viewport };
+    },
+    [],
+  );
 
   // Commit a rendered page into its shell: canvas paint + text layer.
   // drawImage commits pixels with no re-layout and no blank flash; the text
@@ -188,31 +222,42 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // selection lands on glyphs). Records identity AFTER pixels land, so a
   // commit can never mark a page rendered that isn't. A null bitmap (already
   // rendered, or lost its liveness race) commits nothing.
-  const commitBitmap = useCallback((target: number, key: string, done: { canvas: HTMLCanvasElement; textContent: any; viewport: any } | null) => {
-    if (!done) return;
-    const canvas = canvasRefs.current.get(target);
-    const layer = textRefs.current.get(target);
-    if (!canvas) return;
-    const { canvas: off, textContent, viewport } = done;
-    if (canvas.width !== off.width || canvas.height !== off.height) {
-      canvas.width = off.width;
-      canvas.height = off.height;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(off, 0, 0);
-    const ctor = textLayerRef.current;
-    if (layer && ctor) {
-      layer.replaceChildren();
-      try {
-        void new ctor({ textContentSource: textContent, container: layer, viewport }).render();
-      } catch {
-        /* text layer never blocks paint — canvas already committed */
+  const commitBitmap = useCallback(
+    (
+      target: number,
+      key: string,
+      done: {
+        canvas: HTMLCanvasElement;
+        textContent: PdfTextContent;
+        viewport: PdfViewport;
+      } | null,
+    ) => {
+      if (!done) return;
+      const canvas = canvasRefs.current.get(target);
+      const layer = textRefs.current.get(target);
+      if (!canvas) return;
+      const { canvas: off, textContent, viewport } = done;
+      if (canvas.width !== off.width || canvas.height !== off.height) {
+        canvas.width = off.width;
+        canvas.height = off.height;
       }
-    }
-    renderedRef.current.add(key);
-    renderedKeys.current.set(target, key);
-  }, []);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(off, 0, 0);
+      const ctor = textLayerRef.current;
+      if (layer && ctor) {
+        layer.replaceChildren();
+        try {
+          void new ctor({ textContentSource: textContent, container: layer, viewport }).render();
+        } catch {
+          /* text layer never blocks paint — canvas already committed */
+        }
+      }
+      renderedRef.current.add(key);
+      renderedKeys.current.set(target, key);
+    },
+    [],
+  );
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (syncDisabled || !onInverse) return;
@@ -243,7 +288,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     const box = scrollRef.current;
     const shell = shellRefs.current.get(n);
     if (!box || !shell) return;
-    const delta = shell.getBoundingClientRect().top - box.getBoundingClientRect().top - SCROLL_PAD_TOP;
+    const delta =
+      shell.getBoundingClientRect().top - box.getBoundingClientRect().top - SCROLL_PAD_TOP;
     const top = box.scrollTop + delta;
     if (Math.abs(top - box.scrollTop) > 0.5) {
       programmaticRef.current = true;
@@ -294,49 +340,55 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
   // Cancellation is per-DOCUMENT (docKey match): a newer document supersedes
   // the probe, but nothing else does — there is no shared generation for a
   // re-render or a neighbor pass to trip over.
-  const probeDims = useCallback(async (pdf: PdfDoc, total: number, alive: () => boolean) => {
-    const snapAnchor = () => {
-      const box = scrollRef.current;
-      const anchorPage = visibleRef.current;
-      const shell = shellRefs.current.get(anchorPage);
-      compRef.current = box && shell
-        ? { page: anchorPage, delta: shell.getBoundingClientRect().top - box.getBoundingClientRect().top }
-        : null;
-    };
-    const differs = (a: { w: number; h: number }, b: { w: number; h: number }) =>
-      Math.abs(a.w - b.w) / Math.max(1, b.w) > 0.005 || Math.abs(a.h - b.h) / Math.max(1, b.h) > 0.005;
-    try {
-      const first = await pdf.getPage(1);
-      if (!alive()) return;
-      const v1 = first.getViewport({ scale: 1 });
-      const base = { w: v1.width, h: v1.height };
-      const dims = new Map<number, { w: number; h: number }>();
-      for (let n = 1; n <= total; n++) dims.set(n, base);
-      dimsRef.current = dims;
-      snapAnchor();
-      bumpDims();
-      for (let n = 2; n <= total; n++) {
+  const probeDims = useCallback(
+    async (pdf: DocLike, total: number, alive: () => boolean) => {
+      const snapAnchor = () => {
+        const box = scrollRef.current;
+        const anchorPage = visibleRef.current;
+        const shell = shellRefs.current.get(anchorPage);
+        compRef.current =
+          box && shell
+            ? {
+                page: anchorPage,
+                delta: shell.getBoundingClientRect().top - box.getBoundingClientRect().top,
+              }
+            : null;
+      };
+      const differs = (a: { w: number; h: number }, b: { w: number; h: number }) =>
+        Math.abs(a.w - b.w) / Math.max(1, b.w) > 0.005 ||
+        Math.abs(a.h - b.h) / Math.max(1, b.h) > 0.005;
+      try {
+        const first = await pdf.getPage(1);
         if (!alive()) return;
-        // eslint-disable-next-line no-await-in-loop
-        const pg = await pdf.getPage(n);
-        if (!alive()) return;
-        const v = pg.getViewport({ scale: 1 });
-        const next = { w: v.width, h: v.height };
-        if (!differs(next, dims.get(n) as { w: number; h: number })) continue;
-        dims.set(n, next);
-        if (n % 10 === 0 || n === total) {
+        const v1 = first.getViewport({ scale: 1 });
+        const base = { w: v1.width, h: v1.height };
+        const dims = new Map<number, { w: number; h: number }>();
+        for (let n = 1; n <= total; n++) dims.set(n, base);
+        dimsRef.current = dims;
+        snapAnchor();
+        bumpDims();
+        for (let n = 2; n <= total; n++) {
           if (!alive()) return;
-          dimsRef.current = new Map(dims);
-          snapAnchor();
-          bumpDims();
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise<void>((r) => setTimeout(r, 0));
+          const pg = await pdf.getPage(n);
+          if (!alive()) return;
+          const v = pg.getViewport({ scale: 1 });
+          const next = { w: v.width, h: v.height };
+          if (!differs(next, dims.get(n) as { w: number; h: number })) continue;
+          dims.set(n, next);
+          if (n % 10 === 0 || n === total) {
+            if (!alive()) return;
+            dimsRef.current = new Map(dims);
+            snapAnchor();
+            bumpDims();
+            await new Promise<void>((r) => setTimeout(r, 0));
+          }
         }
+      } catch {
+        // Probe never blocks the preview; shells keep the default aspect.
       }
-    } catch {
-      // Probe never blocks the preview; shells keep the default aspect.
-    }
-  }, [bumpDims]);
+    },
+    [bumpDims],
+  );
 
   // Document open (per pdfUrl+stamp) + canonical reset to the pager page.
   // Section-count state (numPages) commits TOGETHER with the doc identity so
@@ -353,13 +405,14 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         setError(null);
         try {
           if (!textLayerRef.current) {
-            textLayerRef.current = ((await getPdfJs()).TextLayer ?? null) as PdfJsApi['TextLayer'] | null;
+            textLayerRef.current = ((await getPdfJs()).TextLayer ?? null) as
+              PdfJsApi['TextLayer'] | null;
           }
         } catch {
           /* headless/test env — canvas paint still commits without text */
         }
         const key = `${pdfUrl}#${stamp}`;
-        let pdf: PdfDoc;
+        let pdf: DocLike;
         if (docRef.current?.key === key) {
           setPhase('rendering...');
           pdf = docRef.current.pdf;
@@ -368,9 +421,13 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
           const t0 = Date.now();
           await yieldUi();
           setPhase('loading...');
-          pdf = (await openPdfSource(pdfUrl)) as unknown as PdfDoc;
+          pdf = await openPdfSource(pdfUrl);
           if (cancelled) return;
-          emit({ scope: 'preview', kind: 'progress', message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms` });
+          emit({
+            scope: 'preview',
+            kind: 'progress',
+            message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms`,
+          });
           docRef.current = { key, pdf };
         }
         if (cancelled) return;
@@ -409,7 +466,7 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     return () => {
       cancelled = true;
     };
-  }, [pdfUrl, stamp, probeDims, armJumpTimeout]);
+  }, [pdfUrl, stamp, probeDims, armJumpTimeout, bumpDims]);
 
   // Render the bitmap window: visible page immediately, neighbors idle.
   // The jump scroll fires once the TARGET bitmap lands (not after the whole
@@ -451,7 +508,12 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     const inWindow = new Set(ordered);
     // Idle prefetch ring: one page beyond each window edge, same identity
     // maps, exempt from eviction.
-    const preWin = windowFor(target, total, WINDOW_ABOVE + PREFETCH_BEHIND, WINDOW_BELOW + PREFETCH_AHEAD);
+    const preWin = windowFor(
+      target,
+      total,
+      WINDOW_ABOVE + PREFETCH_BEHIND,
+      WINDOW_BELOW + PREFETCH_AHEAD,
+    );
     const prefetch = preWin.pages.filter((n) => !inWindow.has(n));
     // Claim one in-flight token PER page: a newer pass for the same page
     // supersedes the older one; other pages are unaffected.
@@ -480,10 +542,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         for (const n of ordered.slice(1)) {
           const nk = `${key}#${n}`;
           if (!alivePage(nk)) continue;
-          // eslint-disable-next-line no-await-in-loop
           await idle();
           if (!alivePage(nk)) continue;
-          // eslint-disable-next-line no-await-in-loop
           const nb = await renderBitmap(pdf, nk, n, () => alivePage(nk));
           if (!alivePage(nk)) continue;
           // Same guard per neighbor: skip the commit when the window moved
@@ -495,10 +555,8 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         for (const n of prefetch) {
           const nk = `${key}#${n}`;
           if (!alivePage(nk) || renderedRef.current.has(nk)) continue;
-          // eslint-disable-next-line no-await-in-loop
           await idle();
           if (!alivePage(nk) || visibleRef.current !== target) break;
-          // eslint-disable-next-line no-await-in-loop
           const nb = await renderBitmap(pdf, nk, n, () => alivePage(nk));
           if (!alivePage(nk) || visibleRef.current !== target) break;
           commitBitmap(n, nk, nb);
@@ -512,8 +570,13 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         // (at most PREFETCH_AHEAD+PREFETCH_BEHIND pages).
         const keepPrefetch = new Set(prefetch);
         for (const [n, canvas] of canvasRefs.current) {
-          if (renderedKeys.current.get(n) !== key || inWindow.has(n) || keepPrefetch.has(n)) continue;
-          if (inFlightRef.current.get(`${key}#${n}`) !== myTokens.get(`${key}#${n}`) && inFlightRef.current.has(`${key}#${n}`)) continue;
+          if (renderedKeys.current.get(n) !== key || inWindow.has(n) || keepPrefetch.has(n))
+            continue;
+          if (
+            inFlightRef.current.get(`${key}#${n}`) !== myTokens.get(`${key}#${n}`) &&
+            inFlightRef.current.has(`${key}#${n}`)
+          )
+            continue;
           renderedKeys.current.delete(n);
           renderedRef.current.delete(`${key}#${n}`);
           canvas.width = 0;
@@ -523,7 +586,17 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         endPhase();
       }
     })();
-  }, [docKey, visible, numPages, renderEpoch, scrollToShell, beginPhase, endPhase, commitBitmap, renderBitmap]);
+  }, [
+    docKey,
+    visible,
+    numPages,
+    renderEpoch,
+    scrollToShell,
+    beginPhase,
+    endPhase,
+    commitBitmap,
+    renderBitmap,
+  ]);
 
   // Pager/SyncTeX jump: a prop page that differs from the visible page is an
   // EXTERNAL jump (our own scroll reports echo back equal and no-op here).
@@ -561,11 +634,15 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
         }
         schedulePick();
       },
-      { root: box, threshold: Array.from({ length: 11 }, (_, i) => i / 10), rootMargin: '-40% 0px -40% 0px' },
+      {
+        root: box,
+        threshold: Array.from({ length: 11 }, (_, i) => i / 10),
+        rootMargin: '-40% 0px -40% 0px',
+      },
     );
     // Shell refs populate during this commit's layout; the observer must see
     // them, so observe on the next frame (disconnect still cleans up).
-    let raf = requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       for (const [, el] of shellRefs.current) observer.observe(el);
     });
     return () => {
@@ -648,20 +725,29 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     }
   }, []);
 
-  const setShellRef = useCallback((n: number) => (el: HTMLDivElement | null) => {
-    if (el) shellRefs.current.set(n, el);
-    else shellRefs.current.delete(n);
-  }, []);
+  const setShellRef = useCallback(
+    (n: number) => (el: HTMLDivElement | null) => {
+      if (el) shellRefs.current.set(n, el);
+      else shellRefs.current.delete(n);
+    },
+    [],
+  );
 
-  const setCanvasRef = useCallback((n: number) => (el: HTMLCanvasElement | null) => {
-    if (el) canvasRefs.current.set(n, el);
-    else canvasRefs.current.delete(n);
-  }, []);
+  const setCanvasRef = useCallback(
+    (n: number) => (el: HTMLCanvasElement | null) => {
+      if (el) canvasRefs.current.set(n, el);
+      else canvasRefs.current.delete(n);
+    },
+    [],
+  );
 
-  const setTextRef = useCallback((n: number) => (el: HTMLDivElement | null) => {
-    if (el) textRefs.current.set(n, el);
-    else textRefs.current.delete(n);
-  }, []);
+  const setTextRef = useCallback(
+    (n: number) => (el: HTMLDivElement | null) => {
+      if (el) textRefs.current.set(n, el);
+      else textRefs.current.delete(n);
+    },
+    [],
+  );
 
   // Every page owns a shell (stable scroll height from the probed aspect);
   // the canvas fills it, so unrendered pages read as placeholders, never void.
@@ -685,10 +771,23 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
 
   if (!pdfUrl) return <Typography variant="body1">No PDF yet</Typography>;
 
-  if (error) return <Typography variant="body1" color="error">{error}</Typography>;
+  if (error)
+    return (
+      <Typography variant="body1" color="error">
+        {error}
+      </Typography>
+    );
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <PreviewToolbar
         pageNumber={page}
         totalPages={numPages}
@@ -700,7 +799,16 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
       <Box
         ref={scrollRef}
         onScroll={handleScroll}
-        sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, py: 1 }}
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 1,
+          py: 1,
+        }}
       >
         {allPages.map((n) => (
           <div key={`${docKey}#${n}`} ref={setShellRef(n)} data-page={n} style={shellStyle(n)}>
@@ -710,7 +818,9 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
               onClick={handleCanvasClick}
               className="synctex-canvas"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-              title={syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'}
+              title={
+                syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'
+              }
             />
             <div
               ref={setTextRef(n)}

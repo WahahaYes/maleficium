@@ -10,7 +10,7 @@ const CRC32_TABLE: number[] = [];
 for (let i = 0; i < 256; i++) {
   let c = i;
   for (let j = 0; j < 8; j++) {
-    c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
   }
   CRC32_TABLE[i] = c;
 }
@@ -40,18 +40,18 @@ function makeChunk(type: string, data: Buffer): Buffer {
 export function makePng(w: number, h: number, r: number, g: number, b: number): Buffer {
   // PNG signature
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  
+
   // IHDR chunk (13 bytes)
   const ihdrData = Buffer.alloc(13);
   ihdrData.writeUInt32BE(w, 0);
   ihdrData.writeUInt32BE(h, 4);
-  ihdrData.writeUInt8(8, 8);   // bit depth
-  ihdrData.writeUInt8(2, 9);   // color type (RGB)
-  ihdrData.writeUInt8(0, 10);  // compression
-  ihdrData.writeUInt8(0, 11);  // filter
-  ihdrData.writeUInt8(0, 12);  // interlace
+  ihdrData.writeUInt8(8, 8); // bit depth
+  ihdrData.writeUInt8(2, 9); // color type (RGB)
+  ihdrData.writeUInt8(0, 10); // compression
+  ihdrData.writeUInt8(0, 11); // filter
+  ihdrData.writeUInt8(0, 12); // interlace
   const ihdrChunk = makeChunk('IHDR', ihdrData);
-  
+
   // Filter-0 scanlines
   const scanlines: Buffer[] = [];
   for (let y = 0; y < h; y++) {
@@ -66,10 +66,10 @@ export function makePng(w: number, h: number, r: number, g: number, b: number): 
   const rawData = Buffer.concat(scanlines);
   const deflated = deflateSync(rawData);
   const idatChunk = makeChunk('IDAT', deflated);
-  
+
   // IEND chunk
   const iendChunk = makeChunk('IEND', Buffer.alloc(0));
-  
+
   return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
 }
 
@@ -102,14 +102,14 @@ ${inputLines.join('\n')}
 \\end{document}`;
   const mainPath = join(root, 'main.tex');
   writeFileSync(mainPath, mainContent);
-  
+
   for (let i = 0; i < chapters; i++) {
     const chContent = `\\section{Chapter ${i + 1}}
 ${LOREM.repeat(3)}`;
     const chPath = join(root, `ch${i + 1}.tex`);
     writeFileSync(chPath, chContent);
   }
-  
+
   return mainPath;
 }
 
@@ -125,7 +125,7 @@ ${includegraphics.join('\n')}
 \\end{document}`;
   const docPath = join(root, 'main.tex');
   writeFileSync(docPath, content);
-  
+
   for (let i = 0; i < images; i++) {
     const r = (i * 50) % 256;
     const g = (i * 75) % 256;
@@ -134,6 +134,6 @@ ${includegraphics.join('\n')}
     const figPath = join(root, `fig${i + 1}.png`);
     writeFileSync(figPath, png);
   }
-  
+
   return docPath;
 }

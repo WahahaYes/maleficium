@@ -1,8 +1,20 @@
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile, writeFile, readDir, rename, readFile } from '@tauri-apps/plugin-fs'
-import { joinPath } from './paths'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import {
+  readTextFile,
+  writeTextFile,
+  writeFile,
+  readDir,
+  rename,
+  readFile,
+} from '@tauri-apps/plugin-fs';
+import { joinPath } from './paths';
 
-export type TreeEntry = { name: string; path: string; type: 'dir' | 'file'; children?: TreeEntry[] }
+export type TreeEntry = {
+  name: string;
+  path: string;
+  type: 'dir' | 'file';
+  children?: TreeEntry[];
+};
 
 /** Lowercased extensions that get a rich preview instead of the text editor. */
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']);
@@ -13,10 +25,37 @@ export type PreviewKind = 'text' | 'image' | 'video' | 'pdf' | 'binary';
 
 /** Extensions that open as editable text (everything else previews). */
 const TEXT_EXT = new Set([
-  '.tex', '.bib', '.sty', '.cls', '.md', '.markdown', '.txt', '.log', '.aux',
-  '.toc', '.lof', '.lot', '.out', '.fls', '.json', '.yaml', '.yml', '.toml',
-  '.xml', '.html', '.htm', '.css', '.js', '.ts', '.tsx', '.jsx', '.py',
-  '.sh', '.csv', '.r', '.jl',
+  '.tex',
+  '.bib',
+  '.sty',
+  '.cls',
+  '.md',
+  '.markdown',
+  '.txt',
+  '.log',
+  '.aux',
+  '.toc',
+  '.lof',
+  '.lot',
+  '.out',
+  '.fls',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.xml',
+  '.html',
+  '.htm',
+  '.css',
+  '.js',
+  '.ts',
+  '.tsx',
+  '.jsx',
+  '.py',
+  '.sh',
+  '.csv',
+  '.r',
+  '.jl',
 ]);
 
 /** Classify a path for the editor-vs-preview decision (extension only, cheap). */
@@ -87,7 +126,7 @@ export function sortTreeEntries<T extends { name: string; type: string }>(entrie
     const bDir = b.type === 'dir' ? 0 : 1;
     if (aDir !== bDir) return aDir - bDir;
     const c = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-    return c !== 0 ? c : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    return c !== 0 ? c : a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
   });
 }
 
@@ -100,9 +139,11 @@ export async function openProject(): Promise<string | null> {
     const h = window.location.hash.match(/project=([^&]+)/);
     const preset = q.get('project') ?? (h ? decodeURIComponent(h[1]) : null);
     if (preset) return preset;
-  } catch { /* non-browser/test env — fall through to dialog */ }
-  const path = await openDialog({ directory: true, recursive: true })
-  return path ?? null
+  } catch {
+    /* non-browser/test env — fall through to dialog */
+  }
+  const path = await openDialog({ directory: true, recursive: true });
+  return path ?? null;
 }
 
 /** Create an empty file (parents must exist); returns the absolute path. */
@@ -127,63 +168,66 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
 /** Full recursive walk — main-file scan + watcher baseline ONLY, never the open path. */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
-    const entries = await readDir(root)
-    const result: TreeEntry[] = []
-    const dirs: TreeEntry[] = []
+    const entries = await readDir(root);
+    const result: TreeEntry[] = [];
+    const dirs: TreeEntry[] = [];
     for (const entry of entries) {
       if (isHiddenName(entry.name)) continue;
-      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory
-      const fullPath = joinPath(root, entry.name)
-      const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' }
+      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
+      const fullPath = joinPath(root, entry.name);
+      const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' };
       if (isDir) {
-        const sub = await listTreeDeep(fullPath)
-        child.children = sub
-        dirs.push(child)
+        const sub = await listTreeDeep(fullPath);
+        child.children = sub;
+        dirs.push(child);
       } else {
-        result.push(child)
+        result.push(child);
       }
     }
-    return [...sortTreeEntries(dirs), ...sortTreeEntries(result)]
+    return [...sortTreeEntries(dirs), ...sortTreeEntries(result)];
   } catch {
-    return []
+    return [];
   }
 }
 
 export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
   try {
-    const entries = await readDir(dir)
-    const out: TreeEntry[] = []
+    const entries = await readDir(dir);
+    const out: TreeEntry[] = [];
     for (const entry of entries) {
       if (isHiddenName(entry.name)) continue;
-      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory
-      const fullPath = joinPath(dir, entry.name)
+      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
+      const fullPath = joinPath(dir, entry.name);
       out.push({ name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' });
     }
     return sortTreeEntries(out);
   } catch {
-    return []
+    return [];
   }
 }
 
 export async function loadTex(path: string): Promise<string> {
-  return await readTextFile(path)
+  return await readTextFile(path);
 }
 
 export async function saveTex(path: string, content: string): Promise<void> {
-  await writeTextFile(path, content)
+  await writeTextFile(path, content);
 }
 
 export async function saveTexToDisk(name: string, content: string): Promise<void> {
   try {
-    const path = await saveDialog({ defaultPath: name, filters: [{ name: 'LaTeX', extensions: ['tex'] }] })
-    if (path) await writeTextFile(path, content)
+    const path = await saveDialog({
+      defaultPath: name,
+      filters: [{ name: 'LaTeX', extensions: ['tex'] }],
+    });
+    if (path) await writeTextFile(path, content);
   } catch {
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = name
-    anchor.click()
-    URL.revokeObjectURL(url)
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 }

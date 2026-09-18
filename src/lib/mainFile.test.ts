@@ -37,15 +37,27 @@ describe('resolveMainFile order', () => {
     listTexFiles: async () => ['/r/main.tex', '/r/ch1.tex', '/r/ch2.tex'],
   };
   it('config wins', async () => {
-    const r = await resolveMainFile({ ...base, openedFile: '/r/ch2.tex', readConfig: async () => '{"mainFile":"main.tex"}' });
+    const r = await resolveMainFile({
+      ...base,
+      openedFile: '/r/ch2.tex',
+      readConfig: async () => '{"mainFile":"main.tex"}',
+    });
     expect(r).toMatchObject({ mainFile: '/r/main.tex', source: 'config' });
   });
   it('magic wins over scan', async () => {
-    const r = await resolveMainFile({ ...base, openedFile: '/r/ch2.tex', readConfig: async () => null });
+    const r = await resolveMainFile({
+      ...base,
+      openedFile: '/r/ch2.tex',
+      readConfig: async () => null,
+    });
     expect(r).toMatchObject({ mainFile: '/r/main.tex', source: 'magic' });
   });
   it('scan finds documentclass deterministically', async () => {
-    const r = await resolveMainFile({ ...base, openedFile: '/r/ch1.tex', readConfig: async () => null });
+    const r = await resolveMainFile({
+      ...base,
+      openedFile: '/r/ch1.tex',
+      readConfig: async () => null,
+    });
     expect(r).toMatchObject({ mainFile: '/r/main.tex', source: 'scan' });
   });
   it('single fallback', async () => {
@@ -62,9 +74,15 @@ describe('resolveMainFile order', () => {
     const r = await resolveMainFile({
       root: '/e',
       openedFile: null,
-      readText: async () => { throw new Error('no'); },
-      listTexFiles: async () => { throw new Error('no'); },
-      readConfig: async () => { throw new Error('no'); },
+      readText: async () => {
+        throw new Error('no');
+      },
+      listTexFiles: async () => {
+        throw new Error('no');
+      },
+      readConfig: async () => {
+        throw new Error('no');
+      },
     });
     expect(r).toMatchObject({ mainFile: null, source: 'none' });
   });

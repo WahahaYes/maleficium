@@ -50,7 +50,21 @@ export interface FileTreeProps {
 
 const ROW_PAGE = 200;
 
-function FileNode({ node, depth, selected, onSelect, onDoubleClick, onDelete, onSetMain, onCompileFile, onCreate, onRename, onExpandDir, mainFile, maxDepth } : {
+function FileNode({
+  node,
+  depth,
+  selected,
+  onSelect,
+  onDoubleClick,
+  onDelete,
+  onSetMain,
+  onCompileFile,
+  onCreate,
+  onRename,
+  onExpandDir,
+  mainFile,
+  maxDepth,
+}: {
   node: TreeEntry;
   depth: number;
   selected: string | null;
@@ -76,48 +90,119 @@ function FileNode({ node, depth, selected, onSelect, onDoubleClick, onDelete, on
     const isMain = mainFile != null && node.path === mainFile;
     return (
       <>
-      <ListItemButton
-        data-path={node.path}
-        selected={selected === node.path}
-        onClick={() => onSelect(node.path)}
-        onDoubleClick={() => onDoubleClick?.(node.path)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY });
-        }}
-        sx={{ pl: 1 + depth * 2 }}
-      >
-        <ListItemIcon sx={{ minWidth: 28 }}>
-          <DescriptionIcon fontSize="small" color="action" />
-        </ListItemIcon>
-        <Typography variant="body2" noWrap sx={{flex:1}}>{node.name}</Typography>
-        {isMain ? <Chip label="main" size="small" color="primary" sx={{ ml: 1, height: 18 }} /> : null}
-      </ListItemButton>
-      <Menu open={menu != null} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
-        {onRename ? <MenuItem onClick={() => { setMenu(null); setNameDraft(node.name); }}>Rename</MenuItem> : null}
-        {onSetMain && node.path.endsWith('.tex') ? <MenuItem onClick={() => { setMenu(null); onSetMain(node.path); }}>Set as main</MenuItem> : null}
-        {onCompileFile && node.path.endsWith('.tex') ? <MenuItem onClick={() => { setMenu(null); onCompileFile(node.path); }}>Compile this file</MenuItem> : null}
-        {onDelete ? <MenuItem onClick={() => { setMenu(null); setConfirmDelete(true); }}>Delete</MenuItem> : null}
-      </Menu>
-      <Dialog open={nameDraft != null} onClose={() => setNameDraft(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Rename {node.name}</DialogTitle>
-        <DialogContent>
-          <TextField autoFocus fullWidth size="small" value={nameDraft ?? ''} onChange={(e) => setNameDraft(e.target.value)} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setNameDraft(null)}>Cancel</Button>
-          <Button variant="contained" onClick={() => { if (nameDraft?.trim()) onRename?.(node.path, nameDraft.trim()); setNameDraft(null); }}>Rename</Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} maxWidth="xs">
-        <DialogTitle>Delete {node.name}?</DialogTitle>
-        <DialogContent><Typography variant="body2">Moves to trash — Undo restores it.</Typography></DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={() => { setConfirmDelete(false); onDelete?.(node.path); }}>Delete</Button>
-        </DialogActions>
-      </Dialog>
-      </>);
+        <ListItemButton
+          data-path={node.path}
+          selected={selected === node.path}
+          onClick={() => onSelect(node.path)}
+          onDoubleClick={() => onDoubleClick?.(node.path)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY });
+          }}
+          sx={{ pl: 1 + depth * 2 }}
+        >
+          <ListItemIcon sx={{ minWidth: 28 }}>
+            <DescriptionIcon fontSize="small" color="action" />
+          </ListItemIcon>
+          <Typography variant="body2" noWrap sx={{ flex: 1 }}>
+            {node.name}
+          </Typography>
+          {isMain ? (
+            <Chip label="main" size="small" color="primary" sx={{ ml: 1, height: 18 }} />
+          ) : null}
+        </ListItemButton>
+        <Menu
+          open={menu != null}
+          onClose={() => setMenu(null)}
+          anchorReference="anchorPosition"
+          anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}
+        >
+          {onRename ? (
+            <MenuItem
+              onClick={() => {
+                setMenu(null);
+                setNameDraft(node.name);
+              }}
+            >
+              Rename
+            </MenuItem>
+          ) : null}
+          {onSetMain && node.path.endsWith('.tex') ? (
+            <MenuItem
+              onClick={() => {
+                setMenu(null);
+                onSetMain(node.path);
+              }}
+            >
+              Set as main
+            </MenuItem>
+          ) : null}
+          {onCompileFile && node.path.endsWith('.tex') ? (
+            <MenuItem
+              onClick={() => {
+                setMenu(null);
+                onCompileFile(node.path);
+              }}
+            >
+              Compile this file
+            </MenuItem>
+          ) : null}
+          {onDelete ? (
+            <MenuItem
+              onClick={() => {
+                setMenu(null);
+                setConfirmDelete(true);
+              }}
+            >
+              Delete
+            </MenuItem>
+          ) : null}
+        </Menu>
+        <Dialog open={nameDraft != null} onClose={() => setNameDraft(null)} maxWidth="xs" fullWidth>
+          <DialogTitle>Rename {node.name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              fullWidth
+              size="small"
+              value={nameDraft ?? ''}
+              onChange={(e) => setNameDraft(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setNameDraft(null)}>Cancel</Button>
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (nameDraft?.trim()) onRename?.(node.path, nameDraft.trim());
+                setNameDraft(null);
+              }}
+            >
+              Rename
+            </Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} maxWidth="xs">
+          <DialogTitle>Delete {node.name}?</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">Moves to trash — Undo restores it.</Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => {
+                setConfirmDelete(false);
+                onDelete?.(node.path);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
   }
 
   const preloaded = node.children ?? lazyChildren;
@@ -154,47 +239,105 @@ function FileNode({ node, depth, selected, onSelect, onDoubleClick, onDelete, on
         sx={{ pl: 1 + depth * 2 }}
       >
         <ListItemIcon sx={{ minWidth: 28 }}>
-          {open ? <FolderOpenIcon fontSize="small" color="action" /> : <FolderIcon fontSize="small" color="action" />}
+          {open ? (
+            <FolderOpenIcon fontSize="small" color="action" />
+          ) : (
+            <FolderIcon fontSize="small" color="action" />
+          )}
         </ListItemIcon>
-        <Typography variant="body2" noWrap sx={{flex:1}}>{node.name}</Typography>
+        <Typography variant="body2" noWrap sx={{ flex: 1 }}>
+          {node.name}
+        </Typography>
         {loading ? <Typography variant="caption">…</Typography> : null}
       </ListItemButton>
-      {open && expandable && (preloaded ?? []).map((child) => (
-        <FileNode
-          key={child.path}
-          node={child}
-          depth={depth + 1}
-          selected={selected}
-          onSelect={onSelect}
-          onDoubleClick={onDoubleClick}
-          onDelete={onDelete}
-          onSetMain={onSetMain}
-          onCompileFile={onCompileFile}
-          onCreate={onCreate}
-          onRename={onRename}
-          onExpandDir={onExpandDir}
-          mainFile={mainFile}
-          maxDepth={maxDepth}
-        />
-      ))}
-      <Menu open={menu != null && node.type === 'dir'} onClose={() => setMenu(null)} anchorReference="anchorPosition" anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}>
-        {onCreate ? <MenuItem onClick={() => { setMenu(null); setNameDraft(''); }}>New file here</MenuItem> : null}
+      {open &&
+        expandable &&
+        (preloaded ?? []).map((child) => (
+          <FileNode
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            selected={selected}
+            onSelect={onSelect}
+            onDoubleClick={onDoubleClick}
+            onDelete={onDelete}
+            onSetMain={onSetMain}
+            onCompileFile={onCompileFile}
+            onCreate={onCreate}
+            onRename={onRename}
+            onExpandDir={onExpandDir}
+            mainFile={mainFile}
+            maxDepth={maxDepth}
+          />
+        ))}
+      <Menu
+        open={menu != null && node.type === 'dir'}
+        onClose={() => setMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}
+      >
+        {onCreate ? (
+          <MenuItem
+            onClick={() => {
+              setMenu(null);
+              setNameDraft('');
+            }}
+          >
+            New file here
+          </MenuItem>
+        ) : null}
       </Menu>
-      <Dialog open={nameDraft != null && node.type === 'dir'} onClose={() => setNameDraft(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={nameDraft != null && node.type === 'dir'}
+        onClose={() => setNameDraft(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>New file in {node.name}</DialogTitle>
         <DialogContent>
-          <TextField autoFocus fullWidth size="small" placeholder="name.tex" value={nameDraft ?? ''} onChange={(e) => setNameDraft(e.target.value)} />
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            placeholder="name.tex"
+            value={nameDraft ?? ''}
+            onChange={(e) => setNameDraft(e.target.value)}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNameDraft(null)}>Cancel</Button>
-          <Button variant="contained" onClick={() => { if (nameDraft?.trim()) onCreate?.(node.path, nameDraft.trim()); setNameDraft(null); }}>Create</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (nameDraft?.trim()) onCreate?.(node.path, nameDraft.trim());
+              setNameDraft(null);
+            }}
+          >
+            Create
+          </Button>
         </DialogActions>
       </Dialog>
     </>
   );
 }
 
-export default function FileTree({ tree, selected, onSelect, onDoubleClick, onDelete, onSetMain, onCompileFile, onCreate, onRename, onExpandDir, rootDir, mainFile, lazy = true, maxDepth = 2, filterHidden = true }: FileTreeProps) {
+export default function FileTree({
+  tree,
+  selected,
+  onSelect,
+  onDoubleClick,
+  onDelete,
+  onSetMain,
+  onCompileFile,
+  onCreate,
+  onRename,
+  onExpandDir,
+  rootDir,
+  mainFile,
+  lazy = true,
+  maxDepth = 2,
+  filterHidden = true,
+}: FileTreeProps) {
   // NOTE: `lazy`/`filterHidden` are honored by the DATA layer: App opens
   // with a 1-level root (`listDir1Level`) and expands via `onExpandDir`
   // (filtering in `files.ts`).
@@ -266,7 +409,12 @@ export default function FileTree({ tree, selected, onSelect, onDoubleClick, onDe
           onChange={(e) => setQuery(e.target.value)}
         />
         {rootCreate ? (
-          <Button size="small" aria-label="New file in project root" onClick={() => setRootDraft('')} sx={{ minWidth: 0, px: 1 }}>
+          <Button
+            size="small"
+            aria-label="New file in project root"
+            onClick={() => setRootDraft('')}
+            sx={{ minWidth: 0, px: 1 }}
+          >
             <AddIcon fontSize="small" />
           </Button>
         ) : null}
@@ -291,14 +439,34 @@ export default function FileTree({ tree, selected, onSelect, onDoubleClick, onDe
           />
         ))}
       </List>
-      <Dialog open={rootDraft != null && !!rootCreate} onClose={() => setRootDraft(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={rootDraft != null && !!rootCreate}
+        onClose={() => setRootDraft(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>New file in project</DialogTitle>
         <DialogContent>
-          <TextField autoFocus fullWidth size="small" placeholder="name.tex" value={rootDraft ?? ''} onChange={(e) => setRootDraft(e.target.value)} />
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            placeholder="name.tex"
+            value={rootDraft ?? ''}
+            onChange={(e) => setRootDraft(e.target.value)}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRootDraft(null)}>Cancel</Button>
-          <Button variant="contained" onClick={() => { if (rootDraft?.trim() && rootCreate) onCreate?.(rootCreate, rootDraft.trim()); setRootDraft(null); }}>Create</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (rootDraft?.trim() && rootCreate) onCreate?.(rootCreate, rootDraft.trim());
+              setRootDraft(null);
+            }}
+          >
+            Create
+          </Button>
         </DialogActions>
       </Dialog>
       {tree.length > limit ? (

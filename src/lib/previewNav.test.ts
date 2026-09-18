@@ -21,17 +21,21 @@ describe('preview window shape', () => {
 
 describe('visible page pick', () => {
   it('picks the largest intersection ratio', () => {
-    expect(pickVisible([
-      { page: 1, ratio: 0.2 },
-      { page: 2, ratio: 0.8 },
-      { page: 3, ratio: 0.4 },
-    ])).toBe(2);
+    expect(
+      pickVisible([
+        { page: 1, ratio: 0.2 },
+        { page: 2, ratio: 0.8 },
+        { page: 3, ratio: 0.4 },
+      ]),
+    ).toBe(2);
   });
   it('breaks ties toward the smaller page so page 1 stays reachable', () => {
-    expect(pickVisible([
-      { page: 2, ratio: 0.5 },
-      { page: 1, ratio: 0.5 },
-    ])).toBe(1);
+    expect(
+      pickVisible([
+        { page: 2, ratio: 0.5 },
+        { page: 1, ratio: 0.5 },
+      ]),
+    ).toBe(1);
   });
   it('keeps the current page when nothing intersects', () => {
     expect(pickVisible([])).toBeNull();

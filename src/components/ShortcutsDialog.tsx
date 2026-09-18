@@ -21,7 +21,9 @@ export default function ShortcutsDialog({ open, onClose }: { open: boolean; onCl
             {KEYMAP.map((k) => (
               <TableRow key={k.id}>
                 <TableCell>{k.label}</TableCell>
-                <TableCell align="right" sx={{ fontFamily: 'monospace' }}>{k.keys}</TableCell>
+                <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  {k.keys}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

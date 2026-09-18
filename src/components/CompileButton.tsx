@@ -13,7 +13,12 @@ import Tooltip from '@mui/material/Tooltip';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 
-export default function CompileButton({ targetLabel, compiling, onCompile, onCancel }: {
+export default function CompileButton({
+  targetLabel,
+  compiling,
+  onCompile,
+  onCancel,
+}: {
   /** Human label of the working document (repo-relative basename chain). */
   targetLabel: string;
   compiling: boolean;
@@ -21,7 +26,10 @@ export default function CompileButton({ targetLabel, compiling, onCompile, onCan
   onCancel: () => void;
 }) {
   return (
-    <Tooltip title={compiling ? `Cancel ${targetLabel}` : `Compile ${targetLabel}`} placement="bottom">
+    <Tooltip
+      title={compiling ? `Cancel ${targetLabel}` : `Compile ${targetLabel}`}
+      placement="bottom"
+    >
       <IconButton
         size="small"
         color={compiling ? 'error' : 'primary'}

@@ -1,47 +1,24 @@
-# Prevent common commit-time mistakes in this two-language repo.
-# Fast static checks only (seconds): whitespace/hygiene, plus the linters and
-# type gates already standing in the repo. Vitest, cargo test, vite build and
-# the e2e footprint harness stay in the S0.2 one-command gate, not here.
-#
-# Setup (once per clone): `pre-commit install`. CI runs `pre-commit run
-# --all-files` instead (no hook installation needed there).
 default_stages: [pre-commit]
 repos:
-  # Official hygiene hooks (tiny, language-agnostic).
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      # New-lines only: trailing-whitespace and end-of-file checks stay OFF.
-      # The tree predates them (missing final newlines, trailing spaces in
-      # fixtures) and S0.2/S1.5 normalize that deliberately — a hook that
-      # rewrites unrelated files on every commit is worse than no hook.
       - id: check-yaml
       - id: check-json
-        # Tauri config + capability files predate strict JSON (comments and
-        # $schema URL keys); the Tauri CLI validates them at build time.
-        # tsconfig.json is JSONC (comments); tsc validates it.
         exclude: ^(src-tauri/(tauri\.conf\.json|capabilities/|gen/|target/)|tsconfig\.json)$
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
-        args: ["--maxkb=2048"]
-        # Sidecars are tracked until S1.5 untracks them (audit F-23);
-        # keep this guard for everything else.
+        args: ['--maxkb=2048']
         exclude: ^src-tauri/binaries/
       - id: mixed-line-ending
-        args: ["--fix=lf"]
+        args: ['--fix=lf']
         exclude: ^src-tauri/binaries/
-  # Bash scripts (e2e harnesses, npm pre-hooks): lint only, no reformat, so
-  # the hook never rewrites what it checks.
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
-        args: ["--severity=warning"]
-  # Rust: format gate, then lint gate. Both read-only (no --fix): failures
-  # print the fix command for the author to run deliberately. The tree must
-  # be `cargo fmt`-clean at HEAD (one `cargo fmt` commit if it drifts), so
-  # this hook only ever flags NEW unformatted code, never old debt.
+        args: ['--severity=warning']
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -56,9 +33,6 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
-  # TypeScript: the repo's own type gate (no eslint/prettier config exists,
-  # so the compiler is the linter). ~9s on this box; pass_filenames:false
-  # keeps one invocation per commit, not one per staged file.
   - repo: local
     hooks:
       - id: tsc-noemit
@@ -66,4 +40,19 @@ repos:
         entry: ./node_modules/.bin/tsc --noEmit --skipLibCheck
         language: system
         types: [ts]
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: ./node_modules/.bin/eslint .
+        language: system
+        types: [ts]
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: prettier-check
+        name: prettier --check
+        entry: ./node_modules/.bin/prettier --check .
+        language: system
         pass_filenames: false

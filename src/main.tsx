@@ -1,11 +1,11 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { ThemeProvider, CssBaseline } from "@mui/material";
-import App from "./App";
-import { createAppTheme } from "./lib/theme";
-import "./App.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { ThemeProvider, CssBaseline } from '@mui/material';
+import App from './App';
+import { createAppTheme } from './lib/theme';
+import './App.css';
 
-function Root() {
+export function Root() {
   const [mode, setMode] = React.useState<'dark' | 'light'>(() => {
     try {
       return localStorage.getItem('maleficium.theme') === 'light' ? 'light' : 'dark';
@@ -13,8 +13,6 @@ function Root() {
       return 'dark';
     }
   });
-  // D-11: the density knob `createAppTheme(mode, density)` shipped without UI.
-  // Persisted like the theme; the View > Density submenu owns it now.
   const [density, setDensity] = React.useState<'comfortable' | 'compact'>(() => {
     try {
       return localStorage.getItem('maleficium.density') === 'compact' ? 'compact' : 'comfortable';
@@ -32,21 +30,25 @@ function Root() {
           setMode(m);
           try {
             localStorage.setItem('maleficium.theme', m);
-          } catch { /* private mode */ }
+          } catch {
+            /* private mode */
+          }
         }}
         density={density}
         onDensityMode={(d) => {
           setDensity(d);
           try {
             localStorage.setItem('maleficium.density', d);
-          } catch { /* private mode */ }
+          } catch {
+            /* private mode */
+          }
         }}
       />
     </ThemeProvider>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <Root />
   </React.StrictMode>,

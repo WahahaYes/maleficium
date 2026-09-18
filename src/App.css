@@ -3,8 +3,12 @@
 }
 
 @keyframes synctex-flash {
-  0% { background-color: rgba(255, 176, 0, 0.55); }
-  100% { background-color: transparent; }
+  0% {
+    background-color: rgba(255, 176, 0, 0.55);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 /* PDF canvas inverse-SyncTeX hit feedback: brief amber outline overlay.

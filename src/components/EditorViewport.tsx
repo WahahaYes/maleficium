@@ -29,7 +29,15 @@ export interface EditorViewportHandle {
   caretLine: () => number;
 }
 
-function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, onDoubleClickRef }: EditorViewportProps & {
+function EditorViewport({
+  value,
+  onChange,
+  onSave,
+  line,
+  flashKey,
+  viewportRef,
+  onDoubleClickRef,
+}: EditorViewportProps & {
   /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
   /** Double-click line → App runs forward SyncTeX (no editor fork). */
@@ -77,7 +85,9 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
             try {
               const head = view.state.selection.main.head;
               onDoubleClickRef?.current?.(view.state.doc.lineAt(head).number);
-            } catch { /* no selection — ignore */ }
+            } catch {
+              /* no selection — ignore */
+            }
             return false;
           },
         }),
@@ -87,8 +97,10 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
     viewRef.current = view;
     const dt = Math.round(performance.now() - t0);
     if (value.length > 1_000_000) {
-      // eslint-disable-next-line no-console
-      console.timeLog?.('editor', `editor render ${(value.length / 1_048_576).toFixed(1)}MB file in ${dt}ms`);
+      console.timeLog?.(
+        'editor',
+        `editor render ${(value.length / 1_048_576).toFixed(1)}MB file in ${dt}ms`,
+      );
     }
     return () => {
       view.destroy();
@@ -120,13 +132,25 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
       const ln = view.state.doc.line(Math.min(line, view.state.doc.lines));
       view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
       view.focus();
-    } catch { /* line out of range — ignore */ }
+    } catch {
+      /* line out of range — ignore */
+    }
     if (flashKeyRef.current !== flashKey) {
       flashKeyRef.current = flashKey;
-      const dom = view.domAtPos(Math.min(line, view.state.doc.lines) >= 1
-        ? (() => { try { return view.state.doc.line(Math.min(line, view.state.doc.lines)).from; } catch { return 0; } })()
-        : 0);
-      const el = (dom?.node instanceof HTMLElement ? dom.node : dom?.node?.parentElement) as HTMLElement | null;
+      const dom = view.domAtPos(
+        Math.min(line, view.state.doc.lines) >= 1
+          ? (() => {
+              try {
+                return view.state.doc.line(Math.min(line, view.state.doc.lines)).from;
+              } catch {
+                return 0;
+              }
+            })()
+          : 0,
+      );
+      const el = (
+        dom?.node instanceof HTMLElement ? dom.node : dom?.node?.parentElement
+      ) as HTMLElement | null;
       const lineEl = el?.closest?.('.cm-line') as HTMLElement | null;
       if (lineEl) {
         lineEl.classList.add('cm-synctex-flash');
@@ -144,7 +168,9 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
       if (!view) return;
       const sel = view.state.selection.main;
       const line = view.state.doc.lineAt(sel.head);
-      const target = view.state.doc.line(Math.min(view.state.doc.lines, Math.max(1, line.number + dir)));
+      const target = view.state.doc.line(
+        Math.min(view.state.doc.lines, Math.max(1, line.number + dir)),
+      );
       view.dispatch({
         selection: EditorSelection.range(sel.anchor, dir > 0 ? target.to : target.from),
         scrollIntoView: true,
@@ -155,7 +181,10 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
       selectAll: () => {
         const view = viewRef.current;
         if (!view) return;
-        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length }, scrollIntoView: true });
+        view.dispatch({
+          selection: { anchor: 0, head: view.state.doc.length },
+          scrollIntoView: true,
+        });
         view.focus();
       },
       expandSelection: () => stepOut(1),
@@ -167,7 +196,9 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
           const ln = view.state.doc.line(Math.min(Math.max(1, n), view.state.doc.lines));
           view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
           view.focus();
-        } catch { /* out of range — ignore */ }
+        } catch {
+          /* out of range — ignore */
+        }
       },
       caretLine: () => {
         const view = viewRef.current;
@@ -179,7 +210,9 @@ function EditorViewport({ value, onChange, onSave, line, flashKey, viewportRef, 
         }
       },
     };
-    return () => { viewportRef.current = null; };
+    return () => {
+      viewportRef.current = null;
+    };
   }, [viewportRef]);
 
   return (

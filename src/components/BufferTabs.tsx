@@ -11,7 +11,14 @@ import MenuItem from '@mui/material/MenuItem';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
 
-export default function BufferTabs({ buffers, active, onSelect, onClose, onCloseOthers, onCloseAll }: {
+export default function BufferTabs({
+  buffers,
+  active,
+  onSelect,
+  onClose,
+  onCloseOthers,
+  onCloseAll,
+}: {
   buffers: Map<string, { dirty: boolean }>;
   active: string;
   onSelect: (path: string) => void;
@@ -19,9 +26,9 @@ export default function BufferTabs({ buffers, active, onSelect, onClose, onClose
   onCloseOthers?: (keep: string) => void;
   onCloseAll?: () => void;
 }) {
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   if (buffers.size === 0) return null;
   const base = (p: string) => p.slice(p.lastIndexOf('/') + 1) || p;
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   // Stable order: insertion order of the Map (open order).
   return (
     <Box

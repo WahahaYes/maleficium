@@ -28,7 +28,9 @@ beforeEach(() => {
 describe('moveToTrash', () => {
   it('preserves arbitrary bytes through cross-device fallback', async () => {
     // Bytes chosen to be lossy under UTF-8 text decode (PNG magic + 0xFF/0xFE/NUL).
-    const original = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x80, 0xc3, 0x28]);
+    const original = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0x80, 0xc3, 0x28,
+    ]);
     vi.mocked(rename).mockRejectedValueOnce(new Error('EXDEV: cross-device link not permitted'));
     vi.mocked(readFile).mockResolvedValueOnce(original);
 

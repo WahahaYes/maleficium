@@ -33,7 +33,11 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
           }}
         >
           {c.checked != null ? (
-            c.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+            c.checked ? (
+              <CheckIcon fontSize="small" />
+            ) : (
+              <Box sx={{ width: 20 }} />
+            )
           ) : null}
           <ListItemText>{c.label}</ListItemText>
           <ChevronRightIcon fontSize="small" color="action" />
@@ -51,14 +55,26 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
               role="menuitemradio"
               aria-checked={k.checked ?? undefined}
               disabled={!k.enabled}
-              onClick={() => { setSubAnchor(null); close(); void k.run?.(); }}
+              onClick={() => {
+                setSubAnchor(null);
+                close();
+                void k.run?.();
+              }}
             >
               {k.checked != null ? (
-                k.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+                k.checked ? (
+                  <CheckIcon fontSize="small" />
+                ) : (
+                  <Box sx={{ width: 20 }} />
+                )
               ) : null}
               <ListItemText>{k.label}</ListItemText>
               {k.accelerator ? (
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 3, fontFamily: 'monospace' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 3, fontFamily: 'monospace' }}
+                >
                   {k.accelerator}
                 </Typography>
               ) : null}
@@ -73,14 +89,25 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
     <MenuItem
       role="menuitem"
       disabled={!c.enabled}
-      onClick={() => { close(); void c.run?.(); }}
+      onClick={() => {
+        close();
+        void c.run?.();
+      }}
     >
       {c.checked != null ? (
-        c.checked ? <CheckIcon fontSize="small" /> : <Box sx={{ width: 20 }} />
+        c.checked ? (
+          <CheckIcon fontSize="small" />
+        ) : (
+          <Box sx={{ width: 20 }} />
+        )
       ) : null}
       <ListItemText>{c.label}</ListItemText>
       {c.accelerator ? (
-        <Typography variant="caption" color="text.secondary" sx={{ ml: 3, fontFamily: 'monospace' }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ ml: 3, fontFamily: 'monospace' }}
+        >
           {c.accelerator}
         </Typography>
       ) : null}
@@ -88,7 +115,10 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
   );
 }
 
-export default function MenuBar({ sections, status }: {
+export default function MenuBar({
+  sections,
+  status,
+}: {
   sections: MenuSection[];
   /** Right-side cluster (compile icon + phase) — caller owns the contract. */
   status?: React.ReactNode;
@@ -108,8 +138,13 @@ export default function MenuBar({ sections, status }: {
   return (
     <Box
       sx={{
-        display: 'flex', alignItems: 'center', height: 32, flexShrink: 0,
-        borderBottom: 1, borderColor: 'divider', px: 0.5,
+        display: 'flex',
+        alignItems: 'center',
+        height: 32,
+        flexShrink: 0,
+        borderBottom: 1,
+        borderColor: 'divider',
+        px: 0.5,
         backgroundColor: 'background.paper',
       }}
       role="menubar"

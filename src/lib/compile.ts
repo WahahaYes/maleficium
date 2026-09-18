@@ -11,9 +11,11 @@ import { listen } from '@tauri-apps/api/event';
  * Hence: `ok:true` → `pdfPath` is the pdf path, `log` is empty;
  * `ok:false` → `pdfPath` is null, `log` is the error message.
  */
-export type CompileResult = { ok: boolean, pdfPath: string | null, log: string };
+export type CompileResult = { ok: boolean; pdfPath: string | null; log: string };
 
-export function onCompileLine(cb:(line:string)=>void):Promise<()=>void> { return listen<string>('compile-line', (e)=>cb(e.payload)); }
+export function onCompileLine(cb: (line: string) => void): Promise<() => void> {
+  return listen<string>('compile-line', (e) => cb(e.payload));
+}
 
 export async function compileTex(inputPath: string, workdir: string): Promise<CompileResult> {
   try {
@@ -24,4 +26,6 @@ export async function compileTex(inputPath: string, workdir: string): Promise<Co
   }
 }
 
-export async function cancelCompile(): Promise<string> { return await invoke<string>('cancel_compile'); }
+export async function cancelCompile(): Promise<string> {
+  return await invoke<string>('cancel_compile');
+}

@@ -33,7 +33,10 @@ const DOCUMENTCLASS_RE = /\\documentclass(\[[^\]]*\])?\{[^}]*\}/;
 export function parseMagicComment(content: string): string | null {
   const m = content.match(MAGIC_RE);
   if (!m) return null;
-  const v = m[1].trim().replace(/^["']|["']$/g, '').trim();
+  const v = m[1]
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .trim();
   return v || null;
 }
 

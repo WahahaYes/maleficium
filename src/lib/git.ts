@@ -5,14 +5,23 @@ export type GitBadge = 'M' | 'A' | 'D' | 'U' | 'R';
 /** Never-throw git state: non-repos degrade honestly instead of throwing. */
 export type GitState =
   | { ok: true; badges: Record<string, GitBadge>; branch: string | null; raw: string }
-  | { ok: false; reason: 'not-a-repo' | 'no-git-binary'; badges: Record<string, GitBadge>; branch: null; raw: string };
+  | {
+      ok: false;
+      reason: 'not-a-repo' | 'no-git-binary';
+      badges: Record<string, GitBadge>;
+      branch: null;
+      raw: string;
+    };
 
 /**
  * Parse `git status --porcelain=v1 -b` output into per-file badges.
  * `??` → A (untracked shown as added), `UU`/`AA`/`DD` → U, `R` → R.
  * Branch comes from the `## branch...upstream` header line.
  */
-export function parseGitPorcelain(text: string): { badges: Record<string, GitBadge>; branch: string | null } {
+export function parseGitPorcelain(text: string): {
+  badges: Record<string, GitBadge>;
+  branch: string | null;
+} {
   const badges: Record<string, GitBadge> = {};
   let branch: string | null = null;
   for (const line of text.split('\n')) {
@@ -66,7 +75,10 @@ export async function gitStatus(root: string): Promise<{ ok: boolean; text: stri
   }
 }
 
-export async function gitShowHead(root: string, file: string): Promise<{ ok: boolean; text: string }> {
+export async function gitShowHead(
+  root: string,
+  file: string,
+): Promise<{ ok: boolean; text: string }> {
   try {
     const text = await invoke<string>('git_show_head', { root, file });
     return { ok: true, text };

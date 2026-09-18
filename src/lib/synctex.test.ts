@@ -3,7 +3,9 @@ import { parseForwardSync, parseInverseSync, isForwardNoMatch } from './synctex'
 
 describe('parseForwardSync', () => {
   it('extracts the Page: number from synctex view output', () => {
-    expect(parseForwardSync('SyncTeX result begin\nPage:3\nx:100\ny:200\nSyncTeX result end')).toBe(3);
+    expect(parseForwardSync('SyncTeX result begin\nPage:3\nx:100\ny:200\nSyncTeX result end')).toBe(
+      3,
+    );
   });
   it('clamps Page:0 up to page 1', () => {
     expect(parseForwardSync('Page:0')).toBe(1);
@@ -33,7 +35,9 @@ describe('isForwardNoMatch', () => {
 
 describe('parseInverseSync', () => {
   it('extracts Input: and Line: from synctex edit output', () => {
-    const r = parseInverseSync('SyncTeX result begin\nInput:/proj/hello.tex\nLine:7\nColumn:0\nSyncTeX result end');
+    const r = parseInverseSync(
+      'SyncTeX result begin\nInput:/proj/hello.tex\nLine:7\nColumn:0\nSyncTeX result end',
+    );
     expect(r).toEqual({ line: 7, hitFile: '/proj/hello.tex' });
   });
   it('returns null line when Line: is missing', () => {
