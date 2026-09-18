@@ -94,6 +94,31 @@ touch "$OUT/main.pdf" "$OUT/main.log" "$OUT/main.synctex.gz"
 [[ -e "$ROOT/out" ]] && fail "legacy in-project out/ re-created"
 pass "compile artifacts land in tmp shard, porcelain clean, no in-project out/"
 
+# --- trust boundary pins — 11-audit design §3/§6 (static, no window) ---------
+# The tightening must never silently regress: static scope stays off $HOME,
+# CSP stays an enforced object, opener stays fully removed (lockfiles too).
+CAPDIR="$DEVROOT/maleficium/src-tauri/capabilities"
+TAURICONF="$DEVROOT/maleficium/src-tauri/tauri.conf.json"
+HOMEHITS="$(grep -rnF '$HOME' "$CAPDIR" 2>/dev/null || true)"
+[[ -z "$HOMEHITS" ]] || fail "static capability went home-wide again: $HOMEHITS"
+pass "no home-wide static scope in capabilities"
+CSPKIND="$(python3 -c "import json,sys; c=json.load(open(sys.argv[1]))['app']['security']['csp']; print('object' if isinstance(c, dict) else 'null')" "$TAURICONF")"
+[[ "$CSPKIND" == "object" ]] || fail "security.csp is null or not an object in tauri.conf.json"
+pass "security.csp is an enforced object"
+for f in \
+    "$CAPDIR/default.json" \
+    "$DEVROOT/maleficium/src-tauri/src/lib.rs" \
+    "$DEVROOT/maleficium/src-tauri/Cargo.toml" \
+    "$DEVROOT/maleficium/package.json" \
+    "$DEVROOT/maleficium/src-tauri/Cargo.lock" \
+    "$DEVROOT/maleficium/package-lock.json"; do
+    [ -f "$f" ] || fail "opener pin cannot find watched file: $f"
+    if grep -q "opener" "$f"; then
+        fail "opener reappeared in $f"
+    fi
+done
+pass "opener stays removed (capabilities, rust, manifests, lockfiles)"
+
 # --- final sweep ---------------------------------------------------------------
 [[ -z "$(porcelain)" ]] || fail "final porcelain not clean: $(porcelain)"
 echo ""

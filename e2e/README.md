@@ -12,6 +12,8 @@ derivations — it never ships in the product bundle.
   asserts porcelain discipline at every step. Run:
   `./e2e/project-footprint.sh` from `maleficium/`. Green 2026-09-14.
   (Full writeup: `notes/08-devloop/2026-09-14-footprint-harness.md`.)
+  Also pins the trust boundary statically: no `$HOME` in `capabilities/`,
+  `security.csp` enforced, `opener` absent incl. lockfiles.
 
 ## Conventions
 

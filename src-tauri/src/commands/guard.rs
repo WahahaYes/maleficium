@@ -269,4 +269,23 @@ mod tests {
         let evil = format!("{}/link", base.to_string_lossy());
         assert!(require_within(&evil, &base).is_err());
     }
+
+    #[test]
+    fn require_within_fails_closed_on_missing_path() {
+        // canonical_root has the missing-path case; require_within needs its
+        // own — it canonicalizes independently and must fail the same way.
+        let base = scratch("within-missing");
+        let missing = base.join("no-such-file.tex");
+        let err = require_within(&missing.to_string_lossy(), &base).unwrap_err();
+        assert!(err.contains("unresolvable"), "unexpected: {}", err);
+    }
+
+    #[test]
+    fn require_within_rejects_empty_and_nul() {
+        // Entry-point hygiene: empty/NUL never reach canonicalize.
+        let base = scratch("within-empty");
+        assert!(require_within("", &base).is_err());
+        let nul = format!("{}/a\0b", base.to_string_lossy());
+        assert!(require_within(&nul, &base).is_err());
+    }
 }
