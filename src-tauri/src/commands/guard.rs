@@ -1,4 +1,4 @@
-//! Trust-boundary guards (Slice A): input validation for IPC commands +
+//! Trust-boundary guards: input validation for IPC commands +
 //! the runtime project-scope grant.
 //!
 //! Rule (design §5): custom Rust commands validate inputs themselves and
@@ -6,9 +6,11 @@
 //! deliberately no frontend mirror.
 //!
 //! Layout: pure/testable helpers (`reject_empty_nul`, `require_absolute`,
-//! `is_within`, `is_bare_filename`) + thin wrappers that touch the fs
-//! (`canonical_root`, `require_within` — both canonicalize and fail closed)
-//! + the one command that mints runtime scope (`grant_project_access`).
+//! `is_within`, `is_bare_filename`, `require_repo_path`) + thin wrappers
+//! that touch the fs (`canonical_root`, `require_within`,
+//! `require_allowed` — all canonicalize and fail closed) + scope fetch
+//! (`live_scope`) + the one command that mints runtime scope
+//! (`grant_project_access`).
 
 use std::path::{Path, PathBuf};
 
@@ -36,15 +38,17 @@ pub fn require_absolute(path: &Path, raw: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Pure containment: true when canonical `path` equals `base` or sits under
-/// it. Both sides MUST already be canonicalized (symlinks resolved) by the
-/// caller — `Path::starts_with` compares components, so a raw
-/// `/base/../evil` would otherwise prefix-match. See `require_within`.
+/// Pure containment predicate behind `require_within`: true when canonical
+/// `path` equals `base` or sits under it. Both sides MUST already be
+/// canonicalized (symlinks resolved) by the caller — `Path::starts_with`
+/// compares components, so a raw `/base/../evil` would otherwise
+/// prefix-match.
 ///
-/// Reserved for Slice B/C command validation (design §5); the grant path in
-/// this slice needs only `canonical_root`.
-// Note: `mod commands` is private, so `pub` items read as dead until the
-// validation call sites land — the allow is intentional, not legacy.
+/// `#[allow(dead_code)]`: `require_within` (its caller) is exercised by
+/// tests only in this slice — no production call site yet. The allow marks
+/// honest test-surface, not legacy: delete neither without deleting both.
+// Note: `mod commands` is private, so `pub` items read as dead until a
+// production call site lands — the allow is intentional, not legacy.
 #[allow(dead_code)]
 pub fn is_within(canonical_path: &Path, canonical_base: &Path) -> bool {
     canonical_path.starts_with(canonical_base)
@@ -58,9 +62,6 @@ pub fn is_within(canonical_path: &Path, canonical_base: &Path) -> bool {
 /// Note: path separators are rejected but interior dots are fine —
 /// `ch1..v2.tex` is a legal filename (`..` traverses only beside a
 /// separator, and separators never survive this check).
-///
-/// Reserved for Slice B/C command validation (design §5).
-#[allow(dead_code)]
 pub fn is_bare_filename(name: &str) -> bool {
     if name.is_empty() || name.contains('\0') {
         return false;
@@ -94,7 +95,15 @@ pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
 /// Validate that `candidate` canonicalizes to a path inside canonical `base`.
 /// Fails closed on unresolvable paths AND on containment failure.
 ///
-/// Reserved for Slice B/C command validation (design §5).
+/// Kept alongside `require_allowed` (the live-scope check every command
+/// uses): this is the base-relative form, used wherever a caller already
+/// holds a canonical base (tests, future command args that arrive as
+/// root + relative pairs). Same fail-closed contract, different anchor.
+///
+/// `#[allow(dead_code)]`: exercised by tests only in this slice — no
+/// production call site yet. Honest test-surface, not legacy.
+// Note: `mod commands` is private, so `pub` items read as dead until a
+// production call site lands — the allow is intentional, not legacy.
 #[allow(dead_code)]
 pub fn require_within(candidate: &str, canonical_base: &Path) -> Result<PathBuf, String> {
     reject_empty_nul(candidate)?;
@@ -108,14 +117,55 @@ pub fn require_within(candidate: &str, canonical_base: &Path) -> Result<PathBuf,
 }
 
 /// Validate a bare filename (no fs access). See `is_bare_filename`.
-///
-/// Reserved for Slice B/C command validation (design §5).
-#[allow(dead_code)]
 pub fn require_bare_filename(name: &str) -> Result<&str, String> {
     if !is_bare_filename(name) {
         return Err(format!("forbidden name (not a bare filename): {}", name));
     }
     Ok(name)
+}
+
+/// Validate a `HEAD:<file>`-style repo-relative path: rejects empty, NUL,
+/// absolute paths, and any `..` component (pure lexical check — no fs
+/// access, so it works for files that exist only in HEAD, not on disk).
+/// Windows separators are rejected too (this is a git-path, always `/`).
+pub fn require_repo_path(file: &str) -> Result<&str, String> {
+    reject_empty_nul(file)?;
+    let p = Path::new(file);
+    if p.is_absolute() {
+        return Err(format!("forbidden path (not repo-relative): {}", file));
+    }
+    if file.contains('\\') {
+        return Err(format!("forbidden path (backslash): {}", file));
+    }
+    if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(format!("forbidden path (parent escape): {}", file));
+    }
+    Ok(file)
+}
+
+/// Fetch the live fs scope, or fail closed when unavailable (never panic —
+/// `try_fs_scope` returns None outside a managed window context).
+pub fn live_scope(app: &AppHandle) -> Result<tauri::fs::Scope, String> {
+    app.try_fs_scope()
+        .ok_or_else(|| "forbidden path: fs scope unavailable".to_string())
+}
+
+/// Validate that `candidate` canonicalizes to a path the LIVE fs scope
+/// currently allows (runtime grant from `grant_project_access`, dialog
+/// picks, or static capability homes). This is the enforcement behind
+/// every custom command: the scope is the source of truth, so commands
+/// accept exactly what the fs plugin itself would serve.
+pub fn require_allowed(app: &AppHandle, candidate: &str) -> Result<PathBuf, String> {
+    reject_empty_nul(candidate)?;
+    let canon = Path::new(candidate)
+        .canonicalize()
+        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
+    let scope = live_scope(app)?;
+    if scope.is_allowed(&canon) {
+        Ok(canon)
+    } else {
+        Err(format!("forbidden path (outside scope): {}", candidate))
+    }
 }
 
 /// Mint a recursive runtime fs-scope grant for one validated project root
@@ -130,9 +180,7 @@ pub fn require_bare_filename(name: &str) -> Result<&str, String> {
 #[tauri::command]
 pub fn grant_project_access(app: AppHandle, root: String) -> Result<String, String> {
     let canon = canonical_root(&root)?;
-    let scope = app
-        .try_fs_scope()
-        .ok_or_else(|| "forbidden path: fs scope unavailable".to_string())?;
+    let scope = live_scope(&app)?;
     scope
         .allow_directory(&canon, true)
         .map_err(|e| format!("grant failed for {}: {}", canon.display(), e))?;
@@ -287,5 +335,19 @@ mod tests {
         assert!(require_within("", &base).is_err());
         let nul = format!("{}/a\0b", base.to_string_lossy());
         assert!(require_within(&nul, &base).is_err());
+    }
+
+    #[test]
+    fn repo_path_rule() {
+        assert!(require_repo_path("chapters/method.tex").is_ok());
+        assert!(require_repo_path("main.tex").is_ok());
+        // Works for HEAD-only paths (no fs access — missing file still validates).
+        assert!(require_repo_path("deleted-in-workdir.tex").is_ok());
+        assert!(require_repo_path("").is_err());
+        assert!(require_repo_path("a\0b").is_err());
+        assert!(require_repo_path("/abs/path.tex").is_err());
+        assert!(require_repo_path("../outside.tex").is_err());
+        assert!(require_repo_path("sub/../../outside.tex").is_err());
+        assert!(require_repo_path("sub\\win.tex").is_err());
     }
 }

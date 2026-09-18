@@ -4,6 +4,8 @@ use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
+use super::guard::require_allowed;
+
 fn out_pdf(outdir: &Path, main_file: &str) -> PathBuf {
     let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
     outdir.join(format!("{}.pdf", stem))
@@ -126,13 +128,28 @@ fn wait_child(mut child: std::process::Child, timeout_secs: u64) -> WaitOutcome 
 
 #[tauri::command]
 pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String, workdir: String) -> Result<String, String> {
-    let (dir, main_file) = if Path::new(&input).is_absolute() {
-        let p = Path::new(&input);
-        let d = p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| PathBuf::from(&workdir));
-        let f = p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or(input.clone());
-        (d, f)
+    // Trust boundary (design §5): both strings come from the frontend, so
+    // each must resolve inside the live fs scope (runtime project grant,
+    // dialog picks, or tmp/appdata statics) before anything else. The
+    // outdir below derives from `temp_dir()` server-side — safe by
+    // construction, never from frontend strings. Canonical forms drive the
+    // split below (no raw-string slicing), so `..`/symlink games fail here,
+    // not at the engine spawn.
+    let workdir_canon = require_allowed(&app, &workdir)?;
+    let input_canon: Option<PathBuf> = if Path::new(&input).is_absolute() {
+        // Absolute input: the file itself must be in scope (canonicalize
+        // fails closed on missing files — a compile target must exist).
+        Some(require_allowed(&app, &input)?)
     } else {
-        (PathBuf::from(&workdir), input.clone())
+        None
+    };
+    let (dir, main_file) = match input_canon {
+        Some(canon) => {
+            let d = canon.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| workdir_canon.clone());
+            let f = canon.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or(input.clone());
+            (d, f)
+        }
+        None => (workdir_canon.clone(), input.clone()),
     };
     // App-local outdir (V-4): shard OS tmp by the main-file dir so NOTHING is
     // written into the user's project. `compile_tex` signature unchanged.
