@@ -652,7 +652,14 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
     let unlisten: ()=>void = ()=>{};
-    try { unlisten = await onCompileLine((line)=>emit({scope:'compile',kind:'progress',message:String(line).slice(0,300)})); } catch {}
+    // `note: downloading <pkg>` lines get their own download-wait signal
+    // so a long first build reads as network-wait, not an engine hang.
+    const isDownloadLine = (l: string) => /(^|\s)downloading\s/i.test(l);
+    try { unlisten = await onCompileLine((line)=>{
+      const s = String(line);
+      if (isDownloadLine(s)) emit({scope:'compile',kind:'info',message:'downloading '+s.replace(/^.*downloading\s+/i,'').slice(0,120)});
+      else emit({scope:'compile',kind:'progress',message:s.slice(0,300)});
+    }); } catch {}
     const t0 = Date.now(); const hb = setInterval(()=>emit({scope:'compile',kind:'progress',message:`still compiling ${target ?? fileName} (${Math.floor((Date.now()-t0)/1000)}s)`}), 5000);
     let maxGap = 0; let lastT = performance.now(); let probing = true;
     const tickProbe = () => { if (!probing) return; const now = performance.now(); maxGap = Math.max(maxGap, now - lastT); lastT = now; requestAnimationFrame(tickProbe); };
