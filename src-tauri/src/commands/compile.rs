@@ -1,6 +1,6 @@
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
@@ -60,7 +60,9 @@ fn sidecar_path_for(name: &str) -> Option<PathBuf> {
             }
         }
     }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join(&exe_name);
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries")
+        .join(&exe_name);
     if dev.exists() {
         return Some(dev);
     }
@@ -127,7 +129,12 @@ fn wait_child(mut child: std::process::Child, timeout_secs: u64) -> WaitOutcome 
 }
 
 #[tauri::command]
-pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String, workdir: String) -> Result<String, String> {
+pub fn compile_tex(
+    app: AppHandle,
+    state: State<'_, CompileState>,
+    input: String,
+    workdir: String,
+) -> Result<String, String> {
     // Trust boundary (design §5): both strings come from the frontend, so
     // each must resolve inside the live fs scope (runtime project grant,
     // dialog picks, or tmp/appdata statics) before anything else. The
@@ -145,8 +152,14 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     };
     let (dir, main_file) = match input_canon {
         Some(canon) => {
-            let d = canon.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| workdir_canon.clone());
-            let f = canon.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or(input.clone());
+            let d = canon
+                .parent()
+                .map(|d| d.to_path_buf())
+                .unwrap_or_else(|| workdir_canon.clone());
+            let f = canon
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or(input.clone());
             (d, f)
         }
         None => (workdir_canon.clone(), input.clone()),
@@ -156,7 +169,10 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     let outdir = out_dir_for(&std::env::temp_dir(), &dir.to_string_lossy());
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
-    let _ = app.emit("compile-line", format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()));
+    let _ = app.emit(
+        "compile-line",
+        format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()),
+    );
 
     // 1) Bundled sidecar (externalBin `binaries/tectonic`), resolved without new deps.
     // Its stderr is the most relevant failure (the file was actually processed),
@@ -174,7 +190,14 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
     let mut sidecar_err: Option<String> = None;
     if let Some(bin) = sidecar_path() {
         match Command::new(&bin)
-            .args(["-X", "compile", &main_file, "--outdir", &outdir_str, "--synctex"])
+            .args([
+                "-X",
+                "compile",
+                &main_file,
+                "--outdir",
+                &outdir_str,
+                "--synctex",
+            ])
             .current_dir(&dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -182,7 +205,8 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
         {
             Ok(child) => {
                 let mut child = child;
-                let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+                let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take())
+                else {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(String::from("sidecar pipes unavailable"));
@@ -192,20 +216,16 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
                 let app_clone = app.clone();
                 let stdout_handle = std::thread::spawn(move || {
                     let reader = BufReader::new(stdout);
-                    for line in reader.lines() {
-                        if let Ok(line) = line {
-                            let _ = app_clone.emit("compile-line", line.clone());
-                        }
+                    for line in reader.lines().map_while(Result::ok) {
+                        let _ = app_clone.emit("compile-line", line);
                     }
                 });
 
                 let mut collected: Vec<String> = Vec::new();
                 let stderr_reader = BufReader::new(stderr);
-                for line in stderr_reader.lines() {
-                    if let Ok(line) = line {
-                        let _ = app.emit("compile-line", line.clone());
-                        collected.push(line);
-                    }
+                for line in stderr_reader.lines().map_while(Result::ok) {
+                    let _ = app.emit("compile-line", line.clone());
+                    collected.push(line);
                 }
 
                 let _ = stdout_handle.join();
@@ -224,9 +244,7 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
                     }
                 };
                 match outcome {
-                    WaitOutcome::Cancelled => {
-                        return Err(String::from("compile cancelled"))
-                    }
+                    WaitOutcome::Cancelled => return Err(String::from("compile cancelled")),
                     WaitOutcome::TimedOut => {
                         sidecar_err = Some(format!(
                             "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
@@ -252,11 +270,14 @@ pub fn compile_tex(app: AppHandle, state: State<'_, CompileState>, input: String
         }
     }
 
-    match sidecar_path() {
-        None => return Err(String::from("bundled tectonic sidecar missing (src-tauri/binaries/) — no PATH fallback")),
-        Some(_) => {}
+    if sidecar_path().is_none() {
+        return Err(String::from(
+            "bundled tectonic sidecar missing (src-tauri/binaries/) — no PATH fallback",
+        ));
     }
-    if let Some(e) = sidecar_err { return Err(e); }
+    if let Some(e) = sidecar_err {
+        return Err(e);
+    }
     Err(last_err)
 }
 
@@ -268,7 +289,7 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
             let _ = c.wait();
             Ok(String::from("cancelled"))
         }
-        None => Err(String::from("nothing to cancel"))
+        None => Err(String::from("nothing to cancel")),
     }
 }
 
@@ -278,12 +299,18 @@ mod tests {
 
     #[test]
     fn out_pdf_maps_tex_stem_to_pdf() {
-        assert_eq!(out_pdf(Path::new("/t/out"), "hello.tex"), Path::new("/t/out/hello.pdf"));
+        assert_eq!(
+            out_pdf(Path::new("/t/out"), "hello.tex"),
+            Path::new("/t/out/hello.pdf")
+        );
     }
 
     #[test]
     fn out_pdf_appends_pdf_when_no_tex_suffix() {
-        assert_eq!(out_pdf(Path::new("/t/out"), "hello"), Path::new("/t/out/hello.pdf"));
+        assert_eq!(
+            out_pdf(Path::new("/t/out"), "hello"),
+            Path::new("/t/out/hello.pdf")
+        );
     }
 
     #[test]

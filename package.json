@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "PIDS=$(lsof -ti:1420,1421 2>/dev/null); if [ -n \"$PIDS\" ]; then echo reclaiming 1420/1421: $PIDS; echo \"$PIDS\" | xargs -r kill -TERM 2>/dev/null; sleep 2; lsof -ti:1420,1421 2>/dev/null | xargs -r kill -KILL 2>/dev/null; fi; pkill -f '[b]inaries/tectonic' 2>/dev/null; true",
-    "predev:desktop": "PIDS=$(lsof -ti:1420,1421 2>/dev/null); if [ -n \"$PIDS\" ]; then echo reclaiming 1420/1421: $PIDS; echo \"$PIDS\" | xargs -r kill -TERM 2>/dev/null; sleep 2; lsof -ti:1420,1421 2>/dev/null | xargs -r kill -KILL 2>/dev/null; fi; pkill -f '[b]inaries/tectonic' 2>/dev/null; true",
+    "predev": "sh scripts/reclaim.sh",
+    "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh",
     "dev": "vite",
     "dev:desktop": "tauri dev",
+    "prebuild": "sh scripts/check-freshness.sh --all",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",

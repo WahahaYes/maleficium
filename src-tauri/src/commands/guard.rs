@@ -96,7 +96,9 @@ pub fn require_repo_path(file: &str) -> Result<&str, String> {
     if file.contains('\\') {
         return Err(format!("forbidden path (backslash): {}", file));
     }
-    if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err(format!("forbidden path (parent escape): {}", file));
     }
     Ok(file)
@@ -178,10 +180,8 @@ mod tests {
 
     #[test]
     fn fails_closed_on_missing_path() {
-        let missing = std::env::temp_dir().join(format!(
-            "maleficium-guard-missing-{}",
-            std::process::id()
-        ));
+        let missing =
+            std::env::temp_dir().join(format!("maleficium-guard-missing-{}", std::process::id()));
         let _ = fs::remove_dir_all(&missing);
         assert!(canonical_root(&missing.to_string_lossy()).is_err());
     }
