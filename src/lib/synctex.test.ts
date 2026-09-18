@@ -23,6 +23,9 @@ describe('isForwardNoMatch', () => {
   it('flags the bare {} response', () => {
     expect(isForwardNoMatch('{}')).toBe(true);
   });
+  it('flags the untagged-file warning', () => {
+    expect(isForwardNoMatch('SyncTeX Warning: No tag for /proj/other.tex')).toBe(true);
+  });
   it('passes real output through', () => {
     expect(isForwardNoMatch('SyncTeX result begin\nPage:1\nSyncTeX result end')).toBe(false);
   });

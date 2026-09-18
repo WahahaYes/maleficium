@@ -33,11 +33,10 @@ export function parseForwardSync(text: string): number | null {
 }
 
 /**
- * True when `synctex view` output is a no-match response.
- * Both shapes observed: the literal `no_match` token and the bare `{}`.
+ * True when `synctex view` output is a genuine no-match response.
  */
 export function isForwardNoMatch(text: string): boolean {
-  return text.includes('no_match') || text === '{}';
+  return text.includes('no_match') || text.includes('No tag for') || text === '{}';
 }
 
 /**

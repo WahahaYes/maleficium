@@ -797,10 +797,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable while compiling (synctex_no_match)' });
       return;
     }
-    // Forward SyncTeX needs the ABSOLUTE path of the VISIBLE file: the gz
-    // stores absolute Input paths per file, so a pdf basename never matches
-    // and the main file would resolve the wrong line table for chapters.
-    // Bare untitled names resolve against the untitled workdir.
     const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
     const result = await forward_sync(pdfUrl, texPath, currentLine);
     if (!result.ok) {
@@ -886,9 +882,6 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   // so both callers land the preview identically.
   forwardSyncLineRef.current = (line: number) => {
     if (!pdfUrl || compilePhase === 'compiling') return;
-    // Explicit-line forward shares handleForwardSync's tex-path rule, but
-    // targets the line the user named (e.g. editor double-click) rather
-    // than the caret — the visible file owns the line the user pointed at.
     const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
     void forward_sync(pdfUrl, texPath, line).then((result) => {
       if (!result.ok || isForwardNoMatch(result.text)) {

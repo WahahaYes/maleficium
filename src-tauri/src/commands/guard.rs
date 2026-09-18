@@ -6,11 +6,10 @@
 //! deliberately no frontend mirror.
 //!
 //! Layout: pure/testable helpers (`reject_empty_nul`, `require_absolute`,
-//! `is_within`, `is_bare_filename`, `require_repo_path`) + thin wrappers
-//! that touch the fs (`canonical_root`, `require_within`,
-//! `require_allowed` — all canonicalize and fail closed) + scope fetch
-//! (`live_scope`) + the one command that mints runtime scope
-//! (`grant_project_access`).
+//! `is_bare_filename`, `require_repo_path`) + thin wrappers that touch the
+//! fs (`canonical_root`, `require_allowed` — both canonicalize and fail
+//! closed) + scope fetch (`live_scope`) + the one command that mints runtime
+//! scope (`grant_project_access`).
 
 use std::path::{Path, PathBuf};
 
@@ -36,22 +35,6 @@ pub fn require_absolute(path: &Path, raw: &str) -> Result<(), String> {
         return Err(format!("forbidden path (not absolute): {}", raw));
     }
     Ok(())
-}
-
-/// Pure containment predicate behind `require_within`: true when canonical
-/// `path` equals `base` or sits under it. Both sides MUST already be
-/// canonicalized (symlinks resolved) by the caller — `Path::starts_with`
-/// compares components, so a raw `/base/../evil` would otherwise
-/// prefix-match.
-///
-/// `#[allow(dead_code)]`: `require_within` (its caller) is exercised by
-/// tests only in this slice — no production call site yet. The allow marks
-/// honest test-surface, not legacy: delete neither without deleting both.
-// Note: `mod commands` is private, so `pub` items read as dead until a
-// production call site lands — the allow is intentional, not legacy.
-#[allow(dead_code)]
-pub fn is_within(canonical_path: &Path, canonical_base: &Path) -> bool {
-    canonical_path.starts_with(canonical_base)
 }
 
 /// True when `name` is a bare filename: no `/`, `\`, or NUL, not
@@ -88,30 +71,6 @@ pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", raw, e))?;
     if !canon.is_dir() {
         return Err(format!("forbidden path (not a directory): {}", raw));
-    }
-    Ok(canon)
-}
-
-/// Validate that `candidate` canonicalizes to a path inside canonical `base`.
-/// Fails closed on unresolvable paths AND on containment failure.
-///
-/// Kept alongside `require_allowed` (the live-scope check every command
-/// uses): this is the base-relative form, used wherever a caller already
-/// holds a canonical base (tests, future command args that arrive as
-/// root + relative pairs). Same fail-closed contract, different anchor.
-///
-/// `#[allow(dead_code)]`: exercised by tests only in this slice — no
-/// production call site yet. Honest test-surface, not legacy.
-// Note: `mod commands` is private, so `pub` items read as dead until a
-// production call site lands — the allow is intentional, not legacy.
-#[allow(dead_code)]
-pub fn require_within(candidate: &str, canonical_base: &Path) -> Result<PathBuf, String> {
-    reject_empty_nul(candidate)?;
-    let canon = Path::new(candidate)
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
-    if !is_within(&canon, canonical_base) {
-        return Err(format!("forbidden path (outside scope): {}", candidate));
     }
     Ok(canon)
 }
@@ -240,51 +199,6 @@ mod tests {
     }
 
     #[test]
-    fn normalization_collapses_dotdot_inside_scope() {
-        let base = scratch("norm");
-        let sub = base.join("sub");
-        fs::create_dir_all(&sub).unwrap();
-        let tricky = format!("{}/sub/../sub", base.to_string_lossy());
-        assert_eq!(require_within(&tricky, &base).unwrap(), sub.canonicalize().unwrap());
-    }
-
-    #[test]
-    fn dotdot_escape_rejected() {
-        let outer = scratch("escape");
-        let base = outer.join("proj");
-        let outside = outer.join("outside");
-        fs::create_dir_all(&base).unwrap();
-        fs::create_dir_all(&outside).unwrap();
-        let base = base.canonicalize().unwrap();
-        // Exists (canonicalize succeeds) but outside base → containment error.
-        let evil = format!("{}/../outside", base.to_string_lossy());
-        let err = require_within(&evil, &base).unwrap_err();
-        assert!(err.contains("outside scope"), "unexpected: {}", err);
-    }
-
-    #[test]
-    fn absolute_escape_rejected() {
-        let base = scratch("abs");
-        let sibling = base
-            .parent()
-            .unwrap()
-            .join(format!("maleficium-guard-abs-sib-{}", std::process::id()));
-        fs::create_dir_all(&sibling).unwrap();
-        let err = require_within(&sibling.to_string_lossy(), &base).unwrap_err();
-        assert!(err.contains("outside scope"), "unexpected: {}", err);
-        let _ = fs::remove_dir_all(&sibling);
-    }
-
-    #[test]
-    fn within_allows_equal_and_prefix_trick_fails() {
-        // Pure component comparison: "/srv/proj2" is NOT within "/srv/proj".
-        assert!(is_within(Path::new("/srv/proj"), Path::new("/srv/proj")));
-        assert!(is_within(Path::new("/srv/proj/a/b"), Path::new("/srv/proj")));
-        assert!(!is_within(Path::new("/srv/proj2"), Path::new("/srv/proj")));
-        assert!(!is_within(Path::new("/srv"), Path::new("/srv/proj")));
-    }
-
-    #[test]
     fn bare_filename_rule() {
         assert!(is_bare_filename("main.pdf"));
         assert!(is_bare_filename("ch 1 (final).tex"));
@@ -299,42 +213,6 @@ mod tests {
         assert!(!is_bare_filename("a\0b"));
         assert!(require_bare_filename("ok.tex").is_ok());
         assert!(require_bare_filename("a/b").is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn symlink_escape_collapses_to_target() {
-        use std::os::unix::fs::symlink;
-        let outer = scratch("symlink");
-        let base = outer.join("proj");
-        let outside = outer.join("outside");
-        fs::create_dir_all(&base).unwrap();
-        fs::create_dir_all(&outside).unwrap();
-        let base = base.canonicalize().unwrap();
-        symlink(&outside, base.join("link")).unwrap();
-        // The link resolves outside base → rejected even though the raw
-        // string prefix-matches base.
-        let evil = format!("{}/link", base.to_string_lossy());
-        assert!(require_within(&evil, &base).is_err());
-    }
-
-    #[test]
-    fn require_within_fails_closed_on_missing_path() {
-        // canonical_root has the missing-path case; require_within needs its
-        // own — it canonicalizes independently and must fail the same way.
-        let base = scratch("within-missing");
-        let missing = base.join("no-such-file.tex");
-        let err = require_within(&missing.to_string_lossy(), &base).unwrap_err();
-        assert!(err.contains("unresolvable"), "unexpected: {}", err);
-    }
-
-    #[test]
-    fn require_within_rejects_empty_and_nul() {
-        // Entry-point hygiene: empty/NUL never reach canonicalize.
-        let base = scratch("within-empty");
-        assert!(require_within("", &base).is_err());
-        let nul = format!("{}/a\0b", base.to_string_lossy());
-        assert!(require_within(&nul, &base).is_err());
     }
 
     #[test]
