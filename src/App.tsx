@@ -66,6 +66,10 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   const [pdfUrl, setPdfUrl] = useState<string|null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
+  // Ref mirror: forward SyncTeX reads via forwardSyncRef (subscribe-once
+  // listener) — state would go stale the same way compile did.
+  const currentLineRef = useRef(currentLine);
+  currentLineRef.current = currentLine;
   // Bumped on every inverse SyncTeX hit → EditorViewport flashes the line amber.
   const [synctexFlash, setSynctexFlash] = useState(0);
   // Ref mirror for the watcher closure (effect is [root]-scoped; fileName would go stale).
@@ -797,8 +801,12 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX unavailable while compiling (synctex_no_match)' });
       return;
     }
+    // The caret may have moved since the last jump: read the live line from
+    // the viewport bridge (currentLine only tracks jumps, not caret moves).
+    const liveLine = viewportRef.current?.caretLine() ?? currentLineRef.current;
+    if (liveLine !== currentLineRef.current) setCurrentLine(liveLine);
     const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
-    const result = await forward_sync(pdfUrl, texPath, currentLine);
+    const result = await forward_sync(pdfUrl, texPath, liveLine);
     if (!result.ok) {
       emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
       return;
@@ -807,15 +815,16 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
       emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
       return;
     }
-    // Forward SyncTeX is bidirectional now: parse the Page:/x:/y: rect and
-    // jump the preview there (same-page flash when already viewing it).
     const target = parseForwardSync(result.text);
-    if (target != null) {
-      setPageNumber(target);
-      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
-    } else {
+    if (target == null) {
       emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → ${result.text.slice(0, 120)}` });
+      return;
     }
+    // Preamble/untagged lines resolve to a same-page rect with no movement:
+    // arriving without moving is noise, not navigation — stay silent.
+    if (target === pageNumberRef.current) return;
+    setPageNumber(target);
+    emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
   }
 
   async function handleInverseSync(page: number, x: number, y: number){
@@ -877,11 +886,11 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   compileRef.current = compile;
   forwardSyncRef.current = handleForwardSync;
   handleSelectRef.current = handleSelect;
-  // Forward SyncTeX from an explicit line (editor double-click). Shares the
-  // request path with handleForwardSync; the parse-and-jump tail is factored
-  // so both callers land the preview identically.
+  // Forward SyncTeX from an explicit line (editor double-click). The line is
+  // given, so no caret read — but the same-page silence rule still applies.
   forwardSyncLineRef.current = (line: number) => {
     if (!pdfUrl || compilePhase === 'compiling') return;
+    if (line !== currentLineRef.current) setCurrentLine(line);
     const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
     void forward_sync(pdfUrl, texPath, line).then((result) => {
       if (!result.ok || isForwardNoMatch(result.text)) {
@@ -889,10 +898,9 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
         return;
       }
       const target = parseForwardSync(result.text);
-      if (target != null) {
-        setPageNumber(target);
-        emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
-      }
+      if (target == null || target === pageNumberRef.current) return;
+      setPageNumber(target);
+      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
     });
   };
 
@@ -919,6 +927,8 @@ export default function App({ themeMode = 'dark', onThemeMode = () => {}, densit
   }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
+  const pageNumberRef = useRef(pageNumber);
+  pageNumberRef.current = pageNumber;
   const [compilePhase, setCompilePhase] = useState('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
