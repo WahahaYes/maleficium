@@ -6,6 +6,9 @@
 // and scroll compensation. All pure and unit-tested; the component owns I/O.
 
 /** Shells rendered above the anchor (neighbors kept as bitmaps). */
+// Idle prefetch ring (render-idle, outside the window + eviction set).
+export const PREFETCH_AHEAD = 1;
+export const PREFETCH_BEHIND = 1;
 export const WINDOW_ABOVE = 1;
 /** Shells rendered below the anchor (neighbors kept as bitmaps). */
 export const WINDOW_BELOW = 2;

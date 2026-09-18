@@ -26,6 +26,8 @@ import { getPdfJs, openPdfSource } from '../lib/pdfjs';
 import { emit } from '../lib/events';
 import PreviewToolbar from './PreviewToolbar';
 import {
+  PREFETCH_AHEAD,
+  PREFETCH_BEHIND,
   WINDOW_ABOVE,
   WINDOW_BELOW,
   clampPage,
@@ -447,6 +449,10 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
     }
     const ordered = offsets.map((o) => target + o).filter((n) => n >= win.lo && n <= win.hi);
     const inWindow = new Set(ordered);
+    // Idle prefetch ring: one page beyond each window edge, same identity
+    // maps, exempt from eviction.
+    const preWin = windowFor(target, total, WINDOW_ABOVE + PREFETCH_BEHIND, WINDOW_BELOW + PREFETCH_AHEAD);
+    const prefetch = preWin.pages.filter((n) => !inWindow.has(n));
     // Claim one in-flight token PER page: a newer pass for the same page
     // supersedes the older one; other pages are unaffected.
     const myTokens = new Map<string, number>();
@@ -485,13 +491,28 @@ export default function Preview({ pdfUrl, stamp, pageNumber = 1, onPage, onSync,
           if (visibleRef.current !== target) break;
           commitBitmap(n, nk, nb);
         }
+        // Lowest priority, fully idle: fill the prefetch ring.
+        for (const n of prefetch) {
+          const nk = `${key}#${n}`;
+          if (!alivePage(nk) || renderedRef.current.has(nk)) continue;
+          // eslint-disable-next-line no-await-in-loop
+          await idle();
+          if (!alivePage(nk) || visibleRef.current !== target) break;
+          // eslint-disable-next-line no-await-in-loop
+          const nb = await renderBitmap(pdf, nk, n, () => alivePage(nk));
+          if (!alivePage(nk) || visibleRef.current !== target) break;
+          commitBitmap(n, nk, nb);
+        }
         // Memory contract: shells stay for scroll height, but bitmaps
         // outside the window are freed (canvas backing cleared). Keyed by
         // the captured doc identity so a newer document's bitmaps (same
         // page numbers, different key) are never touched — and a page with
         // a NEWER in-flight token is never evicted (its pixels are coming).
+        // Prefetch ring: idle only, exempt from eviction below
+        // (at most PREFETCH_AHEAD+PREFETCH_BEHIND pages).
+        const keepPrefetch = new Set(prefetch);
         for (const [n, canvas] of canvasRefs.current) {
-          if (renderedKeys.current.get(n) !== key || inWindow.has(n)) continue;
+          if (renderedKeys.current.get(n) !== key || inWindow.has(n) || keepPrefetch.has(n)) continue;
           if (inFlightRef.current.get(`${key}#${n}`) !== myTokens.get(`${key}#${n}`) && inFlightRef.current.has(`${key}#${n}`)) continue;
           renderedKeys.current.delete(n);
           renderedRef.current.delete(`${key}#${n}`);
