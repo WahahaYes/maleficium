@@ -44,3 +44,20 @@ export function markSaved(
   next.set(path, { ...prev, dirty: false });
   return next;
 }
+
+export const MAX_BUFFERS = 10;
+
+export function enforceBufferCap(
+  buffers: Map<string, BufferState>,
+  active: string,
+): Map<string, BufferState> {
+  if (buffers.size <= MAX_BUFFERS) return buffers;
+  const next = new Map(buffers);
+  for (const k of [...next.keys()]) {
+    if (next.size <= MAX_BUFFERS) break;
+    if (k === active) continue;
+    const b = next.get(k);
+    if (b && !b.dirty) next.delete(k);
+  }
+  return next;
+}

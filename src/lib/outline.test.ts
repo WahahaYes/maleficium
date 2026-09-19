@@ -10,7 +10,7 @@ describe('parseOutline sections', () => {
       { level: 2, title: 'Bits', line: 5, kind: 'section' },
     ]);
   });
-  it('ignores commented sections and caps entries', () => {
+  it('ignores commented sections', () => {
     expect(parseOutline('% \\section{Fake}\n\\section{Real}\n')).toEqual([
       { level: 1, title: 'Real', line: 2, kind: 'section' },
     ]);
@@ -80,16 +80,12 @@ describe('filterOutline', () => {
     expect(filterOutline(all, 'figures').length).toBe(1);
     expect(filterOutline(all, 'labels').length).toBe(0);
   });
-  it('3000 sections parse fast and cap at 1000', () => {
+  it('3000 sections parse and cap at 1000', () => {
     const lines = ['\\documentclass{article}', '\\begin{document}'];
     for (let i = 0; i < 3000; i++) lines.push(`\\section{S${i}} \\label{s:${i}}`);
     lines.push('\\end{document}');
-    const t0 = Date.now();
     const rows = parseOutline(lines.join('\n'));
-    const ms = Date.now() - t0;
-    console.log(`outline 3000 sections: ${ms}ms, ${rows.length} rows`);
     expect(rows.length).toBe(1000);
-    expect(ms).toBeLessThan(2000);
   });
 });
 

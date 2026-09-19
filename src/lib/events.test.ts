@@ -31,7 +31,7 @@ describe('events bus', () => {
     expect(list[list.length - 1].message).toBe('m600');
   });
 
-  it('subscriber receives events', () => {
+  it('subscriber receives events, unsub stops delivery', () => {
     events.clear();
     const received: events.BusEvent[] = [];
     const unsub = events.subscribe((e) => {
@@ -45,19 +45,6 @@ describe('events bus', () => {
     unsub();
     events.emit({ scope: 'app', kind: 'info', message: 'third' });
     expect(received.length).toBe(2);
-  });
-
-  it('unsub stops receiving events', () => {
-    events.clear();
-    const received: events.BusEvent[] = [];
-    const unsub = events.subscribe((e) => {
-      received.push(e);
-    });
-    events.emit({ scope: 'app', kind: 'info', message: 'before unsub' });
-    unsub();
-    events.emit({ scope: 'app', kind: 'info', message: 'after unsub' });
-    expect(received.length).toBe(1);
-    expect(received[0].message).toBe('before unsub');
   });
 
   it('clear empties the list', () => {

@@ -34,7 +34,13 @@ import {
   LARGE_FILE_BYTES,
   TreeEntry,
 } from './lib/files';
-import { getOrCreateBuffer, updateBuffer, markSaved, type BufferState } from './lib/buffers';
+import {
+  getOrCreateBuffer,
+  updateBuffer,
+  markSaved,
+  enforceBufferCap,
+  type BufferState,
+} from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf } from './lib/preview-bus';
 import {
@@ -106,21 +112,6 @@ export default function App({
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
-  // At most 10 open buffers (LRU persist-then-evict; dirty never lost —
-  // eviction persists first, so content is always on disk before the drop).
-  const MAX_BUFFERS = 10;
-  const enforceBufferCap = useCallback((m: Map<string, BufferState>): Map<string, BufferState> => {
-    if (m.size <= MAX_BUFFERS) return m;
-    const keys = [...m.keys()];
-    // Evict oldest clean non-active first; active file never evicted.
-    for (const k of keys) {
-      if (m.size <= MAX_BUFFERS) break;
-      if (k === fileNameRef.current) continue;
-      const b = m.get(k);
-      if (b && !b.dirty) m.delete(k);
-    }
-    return m;
-  }, []);
   // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
   // our own writes must not raise the reload banner. Windowed suppression.
   const ownWritesRef = useRef<Map<string, number>>(new Map());
@@ -191,7 +182,7 @@ export default function App({
         setBuffers((b) => {
           const n = new Map(b);
           getOrCreateBuffer(n, path, content);
-          return enforceBufferCap(n);
+          return enforceBufferCap(n, fileNameRef.current);
         });
         setTex(content);
         setFileName(path);
@@ -1075,7 +1066,7 @@ export default function App({
           setBuffers((b) => {
             const n = new Map(b);
             getOrCreateBuffer(n, hitFile as string, content);
-            return enforceBufferCap(n);
+            return enforceBufferCap(n, fileNameRef.current);
           });
           setTex(content);
           setFileName(hitFile as string);
@@ -1107,7 +1098,7 @@ export default function App({
       setBuffers((b) => {
         const n = new Map(b);
         getOrCreateBuffer(n, absPath, content);
-        return enforceBufferCap(n);
+        return enforceBufferCap(n, fileNameRef.current);
       });
       setTex(content);
       setFileName(absPath);
