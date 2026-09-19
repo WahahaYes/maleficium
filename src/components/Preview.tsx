@@ -269,22 +269,18 @@ export default function Preview({
     if (sel && !sel.isCollapsed) return;
     const canvas = canvasRefs.current.get(n);
     const rect = (canvas ?? e.currentTarget).getBoundingClientRect();
-    // Prefer the pdf.js viewport when this page has rendered: map the
-    // click back through its own convertToPdfPoint, the exact inverse
-    // of the render transform (DPR-folded scale, rotation, y-flip).
-    // Falls back to canvas backing size when the page hasn't rendered.
-    const vp = viewportRefs.current.get(n);
+    // SyncTeX y grows DOWN from the page top (proven by y-sweep against
+    // the bundled sidecar: small y = top content, large y = bottom).
+    // Map through the scale-1 probe dims (true page points), never the
+    // DPR-folded render viewport. Falls back to canvas backing size.
+    const dims = dimsRef.current.get(n);
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
     let x: number;
     let y: number;
-    if (vp && typeof vp.convertToPdfPoint === 'function') {
-      [x, y] = vp.convertToPdfPoint(cssX, cssY);
-    } else if (vp) {
-      const cssW = Math.max(1, rect.width);
-      const cssH = Math.max(1, rect.height);
-      x = (cssX / cssW) * vp.width;
-      y = ((rect.height - cssY) / cssH) * vp.height;
+    if (dims) {
+      x = (cssX / Math.max(1, rect.width)) * dims.w;
+      y = (cssY / Math.max(1, rect.height)) * dims.h;
     } else {
       const scaleX = (canvas?.width ?? rect.width) / Math.max(1, rect.width);
       const scaleY = (canvas?.height ?? rect.height) / Math.max(1, rect.height);
