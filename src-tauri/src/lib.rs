@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod commands;
 pub mod core;
+pub mod mcp;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

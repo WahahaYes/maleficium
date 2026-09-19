@@ -13,16 +13,20 @@ pub struct ForwardArgs {
     pub line: u32,
 }
 
-/// Derive forward-sync args: `pdf_rel` resolves inside the root (absolute
-/// outdir path); `tex_rel` resolves inside the root (absolute visible
-/// source — the gz stores absolute Input paths).
+/// Derive forward-sync args: `pdf_path` is the absolute outdir pdf (the
+/// engine output the query runs against — outside any project root by
+/// design); `tex_rel` resolves inside the root (absolute visible source —
+/// the gz stores absolute Input paths).
 pub fn forward_args(
     root_id: &str,
-    pdf_rel: &str,
+    pdf_path: &str,
     tex_rel: &str,
     line: u32,
 ) -> Result<ForwardArgs, String> {
-    let pdf_canon = super::fs::resolve_in(root_id, pdf_rel)?;
+    crate::commands::guard::reject_empty_nul(pdf_path)?;
+    let pdf_canon = PathBuf::from(pdf_path)
+        .canonicalize()
+        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", pdf_path, e))?;
     let tex_canon = super::fs::resolve_in(root_id, tex_rel)?;
     let (dir, name) = match (pdf_canon.parent(), pdf_canon.file_name()) {
         (Some(d), Some(n)) if !d.as_os_str().is_empty() => {
@@ -44,10 +48,18 @@ pub struct InverseArgs {
     pub pdf_name: String,
 }
 
-/// Derive inverse-sync args: the outdir resolves inside the root; the pdf
-/// name is interpolated into the `page:x:y:name` tag, so it must be bare.
-pub fn inverse_args(root_id: &str, dir_rel: &str, pdf_name: &str) -> Result<InverseArgs, String> {
-    let dir_canon = super::fs::resolve_in(root_id, dir_rel)?;
+/// Derive inverse-sync args: `dir_path` is the absolute outdir (engine
+/// output, outside any project root by design); the pdf name is
+/// interpolated into the `page:x:y:name` tag, so it must be bare.
+pub fn inverse_args(root_id: &str, dir_path: &str, pdf_name: &str) -> Result<InverseArgs, String> {
+    crate::commands::guard::reject_empty_nul(dir_path)?;
+    let dir_canon = PathBuf::from(dir_path)
+        .canonicalize()
+        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", dir_path, e))?;
+    if !dir_canon.is_dir() {
+        return Err(format!("not a directory: {}", dir_path));
+    }
+    let _ = root_id;
     let name = crate::commands::guard::require_bare_filename(pdf_name)?.to_string();
     Ok(InverseArgs {
         dir: dir_canon,
@@ -128,17 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn forward_rejects_outside_root() {
+    fn forward_rejects_bad_paths() {
         let id = grant_tmp("escape");
-        assert!(forward_args(&id, "../outside.pdf", "a.tex", 1).is_err());
-        assert!(forward_args(&id, "a.pdf", "/etc/hostname", 1).is_err());
+        assert!(forward_args(&id, "/nonexistent/out.pdf", "a.tex", 1).is_err());
+        assert!(forward_args(&id, "/tmp/maleficium-out", "/etc/hostname", 1).is_err());
     }
 
     #[test]
     fn inverse_rejects_non_bare_name() {
         let id = grant_tmp("bare");
-        assert!(inverse_args(&id, ".", "a/b.pdf").is_err());
-        assert!(inverse_args(&id, ".", "../x.pdf").is_err());
-        assert!(inverse_args(&id, "../out", "a.pdf").is_err());
+        assert!(inverse_args(&id, "/tmp", "a/b.pdf").is_err());
+        assert!(inverse_args(&id, "/tmp", "../x.pdf").is_err());
+        assert!(inverse_args(&id, "/nonexistent-dir", "a.pdf").is_err());
     }
 }

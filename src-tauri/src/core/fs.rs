@@ -111,19 +111,30 @@ fn trash_home(root: &Path) -> PathBuf {
         .join(hash_root(&root.to_string_lossy()))
 }
 
-fn trash_name(original: &Path) -> String {
+fn trash_name(original: &Path, rel: &str) -> String {
     let base = original
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file".to_string());
-    format!(
-        "{}.{}",
-        base,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    )
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let flat_rel = rel.replace('/', "__");
+    format!("{}__{}__{}", base, flat_rel, stamp)
+}
+
+fn split_trash_name(name: &str) -> Option<(String, String)> {
+    let (base, rest) = name.split_once("__")?;
+    let (flat_rel, _stamp) = rest.rsplit_once("__")?;
+    let rel = flat_rel.replace("__", "/");
+    if !crate::commands::guard::is_bare_filename(base) || rel.is_empty() || rel.contains('\0') {
+        return None;
+    }
+    if rel.contains("__") {
+        return None;
+    }
+    Some((base.to_string(), rel))
 }
 
 /// Move a project file to the app-local trash home. Returns the trash path.
@@ -141,7 +152,7 @@ pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> 
     let root = session_root(id)?;
     let home = trash_home(&root);
     std::fs::create_dir_all(&home).map_err(|e| format!("trash home unreachable: {}", e))?;
-    let dest = home.join(trash_name(&abs));
+    let dest = home.join(trash_name(&abs, rel));
     match std::fs::rename(&abs, &dest) {
         Ok(()) => Ok(dest.to_string_lossy().to_string()),
         Err(_) => {
@@ -169,14 +180,9 @@ pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
         .file_name()
         .ok_or_else(|| "forbidden path (no file name)".to_string())?
         .to_string_lossy();
-    let dot = name
-        .rfind('.')
-        .ok_or_else(|| "forbidden path (not a trash entry)".to_string())?;
-    let original = String::from_utf8_lossy(&name.as_bytes()[..dot]).to_string();
-    if !crate::commands::guard::is_bare_filename(&original) {
-        return Err("forbidden path (not a trash entry)".to_string());
-    }
-    let dest = resolve_read(id, &original)?;
+    let (_base, rel) =
+        split_trash_name(&name).ok_or_else(|| "forbidden path (not a trash entry)".to_string())?;
+    let dest = resolve_read(id, &rel)?;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("restore failed: {}", e))?;
     }
