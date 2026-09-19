@@ -1534,6 +1534,7 @@ export default function App({
             flashKey={synctexFlash}
             viewportRef={viewportRef}
             onDoubleClickRef={forwardSyncLineRef}
+            filePath={fileName}
           />
         </Box>
       )}

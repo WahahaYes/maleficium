@@ -37,16 +37,19 @@ function EditorViewport({
   flashKey,
   viewportRef,
   onDoubleClickRef,
+  filePath,
 }: EditorViewportProps & {
   /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
   /** Double-click file + line → App runs forward SyncTeX (no editor fork). */
   onDoubleClickRef?: React.MutableRefObject<((file: string, line: number) => void) | null>;
+  /** Absolute path of the file in the viewport (captured at click time). */
+  filePath?: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  const filePathRef = useRef(filePath);
+  filePathRef.current = filePath;
   // Last value WE sent downstream (mount doc or external sync). Keystrokes
   // update this synchronously in the updateListener so the [value] echo-back
   // from App state never triggers a full-doc replace (cursor jump).
@@ -88,7 +91,10 @@ function EditorViewport({
           dblclick: (_e, view) => {
             try {
               const head = view.state.selection.main.head;
-              onDoubleClickRef?.current?.(valueRef.current, view.state.doc.lineAt(head).number);
+              onDoubleClickRef?.current?.(
+                filePathRef.current ?? '',
+                view.state.doc.lineAt(head).number,
+              );
             } catch {
               /* no selection — ignore */
             }
