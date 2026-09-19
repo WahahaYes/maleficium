@@ -980,9 +980,10 @@ export default function App({
   }
 
   // True when the app-local outdir already holds this target's engine output
-  // (pdf + log from a previous successful run): the warm compile then only
-  // verifies freshness (~free when tectonic skips work) instead of paying a
-  // full cold build on every open. Best-effort stat only — never throws.
+  // (pdf from a previous successful run): the warm compile then only
+  // verifies freshness instead of paying a full cold build on every open.
+  // Best-effort stat only — never throws. The log is not required here:
+  // the engine does not reliably leave one beside every pdf.
   async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
     try {
       const { tempDir } = await import('@tauri-apps/api/path');
@@ -992,7 +993,6 @@ export default function App({
       const out = appOutDir(await tempDir(), dir);
       const { stat: statFile } = await import('@tauri-apps/plugin-fs');
       await statFile(`${out}/${stem}.pdf`);
-      await statFile(`${out}/${stem}.log`);
       return true;
     } catch {
       return false;
