@@ -10,11 +10,13 @@ pub fn forward_sync(
     tex: String,
     line: u32,
 ) -> Result<String, String> {
-    // Trust boundary (design §5): `pdf` is the absolute outdir path and
-    // `tex` the absolute visible source — both must sit inside the live fs
-    // scope (project grant or tmp). `line` is `u32`: type-checked already.
-    let pdf_canon = require_allowed(&app, &pdf)?;
-    require_allowed(&app, &tex)?;
+    // Trust boundary (design §5): `pdf` is the absolute outdir path —
+    // engine output outside any project root by design — so it validates
+    // as an existing pdf file, never against the project grant. `tex` is
+    // the absolute visible source and MUST sit inside the live fs scope
+    // (project grant or tmp). `line` is `u32`: type-checked already.
+    let pdf_canon = core::canonical_out_pdf(&pdf)?;
+    let tex_canon = require_allowed(&app, &tex)?;
     // Forward (editor → PDF): run INSIDE the pdf's out dir with the bare pdf
     // name, mirroring inverse_sync. Rationale (verified against the bundled
     // sidecar 2026-09-14): with an absolute `-o` path the tool finds the
@@ -37,7 +39,13 @@ pub fn forward_sync(
     };
     let output = Command::new(&bin)
         .current_dir(&dir)
-        .args(["view", "-i", &format!("{}:1:{}", line, tex), "-o", &name])
+        .args([
+            "view",
+            "-i",
+            &format!("{}:1:{}", line, tex_canon.to_string_lossy()),
+            "-o",
+            &name,
+        ])
         .output()
         .map_err(|e| format!("synctex sidecar failed: {}", e))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -51,18 +59,20 @@ pub fn forward_sync(
 
 #[tauri::command]
 pub fn inverse_sync(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     synctex_dir: String,
     pdf_name: String,
     page: u32,
     x: f32,
     y: f32,
 ) -> Result<String, String> {
-    // Trust boundary (design §5): `synctex_dir` is the outdir — must sit
-    // inside the live fs scope (tmp). `pdf_name` is interpolated into the
-    // `page:x:y:name` tag, so it must be a BARE filename (no separators,
-    // no `..`, no NUL) — never a path. `page`/`x`/`y` are typed already.
-    let dir_canon = require_allowed(&app, &synctex_dir)?;
+    // Trust boundary (design §5): `synctex_dir` is the absolute outdir —
+    // engine output outside any project root by design — so it validates
+    // as an existing outdir, never against the project grant. `pdf_name`
+    // is interpolated into the `page:x:y:name` tag, so it must be a BARE
+    // filename (no separators, no `..`, no NUL) — never a path.
+    // `page`/`x`/`y` are typed already.
+    let dir_canon = core::canonical_out_dir(&synctex_dir)?;
     let name = require_bare_filename(&pdf_name)?.to_string();
     // Inverse (PDF → editor): synctex resolves `<pdf>.synctex.gz` relative to CWD,
     // so run INSIDE the out dir and pass the bare pdf name. Finds

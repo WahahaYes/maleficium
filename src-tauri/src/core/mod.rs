@@ -112,6 +112,57 @@ pub struct FileEntry {
     pub entry_type: String,
 }
 
+/// Validate an engine outdir path: absolute, resolvable, a directory inside
+/// the OS tmp tree. Outdirs live outside any project root by design (V-4),
+/// so they never validate against the project grant — containment here
+/// means "inside tmp", which is exactly where `out_dir_for` puts them.
+pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
+    crate::commands::guard::reject_empty_nul(dir)?;
+    let path = Path::new(dir);
+    if !path.is_absolute() {
+        return Err(format!("forbidden path (not absolute): {}", dir));
+    }
+    let canon = path
+        .canonicalize()
+        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", dir, e))?;
+    if !canon.is_dir() {
+        return Err(format!("not a directory: {}", dir));
+    }
+    let tmp = std::env::temp_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    if !canon.starts_with(&tmp) {
+        return Err(format!("forbidden path (outside tmp): {}", dir));
+    }
+    Ok(canon)
+}
+
+/// Validate an engine-output pdf path: absolute, resolvable, a `.pdf` file
+/// inside the OS tmp tree. Same outdir story as `canonical_out_dir`.
+pub fn canonical_out_pdf(pdf: &str) -> Result<PathBuf, String> {
+    crate::commands::guard::reject_empty_nul(pdf)?;
+    let path = Path::new(pdf);
+    if !path.is_absolute() {
+        return Err(format!("forbidden path (not absolute): {}", pdf));
+    }
+    let canon = path
+        .canonicalize()
+        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", pdf, e))?;
+    if !canon.is_file() {
+        return Err(format!("not a file: {}", pdf));
+    }
+    if canon.extension().is_none_or(|e| e != "pdf") {
+        return Err(format!("not a pdf: {}", pdf));
+    }
+    let tmp = std::env::temp_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    if !canon.starts_with(&tmp) {
+        return Err(format!("forbidden path (outside tmp): {}", pdf));
+    }
+    Ok(canon)
+}
+
 /// Names never shown in listings (build artifacts + trash).
 pub fn is_hidden_name(name: &str) -> bool {
     const EXACT: &[&str] = &[".git", ".maleficium-trash", "out"];
@@ -157,5 +208,29 @@ mod tests {
         assert!(is_hidden_name(".git"));
         assert!(is_hidden_name("x.aux"));
         assert!(!is_hidden_name("main.tex"));
+    }
+
+    #[test]
+    fn out_pdf_validates_tmp_pdf_only() {
+        let dir = std::env::temp_dir().join(format!("maleficium-outpdf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pdf = dir.join("main.pdf");
+        std::fs::write(&pdf, "%PDF").unwrap();
+        assert!(canonical_out_pdf(&pdf.to_string_lossy()).is_ok());
+        assert!(canonical_out_pdf(&dir.join("main.tex").to_string_lossy()).is_err());
+        assert!(canonical_out_pdf("/nonexistent/main.pdf").is_err());
+        assert!(canonical_out_pdf("relative/main.pdf").is_err());
+    }
+
+    #[test]
+    fn out_dir_validates_tmp_dir_only() {
+        let dir = std::env::temp_dir().join(format!("maleficium-outdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let canon = dir.canonicalize().unwrap();
+        assert!(canonical_out_dir(&canon.to_string_lossy()).is_ok());
+        assert!(canonical_out_dir("/nonexistent-dir").is_err());
+        assert!(canonical_out_dir("relative/dir").is_err());
     }
 }
