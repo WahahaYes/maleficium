@@ -76,7 +76,7 @@ pub fn inverse_sync(
     let name = require_bare_filename(&pdf_name)?.to_string();
     // Inverse (PDF → editor): synctex resolves `<pdf>.synctex.gz` relative to CWD,
     // so run INSIDE the out dir and pass the bare pdf name. Finds
-    // `<tmp>/maleficium-out/<hash>/hello.synctex.gz` next to the pdf (Tectonic
+    // `<cache>/maleficium-out/<hash>/hello.synctex.gz` next to the pdf (Tectonic
     // `--synctex` writes both there). Passing an absolute `-o` path fails: the
     // tool looks for the `.synctex.gz` next to CWD, not next to the pdf arg.
     // Bundled sidecar (externalBin `binaries/synctex`) — no PATH fallback.

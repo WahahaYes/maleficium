@@ -64,8 +64,27 @@ pub fn hash_root(root: &str) -> String {
 }
 
 /// App-local compile-output home for one project root.
-pub fn out_dir_for(tmp: &Path, root: &str) -> PathBuf {
-    tmp.join("maleficium-out").join(hash_root(root))
+pub fn out_dir_for(base: &Path, root: &str) -> PathBuf {
+    base.join("maleficium-out").join(hash_root(root))
+}
+
+/// Base dir for all engine outputs: the OS app-cache dir, shared by the
+/// Tauri commands, the headless MCP sidecar, and the frontend log-read
+/// (which resolves the same location via `appCacheDir()`). Falls back to
+/// the OS tmp tree when no cache location resolves.
+pub fn out_base_dir() -> PathBuf {
+    const APP_ID: &str = "com.ethan.tauri-app";
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg).join(APP_ID);
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            return PathBuf::from(home).join(".cache").join(APP_ID);
+        }
+    }
+    std::env::temp_dir()
 }
 
 /// Triple suffix matching `src-tauri/binaries/<name>-<triple>`.
@@ -113,9 +132,10 @@ pub struct FileEntry {
 }
 
 /// Validate an engine outdir path: absolute, resolvable, a directory inside
-/// the OS tmp tree. Outdirs live outside any project root by design (V-4),
+/// the app-cache tree. Outdirs live outside any project root by design (V-4),
 /// so they never validate against the project grant — containment here
-/// means "inside tmp", which is exactly where `out_dir_for` puts them.
+/// means "inside the app cache", which is exactly where `out_dir_for` puts
+/// them.
 pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
     crate::commands::guard::reject_empty_nul(dir)?;
     let path = Path::new(dir);
@@ -128,17 +148,17 @@ pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
     if !canon.is_dir() {
         return Err(format!("not a directory: {}", dir));
     }
-    let tmp = std::env::temp_dir()
+    let base = out_base_dir()
         .canonicalize()
-        .unwrap_or_else(|_| std::env::temp_dir());
-    if !canon.starts_with(&tmp) {
-        return Err(format!("forbidden path (outside tmp): {}", dir));
+        .unwrap_or_else(|_| out_base_dir());
+    if !canon.starts_with(&base) {
+        return Err(format!("forbidden path (outside app cache): {}", dir));
     }
     Ok(canon)
 }
 
 /// Validate an engine-output pdf path: absolute, resolvable, a `.pdf` file
-/// inside the OS tmp tree. Same outdir story as `canonical_out_dir`.
+/// inside the app-cache tree. Same outdir story as `canonical_out_dir`.
 pub fn canonical_out_pdf(pdf: &str) -> Result<PathBuf, String> {
     crate::commands::guard::reject_empty_nul(pdf)?;
     let path = Path::new(pdf);
@@ -154,11 +174,11 @@ pub fn canonical_out_pdf(pdf: &str) -> Result<PathBuf, String> {
     if canon.extension().is_none_or(|e| e != "pdf") {
         return Err(format!("not a pdf: {}", pdf));
     }
-    let tmp = std::env::temp_dir()
+    let base = out_base_dir()
         .canonicalize()
-        .unwrap_or_else(|_| std::env::temp_dir());
-    if !canon.starts_with(&tmp) {
-        return Err(format!("forbidden path (outside tmp): {}", pdf));
+        .unwrap_or_else(|_| out_base_dir());
+    if !canon.starts_with(&base) {
+        return Err(format!("forbidden path (outside app cache): {}", pdf));
     }
     Ok(canon)
 }
@@ -211,8 +231,14 @@ mod tests {
     }
 
     #[test]
-    fn out_pdf_validates_tmp_pdf_only() {
-        let dir = std::env::temp_dir().join(format!("maleficium-outpdf-{}", std::process::id()));
+    fn out_base_dir_resolves_app_cache() {
+        let base = out_base_dir();
+        assert!(base.ends_with("com.ethan.tauri-app"));
+    }
+
+    #[test]
+    fn out_pdf_validates_cache_pdf_only() {
+        let dir = out_base_dir().join(format!("maleficium-outpdf-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let pdf = dir.join("main.pdf");
@@ -224,8 +250,8 @@ mod tests {
     }
 
     #[test]
-    fn out_dir_validates_tmp_dir_only() {
-        let dir = std::env::temp_dir().join(format!("maleficium-outdir-{}", std::process::id()));
+    fn out_dir_validates_cache_dir_only() {
+        let dir = out_base_dir().join(format!("maleficium-outdir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dir.canonicalize().unwrap();

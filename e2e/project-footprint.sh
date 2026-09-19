@@ -6,7 +6,7 @@
 # because every app-local derivation resolves outside it. It replicates each
 # derivation in bash (same algorithms, documented line-refs) against a scratch
 # copy of playground/simple/, then asserts `git status --porcelain` stays clean and
-# the computed homes land in app-data/tmp — never under the project root.
+# the computed homes land in app-data/app-cache — never under the project root.
 #
 # What it does NOT prove (needs the live app → driver-driven run / eyes):
 # that the running Tauri commands actually CALL these derivations with the
@@ -85,15 +85,16 @@ fi
 [[ -e "$ROOT/.maleficium.json" ]] && fail "legacy .maleficium.json re-created"
 pass "no .maleficium.json write-site in src; none in project (association is localStorage-only)"
 
-# --- compile out/ — compile.rs out_dir_for + paths.ts appOutDir ----------------
-OUT="/tmp/maleficium-out/$HASH"
+# --- compile out/ — core/mod.rs out_dir_for over out_base_dir + paths.ts appOutDir
+CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/com.ethan.tauri-app"
+OUT="$CACHEDIR/maleficium-out/$HASH"
 [[ "$OUT" == "$ROOT"* ]] && fail "out dir inside project: $OUT"
 pass "compile out dir outside project: $OUT"
 mkdir -p "$OUT"
 touch "$OUT/main.pdf" "$OUT/main.log" "$OUT/main.synctex.gz"
 [[ -z "$(porcelain)" ]] || fail "project dirty after simulated compile output"
 [[ -e "$ROOT/out" ]] && fail "legacy in-project out/ re-created"
-pass "compile artifacts land in tmp shard, porcelain clean, no in-project out/"
+pass "compile artifacts land in cache shard, porcelain clean, no in-project out/"
 
 # --- trust boundary pins — 11-audit design §3/§6 (static, no window) ---------
 # The tightening must never silently regress: static scope stays off $HOME,

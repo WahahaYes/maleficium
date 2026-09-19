@@ -76,7 +76,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .ok_or_else(|| "no file name".to_string())?;
-    let outdir = super::out_dir_for(&std::env::temp_dir(), &dir.to_string_lossy());
+    let outdir = super::out_dir_for(&super::out_base_dir(), &dir.to_string_lossy());
     std::fs::create_dir_all(&outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
     let outdir_str = outdir.to_string_lossy().to_string();
     let bin = super::sidecar_path_for("tectonic")

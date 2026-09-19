@@ -27,7 +27,7 @@ pub fn compile_tex(
 ) -> Result<String, String> {
     // Trust boundary (design §5): both strings come from the frontend, so
     // each must resolve inside the live fs scope before anything else. The
-    // outdir derives from `temp_dir()` server-side — safe by construction.
+    // outdir derives from the app-cache dir server-side — safe by construction.
     // Canonical forms drive the split (no raw-string slicing), so `..` /
     // symlink games fail here, not at the engine spawn.
     let workdir_canon = require_allowed(&app, &workdir)?;
@@ -50,7 +50,7 @@ pub fn compile_tex(
         }
         None => (workdir_canon.clone(), input.clone()),
     };
-    let outdir = core::out_dir_for(&std::env::temp_dir(), &dir.to_string_lossy());
+    let outdir = core::out_dir_for(&core::out_base_dir(), &dir.to_string_lossy());
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
     let _ = app.emit(

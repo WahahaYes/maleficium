@@ -34,9 +34,10 @@ export function appTrashDir(appDataDir: string, root: string): string {
 
 /**
  * App-local compile-output home for one project root. Mirrors the Rust
- * derivation in `commands/compile.rs` (`outDirFor`): same hash, same layout,
- * so the frontend log-read + Clean target the dir the engine wrote.
+ * derivation in `core/mod.rs` (`out_dir_for` over `out_base_dir`): same
+ * hash, same layout, so the frontend log-read + Clean target the dir the
+ * engine wrote. The base is the OS app-cache dir (`appCacheDir()`).
  */
-export function appOutDir(tmpDir: string, root: string): string {
-  return joinPath(tmpDir, 'maleficium-out', hashRoot(root));
+export function appOutDir(baseDir: string, root: string): string {
+  return joinPath(baseDir, 'maleficium-out', hashRoot(root));
 }

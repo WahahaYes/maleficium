@@ -255,7 +255,7 @@ pub fn log_tail(id: &str, rel: &str, max_lines: usize) -> Result<String, String>
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let outdir = out_dir_for(&std::env::temp_dir(), &dir.to_string_lossy());
+    let outdir = out_dir_for(&super::out_base_dir(), &dir.to_string_lossy());
     let log_path = outdir.join(format!("{}.log", stem));
     let text = std::fs::read_to_string(&log_path).map_err(|e| format!("log unavailable: {}", e))?;
     let lines: Vec<&str> = text.lines().collect();

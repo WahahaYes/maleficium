@@ -539,12 +539,12 @@ export default function App({
       });
       return;
     }
-    // App-local outdir (V-4, mirrors Rust `out_dir_for`): clean NEVER touches
-    // the project dir (RULES §8: no legacy).
-    const { tempDir } = await import('@tauri-apps/api/path');
+    // App-local outdir (V-4, mirrors Rust `out_dir_for` over the app-cache
+    // dir): clean NEVER touches the project dir (RULES §8: no legacy).
+    const { appCacheDir } = await import('@tauri-apps/api/path');
     const { appOutDir } = await import('./lib/paths');
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
-    const out = appOutDir(await tempDir(), dir);
+    const out = appOutDir(await appCacheDir(), dir);
     try {
       // Per-entry removal (no recursive-remove capability needed): build
       // artifacts only, never sources. Missing dir = already clean.
@@ -906,11 +906,12 @@ export default function App({
     setLog(r.ok ? (r.pdfPath ?? '') : r.log);
     const readEngineLog = async (): Promise<string | null> => {
       try {
-        // App-local outdir (V-4, mirrors Rust `out_dir_for`): the engine log
-        // lives in tmp, never in the project (RULES §8: no legacy).
-        const { tempDir } = await import('@tauri-apps/api/path');
+        // App-local outdir (V-4, mirrors Rust `out_dir_for` over the
+        // app-cache dir): the engine log lives in cache, never in the
+        // project (RULES §8: no legacy).
+        const { appCacheDir } = await import('@tauri-apps/api/path');
         const { appOutDir } = await import('./lib/paths');
-        const out = appOutDir(await tempDir(), workdir!);
+        const out = appOutDir(await appCacheDir(), workdir!);
         return await readTextFile(`${out}/${main.replace(/\.tex$/, '.log')}`);
       } catch {
         return null;
@@ -986,11 +987,11 @@ export default function App({
   // the engine does not reliably leave one beside every pdf.
   async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
     try {
-      const { tempDir } = await import('@tauri-apps/api/path');
+      const { appCacheDir } = await import('@tauri-apps/api/path');
       const { appOutDir } = await import('./lib/paths');
       const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
       const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
-      const out = appOutDir(await tempDir(), dir);
+      const out = appOutDir(await appCacheDir(), dir);
       const { stat: statFile } = await import('@tauri-apps/plugin-fs');
       await statFile(`${out}/${stem}.pdf`);
       return true;
