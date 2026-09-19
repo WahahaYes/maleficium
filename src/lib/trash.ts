@@ -53,9 +53,20 @@ export async function undoTrash(history: FileHistory): Promise<{ ok: boolean; er
   try {
     await rename(entry.trashPath, entry.originalPath);
     return { ok: true };
-  } catch (e) {
-    // Restore the entry so a retry is possible.
-    history.record({ originalPath: entry.originalPath, trashPath: entry.trashPath, at: entry.at });
-    return { ok: false, error: String(e) };
+  } catch {
+    // Rename across filesystems fails; copy the bytes back instead.
+    try {
+      const bytes = await readFile(entry.trashPath);
+      await writeFile(entry.originalPath, bytes);
+      await remove(entry.trashPath);
+      return { ok: true };
+    } catch (e) {
+      history.record({
+        originalPath: entry.originalPath,
+        trashPath: entry.trashPath,
+        at: entry.at,
+      });
+      return { ok: false, error: String(e) };
+    }
   }
 }

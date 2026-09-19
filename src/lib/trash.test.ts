@@ -92,4 +92,22 @@ describe('undoTrash', () => {
     const result = await undoTrash(new FileHistory());
     expect(result).toMatchObject({ ok: false, error: 'nothing to undo' });
   });
+
+  it('falls back to copy-then-delete when rename crosses devices', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+    vi.mocked(rename).mockRejectedValueOnce(new Error('EXDEV: cross-device link not permitted'));
+    vi.mocked(readFile).mockResolvedValueOnce(bytes);
+
+    const history = new FileHistory();
+    history.record({ originalPath: '/root/main.tex', trashPath: '/trash/main.tex.123' });
+    const result = await undoTrash(history);
+
+    expect(result).toMatchObject({ ok: true });
+    expect(vi.mocked(readFile)).toHaveBeenCalledWith('/trash/main.tex.123');
+    expect(Array.from(vi.mocked(writeFile).mock.calls[0]?.[1] as Uint8Array)).toEqual(
+      Array.from(bytes),
+    );
+    expect(vi.mocked(remove)).toHaveBeenCalledWith('/trash/main.tex.123');
+    expect(history.size).toBe(0);
+  });
 });
