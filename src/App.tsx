@@ -759,13 +759,20 @@ export default function App({
 
   // Shared compile runner: `target` is the main-file target, or an explicit
   // one-off file (compile-from-this-file bypasses the main association).
+  // `skipPersist` is the warm-open path only: the target was just loaded
+  // from disk, so there is nothing to persist — ownership is proven by the
+  // load itself, and warm never writes. All other callers persist through
+  // the ownership guard below.
   // Reentrancy: a second call while `compiling` is a no-op returning false
   // (warm-on-open and double-Ctrl+R collapse into one run — never two
   // engine children). Returns true when THIS call owned the run. The gate
   // reads a REF (not state) so a warm run racing a user Ctrl+R in the same
   // tick still collapses — state would be stale for both.
   const phaseRef = useRef('idle');
-  async function runCompile(target: string | null): Promise<boolean> {
+  async function runCompile(
+    target: string | null,
+    opts?: { skipPersist?: boolean },
+  ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
     const finish = (phase: string) => {
@@ -830,12 +837,14 @@ export default function App({
     // (buffered, or the untitled flow); (2) `target` must be a contained
     // project file or an explicit one-off .tex — never a bare untitled name
     // resolved against a project dir. Violations abort BEFORE any write.
+    // Warm skips both guard and persist (disk is fresh, warm never writes).
+    const skipPersist = opts?.skipPersist === true;
     const ownsTarget =
       target == null ||
       buffers.has(target) ||
       target === fileName ||
       (!target.includes('/') && !fileName.includes('/'));
-    if (target != null && target.includes('/') && !ownsTarget) {
+    if (!skipPersist && target != null && target.includes('/') && !ownsTarget) {
       finish('failure');
       setCompileStart(null);
       probing = false;
@@ -855,26 +864,28 @@ export default function App({
     }
     try {
       if (target && target.includes('/')) {
-        // Persist ALL dirty buffers so \input parts compile from disk.
-        for (const [p, buf] of buffers) {
-          if (buf.dirty) {
-            try {
-              await saveTex(p, buf.value);
-              markOwnWrite(p);
-            } catch {
-              /* keep dirty, reported at finish */
+        if (!skipPersist) {
+          // Persist ALL dirty buffers so \input parts compile from disk.
+          for (const [p, buf] of buffers) {
+            if (buf.dirty) {
+              try {
+                await saveTex(p, buf.value);
+                markOwnWrite(p);
+              } catch {
+                /* keep dirty, reported at finish */
+              }
             }
           }
-        }
-        setBuffers((b) => {
-          let n = b;
-          for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p);
-          return n;
-        });
-        // Also persist the visible editor if it was never buffered (untitled flow).
-        if (!buffers.has(target)) {
-          await saveTex(target, tex);
-          markOwnWrite(target);
+          setBuffers((b) => {
+            let n = b;
+            for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p);
+            return n;
+          });
+          // Also persist the visible editor if it was never buffered (untitled flow).
+          if (!buffers.has(target)) {
+            await saveTex(target, tex);
+            markOwnWrite(target);
+          }
         }
         workdir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
       } else {
@@ -958,8 +969,10 @@ export default function App({
 
   // Cache-warm on open: a background compile of a freshly opened project's
   // main file, AFTER the editor is populated (openRoot awaits handleSelect
-  // first). NOT a second code path — the same runCompile with the same
-  // stream, same phase, same clobber guard. Two honesty rules: (1) this runs
+  // first). The write phase is skipped (skipPersist: disk is fresh, warm
+  // never writes), which also settles the handleSelect state race — the
+  // ownership guard reads pre-select closures, so warm bypasses it by
+  // construction instead of tripping it. Two honesty rules: (1) this runs
   // only when the engine CACHE is usable — no cache entry means a full cold
   // build, which is the user's explicit Ctrl+R to pay for, not open's;
   // (2) a warm FAILURE is quiet (debug line only) — open must never look
@@ -976,7 +989,7 @@ export default function App({
       return;
     }
     emit({ scope: 'compile', kind: 'info', message: 'warming preview for ' + mainAbsPath });
-    await runCompile(mainAbsPath);
+    await runCompile(mainAbsPath, { skipPersist: true });
     // Not owned (user raced us) → their stream wins; nothing to report.
   }
 
