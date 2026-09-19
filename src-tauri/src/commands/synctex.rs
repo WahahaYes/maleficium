@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use super::guard::{require_allowed, require_bare_filename};
-use super::synctex_path;
+use crate::core;
 
 #[tauri::command]
 pub fn forward_sync(
@@ -23,7 +23,7 @@ pub fn forward_sync(
     // AND the tag resolution succeed. `tex` stays absolute — the gz stores
     // absolute Input paths, so absolute matches exactly.
     // Bundled sidecar (externalBin `binaries/synctex`) — no PATH fallback.
-    let bin = synctex_path()
+    let bin = core::sidecar_path_for("synctex")
         .ok_or_else(|| String::from("bundled synctex sidecar missing (src-tauri/binaries/)"))?;
     let pdf_path: &std::path::Path = &pdf_canon;
     let (dir, name) = match (pdf_path.parent(), pdf_path.file_name()) {
@@ -70,7 +70,7 @@ pub fn inverse_sync(
     // `--synctex` writes both there). Passing an absolute `-o` path fails: the
     // tool looks for the `.synctex.gz` next to CWD, not next to the pdf arg.
     // Bundled sidecar (externalBin `binaries/synctex`) — no PATH fallback.
-    let bin = synctex_path()
+    let bin = core::sidecar_path_for("synctex")
         .ok_or_else(|| String::from("bundled synctex sidecar missing (src-tauri/binaries/)"))?;
     let output = Command::new(&bin)
         .current_dir(&dir_canon)
