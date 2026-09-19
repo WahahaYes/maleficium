@@ -100,6 +100,7 @@ export default function Preview({
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
   const textRefs = useRef(new Map<number, HTMLDivElement>());
+  const viewportRefs = useRef(new Map<number, PdfViewport>());
   // Bitmap identity is per document revision AND page: cleared on every doc
   // change so entries can never accumulate across recompiles (bounded by the
   // window). Keyed (page -> docKey) so the eviction pass can never clear a
@@ -237,6 +238,7 @@ export default function Preview({
       const layer = textRefs.current.get(target);
       if (!canvas) return;
       const { canvas: off, textContent, viewport } = done;
+      viewportRefs.current.set(target, viewport);
       if (canvas.width !== off.width || canvas.height !== off.height) {
         canvas.width = off.width;
         canvas.height = off.height;
@@ -267,12 +269,27 @@ export default function Preview({
     if (sel && !sel.isCollapsed) return;
     const canvas = canvasRefs.current.get(n);
     const rect = (canvas ?? e.currentTarget).getBoundingClientRect();
-    // pdf.js viewport scale (render): CSS px → PDF points. Inverse SyncTeX
-    // wants PDF points, not screen px — unscale here (DPR applied at render).
-    const scaleX = (canvas?.width ?? rect.width) / Math.max(1, rect.width);
-    const scaleY = (canvas?.height ?? rect.height) / Math.max(1, rect.height);
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    // Prefer the pdf.js viewport when this page has rendered: CSS px map
+    // back through the exact scale used at render (DPR-folded), so
+    // resize/re-anchor drift between canvas backing and shell layout
+    // cannot skew the query. Falls back to canvas backing size.
+    // SyncTeX y grows UP from the page bottom; DOM y grows DOWN.
+    const vp = viewportRefs.current.get(n);
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    let x: number;
+    let y: number;
+    if (vp) {
+      const cssW = Math.max(1, rect.width);
+      const cssH = Math.max(1, rect.height);
+      x = (cssX / cssW) * vp.width;
+      y = ((rect.height - cssY) / cssH) * vp.height;
+    } else {
+      const scaleX = (canvas?.width ?? rect.width) / Math.max(1, rect.width);
+      const scaleY = (canvas?.height ?? rect.height) / Math.max(1, rect.height);
+      x = cssX * scaleX;
+      y = cssY * scaleY;
+    }
     // Hit feedback WITHOUT remount: toggle a class, remove after 300ms.
     // (The old `key={flash}` trick recreated the canvas and blanked the view.)
     if (canvas) {
