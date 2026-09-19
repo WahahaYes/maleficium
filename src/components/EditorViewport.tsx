@@ -40,11 +40,13 @@ function EditorViewport({
 }: EditorViewportProps & {
   /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
-  /** Double-click line → App runs forward SyncTeX (no editor fork). */
-  onDoubleClickRef?: React.MutableRefObject<((line: number) => void) | null>;
+  /** Double-click file + line → App runs forward SyncTeX (no editor fork). */
+  onDoubleClickRef?: React.MutableRefObject<((file: string, line: number) => void) | null>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
   // Last value WE sent downstream (mount doc or external sync). Keystrokes
   // update this synchronously in the updateListener so the [value] echo-back
   // from App state never triggers a full-doc replace (cursor jump).
@@ -81,10 +83,12 @@ function EditorViewport({
           },
           // Double-click = forward SyncTeX from the caret line. Single click
           // stays caret-only; the PDF canvas owns single-click inverse.
+          // The file is captured at click time — fileName state may lag the
+          // visible buffer after a fast file switch + double-click.
           dblclick: (_e, view) => {
             try {
               const head = view.state.selection.main.head;
-              onDoubleClickRef?.current?.(view.state.doc.lineAt(head).number);
+              onDoubleClickRef?.current?.(valueRef.current, view.state.doc.lineAt(head).number);
             } catch {
               /* no selection — ignore */
             }

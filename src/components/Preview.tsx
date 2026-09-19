@@ -259,25 +259,30 @@ export default function Preview({
     [],
   );
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleShellClick = (n: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (syncDisabled || !onInverse) return;
-    const canvas = e.currentTarget;
-    const hit = Number(canvas.dataset.page ?? page);
-    const rect = canvas.getBoundingClientRect();
+    // Text selection wins over navigation: a drag-select ending here leaves
+    // a non-collapsed range; only a plain (collapsed) click syncs.
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const canvas = canvasRefs.current.get(n);
+    const rect = (canvas ?? e.currentTarget).getBoundingClientRect();
     // pdf.js viewport scale (render): CSS px → PDF points. Inverse SyncTeX
     // wants PDF points, not screen px — unscale here (DPR applied at render).
-    const scaleX = canvas.width / Math.max(1, rect.width);
-    const scaleY = canvas.height / Math.max(1, rect.height);
+    const scaleX = (canvas?.width ?? rect.width) / Math.max(1, rect.width);
+    const scaleY = (canvas?.height ?? rect.height) / Math.max(1, rect.height);
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
     // Hit feedback WITHOUT remount: toggle a class, remove after 300ms.
     // (The old `key={flash}` trick recreated the canvas and blanked the view.)
-    canvas.classList.remove('synctex-hit');
-    // Force reflow so rapid clicks retrigger the outline.
-    void canvas.offsetWidth;
-    canvas.classList.add('synctex-hit');
-    setTimeout(() => canvas.classList.remove('synctex-hit'), 300);
-    onInverse(hit, Math.round(x), Math.round(y));
+    if (canvas) {
+      canvas.classList.remove('synctex-hit');
+      // Force reflow so rapid clicks retrigger the outline.
+      void canvas.offsetWidth;
+      canvas.classList.add('synctex-hit');
+      setTimeout(() => canvas.classList.remove('synctex-hit'), 300);
+    }
+    onInverse(n, Math.round(x), Math.round(y));
   };
 
   // Jump the viewport to a shell via rect deltas (offsetTop is
@@ -811,22 +816,32 @@ export default function Preview({
         }}
       >
         {allPages.map((n) => (
-          <div key={`${docKey}#${n}`} ref={setShellRef(n)} data-page={n} style={shellStyle(n)}>
+          <div
+            key={`${docKey}#${n}`}
+            ref={setShellRef(n)}
+            data-page={n}
+            style={shellStyle(n)}
+            onClick={handleShellClick(n)}
+            title={
+              syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'
+            }
+          >
             <canvas
               ref={setCanvasRef(n)}
               data-page={n}
-              onClick={handleCanvasClick}
               className="synctex-canvas"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-              title={
-                syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'
-              }
             />
             <div
               ref={setTextRef(n)}
               className="textLayer"
               data-page={n}
-              style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                overflow: 'hidden',
+                pointerEvents: 'none',
+              }}
             />
           </div>
         ))}

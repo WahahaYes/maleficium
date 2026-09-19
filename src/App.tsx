@@ -646,7 +646,7 @@ export default function App({
   // Double-click in the editor = forward SyncTeX from the caret line
   // (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
-  const forwardSyncLineRef = useRef<(line: number) => void>(() => {});
+  const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -1118,12 +1118,13 @@ export default function App({
   compileRef.current = compile;
   forwardSyncRef.current = handleForwardSync;
   handleSelectRef.current = handleSelect;
-  // Forward SyncTeX from an explicit line (editor double-click). The line is
-  // given, so no caret read — but the same-page silence rule still applies.
-  forwardSyncLineRef.current = (line: number) => {
+  // Forward SyncTeX from an explicit file + line (editor double-click).
+  // The file is captured at click time — fileName state may lag the
+  // visible buffer after a fast file switch + double-click.
+  forwardSyncLineRef.current = (file: string, line: number) => {
     if (!pdfUrl || compilePhase === 'compiling') return;
     if (line !== currentLineRef.current) setCurrentLine(line);
-    const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
+    const texPath = file.includes('/') ? file : workdirHint + '/' + file;
     void forward_sync(pdfUrl, texPath, line).then((result) => {
       if (!result.ok || isForwardNoMatch(result.text)) {
         emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
