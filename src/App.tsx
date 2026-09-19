@@ -1016,7 +1016,11 @@ export default function App({
     const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
     const result = await forward_sync(pdfUrl, texPath, liveLine);
     if (!result.ok) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
+      });
       return;
     }
     if (isForwardNoMatch(result.text)) {
@@ -1051,7 +1055,11 @@ export default function App({
     }
     const result = await inverse_sync(pdfUrl, page, x, y);
     if (!result.ok) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX query failed (synctex_no_match)' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
+      });
       return;
     }
     // Real `synctex edit` shape:
@@ -1126,8 +1134,16 @@ export default function App({
     if (line !== currentLineRef.current) setCurrentLine(line);
     const texPath = file.includes('/') ? file : workdirHint + '/' + file;
     void forward_sync(pdfUrl, texPath, line).then((result) => {
-      if (!result.ok || isForwardNoMatch(result.text)) {
+      if (isForwardNoMatch(result.text)) {
         emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+        return;
+      }
+      if (!result.ok) {
+        emit({
+          scope: 'preview',
+          kind: 'warn',
+          message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
+        });
         return;
       }
       const target = parseForwardSync(result.text);
