@@ -9,8 +9,8 @@
 // by scroll AND by pager. The pager (App-owned pageNumber) only drives
 // jumps: a prop change that differs from the visible page scrolls AFTER the
 // target bitmap lands; neighbors then render idle. Programmatic scrolls
-// carry a flag so a user grab mid-jump cancels it. devicePixelRatio capped
-// at 2.
+// carry a flag so a user grab mid-jump cancels it. Canvas backing renders
+// at 2x the laid-out width.
 // Shell count never scales with the document (buffers + observers do): one
 // shell div per page is O(pages) DOM by design, and O(visible) work per
 // event holds because the observer callback only records ratios while the
@@ -163,12 +163,11 @@ export default function Preview({
   // is false only when its own document was superseded or a newer render of
   // the SAME page started — never when an unrelated page renders.
   //
-  // VECTOR, not raster: the canvas carries the exact vector rasterization
-  // (scale = CSS px per PDF point, so 1 backing px per CSS px — no upscale
-  // blur), and the SELECTABLE TEXT comes from a pdf.js TextLayer (real DOM
-  // spans over the canvas, transparent, positioned by pdf.js itself). The
-  // canvas is paint; the text div is the document: zooming re-renders the
-  // vector at the new scale (never stretches pixels), and copy/paste +
+  // VECTOR, not raster: the canvas carries the vector rasterization at 2x
+  // the laid-out width (browser downscales to CSS size, so small text stays
+  // anti-aliased instead of fragmenting), and the SELECTABLE TEXT comes from
+  // a pdf.js TextLayer at exactly the laid-out width (real DOM spans over
+  // the canvas, transparent, positioned by pdf.js itself). Copy/paste +
   // find-in-page work because the glyphs are DOM. There is no raster
   // fallback — canvas + text layer is the single path (the SVG backend was
   // removed upstream in pdf.js 4.0, and a second renderer would be legacy
@@ -183,20 +182,20 @@ export default function Preview({
       canvas: HTMLCanvasElement;
       textContent: PdfTextContent;
       viewport: PdfViewport;
+      textViewport: PdfViewport;
     } | null> => {
       if (renderedRef.current.has(key)) return null;
       const pg = await pdf.getPage(target);
       if (!alive()) return null;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const shell = shellRefs.current.get(target);
       const cssWidth = shell ? Math.max(1, shell.clientWidth) : 820;
-      // Scale = CSS px per PDF point AT the shell's laid-out width: the canvas
-      // backing matches displayed size 1:1 (DPR-folded), so no upscale blur and
-      // no wasted pixels. Text layer shares the SAME viewport object, so spans
-      // land exactly on glyphs (one viewport, two consumers — never two scales).
+      // Canvas paints at 2x the laid-out width and the browser downscales
+      // to CSS size; the text layer uses the CSS width directly so spans
+      // land exactly on glyphs (one layout width, two scales).
       const probe = pg.getViewport({ scale: 1 });
-      const scale = (cssWidth / Math.max(1, probe.width)) * dpr;
-      const viewport = pg.getViewport({ scale });
+      const cssScale = cssWidth / Math.max(1, probe.width);
+      const viewport = pg.getViewport({ scale: cssScale * 2 });
+      const textViewport = pg.getViewport({ scale: cssScale });
       const off = document.createElement('canvas');
       off.height = Math.floor(viewport.height);
       off.width = Math.floor(viewport.width);
@@ -212,17 +211,17 @@ export default function Preview({
         kind: 'progress',
         message: `page ${target} rendered in ${Date.now() - t1}ms`,
       });
-      return { canvas: off, textContent, viewport };
+      return { canvas: off, textContent, viewport, textViewport };
     },
     [],
   );
 
   // Commit a rendered page into its shell: canvas paint + text layer.
   // drawImage commits pixels with no re-layout and no blank flash; the text
-  // div is rebuilt by pdf.js (spans positioned from the SAME viewport, so
-  // selection lands on glyphs). Records identity AFTER pixels land, so a
-  // commit can never mark a page rendered that isn't. A null bitmap (already
-  // rendered, or lost its liveness race) commits nothing.
+  // div is rebuilt by pdf.js from the CSS viewport, so selection lands on
+  // glyphs. Records identity AFTER pixels land, so a commit can never mark
+  // a page rendered that isn't. A null bitmap (already rendered, or lost
+  // its liveness race) commits nothing.
   const commitBitmap = useCallback(
     (
       target: number,
@@ -231,13 +230,14 @@ export default function Preview({
         canvas: HTMLCanvasElement;
         textContent: PdfTextContent;
         viewport: PdfViewport;
+        textViewport: PdfViewport;
       } | null,
     ) => {
       if (!done) return;
       const canvas = canvasRefs.current.get(target);
       const layer = textRefs.current.get(target);
       if (!canvas) return;
-      const { canvas: off, textContent, viewport } = done;
+      const { canvas: off, textContent, viewport, textViewport } = done;
       viewportRefs.current.set(target, viewport);
       if (canvas.width !== off.width || canvas.height !== off.height) {
         canvas.width = off.width;
@@ -250,7 +250,11 @@ export default function Preview({
       if (layer && ctor) {
         layer.replaceChildren();
         try {
-          void new ctor({ textContentSource: textContent, container: layer, viewport }).render();
+          void new ctor({
+            textContentSource: textContent,
+            container: layer,
+            viewport: textViewport,
+          }).render();
         } catch {
           /* text layer never blocks paint — canvas already committed */
         }
