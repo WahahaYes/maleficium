@@ -6,4 +6,5 @@ src-tauri/binaries
 playground/simple/figs
 public/*.svg
 src/assets/*.svg
+src/assets/themes/**/*.jsonc
 *.log

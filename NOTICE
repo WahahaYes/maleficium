@@ -2,3 +2,15 @@ Maleficium
 Copyright 2026 Ethan Wilson
 
 This product includes software developed by Ethan Wilson.
+
+This product bundles third-party VSCode color themes under src/assets/themes/
+(each MIT-licensed, full texts in src/assets/themes/LICENSES/):
+
+- Nord color theme, Copyright (c) 2016-present Sven Greb
+- Night Owl and Owl Light, Copyright (c) 2018 Sarah Drasner
+- One Dark Pro, Copyright (c) 2013-2022 Binaryify
+- OneDark, Copyright (c) 2015 Mahmoud Ali
+- Cobalt2, Copyright (c) 2018 Wes Bos, Roberto Achar
+- Solarized Dark and Light workbench themes, Copyright (c) 2024 Koen Lageveen
+- SynthWave '84 color theme, Copyright (c) 2019 Robb Owen
+- Dracula color theme, Copyright (c) 2016 Dracula Theme
