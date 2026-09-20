@@ -61,8 +61,26 @@ export PDF_PROBE
 cat > "$PDF_PROBE" <<'PROBE'
 const [devroot, pdfPath] = process.argv.slice(2);
 const { readFileSync } = await import('node:fs');
-const pdfjs = await import(`file://${devroot}/node_modules/pdfjs-dist/legacy/build/pdf.mjs`);
-const { createCanvas } = await import(`file://${devroot}/node_modules/@napi-rs/canvas/index.js`);
+// @napi-rs/canvas is an OPTIONAL dependency of pdfjs-dist: present on a full
+// npm install, absent with --no-optional or on platforms without a prebuilt
+// binary. Without it pdfjs cannot even polyfill DOMMatrix headlessly, so both
+// imports live inside the skip guard: skip with a stated reason instead of
+// failing the whole driver run.
+let pdfjs, createCanvas;
+try {
+  pdfjs = await import(`file://${devroot}/node_modules/pdfjs-dist/legacy/build/pdf.mjs`);
+  ({ createCanvas } = await import(`file://${devroot}/node_modules/@napi-rs/canvas/index.js`));
+} catch (e) {
+  process.stdout.write(
+    JSON.stringify({
+      skipped:
+        'D.5 render budgets need pdfjs-dist with its @napi-rs/canvas optional dependency (' +
+        String((e && e.message) || e).slice(0, 160) +
+        ')',
+    }) + '\n',
+  );
+  process.exit(0);
+}
 pdfjs.GlobalWorkerOptions.workerSrc = `${devroot}/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`;
 
 // Load window matches the `pdf loaded N pages in Xms` stream line: bytes in,
@@ -286,9 +304,18 @@ probe = subprocess.run(
     capture_output=True, text=True, timeout=600,
 )
 d5 = {}
+d5_skipped = ""
 if probe.returncode == 0 and probe.stdout.strip():
-    d5 = json.loads(probe.stdout.strip().splitlines()[-1])
-check("D.5 probe runs", bool(d5), (probe.stderr or "no output")[-300:])
+    out = json.loads(probe.stdout.strip().splitlines()[-1])
+    if out.get("skipped"):
+        d5_skipped = out["skipped"]
+    else:
+        d5 = out
+if d5_skipped:
+    print("skip: D.5 probe (" + d5_skipped + ")")
+    record("D.5 probe SKIPPED: " + d5_skipped)
+else:
+    check("D.5 probe runs", bool(d5), (probe.stderr or "no output")[-300:])
 if d5:
     pages = d5["pages"]
     check("3000pp fixture really is 3000 pages", pages >= 3000, str(pages))
