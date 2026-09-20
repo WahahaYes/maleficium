@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FileHistory } from './file-history';
 import { coalesceEvents, debounce } from './watcher';
-import { parseGitPorcelain, emptyGitState } from './git';
 import { sortTreeEntries, isHiddenName, LARGE_FILE_BYTES } from './files';
 import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './buffers';
 
@@ -37,19 +36,6 @@ describe('watcher coalesce+debounce', () => {
     vi.advanceTimersByTime(250);
     expect(fn).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
-  });
-});
-
-describe('git porcelain badges', () => {
-  it('maps M/A/D/U/R + ?? and branch', () => {
-    const { badges, branch } = parseGitPorcelain(
-      '## main...origin/main\n M a.tex\n?? b.tex\nUU c.tex\nR  d.tex -> e.tex\n',
-    );
-    expect(branch).toBe('main');
-    expect(badges).toMatchObject({ 'a.tex': 'M', 'b.tex': 'A', 'c.tex': 'U', 'e.tex': 'R' });
-  });
-  it('honest empty state', () => {
-    expect(emptyGitState('not-a-repo')).toMatchObject({ ok: false, reason: 'not-a-repo' });
   });
 });
 

@@ -70,27 +70,6 @@ pub fn require_bare_filename(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-/// Validate a `HEAD:<file>`-style repo-relative path: rejects empty, NUL,
-/// absolute paths, and any `..` component (pure lexical check — no fs
-/// access, so it works for files that exist only in HEAD, not on disk).
-/// Windows separators are rejected too (this is a git-path, always `/`).
-pub fn require_repo_path(file: &str) -> Result<&str, String> {
-    reject_empty_nul(file)?;
-    let p = Path::new(file);
-    if p.is_absolute() {
-        return Err(format!("forbidden path (not repo-relative): {}", file));
-    }
-    if file.contains('\\') {
-        return Err(format!("forbidden path (backslash): {}", file));
-    }
-    if p.components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(format!("forbidden path (parent escape): {}", file));
-    }
-    Ok(file)
-}
-
 /// Fetch the live fs scope, or fail closed when unavailable (never panic —
 /// `try_fs_scope` returns None outside a managed window context).
 pub fn live_scope(app: &AppHandle) -> Result<tauri::fs::Scope, String> {
@@ -194,19 +173,5 @@ mod tests {
         assert!(!is_bare_filename("a\0b"));
         assert!(require_bare_filename("ok.tex").is_ok());
         assert!(require_bare_filename("a/b").is_err());
-    }
-
-    #[test]
-    fn repo_path_rule() {
-        assert!(require_repo_path("chapters/method.tex").is_ok());
-        assert!(require_repo_path("main.tex").is_ok());
-        // Works for HEAD-only paths (no fs access — missing file still validates).
-        assert!(require_repo_path("deleted-in-workdir.tex").is_ok());
-        assert!(require_repo_path("").is_err());
-        assert!(require_repo_path("a\0b").is_err());
-        assert!(require_repo_path("/abs/path.tex").is_err());
-        assert!(require_repo_path("../outside.tex").is_err());
-        assert!(require_repo_path("sub/../../outside.tex").is_err());
-        assert!(require_repo_path("sub\\win.tex").is_err());
     }
 }
