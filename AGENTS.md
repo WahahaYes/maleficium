@@ -9,6 +9,8 @@ One concern per commit. Brief single line, lowercase, no prefix, no trailing per
 - Good: `associate latex main file`, `restore dpr-folded preview scale`
 - Bad: `feat: associate main file`, `fix preview scale bug`, two concerns in one commit
 
+Parallel sessions share one tree: never `add -A` / `commit -a` — stage only your slice's explicit paths, confirm status shows nothing else staged, then commit. Another lane's staged work gets unstaged, never committed.
+
 `package.json` + `package-lock.json` always ship in the same commit, in sync — never leave the lockfile dirty, never delegate it. No demo or tooling-only code. Tests (`*.test.ts`, `src/test/`, `e2e/`) are product code. Generated output lives only in OS tmp, never committed. `LICENSE` choice and repo `README` stay deferred until the functional POC.
 
 ## Rule 2 — code documentation
