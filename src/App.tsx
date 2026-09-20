@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
@@ -19,6 +19,7 @@ import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream from './components/LogStream';
 import OutlineView from './components/OutlineView';
+import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
@@ -60,6 +61,16 @@ import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { getRecentProjects, touchRecentProject, pruneRecentProjects } from './lib/recentProjects';
 import { moveToTrash, undoTrash } from './lib/trash';
+import { createHistoryStore } from './lib/history';
+import {
+  buildRevisionRows,
+  historyAvailability,
+  retentionSummary,
+  truncationNotice,
+  type HistoryAvailability,
+  type RevisionRow,
+} from './lib/history.view';
+import { hashRoot } from './lib/paths';
 import { grantProjectAccess } from './lib/projectAccess';
 import { watch, readTextFile, mkdir, stat } from '@tauri-apps/plugin-fs';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
@@ -86,6 +97,13 @@ export default function App({
   const [mainCandidates, setMainCandidates] = useState<string[]>([]);
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
   const [trash] = useState(() => new FileHistory());
+  const [revisionCount, setRevisionCount] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRows, setHistoryRows] = useState<RevisionRow[]>([]);
+  const [historyAvail, setHistoryAvail] = useState<HistoryAvailability>('unavailable');
+  const [historySummary, setHistorySummary] = useState<string | null>(null);
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null);
+  const [restoringRev, setRestoringRev] = useState<string | null>(null);
   const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
   const [largeFile, setLargeFile] = useState<string | null>(null);
@@ -118,6 +136,47 @@ export default function App({
     ownWritesRef.current.set(p, Date.now());
   }, []);
 
+  // Revision history: app-local, keyed by a project id that never resolves to
+  // a path outside the store. One project is open at a time, so `rootFor`
+  // answers for that id alone.
+  const rootRef = useRef<string | null>(root);
+  rootRef.current = root;
+  const projectId = root ? hashRoot(root) : null;
+  const history = useMemo(
+    () =>
+      createHistoryStore((id) => {
+        const r = rootRef.current;
+        return r && hashRoot(r) === id ? r : null;
+      }),
+    [],
+  );
+  /** Project-relative path for a file inside the open project, else null. */
+  const relInProject = useCallback((abs: string): string | null => {
+    const r = rootRef.current;
+    return r && abs.startsWith(r + '/') ? abs.slice(r.length + 1) : null;
+  }, []);
+  const refreshRevisionCount = useCallback(
+    async (path: string) => {
+      const rel = relInProject(path);
+      if (!projectId || !rel) {
+        setRevisionCount(0);
+        return;
+      }
+      setRevisionCount((await history.listRevisions(projectId, rel)).length);
+    },
+    [history, projectId, relInProject],
+  );
+  /** Snapshot a saved file. Ineligible files and an unreachable store are quiet. */
+  const recordRevision = useCallback(
+    async (path: string, text: string) => {
+      const rel = relInProject(path);
+      if (!projectId || !rel) return;
+      await history.recordRevision(projectId, rel, new TextEncoder().encode(text));
+      await refreshRevisionCount(path);
+    },
+    [history, projectId, relInProject, refreshRevisionCount],
+  );
+
   useEffect(() => onPdf(setPdfUrl), []);
 
   const handleSelect = useCallback(
@@ -130,6 +189,7 @@ export default function App({
             await saveTex(fileName, cur.value);
             markOwnWrite(fileName);
             setBuffers((b) => markSaved(b, fileName));
+            await recordRevision(fileName, cur.value);
           } catch {
             /* keep dirty */
           }
@@ -194,7 +254,7 @@ export default function App({
         emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
       }
     },
-    [buffers, fileName, root],
+    [buffers, fileName, root, markOwnWrite, recordRevision],
   );
 
   useEffect(() => {
@@ -697,6 +757,7 @@ export default function App({
       await saveTex(fileName, cur?.value ?? tex);
       markOwnWrite(fileName);
       setBuffers((b) => markSaved(b, fileName));
+      await recordRevision(fileName, cur?.value ?? tex);
       setLog('saved ' + fileName);
       emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
     } else {
@@ -704,7 +765,67 @@ export default function App({
       setLog('saved ' + fileName);
       emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
     }
-  }, [fileName, tex, buffers, largeFile, markOwnWrite]);
+  }, [fileName, tex, buffers, largeFile, markOwnWrite, recordRevision]);
+
+  // The counter follows the active file; a file outside the project reads 0.
+  useEffect(() => {
+    void refreshRevisionCount(fileName);
+  }, [fileName, refreshRevisionCount]);
+
+  const openHistory = useCallback(async () => {
+    const rel = relInProject(fileName);
+    const avail = historyAvailability({
+      hasProject: root != null,
+      relPath: rel,
+      storeReady: projectId != null,
+    });
+    setHistoryAvail(avail);
+    setHistoryOpen(true);
+    if (avail !== 'ready' || !projectId || !rel) {
+      setHistoryRows([]);
+      setHistorySummary(null);
+      setHistoryNotice(null);
+      return;
+    }
+    const [revs, info] = await Promise.all([
+      history.listRevisions(projectId, rel),
+      history.retentionInfo(projectId),
+    ]);
+    const rows = buildRevisionRows(revs, Date.now());
+    setHistoryRows(rows);
+    setHistorySummary(retentionSummary(info));
+    setHistoryNotice(truncationNotice(rows.length, info));
+    setRevisionCount(revs.length);
+  }, [fileName, history, projectId, relInProject, root]);
+
+  // Restore writes the revision back to disk; the store keeps the replaced
+  // state as a revision of its own, so the list is the way back.
+  const restoreRevision = useCallback(
+    async (rev: string) => {
+      const rel = relInProject(fileName);
+      if (!projectId || !rel) return;
+      setRestoringRev(rev);
+      try {
+        const bytes = await history.restoreRevision(projectId, rel, rev);
+        if (!bytes) {
+          setLog('restore unavailable');
+          emit({ scope: 'fs', kind: 'warn', message: 'restore unavailable for ' + rel });
+          return;
+        }
+        const text = new TextDecoder().decode(bytes);
+        markOwnWrite(fileName);
+        setBuffers((b) => markSaved(updateBuffer(b, fileName, text), fileName));
+        setTex(text);
+        setReloadPath(null);
+        setLog('restored ' + rel);
+        emit({ scope: 'fs', kind: 'success', message: 'restored ' + rel });
+      } finally {
+        setRestoringRev(null);
+      }
+      await openHistory();
+    },
+    [fileName, history, markOwnWrite, openHistory, projectId, relInProject],
+  );
 
   useEffect(() => {
     if (!fileName.includes('/')) return;
@@ -713,8 +834,9 @@ export default function App({
       if (cur?.dirty) {
         markOwnWrite(fileName);
         saveTex(fileName, cur.value)
-          .then(() => {
+          .then(async () => {
             setBuffers((b) => markSaved(b, fileName));
+            await recordRevision(fileName, cur.value);
             setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
           })
           .catch(() => {
@@ -723,7 +845,7 @@ export default function App({
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers, markOwnWrite]);
+  }, [tex, fileName, buffers, markOwnWrite, recordRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   const publishProblems = (text: string, base: string, wsRoot: string) => {
@@ -1287,6 +1409,12 @@ export default function App({
       .map((o) => ({ line: o.line, title: o.title })),
     outlinePicks,
     canUndoDelete: trash.size > 0,
+    historyAvailable:
+      historyAvailability({
+        hasProject: root != null,
+        relPath: relInProject(fileName),
+        storeReady: projectId != null,
+      }) === 'ready',
     reloadPending: reloadPath != null,
     theme: themeMode,
     density,
@@ -1325,6 +1453,9 @@ export default function App({
     },
     undoDelete: () => {
       void handleUndo();
+    },
+    showHistory: () => {
+      void openHistory();
     },
     renameActive: () => {
       if (!isProjectFile(fileName)) {
@@ -1792,10 +1923,26 @@ export default function App({
           </Button>
         </DialogActions>
       </Dialog>
+      <HistoryDialog
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        fileLabel={relInProject(fileName)}
+        availability={historyAvail}
+        rows={historyRows}
+        summary={historySummary}
+        notice={historyNotice}
+        restoringRev={restoringRev}
+        onRestore={(rev) => void restoreRevision(rev)}
+      />
       <StatusBar
         mainFile={relOf(mainFile)}
         mainFileTitle={mainFile}
         historyCount={trash.size}
+        revisionCount={revisionCount}
+        revisionTitle={`${revisionCount} revision${revisionCount === 1 ? '' : 's'} of ${
+          relInProject(fileName) ?? fileName
+        } — click to open History`}
+        onOpenHistory={() => void openHistory()}
         phase={compilePhase}
         timer={compileTimer}
         message={log}

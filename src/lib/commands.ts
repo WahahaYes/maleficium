@@ -18,6 +18,7 @@ export type CommandId =
   | 'file.recent'
   | 'file.recent-clear'
   | 'edit.undo-delete'
+  | 'history.show'
   | 'edit.rename'
   | 'edit.delete'
   | 'selection.select-all'
@@ -77,6 +78,8 @@ export interface MenuContext {
   /** Currently multi-picked outline lines. */
   outlinePicks: number[];
   canUndoDelete: boolean;
+  /** Revisions are listable for the active file (project file, store reachable). */
+  historyAvailable: boolean;
   reloadPending: boolean;
   theme: 'dark' | 'light';
   density: Density;
@@ -94,6 +97,7 @@ export interface CommandActions {
   keepMine: () => void;
   clean: () => void;
   undoDelete: () => void;
+  showHistory: () => void;
   renameActive: () => void;
   deleteActive: () => void;
   selectAll: () => void;
@@ -206,6 +210,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Undo Delete',
           enabled: ctx.canUndoDelete,
           run: a.undoDelete,
+        },
+        {
+          id: 'history.show',
+          label: 'File History…',
+          accelerator: 'Ctrl+H',
+          enabled: ctx.historyAvailable,
+          run: a.showHistory,
         },
         { id: 'edit.rename', label: 'Rename…', enabled: ctx.isProjectFile, run: a.renameActive },
         { id: 'edit.delete', label: 'Delete', enabled: ctx.isProjectFile, run: a.deleteActive },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildMenus, type MenuContext, type CommandActions } from './commands';
-import { KEYMAP } from './keymap';
+import { KEYMAP, menuChordId } from './keymap';
 import { parseOutline } from './outline';
 
 const baseCtx: MenuContext = {
@@ -17,6 +17,7 @@ const baseCtx: MenuContext = {
   outlineLines: [{ line: 3, title: 'Intro' }],
   outlinePicks: [3],
   canUndoDelete: true,
+  historyAvailable: true,
   reloadPending: false,
   theme: 'dark',
   density: 'comfortable',
@@ -33,6 +34,7 @@ const actions: CommandActions = {
   keepMine: noop,
   clean: noop,
   undoDelete: noop,
+  showHistory: noop,
   renameActive: noop,
   deleteActive: noop,
   selectAll: noop,
@@ -129,10 +131,30 @@ describe('command registry', () => {
   });
   it('no git-named command or label survives', () => {
     const cmds = buildMenus(baseCtx, actions).flatMap((s) => s.commands);
-    for (const c of cmds) {
+    const rows = cmds.flatMap((c) => [c, ...(c.children ?? [])]);
+    for (const c of rows) {
       expect(c.id, c.id).not.toMatch(/git/i);
-      expect(c.label, c.label).not.toMatch(/git|HEAD/i);
+      expect(c.label, c.label).not.toMatch(/git|HEAD|commit|branch|stage|diff|repo/i);
     }
+    // The history surface says it in user words and nothing else.
+    const hist = cmds.find((c) => c.id === 'history.show')!;
+    expect(hist.label).toBe('File History…');
+  });
+
+  it('history row is gated on availability and carries a keymapped chord', () => {
+    const find = (ctx: MenuContext) =>
+      buildMenus(ctx, actions)
+        .flatMap((s) => s.commands)
+        .find((c) => c.id === 'history.show')!;
+    expect(find(baseCtx).enabled).toBe(true);
+    expect(typeof find(baseCtx).run).toBe('function');
+    // Nothing to list without a project file or a reachable store.
+    expect(find({ ...baseCtx, historyAvailable: false }).enabled).toBe(false);
+    // Chord parity: the accelerator is a KEYMAP row and the chord resolves.
+    expect(find(baseCtx).accelerator).toBe('Ctrl+H');
+    expect(KEYMAP.some((k) => k.keys === 'Ctrl+H')).toBe(true);
+    const ev = { ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, key: 'h' };
+    expect(menuChordId(ev as unknown as KeyboardEvent)).toBe('history.show');
   });
   it('recent projects submenu lists recents, disabled when empty', () => {
     const all = buildMenus(baseCtx, actions).flatMap((s) => s.commands);

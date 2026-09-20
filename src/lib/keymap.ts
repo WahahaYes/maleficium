@@ -25,6 +25,7 @@ export const KEYMAP: KeyChord[] = [
   { id: 'expand-selection', label: 'Expand Selection', keys: 'Shift+Alt+Right' },
   { id: 'shrink-selection', label: 'Shrink Selection', keys: 'Shift+Alt+Left' },
   { id: 'go-to-line', label: 'Go to Line…', keys: 'Ctrl+G' },
+  { id: 'file-history', label: 'File History…', keys: 'Ctrl+H' },
   { id: 'shortcuts', label: 'This shortcuts list', keys: '?' },
 ];
 
@@ -40,6 +41,7 @@ export type MenuChordId =
   | 'file.open-project'
   | 'file.close-file'
   | 'file.save'
+  | 'history.show'
   | 'selection.select-all'
   | 'selection.expand'
   | 'selection.shrink'
@@ -58,6 +60,7 @@ export function menuChordId(e: KeyboardEvent): MenuChordId | null {
   if (k === 'w' && !e.shiftKey) return 'file.close-file';
   if (k === 's' && !e.shiftKey) return 'file.save';
   if (k === 'g' && !e.shiftKey) return 'selection.go-to-line';
+  if (k === 'h' && !e.shiftKey) return 'history.show';
   if (k === 'a' && !e.shiftKey && !inEditor) return 'selection.select-all';
   if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.altKey) {
     return e.key === 'ArrowRight' ? 'selection.expand' : 'selection.shrink';

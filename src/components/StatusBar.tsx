@@ -1,8 +1,10 @@
-// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + history).
+// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + restorables).
 //
 // Constant height; scalar props only (no payload). Compile state lives here.
+// The revision count is the entry point to the History surface.
 
 import Box from '@mui/material/Box';
+import ButtonBase from '@mui/material/ButtonBase';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
 
@@ -10,6 +12,9 @@ export default function StatusBar({
   mainFile,
   mainFileTitle,
   historyCount,
+  revisionCount,
+  revisionTitle,
+  onOpenHistory,
   phase,
   timer,
   message,
@@ -18,6 +23,10 @@ export default function StatusBar({
   mainFileTitle?: string | null;
   /** Undoable file-op depth. */
   historyCount?: number;
+  /** Revisions kept for the active file. */
+  revisionCount?: number;
+  revisionTitle?: string;
+  onOpenHistory?: () => void;
   phase: string;
   timer: number;
   message: string;
@@ -74,6 +83,22 @@ export default function StatusBar({
         >
           ↩ {historyCount}
         </Typography>
+      ) : null}
+      {onOpenHistory && revisionCount != null && revisionCount > 0 ? (
+        <ButtonBase
+          onClick={onOpenHistory}
+          title={revisionTitle ?? `${revisionCount} revisions — open History`}
+          sx={{
+            flexShrink: 0,
+            px: 0.5,
+            borderRadius: 0.5,
+            typography: 'caption',
+            color: 'text.secondary',
+            '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+          }}
+        >
+          ⟲ {revisionCount}
+        </ButtonBase>
       ) : null}
       {phase === 'compiling' ? (
         <LinearProgress sx={{ width: 120, height: 2, flexShrink: 0 }} />
