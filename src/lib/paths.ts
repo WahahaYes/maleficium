@@ -39,3 +39,16 @@ export function appTrashDir(appDataDir: string, root: string): string {
 export function appOutDir(baseDir: string, root: string): string {
   return joinPath(baseDir, 'maleficium-out', hashRoot(root));
 }
+
+/**
+ * App-local history home for one project id. Holds the revision index and
+ * the content-addressed blob tree. Nothing is written to the project dir.
+ */
+export function appHistoryDir(appDataDir: string, projectId: string): string {
+  return joinPath(appDataDir, 'maleficium-history', projectId);
+}
+
+/** Blob path for one content hash: two-char fan-out under the history home. */
+export function historyBlobPath(historyDir: string, hash: string): string {
+  return joinPath(historyDir, 'blobs', hash.slice(0, 2), hash);
+}
