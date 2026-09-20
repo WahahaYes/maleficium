@@ -73,7 +73,8 @@ import {
 } from './lib/history.view';
 import { appOutDir, hashRoot } from './lib/paths';
 import { grantProjectAccess } from './lib/projectAccess';
-import { watch, readTextFile, mkdir, stat, readDir, remove } from '@tauri-apps/plugin-fs';
+import { watch } from '@tauri-apps/plugin-fs';
+import { fs } from './lib/fs-provider';
 import { appCacheDir } from '@tauri-apps/api/path';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
@@ -257,7 +258,7 @@ export default function App({
       });
       setLog('loading ' + path);
       try {
-        const info = await stat(path).catch(() => null);
+        const info = await fs().stat(path);
         const size = info?.size ?? 0;
         if (size > LARGE_FILE_BYTES) {
           if (selectToken !== selectTokenRef.current) return; // stale click lost the race
@@ -486,7 +487,7 @@ export default function App({
           // runtime grant. Unreachable entries land in `stale` here.
           const grant = await grantProjectAccess(r);
           if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
-          await stat(grant.path);
+          if ((await fs().stat(grant.path)) === null) throw new Error('root unreachable');
           await openRoot(grant.path, { warm: true });
           return;
         } catch {
@@ -728,7 +729,7 @@ export default function App({
       // dir = already clean.
       let entries = [];
       try {
-        entries = await readDir(out);
+        entries = await fs().listDir(out);
       } catch {
         emit({
           scope: 'compile',
@@ -741,7 +742,7 @@ export default function App({
       let n = 0;
       for (const e of entries) {
         try {
-          await remove(out + '/' + e.name);
+          await fs().remove(out + '/' + e.name);
           n++;
         } catch {
           /* keep going — report count at end */
@@ -1219,7 +1220,7 @@ export default function App({
         workdir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
       } else {
         workdir = '/tmp/maleficium-untitled';
-        await mkdir(workdir, { recursive: true });
+        await fs().mkdir(workdir, { recursive: true });
         const t2 = workdir + '/' + fileName;
         await saveTex(t2, tex);
         markOwnWrite(t2);
@@ -1254,7 +1255,7 @@ export default function App({
         // App-local outdir over the app-cache dir: the engine log lives in
         // cache, never in the project.
         const out = appOutDir(await appCacheDir(), workdir!);
-        return await readTextFile(`${out}/${main.replace(/\.tex$/, '.log')}`);
+        return await fs().readText(`${out}/${main.replace(/\.tex$/, '.log')}`);
       } catch {
         return null;
       }
@@ -1376,8 +1377,7 @@ export default function App({
       const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
       const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
       const out = appOutDir(await appCacheDir(), dir);
-      await stat(`${out}/${stem}.pdf`);
-      return true;
+      return (await fs().stat(`${out}/${stem}.pdf`)) !== null;
     } catch {
       return false;
     }

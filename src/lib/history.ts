@@ -5,7 +5,7 @@
 // revisions that reference them. Everything lives app-local — the project
 // dir holds nothing of ours and the user's own repo is never touched.
 
-import { mkdir, readFile, writeFile, remove, exists } from '@tauri-apps/plugin-fs';
+import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { appHistoryDir, historyBlobPath, joinPath } from './paths';
 import { previewKindFor } from './files';
@@ -175,8 +175,8 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
 
   async function readIndex(historyDir: string): Promise<Index> {
     try {
-      if (!(await exists(indexPath(historyDir)))) return emptyIndex();
-      const raw = await readFile(indexPath(historyDir));
+      if ((await fs().stat(indexPath(historyDir))) === null) return emptyIndex();
+      const raw = await fs().readBytes(indexPath(historyDir));
       return parseIndex(new TextDecoder().decode(raw));
     } catch {
       return emptyIndex();
@@ -184,8 +184,8 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
   }
 
   async function writeIndex(historyDir: string, index: Index): Promise<void> {
-    await mkdir(historyDir, { recursive: true });
-    await writeFile(indexPath(historyDir), new TextEncoder().encode(JSON.stringify(index)));
+    await fs().mkdir(historyDir, { recursive: true });
+    await fs().writeBytes(indexPath(historyDir), new TextEncoder().encode(JSON.stringify(index)));
   }
 
   /** Delete every blob the index no longer references. */
@@ -194,7 +194,7 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
     for (const hash of touched) {
       if (live.has(hash)) continue;
       try {
-        await remove(historyBlobPath(historyDir, hash));
+        await fs().remove(historyBlobPath(historyDir, hash));
       } catch {
         /* already gone — the index is the only truth that matters */
       }
@@ -221,10 +221,10 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         if (last && last.hash === hash) return { stored: false, reason: 'unchanged' };
 
         const blob = historyBlobPath(historyDir, hash);
-        const deduped = await exists(blob);
+        const deduped = (await fs().stat(blob)) !== null;
         if (!deduped) {
-          await mkdir(joinPath(historyDir, 'blobs', hash.slice(0, 2)), { recursive: true });
-          await writeFile(blob, bytes);
+          await fs().mkdir(joinPath(historyDir, 'blobs', hash.slice(0, 2)), { recursive: true });
+          await fs().writeBytes(blob, bytes);
         }
 
         index.seq += 1;
@@ -258,7 +258,7 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         const index = await readIndex(historyDir);
         const entry = (index.files[relPath] ?? []).find((e) => e.rev === rev);
         if (!entry) return null;
-        return await readFile(historyBlobPath(historyDir, entry.hash));
+        return await fs().readBytes(historyBlobPath(historyDir, entry.hash));
       } catch {
         return null;
       }
@@ -271,12 +271,12 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
       if (!root) return null;
       // Snapshot what is on disk first, so restore is itself undoable.
       try {
-        const current = await readFile(joinPath(root, relPath));
+        const current = await fs().readBytes(joinPath(root, relPath));
         await this.recordRevision(projectId, relPath, current);
       } catch {
         /* nothing on disk to preserve */
       }
-      await writeFile(joinPath(root, relPath), bytes);
+      await fs().writeBytes(joinPath(root, relPath), bytes);
       return bytes;
     },
 

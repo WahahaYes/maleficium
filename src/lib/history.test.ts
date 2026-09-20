@@ -5,15 +5,20 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   remove: vi.fn(),
-  exists: vi.fn(),
+  stat: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/path', () => ({
   appDataDir: vi.fn(),
 }));
 
-import { mkdir, readFile, writeFile, remove, exists } from '@tauri-apps/plugin-fs';
+import { mkdir, readFile, writeFile, remove, stat } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';
+
+import { setProviders } from './fs-provider';
+import { desktopFs, desktopDialog } from './fs-provider.tauri';
+
+setProviders({ fs: desktopFs, dialog: desktopDialog });
 import {
   createHistoryStore,
   evict,
@@ -36,7 +41,10 @@ function fakeDisk() {
   const files = new Map<string, Uint8Array>();
   vi.mocked(appDataDir).mockResolvedValue('/app/data');
   vi.mocked(mkdir).mockResolvedValue(undefined);
-  vi.mocked(exists).mockImplementation(async (p: string | URL) => files.has(String(p)));
+  vi.mocked(stat).mockImplementation(async (p: string | URL) => {
+    if (!files.has(String(p))) throw new Error('no such file');
+    return { size: files.get(String(p))?.length ?? 0, isDirectory: false, isFile: true } as never;
+  });
   vi.mocked(readFile).mockImplementation(async (p: string | URL) => {
     const b = files.get(String(p));
     if (!b) throw new Error(`ENOENT: ${String(p)}`);

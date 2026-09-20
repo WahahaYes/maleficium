@@ -4,7 +4,11 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App';
 import { createAppTheme } from './lib/theme';
 import { DEFAULT_PREFS } from './lib/appearance';
+import { setProviders } from './lib/fs-provider';
+import { desktopFs, desktopDialog } from './lib/fs-provider.tauri';
 import './App.css';
+
+setProviders({ fs: desktopFs, dialog: desktopDialog });
 
 export function Root() {
   const [mode, setMode] = React.useState<'dark' | 'light'>(() => {

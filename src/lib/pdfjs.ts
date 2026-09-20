@@ -4,7 +4,7 @@
 // selectable-text overlay. Canvas is paint, DOM spans are the document.
 // Filesystem knowledge (blob:/http:/asset: vs Tauri readFile) lives here.
 import 'pdfjs-dist/web/pdf_viewer.css';
-import { readFile } from '@tauri-apps/plugin-fs';
+import { fs } from './fs-provider';
 import type {
   PDFDocumentProxy,
   PDFPageProxy,
@@ -58,6 +58,6 @@ function isRemoteSource(source: string): boolean {
 /** Open a Preview source: remote/blob/asset URLs via pdf.js, local paths via Tauri fs. */
 export async function openPdfSource(source: string): Promise<PDFDocumentProxy> {
   if (isRemoteSource(source)) return openPdf(source);
-  const bytes = new Uint8Array(await readFile(source));
+  const bytes = new Uint8Array(await fs().readBytes(source));
   return openPdfFromBytes(bytes);
 }

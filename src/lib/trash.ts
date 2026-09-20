@@ -2,7 +2,7 @@
 //
 // Trash lives app-local, never inside the project. No in-project fallback.
 
-import { mkdir, rename, readFile, writeFile, remove } from '@tauri-apps/plugin-fs';
+import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
 import { appTrashDir } from './paths';
@@ -25,19 +25,19 @@ export async function moveToTrash(
     return { ok: false, error: String(e) };
   }
   try {
-    await mkdir(dir, { recursive: true });
+    await fs().mkdir(dir, { recursive: true });
   } catch (e) {
     return { ok: false, error: String(e) };
   }
   const dest = dir + '/' + trashName(absPath);
   try {
-    await rename(absPath, dest);
+    await fs().rename(absPath, dest);
   } catch {
     // Cross-device fallback: copy bytes then delete.
     try {
-      const bytes = await readFile(absPath);
-      await writeFile(dest, bytes);
-      await remove(absPath);
+      const bytes = await fs().readBytes(absPath);
+      await fs().writeBytes(dest, bytes);
+      await fs().remove(absPath);
     } catch (e) {
       return { ok: false, error: String(e) };
     }
@@ -50,14 +50,14 @@ export async function undoTrash(history: FileHistory): Promise<{ ok: boolean; er
   const entry = history.pop();
   if (!entry) return { ok: false, error: 'nothing to undo' };
   try {
-    await rename(entry.trashPath, entry.originalPath);
+    await fs().rename(entry.trashPath, entry.originalPath);
     return { ok: true };
   } catch {
     // Rename across filesystems fails; copy the bytes back instead.
     try {
-      const bytes = await readFile(entry.trashPath);
-      await writeFile(entry.originalPath, bytes);
-      await remove(entry.trashPath);
+      const bytes = await fs().readBytes(entry.trashPath);
+      await fs().writeBytes(entry.originalPath, bytes);
+      await fs().remove(entry.trashPath);
       return { ok: true };
     } catch (e) {
       history.record({

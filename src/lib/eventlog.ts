@@ -15,7 +15,7 @@
 //   grep '"action":"compile.finish"' "$L"      # one fact
 //   tail -f "$L"                               # live
 
-import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
+import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { appEventLogDir, eventLogPath } from './paths';
 import { emit, list, subscribe, type BusEvent } from './events';
@@ -163,7 +163,7 @@ export function startEventLog(): EventLog {
     kept.push(...next.lines);
     try {
       const body = next.rewrite ? next.lines.join('') : batch.join('');
-      await writeFile(target, enc.encode(body), next.rewrite ? undefined : { append: true });
+      await fs().writeBytes(target, enc.encode(body), next.rewrite ? undefined : { append: true });
     } catch {
       /* the log is never the reason the app stops */
     }
@@ -176,10 +176,10 @@ export function startEventLog(): EventLog {
     try {
       const base = await appDataDir();
       if (!recording) return;
-      await mkdir(appEventLogDir(base), { recursive: true });
+      await fs().mkdir(appEventLogDir(base), { recursive: true });
       if (!recording) return;
       const path = eventLogPath(base);
-      await writeFile(path, new Uint8Array());
+      await fs().writeBytes(path, new Uint8Array());
       target = path;
       emit({
         scope: 'app',

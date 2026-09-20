@@ -16,9 +16,12 @@ vi.mock('@tauri-apps/api/path', () => ({
 import { mkdir, rename, readFile, writeFile, remove } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';
 import { moveToTrash, undoTrash } from './trash';
+import { setProviders } from './fs-provider';
+import { desktopFs, desktopDialog } from './fs-provider.tauri';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  setProviders({ fs: desktopFs, dialog: desktopDialog });
   vi.mocked(appDataDir).mockResolvedValue('/app/data');
   vi.mocked(mkdir).mockResolvedValue(undefined);
   vi.mocked(remove).mockResolvedValue(undefined);

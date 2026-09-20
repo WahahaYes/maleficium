@@ -2,7 +2,7 @@
 //
 // Metadata/paths only; file contents read transiently, never stored.
 
-import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
+import { fs } from './fs-provider';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { joinPath } from './paths';
@@ -12,7 +12,7 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
   const walk = async (dir: string) => {
     let entries;
     try {
-      entries = await readDir(dir);
+      entries = await fs().listDir(dir);
     } catch {
       return;
     }
@@ -37,7 +37,7 @@ export async function resolveMainFileTauri(
   return resolveMainFile({
     root,
     openedFile,
-    readText: (p) => readTextFile(p),
+    readText: (p) => fs().readText(p),
     listTexFiles: listTexFilesRecursive,
     // App-local store read.
     readConfig: async (r) => {

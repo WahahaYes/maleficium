@@ -1,12 +1,4 @@
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
-import {
-  readTextFile,
-  writeTextFile,
-  writeFile,
-  readDir,
-  rename,
-  readFile,
-} from '@tauri-apps/plugin-fs';
+import { dialog, fs } from './fs-provider';
 import { joinPath } from './paths';
 
 export type TreeEntry = {
@@ -103,7 +95,7 @@ export function isPreviewable(path: string): boolean {
 
 /** Read a file as bytes for object-URL previews (images/video/pdf). */
 export async function loadPreviewBytes(path: string): Promise<Uint8Array> {
-  return await readFile(path);
+  return await fs().readBytes(path);
 }
 
 /** Files/dirs never shown when `filterHidden` is on (build artifacts + trash). */
@@ -141,7 +133,7 @@ export async function openProject(): Promise<string | null> {
   } catch {
     /* fall through to dialog */
   }
-  const path = await openDialog({ directory: true, recursive: true });
+  const path = await dialog().openDirectory({ recursive: true });
   return path ?? null;
 }
 
@@ -149,7 +141,7 @@ export async function openProject(): Promise<string | null> {
 export async function createFile(dir: string, name: string): Promise<string> {
   const clean = name.trim().replace(/\//g, '_') || 'untitled.tex';
   const full = joinPath(dir, clean);
-  await writeFile(full, new Uint8Array());
+  await fs().writeBytes(full, new Uint8Array());
   return full;
 }
 
@@ -159,7 +151,7 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
   if (!clean) throw new Error('empty name');
   const dir = oldPath.slice(0, oldPath.lastIndexOf('/'));
   const full = dir + '/' + clean;
-  await rename(oldPath, full);
+  await fs().rename(oldPath, full);
   return full;
 }
 
@@ -167,7 +159,7 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
 /** Full recursive walk for background scans — never on the open path. */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
-    const entries = await readDir(root);
+    const entries = await fs().listDir(root);
     const result: TreeEntry[] = [];
     const dirs: TreeEntry[] = [];
     for (const entry of entries) {
@@ -191,7 +183,7 @@ export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
 
 export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
   try {
-    const entries = await readDir(dir);
+    const entries = await fs().listDir(dir);
     const out: TreeEntry[] = [];
     for (const entry of entries) {
       if (isHiddenName(entry.name)) continue;
@@ -206,20 +198,20 @@ export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
 }
 
 export async function loadTex(path: string): Promise<string> {
-  return await readTextFile(path);
+  return await fs().readText(path);
 }
 
 export async function saveTex(path: string, content: string): Promise<void> {
-  await writeTextFile(path, content);
+  await fs().writeText(path, content);
 }
 
 export async function saveTexToDisk(name: string, content: string): Promise<void> {
   try {
-    const path = await saveDialog({
+    const path = await dialog().saveFile({
       defaultPath: name,
       filters: [{ name: 'LaTeX', extensions: ['tex'] }],
     });
-    if (path) await writeTextFile(path, content);
+    if (path) await fs().writeText(path, content);
   } catch {
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);

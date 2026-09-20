@@ -13,6 +13,11 @@ import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';
 import * as events from './events';
 import { appEventLogDir, eventLogPath } from './paths';
+
+import { setProviders } from './fs-provider';
+import { desktopFs, desktopDialog } from './fs-provider.tauri';
+
+setProviders({ fs: desktopFs, dialog: desktopDialog });
 import {
   MAX_LINE_BYTES,
   MAX_LOG_EVENTS,
