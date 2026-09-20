@@ -22,13 +22,18 @@ export function getOrCreateBuffer(
   return next;
 }
 
+/**
+ * Record an edit. A value equal to what the buffer already holds is an echo,
+ * not an edit: the map is returned untouched so nothing is marked dirty.
+ */
 export function updateBuffer(
   buffers: Map<string, BufferState>,
   path: string,
   value: string,
 ): Map<string, BufferState> {
+  const prev = buffers.get(path);
+  if (prev && prev.value === value) return buffers;
   const next = new Map(buffers);
-  const prev = next.get(path);
   next.set(path, { value, dirty: true, version: (prev?.version ?? 0) + 1 });
   return next;
 }

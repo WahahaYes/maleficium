@@ -58,6 +58,21 @@ describe('tree sort + hidden', () => {
 });
 
 describe('buffers dirty tracking', () => {
+  it('an echo of the loaded value is not an edit', () => {
+    // The editor re-emits its text when the doc is set externally (file
+    // switch, reload). That echo must not dirty the buffer, or autosave
+    // rewrites a file the user never touched.
+    const m = new Map([['/a.tex', { value: 'loaded', dirty: false, version: 0 }]]);
+    const echoed = updateBuffer(m, '/a.tex', 'loaded');
+    expect(echoed.get('/a.tex')?.dirty).toBe(false);
+    expect(echoed.get('/a.tex')?.version).toBe(0);
+    expect(echoed).toBe(m);
+    // A real change still dirties.
+    const edited = updateBuffer(m, '/a.tex', 'loaded!');
+    expect(edited.get('/a.tex')?.dirty).toBe(true);
+    expect(edited.get('/a.tex')?.version).toBe(1);
+    expect(edited).not.toBe(m);
+  });
   it('dirty survives unrelated updates until saved', () => {
     const first = getOrCreateBuffer(new Map(), '/a.tex', 'a');
     const edited = updateBuffer(new Map([['/a.tex', first]]), '/a.tex', 'a2');
