@@ -14,6 +14,11 @@
 #
 # Asserts also cover that no in-project path is re-created
 # (.maleficium-trash/, .maleficium.json, in-project out/).
+#
+# The app's own event log is app-local too. Read the current run with:
+#   L="${XDG_DATA_HOME:-$HOME/.local/share}/com.ethan.tauri-app/maleficium-log/events.jsonl"
+#   cat "$L"                                # every event of this run, one JSON object per line
+#   grep '"action":"compile.finish"' "$L"   # one fact, matched on the payload not the prose
 
 set -euo pipefail
 
@@ -115,6 +120,27 @@ grep -q "appHistoryDir" "$HISTSRC" || fail "history store does not use the app-l
 grep -q "appDataDir" "$HISTSRC" || fail "history store does not root itself in app-data"
 pass "history store derives its home from app-data only"
 
+# --- event log home ---------------------------------------------------------
+# The app records its event stream as JSONL under app-data. It is the
+# hands-free read of what a run did, so it must never land in the project.
+LOGDIR="$APPDATA/maleficium-log"
+LOGFILE="$LOGDIR/events.jsonl"
+[[ "$LOGFILE" == "$ROOT"* ]] && fail "event log inside project: $LOGFILE"
+pass "event log outside project: $LOGFILE"
+mkdir -p "$LOGDIR"
+printf '{"at":1,"scope":"fs","kind":"info","message":"revision 1 of main.tex","data":{"action":"revision.record","rel":"main.tex","stored":true,"rev":"1","revisions":1}}\n' > "$LOGFILE"
+[[ -z "$(porcelain)" ]] || fail "project dirty after simulated log write"
+[[ -e "$ROOT/maleficium-log" ]] && fail "in-project maleficium-log re-created"
+if echo "$(porcelain)" | grep -q "events.jsonl"; then fail "event log appeared in project"; fi
+grep -q '"action"' "$LOGFILE" || fail "log line carries no structured payload"
+pass "event log lines land in app-data, porcelain clean, payloads structured"
+LOGSRC="$APPSRC/lib/eventlog.ts"
+[ -f "$LOGSRC" ] || fail "event log writer missing: $LOGSRC"
+grep -q "eventLogPath" "$LOGSRC" || fail "event log writer does not use the app-local derivation"
+grep -q "appDataDir" "$LOGSRC" || fail "event log writer does not root itself in app-data"
+grep -q "MAX_LOG_EVENTS" "$LOGSRC" || fail "event log writer states no retention bound"
+pass "event log writer derives its home from app-data and states its bound"
+
 # --- no-op saves (the blind spot porcelain cannot cover) ---------------------
 # An identical-content rewrite leaves `git status` clean but still moves
 # mtime, so a user's latexmk/watcher sees a file they only opened. Porcelain
@@ -170,4 +196,5 @@ echo "  hash:   $HASH"
 echo "  trash:  $TRASH"
 echo "  hist:   $HIST"
 echo "  out:    $OUT"
+echo "  log:    $LOGFILE  (live: \${XDG_DATA_HOME:-\$HOME/.local/share}/com.ethan.tauri-app/maleficium-log/events.jsonl)"
 echo "  Live driver-driven run: e2e/driver-run.sh."
