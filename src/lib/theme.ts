@@ -5,6 +5,7 @@
 
 import { createTheme } from '@mui/material';
 import type { Shadows } from '@mui/material/styles';
+import type { AppearancePrefs } from './appearance';
 
 export type Density = 'comfortable' | 'compact';
 export type ThemeMode = 'dark' | 'light';
@@ -28,8 +29,9 @@ const flatShadows = Array.from({ length: 25 }, (_, i) =>
   i === 0 ? 'none' : i === 1 ? '0 0 0 1px rgba(0, 0, 0, 0.08)' : '0 0 0 1px rgba(0, 0, 0, 0.06)',
 ) as Shadows;
 
-/** App theme factory: mode + density in, MUI theme out. */
-export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable') {
+/** App theme factory: prefs in, MUI theme out. */
+export function createAppTheme(prefs: AppearancePrefs) {
+  const { mode, density } = prefs;
   return createTheme({
     palette: {
       mode,
@@ -48,7 +50,7 @@ export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable'
           }),
     },
     typography: {
-      fontSize: 13,
+      fontSize: 13 * prefs.uiScale,
       fontFamily: 'Inter, system-ui, sans-serif',
       fontWeightLight: 400,
       fontWeightRegular: 400,
@@ -56,7 +58,7 @@ export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable'
       fontWeightBold: 700,
     },
     spacing: density === 'compact' ? 4 : 8,
-    shape: { borderRadius: 8 },
+    shape: { borderRadius: prefs.radius },
     shadows: flatShadows,
     transitions: {
       duration: {
