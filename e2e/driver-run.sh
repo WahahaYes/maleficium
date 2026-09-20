@@ -16,24 +16,42 @@ pass() { echo "ok: $1"; }
 
 [ -x "$BIN" ] || fail "sidecar missing: build with cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp"
 
-cp -r "$FIXTURE" "$SCRATCH/proj"
-cd "$SCRATCH/proj"
-git init -q
-git add -A
-git commit -qm "fixture"
-ROOT="$SCRATCH/proj"
+if [ -n "${MCP_ROOT_OVERRIDE:-}" ]; then
+  # Drive a caller-owned tree in place (e.g. pre-warming the engine
+  # cache the app will open). Porcelain baseline is taken as-is.
+  ROOT="$MCP_ROOT_OVERRIDE"
+  [ -d "$ROOT" ] || fail "override root missing: $ROOT"
+  cd "$ROOT"
+  if [ ! -d .git ]; then git init -q; git add -A; git -c user.email=driver@local -c user.name=driver commit -qm "fixture"; fi
+else
+  cp -r "$FIXTURE" "$SCRATCH/proj"
+  cd "$SCRATCH/proj"
+  git init -q
+  git add -A
+  git -c user.email=driver@local -c user.name=driver commit -qm "fixture"
+  ROOT="$SCRATCH/proj"
+fi
 porcelain() { git status --porcelain; }
 [[ -z "$(porcelain)" ]] || fail "fixture repo not clean at start"
 
 export MCP_BIN="$BIN" MCP_ROOT="$ROOT"
+export DRIVER_LOG="${DRIVER_LOG:-/tmp/maleficium-driver-log.jsonl}"
 python3 - "$SCRATCH" <<'EOF'
 import json, os, subprocess, sys, time
 scratch = sys.argv[1]
 BIN = os.environ["MCP_BIN"]
 ROOT = os.environ["MCP_ROOT"]
+LOG = os.environ["DRIVER_LOG"]
+WARM_ONLY = os.environ.get("WARM_ONLY") == "1"
+ROUNDS = int(os.environ.get("POLL_ROUNDS", "30"))
 fails = []
-def check(name, cond, detail=""):
+logf = open(LOG, "w")
+def check(name, cond, detail="", ms=None):
     print(("ok: " if cond else "FAIL: ") + name + (f" ({detail})" if detail and not cond else ""))
+    rec = {"check": name, "pass": bool(cond), "detail": str(detail)[:300]}
+    if ms is not None:
+        rec["ms"] = round(ms)
+    logf.write(json.dumps(rec) + "\n"); logf.flush()
     if not cond:
         fails.append(name)
 
@@ -64,13 +82,22 @@ check("escape fails closed", not e["ok"], str(e))
 r = call("compile_run", {"root_id": "drv", "rel": "main.tex"})
 job = (r.get("job_id") or "")
 check("compile starts", r["ok"] and bool(job), str(r))
+t0 = time.time()
+polls = 0
 sc = {"status": "running"}
-for _ in range(30):
+for _ in range(ROUNDS):
     time.sleep(4)
+    polls += 1
     sc = call("compile_poll", {"job_id": job, "tail_lines": 3})
     if sc["status"] != "running":
         break
-check("compile succeeds", sc["status"] == "success", str(sc)[:200])
+compile_ms = (time.time() - t0) * 1000
+check("compile succeeds", sc["status"] == "success", str(sc)[:200], ms=compile_ms)
+check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
+if WARM_ONLY:
+    logf.close()
+    p.kill()
+    sys.exit(0)
 pdf = sc.get("pdf_path") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
@@ -93,6 +120,25 @@ check("trash outside project", trash and not trash.startswith(ROOT), trash)
 
 u = call("undo", {"root_id": "drv", "trash_path": trash})
 check("undo restores", u["ok"] and u.get("path", "").endswith("chapters/method.tex"), str(u))
+
+with open(ROOT + "/fail.tex", "w") as f:
+    f.write("\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{document}\n")
+fr = call("compile_run", {"root_id": "drv", "rel": "fail.tex"})
+fjob = (fr.get("job_id") or "")
+check("failure compile starts", fr["ok"] and bool(fjob), str(fr))
+ft0 = time.time()
+fsc = {"status": "running"}
+for _ in range(30):
+    time.sleep(4)
+    fsc = call("compile_poll", {"job_id": fjob, "tail_lines": 5})
+    if fsc["status"] != "running":
+        break
+fail_ms = (time.time() - ft0) * 1000
+flog = (fsc.get("log") or "") + "\n" + "\n".join(fsc.get("lines") or [])
+check("failure reports failed", fsc.get("status") == "failed", str(fsc)[:200], ms=fail_ms)
+check("failure names the cause", "Undefined control sequence" in flog, flog[:200])
+check("failure writes no pdf", not fsc.get("pdf_path"), str(fsc.get("pdf_path")))
+_os.remove(ROOT + "/fail.tex")
 
 p.kill()
 sys.exit(1 if fails else 0)
