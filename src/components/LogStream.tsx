@@ -11,19 +11,19 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import Typography from '@mui/material/Typography';
-import { list, subscribe, clear, tailEvents, type BusEvent } from '../lib/events';
+import {
+  list,
+  subscribe,
+  clear,
+  tailEvents,
+  problemOf,
+  type BusEvent,
+  type ProblemEvent,
+} from '../lib/events';
 
-export interface ProblemRef {
-  file: string;
-  line: number;
-  clickable?: boolean;
-}
-
-function problemRefOf(e: BusEvent): ProblemRef | null {
-  const d = e.data as Partial<ProblemRef> | null | undefined;
-  if (!d || typeof d.file !== 'string' || typeof d.line !== 'number') return null;
-  if (d.clickable === false) return null;
-  return { file: d.file, line: d.line };
+function problemRefOf(e: BusEvent): ProblemEvent | null {
+  const p = problemOf(e);
+  return p && p.clickable ? p : null;
 }
 
 function kindColor(kind: BusEvent['kind']): string {

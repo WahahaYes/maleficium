@@ -43,7 +43,7 @@ import {
   type BufferState,
 } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
-import { emitPdf, onPdf } from './lib/preview-bus';
+import { emitPdf, onPdf, type PreviewDoc } from './lib/preview-bus';
 import {
   forward_sync,
   inverse_sync,
@@ -51,7 +51,7 @@ import {
   parseForwardSync,
   parseInverseSync,
 } from './lib/synctex';
-import { emit } from './lib/events';
+import { emit, type ProblemEvent } from './lib/events';
 import { revisionRecordData, revisionRestoreData, startEventLog } from './lib/eventlog';
 import { parseLog } from './lib/parseLog';
 import { parseOutline, type OutlineEntry } from './lib/outline';
@@ -113,8 +113,8 @@ export default function App({
   const [largeFile, setLargeFile] = useState<string | null>(null);
   // Non-text selection (image/video/pdf/binary): rich preview, never the editor.
   const [previewFile, setPreviewFile] = useState<string | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [pdfStamp, setPdfStamp] = useState(0);
+  const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
+  const pdfUrl = previewDoc?.url ?? null;
   const [currentLine, setCurrentLine] = useState(1);
   // Ref mirror: the subscribe-once listener reads forward SyncTeX via ref,
   // never state.
@@ -197,7 +197,7 @@ export default function App({
     return () => log.stop();
   }, []);
 
-  useEffect(() => onPdf(setPdfUrl), []);
+  useEffect(() => onPdf(setPreviewDoc), []);
 
   const handleSelect = useCallback(
     async (path: string) => {
@@ -1051,7 +1051,13 @@ export default function App({
           scope: 'compile',
           kind: l.clickable ? 'error' : 'warn',
           message: `${l.file}:${l.line} ${l.msg}`,
-          data: { action: 'compile.problem', file: l.file, line: l.line, clickable: l.clickable },
+          data: {
+            action: 'compile.problem',
+            file: l.file,
+            line: l.line,
+            msg: l.msg,
+            clickable: l.clickable,
+          } satisfies ProblemEvent & { action: string },
         });
       }
     } catch {
@@ -1277,8 +1283,12 @@ export default function App({
           ms: Date.now() - t0,
         },
       });
-      emitPdf(r.pdfPath);
-      setPdfStamp((s) => s + 1);
+      const docRel = target ? relInProject(target) : null;
+      emitPdf({
+        url: r.pdfPath,
+        docKey: projectId && docRel ? `${projectId}:${docRel}` : null,
+        revision: null,
+      });
       emit({
         scope: 'preview',
         kind: 'success',
@@ -1950,7 +1960,7 @@ export default function App({
     >
       <Preview
         pdfUrl={pdfUrl}
-        stamp={pdfStamp}
+        stamp={previewDoc?.stamp ?? 0}
         pageNumber={pageNumber}
         onPage={setPageNumber}
         onSync={handleForwardSync}

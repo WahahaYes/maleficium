@@ -3,6 +3,7 @@
 // Metadata/paths only; file contents read transiently, never stored.
 
 import { fs } from './fs-provider';
+import { hashRoot } from './paths';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { joinPath } from './paths';
@@ -41,7 +42,7 @@ export async function resolveMainFileTauri(
     listTexFiles: listTexFilesRecursive,
     // App-local store read.
     readConfig: async (r) => {
-      const rel = getMainFileFor(r);
+      const rel = getMainFileFor(hashRoot(r));
       return rel ? JSON.stringify({ mainFile: rel }) : null;
     },
   });
@@ -55,5 +56,5 @@ export async function setMainFile(root: string, absOrRelPath: string): Promise<v
   const rel = absOrRelPath.startsWith(root + '/')
     ? absOrRelPath.slice(root.length + 1)
     : absOrRelPath;
-  setMainFileFor(root, rel);
+  setMainFileFor(hashRoot(root), rel);
 }

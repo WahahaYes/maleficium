@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { classifyTauriEvent } from './watcher';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
+import { hashRoot } from './paths';
 import { matchesCompile, matchesForwardSync, menuChordId, KEYMAP } from './keymap';
 
 import { setAppStore } from './app-store';
@@ -60,15 +61,16 @@ describe('watcher classify', () => {
 
 describe('main-file store round-trip', () => {
   it('persists the explicit association per project root', () => {
-    expect(getMainFileFor('/r')).toBeNull();
-    setMainFileFor('/r', 'main.tex');
-    expect(getMainFileFor('/r')).toBe('main.tex');
-    setMainFileFor('/r', 'ch/main.tex');
-    expect(getMainFileFor('/r')).toBe('ch/main.tex');
+    const id = hashRoot('/r');
+    expect(getMainFileFor(id)).toBeNull();
+    setMainFileFor(id, 'main.tex');
+    expect(getMainFileFor(id)).toBe('main.tex');
+    setMainFileFor(id, 'ch/main.tex');
+    expect(getMainFileFor(id)).toBe('ch/main.tex');
   });
   it('survives corrupt storage', () => {
     store['maleficium.mainFile.v1'] = '{nope';
-    expect(getMainFileFor('/r')).toBeNull();
+    expect(getMainFileFor(hashRoot('/r'))).toBeNull();
   });
 });
 

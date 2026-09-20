@@ -1,5 +1,21 @@
 export type EventScope = 'compile' | 'preview' | 'fs' | 'app';
 export type EventKind = 'info' | 'progress' | 'success' | 'error' | 'warn';
+/** Payload of a `compile.problem` event: one diagnostic from the engine log. */
+export interface ProblemEvent {
+  file: string;
+  line: number;
+  msg: string;
+  clickable: boolean;
+}
+
+/** Narrow a bus event to a problem payload; null when it is not one. */
+export function problemOf(e: BusEvent): ProblemEvent | null {
+  const d = e.data as Partial<ProblemEvent> | null | undefined;
+  if (!d || typeof d.file !== 'string' || typeof d.line !== 'number') return null;
+  if (typeof d.msg !== 'string' || typeof d.clickable !== 'boolean') return null;
+  return { file: d.file, line: d.line, msg: d.msg, clickable: d.clickable };
+}
+
 export interface BusEvent {
   scope: EventScope;
   kind: EventKind;
