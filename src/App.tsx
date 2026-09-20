@@ -44,13 +44,6 @@ import {
 } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf, type PreviewDoc } from './lib/preview-bus';
-import {
-  forward_sync,
-  inverse_sync,
-  isForwardNoMatch,
-  parseForwardSync,
-  parseInverseSync,
-} from './lib/synctex';
 import { emit, type ProblemEvent } from './lib/events';
 import { revisionRecordData, revisionRestoreData, startEventLog } from './lib/eventlog';
 import { parseLog } from './lib/parseLog';
@@ -76,6 +69,7 @@ import { grantProjectAccess } from './lib/projectAccess';
 import { watch } from '@tauri-apps/plugin-fs';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
+import { useSynctex } from './hooks/useSynctex';
 import { appCacheDir } from '@tauri-apps/api/path';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
@@ -115,13 +109,9 @@ export default function App({
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
   const pdfUrl = previewDoc?.url ?? null;
-  const [currentLine, setCurrentLine] = useState(1);
   // Ref mirror: the subscribe-once listener reads forward SyncTeX via ref,
   // never state.
-  const currentLineRef = useRef(currentLine);
-  currentLineRef.current = currentLine;
   // Bumped on every inverse SyncTeX hit to flash the line amber.
-  const [synctexFlash, setSynctexFlash] = useState(0);
   // Ref mirror for the watcher closure (the effect is root-scoped).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
@@ -130,6 +120,7 @@ export default function App({
   // Latest closures for the subscribe-once global keymap listener.
   const compileRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
+  const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
@@ -862,7 +853,6 @@ export default function App({
   // duplicates. Double-click in the editor = forward SyncTeX from the
   // caret line (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
-  const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -1394,108 +1384,6 @@ export default function App({
     }
   }
 
-  async function handleForwardSync() {
-    if (!pdfUrl) return;
-    if (compilePhase === 'compiling') {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: 'SyncTeX unavailable while compiling (synctex_no_match)',
-      });
-      return;
-    }
-    // The caret may have moved since the last jump: read the live line from
-    // the viewport bridge (currentLine only tracks jumps, not caret moves).
-    const liveLine = viewportRef.current?.caretLine() ?? currentLineRef.current;
-    if (liveLine !== currentLineRef.current) setCurrentLine(liveLine);
-    const texPath = fileName.includes('/') ? fileName : workdirHint + '/' + fileName;
-    const result = await forward_sync(pdfUrl, texPath, liveLine);
-    if (!result.ok) {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
-      });
-      return;
-    }
-    if (isForwardNoMatch(result.text)) {
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
-      return;
-    }
-    const target = parseForwardSync(result.text);
-    if (target == null) {
-      emit({
-        scope: 'preview',
-        kind: 'info',
-        message: `forward SyncTeX → ${result.text.slice(0, 120)}`,
-      });
-      return;
-    }
-    // Preamble/untagged lines resolve to a same-page rect with no movement:
-    // arriving without moving is noise, not navigation — stay silent.
-    if (target === pageNumberRef.current) return;
-    setPageNumber(target);
-    emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
-  }
-
-  async function handleInverseSync(page: number, x: number, y: number) {
-    if (!pdfUrl) return;
-    if (compilePhase === 'compiling') {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: 'synctex_no_match: disabled during compile',
-      });
-      return;
-    }
-    const result = await inverse_sync(pdfUrl, page, x, y);
-    if (!result.ok) {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
-      });
-      return;
-    }
-    // Real `synctex edit` shape:
-    //   Input:/abs/path/hello.tex\nLine:7\n...
-    const { line, hitFile } = parseInverseSync(result.text);
-    if (line != null) {
-      // Jump the owning file when SyncTeX names one (multi-file projects);
-      // otherwise reveal the line in the current buffer.
-      if (hitFile && hitFile !== fileName) {
-        try {
-          const content = await loadTex(hitFile);
-          setBuffers((b) => {
-            const n = new Map(b);
-            getOrCreateBuffer(n, hitFile as string, content);
-            return enforceBufferCap(n, fileNameRef.current);
-          });
-          setTex(content);
-          setFileName(hitFile as string);
-          setPreviewFile(null);
-          setLargeFile(null);
-          setReloadPath(null);
-        } catch {
-          /* unreadable hit file — still reveal the line number below */
-        }
-      }
-      setCurrentLine(line);
-      setSynctexFlash((f) => f + 1);
-      emit({
-        scope: 'preview',
-        kind: 'success',
-        message: `synctex inverse → ${hitFile ?? fileName}:${line}`,
-      });
-    } else {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: 'SyncTeX: no match at this position (synctex_no_match)',
-      });
-    }
-  }
-
   function handleJump(absPath: string, line: number) {
     loadTex(absPath).then((content) => {
       setBuffers((b) => {
@@ -1516,35 +1404,6 @@ export default function App({
   // `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
   // listener would never resubscribe.
   compileRef.current = compile;
-  forwardSyncRef.current = handleForwardSync;
-  handleSelectRef.current = handleSelect;
-  // Forward SyncTeX from an explicit file + line (editor double-click).
-  // The file is captured at click time — fileName state may lag the
-  // visible buffer after a fast file switch + double-click.
-  forwardSyncLineRef.current = (file: string, line: number) => {
-    if (!pdfUrl || compilePhase === 'compiling') return;
-    if (line !== currentLineRef.current) setCurrentLine(line);
-    const texPath = file.includes('/') ? file : workdirHint + '/' + file;
-    void forward_sync(pdfUrl, texPath, line).then((result) => {
-      if (isForwardNoMatch(result.text)) {
-        emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
-        return;
-      }
-      if (!result.ok) {
-        emit({
-          scope: 'preview',
-          kind: 'warn',
-          message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
-        });
-        return;
-      }
-      const target = parseForwardSync(result.text);
-      if (target == null || target === pageNumberRef.current) return;
-      setPageNumber(target);
-      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
-    });
-  };
-
   // ---- Shell state: view is explicit booleans (View menu presets own them) ----
   const [treeVisible, setTreeVisible] = useState(true);
   const [editorVisible, setEditorVisible] = useState(true);
@@ -1576,9 +1435,6 @@ export default function App({
     store().set(DEVICE_PREF_KEYS.layout, JSON.stringify(layout));
   }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
-  const [pageNumber, setPageNumber] = useState(1);
-  const pageNumberRef = useRef(pageNumber);
-  pageNumberRef.current = pageNumber;
   const [compilePhase, setCompilePhase] = useState('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
@@ -1598,6 +1454,30 @@ export default function App({
   // Viewport bridge assigned via viewportRef prop. Without it
   // selectAll/expand/shrink/goToLine no-op.
   const viewportRef = useRef<EditorViewportHandle | null>(null);
+  const {
+    currentLine,
+    setCurrentLine,
+    synctexFlash,
+    pageNumber,
+    setPageNumber,
+    handleForwardSync,
+    handleInverseSync,
+  } = useSynctex({
+    pdfUrl,
+    compilePhase,
+    fileName,
+    workdirHint,
+    viewportRef,
+    fileNameRef,
+    setBuffers,
+    setTex,
+    setFileName,
+    setPreviewFile,
+    setLargeFile,
+    setReloadPath,
+    forwardSyncRef,
+    forwardSyncLineRef,
+  });
   // Outline: active buffer only, debounced 500ms. Full-fidelity entries
   // (parse cap 1000); the view slices to 100 per filter (filter-first,
   // cap-second). Sections-only rows feed the Selection submenus.
