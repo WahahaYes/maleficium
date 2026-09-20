@@ -24,7 +24,6 @@ import ShortcutsDialog from './components/ShortcutsDialog';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
 import {
-  openProject,
   listDir1Level,
   loadTex,
   saveTex,
@@ -43,10 +42,9 @@ import { revisionRecordData, revisionRestoreData, startEventLog } from './lib/ev
 import { parseOutline, type OutlineEntry } from './lib/outline';
 import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
-import { listTreeDeep } from './lib/files';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
-import { getRecentProjects, touchRecentProject, pruneRecentProjects } from './lib/recentProjects';
+import { pruneRecentProjects } from './lib/recentProjects';
 import { moveToTrash, undoTrash } from './lib/trash';
 import { createHistoryStore } from './lib/history';
 import {
@@ -58,15 +56,13 @@ import {
   type RevisionRow,
 } from './lib/history.view';
 import { appOutDir, hashRoot } from './lib/paths';
-import { grantProjectAccess } from './lib/projectAccess';
-import { watch } from '@tauri-apps/plugin-fs';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
+import { useProjectTree } from './hooks/useProjectTree';
 import { useSynctex } from './hooks/useSynctex';
 import { appCacheDir } from '@tauri-apps/api/path';
-import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -311,181 +307,6 @@ export default function App({
 
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
   // for main-file scan + watcher baseline, never on the open path.
-  const reloadTree = useCallback(async (r: string, deep = false) => {
-    const t0 = performance.now();
-    const t = deep ? await listTreeDeep(r) : await listDir1Level(r);
-    setTree(t);
-    const dt = Math.round(performance.now() - t0);
-    emit({
-      scope: 'fs',
-      kind: 'info',
-      message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms`,
-      data: { action: 'tree.load', rows: t.length, ms: dt, deep },
-    });
-  }, []);
-
-  // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
-  // open-file edits offer reload; on-disk deletes mark the buffer.
-  useEffect(() => {
-    if (!root) return;
-    let unwatch: (() => void) | null = null;
-    let cancelled = false;
-    const pending: { kind: 'create' | 'modify' | 'delete'; path: string }[] = [];
-    const flush = debounce(() => {
-      if (cancelled || pending.length === 0) return;
-      const batch = coalesceEvents(pending.splice(0));
-      void reloadTree(root);
-      const now = Date.now();
-      for (const ev of batch) {
-        // Suppress echoes of our own writes (5s window, pruned here).
-        const own = ownWritesRef.current.get(ev.path);
-        if (own != null && now - own < 5000) continue;
-        if (own != null) ownWritesRef.current.delete(ev.path);
-        if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
-        if (ev.path === fileNameRef.current && ev.kind === 'delete') {
-          setLog('deleted on disk: ' + ev.path);
-          emit({
-            scope: 'fs',
-            kind: 'warn',
-            message: 'deleted on disk: ' + ev.path,
-            data: { action: 'fs.external-delete', path: ev.path },
-          });
-        }
-        emit({
-          scope: 'fs',
-          kind: 'info',
-          message: `external ${ev.kind} ${ev.path}`,
-          data: { action: 'fs.external', change: ev.kind, path: ev.path },
-        });
-      }
-    }, 250);
-    watch(
-      root,
-      (ev) => {
-        for (const c of classifyTauriEvent(ev)) pending.push(c);
-        flush();
-      },
-      { recursive: true, delayMs: 250 },
-    ).then(
-      (u) => {
-        if (!cancelled) unwatch = u;
-        else u();
-      },
-      () => {
-        /* watcher unavailable (web fallback) — tree still works via manual reload */
-      },
-    );
-    return () => {
-      cancelled = true;
-      if (unwatch) unwatch();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [root]);
-
-  // Recents for File > Open Recent as state. Restored entries re-validate
-  // via stat.
-  const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
-  async function openRoot(r: string, opts?: { warm?: boolean }) {
-    // The runtime scope grant comes first: every fs call below resolves
-    // through it. The backend fails closed on invalid roots
-    // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
-    // current project untouched.
-    const grant = await grantProjectAccess(r);
-    if (!grant.ok || !grant.path) {
-      const reason = (grant.error ?? 'grant failed').slice(0, 200);
-      const msg = 'open refused: ' + reason;
-      setLog(msg);
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: msg,
-        data: { action: 'project.open-refused', root: r, error: reason },
-      });
-      return;
-    }
-    const canon = grant.path;
-    setRoot(canon);
-    setRecentProjects(touchRecentProject(canon));
-    await reloadTree(canon, false);
-    setLog('opened ' + canon);
-    emit({
-      scope: 'fs',
-      kind: 'info',
-      message: 'opened ' + canon,
-      data: { action: 'project.open', root: canon },
-    });
-    trash.clear();
-    const m = await resolveMain(canon, null);
-    setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
-    emit({
-      scope: 'fs',
-      kind: m ? 'success' : 'warn',
-      message: m ? 'main file ' + m : 'no main file found in ' + canon,
-      data: { action: 'main.resolved', root: canon, mainFile: m },
-    });
-    // Open the main file on project select — the editor must never sit on
-    // stale untitled content while the tree shows a project. No main →
-    // keep the current editor as-is.
-    if (m) await handleSelect(m);
-    // Cache-warm on open: a background compile starts after the editor is
-    // populated — but only when the engine cache is usable (previous output
-    // present). No cache → no surprise build; the preview waits for the
-    // user's explicit Ctrl+R. Open never fails because warm failed.
-    if (opts?.warm && m) void warmCompile(m);
-  }
-
-  async function open() {
-    const r = await openProject();
-    if (r) {
-      await openRoot(r, { warm: true });
-    } else {
-      setLog('open cancelled');
-      emit({
-        scope: 'fs',
-        kind: 'warn',
-        message: 'cancelled',
-        data: { action: 'project.open-cancelled' },
-      });
-    }
-  }
-
-  // Restore-on-launch: the `?project=` preset wins, else the most recent
-  // project that still resolves, else the Hello sample (no project forced).
-  // Runs once; only roots that all fail validation are pruned.
-  const restoredRef = useRef(false);
-  useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-    void (async () => {
-      try {
-        const q = new URLSearchParams(window.location.search);
-        const h = window.location.hash.match(/project=([^&]+)/);
-        if (q.get('project') || h) return; // openProject() preset path owns it
-      } catch {
-        /* non-browser — fall through to recents */
-      }
-      const recents = getRecentProjects();
-      const stale: string[] = [];
-      for (const r of recents) {
-        try {
-          // Grant first: the validation stat below resolves only through the
-          // runtime grant. Unreachable entries land in `stale` here.
-          const grant = await grantProjectAccess(r);
-          if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
-          if ((await fs().stat(grant.path)) === null) throw new Error('root unreachable');
-          await openRoot(grant.path, { warm: true });
-          return;
-        } catch {
-          stale.push(r);
-        }
-      }
-      if (stale.length > 0 && stale.length === recents.length) {
-        setRecentProjects(pruneRecentProjects((kept) => !stale.includes(kept)));
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
   async function handleCreate(dirPath: string, name: string) {
     try {
@@ -983,6 +804,19 @@ export default function App({
     setLog,
     setLogCollapsed,
     compileRef,
+  });
+  const { reloadTree, openRoot, open, recentProjects, setRecentProjects } = useProjectTree({
+    root,
+    setRoot,
+    setTree,
+    fileNameRef,
+    ownWritesRef,
+    setReloadPath,
+    setLog,
+    trash,
+    resolveMain,
+    handleSelect,
+    warmCompile,
   });
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
