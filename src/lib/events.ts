@@ -28,3 +28,9 @@ export function list(): BusEvent[] {
 export function clear() {
   buf.length = 0;
 }
+
+// Rendered window over the buffer: newest 100, oldest first.
+export const STREAM_CAP = 100;
+export function tailEvents(evts: BusEvent[]): BusEvent[] {
+  return evts.slice(-STREAM_CAP);
+}

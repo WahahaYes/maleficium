@@ -54,4 +54,17 @@ describe('events bus', () => {
     events.clear();
     expect(events.list().length).toBe(0);
   });
+
+  it('renders newest 100 oldest-first, passes short lists through', () => {
+    events.clear();
+    for (let i = 1; i <= 250; i++) {
+      events.emit({ scope: 'app', kind: 'info', message: `m${i}` });
+    }
+    const tail = events.tailEvents(events.list());
+    expect(tail.length).toBe(100);
+    expect(tail[0].message).toBe('m151');
+    expect(tail[tail.length - 1].message).toBe('m250');
+    const short = events.tailEvents(events.list().slice(0, 3));
+    expect(short.map((e) => e.message)).toEqual(['m1', 'm2', 'm3']);
+  });
 });

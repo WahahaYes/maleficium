@@ -11,7 +11,7 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import Typography from '@mui/material/Typography';
-import { list, subscribe, clear, type BusEvent } from '../lib/events';
+import { list, subscribe, clear, tailEvents, type BusEvent } from '../lib/events';
 
 export interface ProblemRef {
   file: string;
@@ -94,7 +94,7 @@ export default function LogStream({
     if (el) el.scrollTop = el.scrollHeight;
   }, [evts]);
 
-  const tail = evts.slice(-100);
+  const tail = tailEvents(evts);
 
   if (collapsed) {
     return (
