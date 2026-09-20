@@ -52,3 +52,16 @@ export function appHistoryDir(appDataDir: string, projectId: string): string {
 export function historyBlobPath(historyDir: string, hash: string): string {
   return joinPath(historyDir, 'blobs', hash.slice(0, 2), hash);
 }
+
+/**
+ * App-local event-log home. The current run's JSONL file lives here; the
+ * project dir never holds a log.
+ */
+export function appEventLogDir(appDataDir: string): string {
+  return joinPath(appDataDir, 'maleficium-log');
+}
+
+/** The JSONL file the running app records its event stream to. */
+export function eventLogPath(appDataDir: string): string {
+  return joinPath(appEventLogDir(appDataDir), 'events.jsonl');
+}

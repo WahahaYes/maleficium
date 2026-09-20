@@ -52,6 +52,7 @@ import {
   parseInverseSync,
 } from './lib/synctex';
 import { emit } from './lib/events';
+import { revisionRecordData, revisionRestoreData, startEventLog } from './lib/eventlog';
 import { parseLog } from './lib/parseLog';
 import { parseOutline, type OutlineEntry } from './lib/outline';
 import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
@@ -157,13 +158,15 @@ export default function App({
     return r && abs.startsWith(r + '/') ? abs.slice(r.length + 1) : null;
   }, []);
   const refreshRevisionCount = useCallback(
-    async (path: string) => {
+    async (path: string): Promise<number> => {
       const rel = relInProject(path);
       if (!projectId || !rel) {
         setRevisionCount(0);
-        return;
+        return 0;
       }
-      setRevisionCount((await history.listRevisions(projectId, rel)).length);
+      const n = (await history.listRevisions(projectId, rel)).length;
+      setRevisionCount(n);
+      return n;
     },
     [history, projectId, relInProject],
   );
@@ -172,11 +175,25 @@ export default function App({
     async (path: string, text: string) => {
       const rel = relInProject(path);
       if (!projectId || !rel) return;
-      await history.recordRevision(projectId, rel, new TextEncoder().encode(text));
-      await refreshRevisionCount(path);
+      const outcome = await history.recordRevision(projectId, rel, new TextEncoder().encode(text));
+      const revisions = await refreshRevisionCount(path);
+      emit({
+        scope: 'fs',
+        kind: 'info',
+        message: outcome.stored
+          ? `revision ${outcome.rev} of ${rel} (${revisions} kept)`
+          : `no revision for ${rel} (${outcome.reason})`,
+        data: revisionRecordData(rel, outcome, revisions),
+      });
     },
     [history, projectId, relInProject, refreshRevisionCount],
   );
+
+  // The bus is recorded to an app-local JSONL file for the length of the run.
+  useEffect(() => {
+    const log = startEventLog();
+    return () => log.stop();
+  }, []);
 
   useEffect(() => onPdf(setPdfUrl), []);
 
@@ -205,7 +222,12 @@ export default function App({
         setLargeFile(null);
         setReloadPath(null);
         setLog('previewing ' + path);
-        emit({ scope: 'fs', kind: 'info', message: 'previewing ' + path });
+        emit({
+          scope: 'fs',
+          kind: 'info',
+          message: 'previewing ' + path,
+          data: { action: 'file.preview', path },
+        });
         return;
       }
       // Reuse preserved buffer without re-reading.
@@ -218,11 +240,21 @@ export default function App({
         setLargeFile(null);
         setReloadPath(null);
         setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
-        emit({ scope: 'fs', kind: 'info', message: 'switched ' + path });
+        emit({
+          scope: 'fs',
+          kind: 'info',
+          message: 'switched ' + path,
+          data: { action: 'file.switch', path, dirty: kept.dirty },
+        });
         if (root && path.endsWith('.tex')) void resolveMain(root, path);
         return;
       }
-      emit({ scope: 'fs', kind: 'progress', message: 'loading ' + path });
+      emit({
+        scope: 'fs',
+        kind: 'progress',
+        message: 'loading ' + path,
+        data: { action: 'file.load', path },
+      });
       setLog('loading ' + path);
       try {
         const info = await stat(path).catch(() => null);
@@ -232,7 +264,12 @@ export default function App({
           setLargeFile(path);
           setFileName(path);
           setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
-          emit({ scope: 'fs', kind: 'warn', message: `large file placeholder ${path} (${size}B)` });
+          emit({
+            scope: 'fs',
+            kind: 'warn',
+            message: `large file placeholder ${path} (${size}B)`,
+            data: { action: 'file.too-large', path, bytes: size },
+          });
           return;
         }
         setLargeFile(null);
@@ -248,11 +285,21 @@ export default function App({
         setFileName(path);
         setReloadPath(null);
         setLog('loaded ' + path);
-        emit({ scope: 'fs', kind: 'success', message: 'loaded ' + path });
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          message: 'loaded ' + path,
+          data: { action: 'file.open', path, chars: content.length },
+        });
         if (root && path.endsWith('.tex')) void resolveMain(root, path);
       } catch (e) {
         setLog('load failed: ' + String(e).slice(0, 120));
-        emit({ scope: 'fs', kind: 'error', message: 'load failed ' + path });
+        emit({
+          scope: 'fs',
+          kind: 'error',
+          message: 'load failed ' + path,
+          data: { action: 'file.load-failed', path, error: String(e).slice(0, 200) },
+        });
       }
     },
     [buffers, fileName, root, markOwnWrite, recordRevision],
@@ -287,6 +334,7 @@ export default function App({
       scope: 'fs',
       kind: 'info',
       message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms`,
+      data: { action: 'tree.load', rows: t.length, ms: dt, deep },
     });
   }, []);
 
@@ -310,9 +358,19 @@ export default function App({
         if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
         if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);
-          emit({ scope: 'fs', kind: 'warn', message: 'deleted on disk: ' + ev.path });
+          emit({
+            scope: 'fs',
+            kind: 'warn',
+            message: 'deleted on disk: ' + ev.path,
+            data: { action: 'fs.external-delete', path: ev.path },
+          });
         }
-        emit({ scope: 'fs', kind: 'info', message: `external ${ev.kind} ${ev.path}` });
+        emit({
+          scope: 'fs',
+          kind: 'info',
+          message: `external ${ev.kind} ${ev.path}`,
+          data: { action: 'fs.external', change: ev.kind, path: ev.path },
+        });
       }
     }, 250);
     watch(
@@ -348,9 +406,15 @@ export default function App({
     // current project untouched.
     const grant = await grantProjectAccess(r);
     if (!grant.ok || !grant.path) {
-      const msg = 'open refused: ' + (grant.error ?? 'grant failed').slice(0, 200);
+      const reason = (grant.error ?? 'grant failed').slice(0, 200);
+      const msg = 'open refused: ' + reason;
       setLog(msg);
-      emit({ scope: 'fs', kind: 'error', message: msg });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: msg,
+        data: { action: 'project.open-refused', root: r, error: reason },
+      });
       return;
     }
     const canon = grant.path;
@@ -358,10 +422,21 @@ export default function App({
     setRecentProjects(touchRecentProject(canon));
     await reloadTree(canon, false);
     setLog('opened ' + canon);
-    emit({ scope: 'fs', kind: 'info', message: 'opened ' + canon });
+    emit({
+      scope: 'fs',
+      kind: 'info',
+      message: 'opened ' + canon,
+      data: { action: 'project.open', root: canon },
+    });
     trash.clear();
     const m = await resolveMain(canon, null);
     setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
+    emit({
+      scope: 'fs',
+      kind: m ? 'success' : 'warn',
+      message: m ? 'main file ' + m : 'no main file found in ' + canon,
+      data: { action: 'main.resolved', root: canon, mainFile: m },
+    });
     // Open the main file on project select — the editor must never sit on
     // stale untitled content while the tree shows a project. No main →
     // keep the current editor as-is.
@@ -379,7 +454,12 @@ export default function App({
       await openRoot(r, { warm: true });
     } else {
       setLog('open cancelled');
-      emit({ scope: 'fs', kind: 'warn', message: 'cancelled' });
+      emit({
+        scope: 'fs',
+        kind: 'warn',
+        message: 'cancelled',
+        data: { action: 'project.open-cancelled' },
+      });
     }
   }
 
@@ -425,11 +505,21 @@ export default function App({
     try {
       const full = await createFile(dirPath, name);
       markOwnWrite(full);
-      emit({ scope: 'fs', kind: 'success', message: 'created ' + full });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: 'created ' + full,
+        data: { action: 'file.create', path: full },
+      });
       if (root) await reloadTree(root, false);
       await handleSelect(full);
     } catch (e) {
-      emit({ scope: 'fs', kind: 'error', message: 'create failed: ' + String(e).slice(0, 120) });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: 'create failed: ' + String(e).slice(0, 120),
+        data: { action: 'file.create-failed', dir: dirPath, name, error: String(e).slice(0, 200) },
+      });
     }
   }
 
@@ -450,10 +540,20 @@ export default function App({
         setFileName(full);
         setReloadPath(null);
       }
-      emit({ scope: 'fs', kind: 'success', message: `renamed to ${full}` });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: `renamed to ${full}`,
+        data: { action: 'file.rename', from: oldPath, to: full },
+      });
       if (root) await reloadTree(root, false);
     } catch (e) {
-      emit({ scope: 'fs', kind: 'error', message: 'rename failed: ' + String(e).slice(0, 120) });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: 'rename failed: ' + String(e).slice(0, 120),
+        data: { action: 'file.rename-failed', from: oldPath, error: String(e).slice(0, 200) },
+      });
     }
   }
 
@@ -472,9 +572,19 @@ export default function App({
       });
       if (reloadPath === fileName) setTex(content);
       setReloadPath(null);
-      emit({ scope: 'fs', kind: 'success', message: 'reloaded ' + reloadPath });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: 'reloaded ' + reloadPath,
+        data: { action: 'file.reload', path: reloadPath, chars: content.length },
+      });
     } catch (e) {
-      emit({ scope: 'fs', kind: 'error', message: 'reload failed: ' + String(e).slice(0, 120) });
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        message: 'reload failed: ' + String(e).slice(0, 120),
+        data: { action: 'file.reload-failed', path: reloadPath, error: String(e).slice(0, 200) },
+      });
     }
   }
 
@@ -492,7 +602,12 @@ export default function App({
       }
     }
     await closeBufferQuiet(path);
-    emit({ scope: 'fs', kind: 'info', message: 'closed ' + path });
+    emit({
+      scope: 'fs',
+      kind: 'info',
+      message: 'closed ' + path,
+      data: { action: 'file.close', path },
+    });
   }
 
   // Close without emitting (batch callers emit once for the batch).
@@ -543,7 +658,12 @@ export default function App({
       if (await closeBufferQuiet(p)) n++;
       else break;
     }
-    emit({ scope: 'fs', kind: 'info', message: `closed ${n} other file${n === 1 ? '' : 's'}` });
+    emit({
+      scope: 'fs',
+      kind: 'info',
+      message: `closed ${n} other file${n === 1 ? '' : 's'}`,
+      data: { action: 'file.close-many', count: n, kept: fileName },
+    });
   }
 
   async function handleCloseAll() {
@@ -553,7 +673,12 @@ export default function App({
       if (await closeBufferQuiet(p)) n++;
       else break;
     }
-    emit({ scope: 'fs', kind: 'info', message: `closed ${n} file${n === 1 ? '' : 's'}` });
+    emit({
+      scope: 'fs',
+      kind: 'info',
+      message: `closed ${n} file${n === 1 ? '' : 's'}`,
+      data: { action: 'file.close-many', count: n },
+    });
   }
 
   async function handleDelete(path: string) {
@@ -564,6 +689,7 @@ export default function App({
         scope: 'fs',
         kind: 'success',
         message: `deleted ${path} (Edit → Undo Delete restores it)`,
+        data: { action: 'file.delete', path },
       });
       setBuffers((b) => {
         const n = new Map(b);
@@ -577,6 +703,7 @@ export default function App({
         scope: 'fs',
         kind: 'error',
         message: 'delete failed: ' + (r.error ?? '').slice(0, 120),
+        data: { action: 'file.delete-failed', path, error: (r.error ?? '').slice(0, 200) },
       });
     }
   }
@@ -588,6 +715,7 @@ export default function App({
         scope: 'compile',
         kind: 'warn',
         message: 'Clean: nothing to clean (no project file)',
+        data: { action: 'compile.clean', removed: 0, reason: 'no-project-file' },
       });
       return;
     }
@@ -602,7 +730,12 @@ export default function App({
       try {
         entries = await readDir(out);
       } catch {
-        emit({ scope: 'compile', kind: 'info', message: 'Clean: already clean' });
+        emit({
+          scope: 'compile',
+          kind: 'info',
+          message: 'Clean: already clean',
+          data: { action: 'compile.clean', out, removed: 0 },
+        });
         return;
       }
       let n = 0;
@@ -615,21 +748,33 @@ export default function App({
         }
       }
       markOwnWrite(out);
-      emit({ scope: 'compile', kind: 'success', message: `Cleaned ${out} (${n} files)` });
+      emit({
+        scope: 'compile',
+        kind: 'success',
+        message: `Cleaned ${out} (${n} files)`,
+        data: { action: 'compile.clean', out, removed: n },
+      });
       if (root) await reloadTree(root, false);
     } catch (e) {
       emit({
         scope: 'compile',
         kind: 'error',
         message: 'Clean failed: ' + String(e).slice(0, 120),
+        data: { action: 'compile.clean-failed', out, error: String(e).slice(0, 200) },
       });
     }
   }
 
   async function handleUndo() {
+    const entry = trash.list().at(-1);
     const r = await undoTrash(trash);
     if (r.ok) {
-      emit({ scope: 'fs', kind: 'success', message: 'restored from trash' });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: 'restored ' + (entry?.originalPath ?? 'from trash'),
+        data: { action: 'file.undo-delete', path: entry?.originalPath ?? null },
+      });
       if (root) {
         await reloadTree(root);
       }
@@ -638,6 +783,7 @@ export default function App({
         scope: 'fs',
         kind: 'error',
         message: 'undo failed: ' + (r.error ?? '').slice(0, 120),
+        data: { action: 'file.undo-delete-failed', error: (r.error ?? '').slice(0, 200) },
       });
     }
   }
@@ -647,7 +793,12 @@ export default function App({
     await setMainFile(root, fileName);
     const m = await resolveMain(root, fileName);
     setLog('main file: ' + (m ?? '(none)'));
-    emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
+    emit({
+      scope: 'fs',
+      kind: 'success',
+      message: 'main file set: ' + (m ?? '(none)'),
+      data: { action: 'main.set', mainFile: m },
+    });
   }
 
   // Main-file tie-break: the scan found >1 `\documentclass` and picked the
@@ -658,7 +809,12 @@ export default function App({
     await setMainFile(root, path);
     await resolveMain(root, path);
     setMainAnchor(null);
-    emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + path });
+    emit({
+      scope: 'fs',
+      kind: 'success',
+      message: 'main file set: ' + path,
+      data: { action: 'main.set', mainFile: path },
+    });
   }
 
   // Tree-driven main association (double-click / context menu on a .tex row).
@@ -668,7 +824,12 @@ export default function App({
     await setMainFile(root, path);
     const m = await resolveMain(root, path);
     setLog('main file: ' + (m ?? '(none)'));
-    emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
+    emit({
+      scope: 'fs',
+      kind: 'success',
+      message: 'main file set: ' + (m ?? '(none)'),
+      data: { action: 'main.set', mainFile: m },
+    });
   }
 
   // One-off compile of a tree-selected file. This is EXPECTED to fail for
@@ -677,13 +838,19 @@ export default function App({
   // path (phase + stream + click-to-jump rows).
   async function handleCompileFile(path: string) {
     if (!path.endsWith('.tex')) {
-      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: 'compile blocked: open a .tex file first',
+        data: { action: 'compile.blocked', reason: 'not-a-tex-file', target: path },
+      });
       return;
     }
     emit({
       scope: 'compile',
       kind: 'info',
       message: `compiling ${path} directly (one-off, not the main file)`,
+      data: { action: 'compile.one-off', target: path },
     });
     await runCompile(path);
   }
@@ -747,21 +914,33 @@ export default function App({
         scope: 'fs',
         kind: 'warn',
         message: 'save blocked for large placeholder ' + largeFile,
+        data: { action: 'file.save-blocked', path: largeFile, reason: 'large-placeholder' },
       });
       return;
     }
     if (fileName.includes('/')) {
       const cur = buffers.get(fileName);
-      await saveTex(fileName, cur?.value ?? tex);
+      const text = cur?.value ?? tex;
+      await saveTex(fileName, text);
       markOwnWrite(fileName);
       setBuffers((b) => markSaved(b, fileName));
-      await recordRevision(fileName, cur?.value ?? tex);
+      await recordRevision(fileName, text);
       setLog('saved ' + fileName);
-      emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: 'saved ' + fileName,
+        data: { action: 'file.save', path: fileName, chars: text.length },
+      });
     } else {
       await saveTexToDisk(fileName, tex);
       setLog('saved ' + fileName);
-      emit({ scope: 'fs', kind: 'success', message: 'saved ' + fileName });
+      emit({
+        scope: 'fs',
+        kind: 'success',
+        message: 'saved ' + fileName,
+        data: { action: 'file.save', path: fileName, chars: tex.length, untitled: true },
+      });
     }
   }, [fileName, tex, buffers, largeFile, markOwnWrite, recordRevision]);
 
@@ -807,7 +986,12 @@ export default function App({
         const bytes = await history.restoreRevision(projectId, rel, rev);
         if (!bytes) {
           setLog('restore unavailable');
-          emit({ scope: 'fs', kind: 'warn', message: 'restore unavailable for ' + rel });
+          emit({
+            scope: 'fs',
+            kind: 'warn',
+            message: 'restore unavailable for ' + rel,
+            data: { action: 'revision.restore-unavailable', rel, rev },
+          });
           return;
         }
         const text = new TextDecoder().decode(bytes);
@@ -816,7 +1000,12 @@ export default function App({
         setTex(text);
         setReloadPath(null);
         setLog('restored ' + rel);
-        emit({ scope: 'fs', kind: 'success', message: 'restored ' + rel });
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          message: 'restored ' + rel,
+          data: revisionRestoreData(rel, rev, text.length),
+        });
       } finally {
         setRestoringRev(null);
       }
@@ -835,6 +1024,12 @@ export default function App({
           .then(async () => {
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
+            emit({
+              scope: 'fs',
+              kind: 'info',
+              message: 'autosaved ' + fileName,
+              data: { action: 'file.save', path: fileName, chars: cur.value.length, auto: true },
+            });
             setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
           })
           .catch(() => {
@@ -854,7 +1049,7 @@ export default function App({
           scope: 'compile',
           kind: l.clickable ? 'error' : 'warn',
           message: `${l.file}:${l.line} ${l.msg}`,
-          data: { file: l.file, line: l.line, clickable: l.clickable },
+          data: { action: 'compile.problem', file: l.file, line: l.line, clickable: l.clickable },
         });
       }
     } catch {
@@ -887,12 +1082,25 @@ export default function App({
       setCompilePhase(phase);
     };
     if (largeFile || previewFile) {
-      emit({ scope: 'compile', kind: 'error', message: 'compile blocked: open a .tex file first' });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: 'compile blocked: open a .tex file first',
+        data: {
+          action: 'compile.blocked',
+          reason: largeFile ? 'large-placeholder' : 'non-text-selection',
+        },
+      });
       finish('failure');
       setLog('compile blocked: open a .tex file first');
       return false;
     }
-    emit({ scope: 'compile', kind: 'progress', message: 'compiling ' + (target ?? fileName) });
+    emit({
+      scope: 'compile',
+      kind: 'progress',
+      message: 'compiling ' + (target ?? fileName),
+      data: { action: 'compile.start', target: target ?? fileName },
+    });
     finish('compiling');
     setCompileStart(Date.now());
     setCompileTimer(0);
@@ -906,13 +1114,21 @@ export default function App({
     try {
       unlisten = await onCompileLine((line) => {
         const s = String(line);
-        if (isDownloadLine(s))
+        if (isDownloadLine(s)) {
+          const pkg = s.replace(/^.*downloading\s+/i, '').slice(0, 120);
           emit({
             scope: 'compile',
             kind: 'info',
-            message: 'downloading ' + s.replace(/^.*downloading\s+/i, '').slice(0, 120),
+            message: 'downloading ' + pkg,
+            data: { action: 'compile.download', package: pkg },
           });
-        else emit({ scope: 'compile', kind: 'progress', message: s.slice(0, 300) });
+        } else
+          emit({
+            scope: 'compile',
+            kind: 'progress',
+            message: s.slice(0, 300),
+            data: { action: 'compile.engine-line' },
+          });
       });
     } catch {
       /* listener attach best-effort — compile proceeds without live lines */
@@ -924,6 +1140,11 @@ export default function App({
           scope: 'compile',
           kind: 'progress',
           message: `still compiling ${target ?? fileName} (${Math.floor((Date.now() - t0) / 1000)}s)`,
+          data: {
+            action: 'compile.progress',
+            target: target ?? fileName,
+            elapsedMs: Date.now() - t0,
+          },
         }),
       5000,
     );
@@ -959,6 +1180,7 @@ export default function App({
         scope: 'compile',
         kind: 'error',
         message: `compile refused: editor does not own ${target} (open it first)`,
+        data: { action: 'compile.refused', reason: 'editor-does-not-own-target', target },
       });
       setLog(`compile refused: editor does not own ${target}`);
       clearInterval(hb);
@@ -1007,7 +1229,12 @@ export default function App({
       finish('failure');
       setCompileStart(null);
       probing = false;
-      emit({ scope: 'compile', kind: 'error', message: 'save failed: ' + String(e).slice(0, 200) });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: 'save failed: ' + String(e).slice(0, 200),
+        data: { action: 'compile.persist-failed', target, error: String(e).slice(0, 200) },
+      });
       clearInterval(hb);
       try {
         unlisten();
@@ -1036,23 +1263,61 @@ export default function App({
       finish('success');
       setCompileStart(null);
       setLogCollapsed(false);
-      emit({ scope: 'compile', kind: 'success', message: 'compiled ' + String(r.pdfPath) });
+      emit({
+        scope: 'compile',
+        kind: 'success',
+        message: 'compiled ' + String(r.pdfPath),
+        data: {
+          action: 'compile.finish',
+          ok: true,
+          target: activeTarget,
+          pdfPath: String(r.pdfPath),
+          ms: Date.now() - t0,
+        },
+      });
       emitPdf(r.pdfPath);
       setPdfStamp((s) => s + 1);
-      emit({ scope: 'preview', kind: 'success', message: 'preview ' + String(r.pdfPath) });
+      emit({
+        scope: 'preview',
+        kind: 'success',
+        message: 'preview ' + String(r.pdfPath),
+        data: { action: 'preview.update', pdfPath: String(r.pdfPath) },
+      });
     } else if (!r.ok && r.log.includes('spawn')) {
       finish('failure');
       setCompileStart(null);
       setLogCollapsed(false);
       setLog(r.log + ' (engine sidecar failed to start)');
-      emit({ scope: 'compile', kind: 'error', message: String(r.log).slice(0, 300) });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: String(r.log).slice(0, 300),
+        data: {
+          action: 'compile.finish',
+          ok: false,
+          target: activeTarget,
+          reason: 'spawn-failed',
+          ms: Date.now() - t0,
+        },
+      });
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
     } else if (!r.ok) {
       finish('failure');
       setCompileStart(null);
       setLogCollapsed(false);
-      emit({ scope: 'compile', kind: 'error', message: String(r.log).slice(0, 300) });
+      emit({
+        scope: 'compile',
+        kind: 'error',
+        message: String(r.log).slice(0, 300),
+        data: {
+          action: 'compile.finish',
+          ok: false,
+          target: activeTarget,
+          reason: 'engine-error',
+          ms: Date.now() - t0,
+        },
+      });
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
     }
@@ -1067,6 +1332,7 @@ export default function App({
       scope: 'compile',
       kind: 'info',
       message: `main-thread max frame ${Math.round(maxGap)}ms during compile`,
+      data: { action: 'compile.frame-probe', maxFrameMs: Math.round(maxGap) },
     });
     return true;
   }
@@ -1086,10 +1352,16 @@ export default function App({
         scope: 'compile',
         kind: 'info',
         message: 'preview will build on first Compile (no cached output)',
+        data: { action: 'compile.warm-skipped', reason: 'no-cached-output', target: mainAbsPath },
       });
       return;
     }
-    emit({ scope: 'compile', kind: 'info', message: 'warming preview for ' + mainAbsPath });
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      message: 'warming preview for ' + mainAbsPath,
+      data: { action: 'compile.warm', target: mainAbsPath },
+    });
     await runCompile(mainAbsPath, { skipPersist: true });
     // Not owned (user raced us) → their stream wins; nothing to report.
   }
@@ -1426,7 +1698,13 @@ export default function App({
     },
     newFile: () => {
       if (root) void handleCreate(root, 'untitled.tex');
-      else emit({ scope: 'fs', kind: 'warn', message: 'New File needs an open project' });
+      else
+        emit({
+          scope: 'fs',
+          kind: 'warn',
+          message: 'New File needs an open project',
+          data: { action: 'command.blocked', command: 'newFile', reason: 'no-project' },
+        });
     },
     closeFile: () => {
       void handleCloseBuffer(fileName);
@@ -1456,6 +1734,11 @@ export default function App({
           scope: 'fs',
           kind: 'warn',
           message: 'Rename needs a project file (open one first)',
+          data: {
+            action: 'command.blocked',
+            command: 'renameActive',
+            reason: 'not-a-project-file',
+          },
         });
         return;
       }
@@ -1515,6 +1798,7 @@ export default function App({
           scope: 'compile',
           kind: 'error',
           message: 'cancel failed: ' + String(e).slice(0, 120),
+          data: { action: 'compile.cancel-failed', error: String(e).slice(0, 200) },
         }),
       );
     },
