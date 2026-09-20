@@ -2,6 +2,10 @@
 
 Separated from `src/` and `src-tauri/`: this folder drives the built app or replicates its derivations — it never ships in the product bundle.
 
+## Isolation
+
+- `worktree-run.sh` — runs any harness from a pinned-commit scratch worktree: `./e2e/worktree-run.sh [<ref>] -- <command...>`. Freezes the source against live-checkout churn (another writer saving `src/` mid-run kills vite and wedges captures) and restores committed fixtures. Carries the uncommitted `e2e/` diff under test (tracked as a patch, untracked by copy); symlinks `node_modules`; shares the main checkout's Rust target dir via `CARGO_TARGET_DIR`. Removes the worktree on success, keeps it on failure. GUI harnesses still serialize on `:1420` (vite fixed port + `strictPort`) — isolation freezes the source, it does not multiplex the port.
+
 ## Contents
 
 - `project-footprint.sh` — static project-footprint audit (no window needed). Copies `playground/simple/` to a scratch git repo, replicates each app-local path derivation in bash, and asserts porcelain discipline at every step. Run: `./e2e/project-footprint.sh` from `maleficium/`. Also pins statically: no `$HOME` in `capabilities/`, `security.csp` enforced, `opener` absent incl. lockfiles.
