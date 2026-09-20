@@ -4,6 +4,7 @@
 // density knob (comfortable/compact), no per-component density props.
 
 import { createTheme } from '@mui/material';
+import type { Shadows } from '@mui/material/styles';
 
 export type Density = 'comfortable' | 'compact';
 export type ThemeMode = 'dark' | 'light';
@@ -21,6 +22,11 @@ export const typeScale = {
   caption: 11,
   editorFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 } as const;
+
+/** Flattened elevation: soft border-shadow at rest, hairlines above. */
+const flatShadows = Array.from({ length: 25 }, (_, i) =>
+  i === 0 ? 'none' : i === 1 ? '0 0 0 1px rgba(0, 0, 0, 0.08)' : '0 0 0 1px rgba(0, 0, 0, 0.06)',
+) as Shadows;
 
 /** App theme factory: mode + density in, MUI theme out. */
 export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable') {
@@ -41,12 +47,39 @@ export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable'
             background: { default: '#1a1b26', paper: '#24283b' },
           }),
     },
-    typography: { fontSize: 13, fontFamily: 'Inter, system-ui, sans-serif' },
+    typography: {
+      fontSize: 13,
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontWeightLight: 400,
+      fontWeightRegular: 400,
+      fontWeightMedium: 500,
+      fontWeightBold: 700,
+    },
     spacing: density === 'compact' ? 4 : 8,
+    shape: { borderRadius: 8 },
+    shadows: flatShadows,
+    transitions: {
+      duration: {
+        shortest: 100,
+        shorter: 120,
+        short: 150,
+        standard: 150,
+        complex: 200,
+        enteringScreen: 150,
+        leavingScreen: 120,
+      },
+    },
     components: {
-      MuiButton: { defaultProps: { size: 'small' } },
+      MuiButtonBase: { defaultProps: { disableRipple: true } },
+      MuiButton: {
+        defaultProps: { size: 'small' },
+        styleOverrides: { root: { borderRadius: 6 } },
+      },
       MuiChip: { defaultProps: { size: 'small' } },
       MuiToolbar: { defaultProps: { variant: 'dense' } },
+      MuiPaper: {
+        styleOverrides: { root: { borderRadius: 12, backgroundImage: 'none' } },
+      },
     },
   });
 }
