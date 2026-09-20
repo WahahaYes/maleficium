@@ -115,6 +115,27 @@ grep -q "appHistoryDir" "$HISTSRC" || fail "history store does not use the app-l
 grep -q "appDataDir" "$HISTSRC" || fail "history store does not root itself in app-data"
 pass "history store derives its home from app-data only"
 
+# --- no-op saves (the blind spot porcelain cannot cover) ---------------------
+# An identical-content rewrite leaves `git status` clean but still moves
+# mtime, so a user's latexmk/watcher sees a file they only opened. Porcelain
+# is blind to it by construction; assert the gap exists, then assert the
+# guard that keeps the app out of it.
+touch -d '2020-01-01 00:00:00' main.tex
+MT_BEFORE="$(stat -c %Y main.tex)"
+cp main.tex "$SCRATCH/identical.bytes"
+cp "$SCRATCH/identical.bytes" main.tex
+MT_AFTER="$(stat -c %Y main.tex)"
+[[ "$MT_BEFORE" != "$MT_AFTER" ]] || fail "identical rewrite left mtime untouched — pin is meaningless"
+[[ -z "$(porcelain)" ]] || fail "identical rewrite dirtied porcelain"
+pass "identical-content rewrite moves mtime while porcelain stays clean (the blind spot)"
+git checkout -q -- main.tex
+# The editor re-emits its text whenever a doc is set externally (file switch,
+# reload). The buffer layer must treat that echo as a non-edit, or autosave
+# rewrites files the user never touched.
+grep -q "prev.value === value" "$APPSRC/lib/buffers.ts" ||
+    fail "buffer layer no longer guards against editor echoes"
+pass "an editor echo cannot dirty a buffer (no autosave on open or switch)"
+
 # --- scope + CSP + opener pins (static, no window) ---
 # Static scope stays off $HOME, CSP stays an enforced object, opener stays
 # fully removed (lockfiles too).
