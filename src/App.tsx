@@ -35,13 +35,7 @@ import {
   LARGE_FILE_BYTES,
   TreeEntry,
 } from './lib/files';
-import {
-  getOrCreateBuffer,
-  updateBuffer,
-  markSaved,
-  enforceBufferCap,
-  type BufferState,
-} from './lib/buffers';
+import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
 import { compileTex, onCompileLine, cancelCompile } from './lib/compile';
 import { emitPdf, onPdf, type PreviewDoc } from './lib/preview-bus';
 import { emit, type ProblemEvent } from './lib/events';
@@ -69,6 +63,7 @@ import { grantProjectAccess } from './lib/projectAccess';
 import { watch } from '@tauri-apps/plugin-fs';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
+import { useBufferManager } from './hooks/useBufferManager';
 import { useSynctex } from './hooks/useSynctex';
 import { appCacheDir } from '@tauri-apps/api/path';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
@@ -93,7 +88,6 @@ export default function App({
   const [mainFile, setMainFileState] = useState<string | null>(null);
   const [mainSource, setMainSource] = useState('');
   const [mainCandidates, setMainCandidates] = useState<string[]>([]);
-  const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
   const [trash] = useState(() => new FileHistory());
   const [revisionCount, setRevisionCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -115,8 +109,6 @@ export default function App({
   // Ref mirror for the watcher closure (the effect is root-scoped).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
-  const buffersRef = useRef(buffers);
-  buffersRef.current = buffers;
   // Latest closures for the subscribe-once global keymap listener.
   const compileRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
@@ -130,6 +122,17 @@ export default function App({
   const markOwnWrite = useCallback((p: string) => {
     ownWritesRef.current.set(p, Date.now());
   }, []);
+  const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
+    useBufferManager({
+      fileName,
+      setFileName,
+      previewFile,
+      setPreviewFile,
+      setTex,
+      setLargeFile,
+      setReloadPath,
+      markOwnWrite,
+    });
 
   // Revision history: app-local, keyed by a project id that never resolves to
   // a path outside the store. One project is open at a time, so `rootFor`
@@ -295,7 +298,7 @@ export default function App({
         });
       }
     },
-    [buffers, fileName, root, markOwnWrite, recordRevision],
+    [buffers, setBuffers, fileName, root, markOwnWrite, recordRevision],
   );
 
   useEffect(() => {
@@ -581,99 +584,6 @@ export default function App({
     }
   }
 
-  async function handleCloseBuffer(path: string) {
-    // Persist-then-evict: close never loses work silently.
-    if (path === fileName && fileName.includes('/')) {
-      const cur = buffers.get(fileName);
-      if (cur?.dirty) {
-        try {
-          await saveTex(fileName, cur.value);
-          markOwnWrite(fileName);
-        } catch {
-          /* keep dirty, still evict? no — stay */ return;
-        }
-      }
-    }
-    await closeBufferQuiet(path);
-    emit({
-      scope: 'fs',
-      kind: 'info',
-      message: 'closed ' + path,
-      data: { action: 'file.close', path },
-    });
-  }
-
-  // Close without emitting (batch callers emit once for the batch).
-  async function closeBufferQuiet(path: string): Promise<boolean> {
-    if (path === fileName && fileName.includes('/')) {
-      const cur = buffers.get(fileName);
-      if (cur?.dirty) {
-        try {
-          await saveTex(fileName, cur.value);
-          markOwnWrite(fileName);
-        } catch {
-          /* persist failed — stay open */ return false;
-        }
-      }
-    }
-    setBuffers((b) => {
-      const n = new Map(b);
-      n.delete(path);
-      return n;
-    });
-    if (path === fileName) {
-      // Fall through to nearest remaining buffer (keeps editor populated).
-      const rest = [...buffers.keys()].filter((k) => k !== path);
-      if (rest.length > 0) {
-        const next = buffers.get(rest[rest.length - 1]);
-        if (next) {
-          setTex(next.value);
-          setFileName(rest[rest.length - 1]);
-          setPreviewFile(null);
-          setLargeFile(null);
-          setReloadPath(null);
-        }
-      } else if (previewFile === path) {
-        setPreviewFile(null);
-      }
-    } else if (previewFile === path) {
-      setPreviewFile(null);
-    }
-    return true;
-  }
-
-  // Close-all / close-others (persist-then-evict per file; dirty-never-lost:
-  // a file that fails to persist stays open and aborts the batch).
-  async function handleCloseOthers(keep: string) {
-    const paths = [...buffers.keys()].filter((k) => k !== keep);
-    let n = 0;
-    for (const p of paths) {
-      if (await closeBufferQuiet(p)) n++;
-      else break;
-    }
-    emit({
-      scope: 'fs',
-      kind: 'info',
-      message: `closed ${n} other file${n === 1 ? '' : 's'}`,
-      data: { action: 'file.close-many', count: n, kept: fileName },
-    });
-  }
-
-  async function handleCloseAll() {
-    const paths = [...buffers.keys()];
-    let n = 0;
-    for (const p of paths) {
-      if (await closeBufferQuiet(p)) n++;
-      else break;
-    }
-    emit({
-      scope: 'fs',
-      kind: 'info',
-      message: `closed ${n} file${n === 1 ? '' : 's'}`,
-      data: { action: 'file.close-many', count: n },
-    });
-  }
-
   async function handleDelete(path: string) {
     if (!root) return;
     const r = await moveToTrash(trash, root, path);
@@ -886,7 +796,7 @@ export default function App({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [buffersRef]);
 
   const workdirHint = fileName.includes('/')
     ? fileName.slice(0, fileName.lastIndexOf('/'))
@@ -934,7 +844,7 @@ export default function App({
         data: { action: 'file.save', path: fileName, chars: tex.length, untitled: true },
       });
     }
-  }, [fileName, tex, buffers, largeFile, markOwnWrite, recordRevision]);
+  }, [fileName, tex, buffers, setBuffers, largeFile, markOwnWrite, recordRevision]);
 
   // The counter follows the active file; a file outside the project reads 0.
   useEffect(() => {
@@ -1003,7 +913,7 @@ export default function App({
       }
       await openHistory();
     },
-    [fileName, history, markOwnWrite, openHistory, projectId, relInProject],
+    [fileName, setBuffers, history, markOwnWrite, openHistory, projectId, relInProject],
   );
 
   useEffect(() => {
@@ -1030,7 +940,7 @@ export default function App({
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers, markOwnWrite, recordRevision]);
+  }, [tex, fileName, buffers, setBuffers, markOwnWrite, recordRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   const publishProblems = (text: string, base: string, wsRoot: string) => {
@@ -1531,7 +1441,7 @@ export default function App({
         }
       });
     },
-    [fileName],
+    [fileName, setBuffers],
   );
 
   // ---- Command registry binding ----
