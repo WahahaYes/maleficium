@@ -70,7 +70,7 @@ import {
   type HistoryAvailability,
   type RevisionRow,
 } from './lib/history.view';
-import { hashRoot } from './lib/paths';
+import { appOutDir, hashRoot } from './lib/paths';
 import { grantProjectAccess } from './lib/projectAccess';
 import { watch, readTextFile, mkdir, stat } from '@tauri-apps/plugin-fs';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
@@ -593,7 +593,6 @@ export default function App({
     // App-local outdir over the app-cache dir: clean never touches the
     // project dir.
     const { appCacheDir } = await import('@tauri-apps/api/path');
-    const { appOutDir } = await import('./lib/paths');
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
     const out = appOutDir(await appCacheDir(), dir);
     try {
@@ -1029,7 +1028,6 @@ export default function App({
         // App-local outdir over the app-cache dir: the engine log lives in
         // cache, never in the project.
         const { appCacheDir } = await import('@tauri-apps/api/path');
-        const { appOutDir } = await import('./lib/paths');
         const out = appOutDir(await appCacheDir(), workdir!);
         return await readTextFile(`${out}/${main.replace(/\.tex$/, '.log')}`);
       } catch {
@@ -1106,7 +1104,6 @@ export default function App({
   async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
     try {
       const { appCacheDir } = await import('@tauri-apps/api/path');
-      const { appOutDir } = await import('./lib/paths');
       const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
       const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
       const out = appOutDir(await appCacheDir(), dir);
