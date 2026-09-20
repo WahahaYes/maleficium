@@ -28,8 +28,6 @@ import {
   loadTex,
   saveTex,
   saveTexToDisk,
-  createFile,
-  renamePath,
   isPreviewable,
   LARGE_FILE_BYTES,
   TreeEntry,
@@ -46,16 +44,15 @@ import { buildMenus, presetOf, type CommandActions, type MenuContext } from './l
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { pruneRecentProjects } from './lib/recentProjects';
-import { moveToTrash, undoTrash } from './lib/trash';
-import { appOutDir, hashRoot } from './lib/paths';
+import { hashRoot } from './lib/paths';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
 import { useProjectTree } from './hooks/useProjectTree';
+import { useFileOps } from './hooks/useFileOps';
 import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useSynctex } from './hooks/useSynctex';
-import { appCacheDir } from '@tauri-apps/api/path';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -281,199 +278,6 @@ export default function App({
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
   // for main-file scan + watcher baseline, never on the open path.
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
-  async function handleCreate(dirPath: string, name: string) {
-    try {
-      const full = await createFile(dirPath, name);
-      markOwnWrite(full);
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        message: 'created ' + full,
-        data: { action: 'file.create', path: full },
-      });
-      if (root) await reloadTree(root, false);
-      await handleSelect(full);
-    } catch (e) {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: 'create failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.create-failed', dir: dirPath, name, error: String(e).slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleRename(oldPath: string, newName: string) {
-    try {
-      const full = await renamePath(oldPath, newName);
-      markOwnWrite(oldPath);
-      markOwnWrite(full);
-      setBuffers((b) => {
-        const prev = b.get(oldPath);
-        if (!prev) return b;
-        const n = new Map(b);
-        n.delete(oldPath);
-        n.set(full, prev);
-        return n;
-      });
-      if (fileName === oldPath) {
-        setFileName(full);
-        setReloadPath(null);
-      }
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        message: `renamed to ${full}`,
-        data: { action: 'file.rename', from: oldPath, to: full },
-      });
-      if (root) await reloadTree(root, false);
-    } catch (e) {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: 'rename failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.rename-failed', from: oldPath, error: String(e).slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleReload() {
-    if (!reloadPath) return;
-    try {
-      const content = await loadTex(reloadPath);
-      setBuffers((b) => {
-        const n = new Map(b);
-        n.set(reloadPath, {
-          value: content,
-          dirty: false,
-          version: (n.get(reloadPath)?.version ?? 0) + 1,
-        });
-        return n;
-      });
-      if (reloadPath === fileName) setTex(content);
-      setReloadPath(null);
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        message: 'reloaded ' + reloadPath,
-        data: { action: 'file.reload', path: reloadPath, chars: content.length },
-      });
-    } catch (e) {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: 'reload failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.reload-failed', path: reloadPath, error: String(e).slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleDelete(path: string) {
-    if (!root) return;
-    const r = await moveToTrash(trash, root, path);
-    if (r.ok) {
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        message: `deleted ${path} (Edit → Undo Delete restores it)`,
-        data: { action: 'file.delete', path },
-      });
-      setBuffers((b) => {
-        const n = new Map(b);
-        n.delete(path);
-        return n;
-      });
-      if (previewFile === path) setPreviewFile(null);
-      await reloadTree(root);
-    } else {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: 'delete failed: ' + (r.error ?? '').slice(0, 120),
-        data: { action: 'file.delete-failed', path, error: (r.error ?? '').slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleClean() {
-    const target = mainFile ?? (fileName.includes('/') ? fileName : null);
-    if (!target || !target.includes('/')) {
-      emit({
-        scope: 'compile',
-        kind: 'warn',
-        message: 'Clean: nothing to clean (no project file)',
-        data: { action: 'compile.clean', removed: 0, reason: 'no-project-file' },
-      });
-      return;
-    }
-    // App-local outdir over the app-cache dir: clean never touches the
-    // project dir.
-    const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
-    const out = appOutDir(await appCacheDir(), dir);
-    try {
-      // Per-entry removal: build artifacts only, never sources. Missing
-      // dir = already clean.
-      let entries = [];
-      try {
-        entries = await fs().listDir(out);
-      } catch {
-        emit({
-          scope: 'compile',
-          kind: 'info',
-          message: 'Clean: already clean',
-          data: { action: 'compile.clean', out, removed: 0 },
-        });
-        return;
-      }
-      let n = 0;
-      for (const e of entries) {
-        try {
-          await fs().remove(out + '/' + e.name);
-          n++;
-        } catch {
-          /* keep going — report count at end */
-        }
-      }
-      markOwnWrite(out);
-      emit({
-        scope: 'compile',
-        kind: 'success',
-        message: `Cleaned ${out} (${n} files)`,
-        data: { action: 'compile.clean', out, removed: n },
-      });
-      if (root) await reloadTree(root, false);
-    } catch (e) {
-      emit({
-        scope: 'compile',
-        kind: 'error',
-        message: 'Clean failed: ' + String(e).slice(0, 120),
-        data: { action: 'compile.clean-failed', out, error: String(e).slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleUndo() {
-    const entry = trash.list().at(-1);
-    const r = await undoTrash(trash);
-    if (r.ok) {
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        message: 'restored ' + (entry?.originalPath ?? 'from trash'),
-        data: { action: 'file.undo-delete', path: entry?.originalPath ?? null },
-      });
-      if (root) {
-        await reloadTree(root);
-      }
-    } else {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        message: 'undo failed: ' + (r.error ?? '').slice(0, 120),
-        data: { action: 'file.undo-delete-failed', error: (r.error ?? '').slice(0, 200) },
-      });
-    }
-  }
 
   async function handleSetMain() {
     if (!root || !fileName.includes('/')) return;
@@ -721,6 +525,23 @@ export default function App({
     handleSelect,
     warmCompile,
   });
+  const { handleCreate, handleRename, handleReload, handleDelete, handleClean, handleUndo } =
+    useFileOps({
+      root,
+      fileName,
+      reloadPath,
+      previewFile,
+      setFileName,
+      mainFile,
+      setTex,
+      setPreviewFile,
+      setReloadPath,
+      setBuffers,
+      trash,
+      markOwnWrite,
+      reloadTree,
+      handleSelect,
+    });
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   void previewCollapsed;
