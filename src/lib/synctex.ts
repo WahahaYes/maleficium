@@ -73,3 +73,35 @@ export async function inverse_sync(
     return { ok: false, text: String(e) };
   }
 }
+
+/**
+ * SyncTeX is unavailable without a rendered pdf, and while a compile runs:
+ * the `.synctex.gz` is being rewritten, so any answer would describe the
+ * previous document.
+ */
+export function syncAvailable(pdfUrl: string | null, compiling: boolean): boolean {
+  return pdfUrl != null && pdfUrl !== '' && !compiling;
+}
+
+/** Absolute source path for a query: bare names resolve against the workdir. */
+export function texPathFor(file: string, workdirHint: string): string {
+  return file.includes('/') ? file : workdirHint + '/' + file;
+}
+
+/**
+ * Whether a forward hit should move the preview. Preamble and untagged
+ * lines resolve to a rect on the current page: arriving without moving is
+ * noise, not navigation.
+ */
+export function shouldTurnPage(target: number | null, current: number): target is number {
+  return target != null && target !== current;
+}
+
+/**
+ * Whether an inverse hit lands in a different file than the open one.
+ * SyncTeX names the owning file in multi-file projects; a null or matching
+ * name means reveal the line in the current buffer.
+ */
+export function isCrossFileHit(hitFile: string | null, openFile: string): hitFile is string {
+  return hitFile != null && hitFile !== '' && hitFile !== openFile;
+}

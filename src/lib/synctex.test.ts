@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { parseForwardSync, parseInverseSync, isForwardNoMatch } from './synctex';
+import {
+  parseForwardSync,
+  parseInverseSync,
+  isForwardNoMatch,
+  syncAvailable,
+  texPathFor,
+  shouldTurnPage,
+  isCrossFileHit,
+} from './synctex';
 
 describe('parseForwardSync', () => {
   it('extracts the Page: number from synctex view output', () => {
@@ -50,5 +58,44 @@ describe('parseInverseSync', () => {
   });
   it('returns nulls for empty output', () => {
     expect(parseInverseSync('')).toEqual({ line: null, hitFile: null });
+  });
+});
+
+describe('syncAvailable', () => {
+  it('needs a pdf', () => {
+    expect(syncAvailable(null, false)).toBe(false);
+    expect(syncAvailable('', false)).toBe(false);
+    expect(syncAvailable('/out/main.pdf', false)).toBe(true);
+  });
+  it('is off while compiling — the gz is being rewritten', () => {
+    expect(syncAvailable('/out/main.pdf', true)).toBe(false);
+  });
+});
+
+describe('texPathFor', () => {
+  it('passes an absolute path through', () => {
+    expect(texPathFor('/proj/ch/a.tex', '/proj')).toBe('/proj/ch/a.tex');
+  });
+  it('resolves a bare name against the workdir', () => {
+    expect(texPathFor('main.tex', '/proj')).toBe('/proj/main.tex');
+  });
+});
+
+describe('shouldTurnPage', () => {
+  it('moves only on a different page', () => {
+    expect(shouldTurnPage(3, 1)).toBe(true);
+    expect(shouldTurnPage(1, 1)).toBe(false);
+    expect(shouldTurnPage(null, 1)).toBe(false);
+  });
+});
+
+describe('isCrossFileHit', () => {
+  it('detects a hit in another file', () => {
+    expect(isCrossFileHit('/proj/ch/b.tex', '/proj/main.tex')).toBe(true);
+  });
+  it('treats null, empty, or the open file as same-file', () => {
+    expect(isCrossFileHit(null, '/proj/main.tex')).toBe(false);
+    expect(isCrossFileHit('', '/proj/main.tex')).toBe(false);
+    expect(isCrossFileHit('/proj/main.tex', '/proj/main.tex')).toBe(false);
   });
 });

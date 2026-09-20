@@ -17,6 +17,9 @@ import { parseLog } from '../lib/parseLog';
 import { appOutDir } from '../lib/paths';
 import { emitPdf } from '../lib/preview-bus';
 
+/** The compile lifecycle. `phaseRef` leads this state by a tick. */
+export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
+
 export interface UseCompileRunnerDeps {
   tex: string;
   fileName: string;
@@ -59,7 +62,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     compileRef,
   } = deps;
 
-  const [compilePhase, setCompilePhase] = useState('idle');
+  const [compilePhase, setCompilePhase] = useState<CompilePhase>('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
 
@@ -107,14 +110,14 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   // engine children). Returns true when this call owned the run. The gate
   // reads a ref (not state) so a warm run racing a user Ctrl+R in the same
   // tick still collapses.
-  const phaseRef = useRef('idle');
+  const phaseRef = useRef<CompilePhase>('idle');
   async function runCompile(
     target: string | null,
     opts?: { skipPersist?: boolean },
   ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
-    const finish = (phase: string) => {
+    const finish = (phase: CompilePhase) => {
       phaseRef.current = phase;
       setCompilePhase(phase);
     };
