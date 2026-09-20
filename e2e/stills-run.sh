@@ -4,9 +4,12 @@
 # Launches the app under Xvfb with a contained HOME, opens each fixture
 # hands-free (Ctrl+O; the `?project=` preset skips the dialog), drives
 # compile/failure with Ctrl+R, captures PNGs to OS tmp with `import`.
-# No assertions here: stills are filed artifacts for on-demand review;
-# the WebDriver slice owns assertions. 3000pp is deferred (no cheap
-# path: needs a generated 3000-page build; see SCOPE).
+# Stills themselves are filed artifacts for on-demand review (no pixel
+# assertions); the one exception is the app event log, asserted after
+# every state because no other harness launches the real app (the
+# driver only drives the headless sidecar, which never starts the
+# frontend log). 3000pp is deferred (no cheap path: needs a generated
+# 3000-page build; see SCOPE).
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -14,7 +17,9 @@ OUT=${STILLS_OUT:-$(mktemp -d /tmp/maleficium-stills-XXXXXX)}
 mkdir -p "$OUT"
 : > "$OUT/dev.log"
 REALHOME="$HOME"
-FAKEHOME=$(mktemp -d /tmp/maleficium-stills-home-XXXXXX)
+# Fixable for log inspection: STILLS_HOME=/tmp/x ./e2e/stills-run.sh, then read
+# $STILLS_HOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl.
+FAKEHOME=${STILLS_HOME:-$(mktemp -d /tmp/maleficium-stills-home-XXXXXX)}
 DISP=${STILLS_DISPLAY:-:99}
 XVFB_PID=""
 # Pin every X tool at the harness display via the environment (xdotool
@@ -47,6 +52,7 @@ sweep_stale() {
 
 log() { printf 'stills: %s\n' "$*"; }
 die() { printf 'stills: FATAL %s\n' "$*" >&2; exit 1; }
+log "contained home $FAKEHOME"
 
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 need Xvfb; need xdotool; need import; need python3
@@ -136,8 +142,10 @@ click_editor() {
   sleep 1
 }
 shot() {
-  # Per-window capture: root captures tear while webkit repaints.
-  import -display "$DISP" -window "$WIN" "$OUT/$1.png" 2>/dev/null && log "captured $1.png" || die "capture failed: $1"
+  # Per-window capture: root captures tear while webkit repaints. Bounded:
+  # a dead window must fail loudly, never hang the harness (one hung
+  # `import` cost a full run with zero output).
+  timeout 60 import -display "$DISP" -window "$WIN" "$OUT/$1.png" 2>/dev/null && log "captured $1.png" || die "capture failed: $1"
 }
 
 stop_app() {
@@ -155,11 +163,44 @@ stop_app() {
   sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 }
 
+check_log() {
+  # $1 = space-separated data.action names this run's log must hold.
+  # The app truncates the log at launch, so exactly one log.open proves
+  # the file is this run's and nothing else's.
+  APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+  [ -f "$APPLOG" ] || die "no app event log at $APPLOG"
+  # shellcheck disable=SC2086
+  REQ="$1" python3 - "$APPLOG" <<'EOF' || die "app event log check failed (see above)"
+import json, os, sys
+path, req = sys.argv[1], os.environ["REQ"].split()
+lines = [l for l in open(path).read().splitlines() if l.strip()]
+assert lines, "log is empty"
+events = []
+for i, l in enumerate(lines):
+    try:
+        e = json.loads(l)
+    except Exception:
+        sys.exit("line %d is not JSON: %s" % (i + 1, l[:120]))
+    assert isinstance(e.get("at"), (int, float)) and isinstance(e.get("message"), str), "line %d lacks at/message" % (i + 1)
+    events.append(e)
+actions = [e.get("data", {}).get("action") for e in events if isinstance(e.get("data"), dict)]
+assert actions.count("log.open") == 1, "expected exactly one log.open (truncation proof), got %d" % actions.count("log.open")
+missing = [a for a in req if a not in actions]
+assert not missing, "missing actions: %s (have %s)" % (missing, sorted(set(actions)))
+print("stills: app log ok: %d lines, actions %s" % (len(lines), ",".join(sorted(set(actions)))))
+EOF
+  log "checked $APPLOG ($1 present)"
+}
+
 # State 1 — Default: open, no compile. Idle shell + quiet preview.
+# Ctrl+S forces a save so the log carries file.save + revision.record live.
 start_app "$FIX/simple"; wait_window 300
 key ctrl+o; sleep 6
+click_editor
+key ctrl+s; sleep 3
 shot 01-default
 stop_app
+check_log "log.open file.save revision.record"
 
 # State 2 — Compiling: pre-compile the fixture through the sidecar so
 # OPEN warms into a live compile by itself (no keystroke race). Rapid
@@ -174,12 +215,13 @@ key ctrl+o; sleep 6
 i=0
 while [ "$i" -lt 8 ]; do
   i=$((i + 1))
-  import -display "$DISP" -window "$WIN" "$OUT/02-compiling-$i.png" 2>/dev/null || true
+  timeout 60 import -display "$DISP" -window "$WIN" "$OUT/02-compiling-$i.png" 2>/dev/null || true
   sleep 5
 done
 log "captured 02-compiling-{1..8}.png"
 shot 02-compiling-done
 stop_app
+check_log "log.open compile.finish"
 
 # State 3 — Failure: bad project, focus, Ctrl+R (bundles warm by now).
 start_app "$FIX/bad"; wait_window 300
@@ -188,6 +230,7 @@ click_editor
 key ctrl+r; sleep 20
 shot 03-failure
 stop_app
+check_log "log.open compile.finish"
 
 log "stills in $OUT:"
 ls "$OUT"/*.png

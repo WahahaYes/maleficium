@@ -6,7 +6,9 @@
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$DEVROOT/src-tauri/target/debug/maleficium-mcp"
+# Honor a shared target dir (e.g. worktree runs reuse the main checkout's
+# build cache via CARGO_TARGET_DIR): the binary lives where cargo put it.
+BIN="${CARGO_TARGET_DIR:-$DEVROOT/src-tauri/target}/debug/maleficium-mcp"
 FIXTURE="$DEVROOT/playground/simple"
 SCRATCH="$(mktemp -d /tmp/maleficium-driver-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
