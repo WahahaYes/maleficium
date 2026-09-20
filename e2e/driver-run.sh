@@ -35,6 +35,75 @@ porcelain() { git status --porcelain; }
 [[ -z "$(porcelain)" ]] || fail "fixture repo not clean at start"
 
 export MCP_BIN="$BIN" MCP_ROOT="$ROOT"
+export DEVROOT
+
+# Heavy fixtures are generated megabytes: they live only in OS tmp (RULES §4)
+# and are rebuilt from src/test/fixtures.ts whenever they are absent.
+FIXTURES="${DRIVER_FIXTURES:-${TMPDIR:-/tmp}/maleficium-driver-fixtures-$(id -u)}"
+PAGES_ROOT="$FIXTURES/pages"
+TREE_ROOT="$FIXTURES/tree"
+export PAGES_ROOT TREE_ROOT
+if [ ! -f "$PAGES_ROOT/doc.tex" ] || [ ! -f "$TREE_ROOT/main.tex" ]; then
+  echo "generating heavy fixtures under $FIXTURES (3000pp + 1000 files)"
+  GEN="$SCRATCH/gen"
+  mkdir -p "$GEN"
+  (cd "$DEVROOT" && ./node_modules/.bin/tsc --ignoreConfig src/test/make-fixture.ts \
+    --outDir "$GEN" --module commonjs --target es2022 --skipLibCheck \
+    --esModuleInterop --types node)
+  node "$GEN/make-fixture.js" pages 3000 "$PAGES_ROOT" >/dev/null
+  node "$GEN/make-fixture.js" flat 1000 "$TREE_ROOT" >/dev/null
+fi
+
+# D.5 budget probe: replicates Preview.tsx's load + render timings headlessly
+# (same pdf.js build, same viewport formula) and reports one JSON line.
+PDF_PROBE="$SCRATCH/pdf-probe.mjs"
+export PDF_PROBE
+cat > "$PDF_PROBE" <<'PROBE'
+const [devroot, pdfPath] = process.argv.slice(2);
+const { readFileSync } = await import('node:fs');
+const pdfjs = await import(`file://${devroot}/node_modules/pdfjs-dist/legacy/build/pdf.mjs`);
+const { createCanvas } = await import(`file://${devroot}/node_modules/@napi-rs/canvas/index.js`);
+pdfjs.GlobalWorkerOptions.workerSrc = `${devroot}/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`;
+
+// Load window matches the `pdf loaded N pages in Xms` stream line: bytes in,
+// document open, page count known.
+const t0 = Date.now();
+const data = new Uint8Array(readFileSync(pdfPath));
+const doc = await pdfjs.getDocument({
+  data,
+  useSystemFonts: true,
+  standardFontDataUrl: `${devroot}/node_modules/pdfjs-dist/standard_fonts/`,
+}).promise;
+const loadMs = Date.now() - t0;
+
+// Render window matches `page N rendered in Xms`: raster plus text layer, at
+// the shell-width scale the preview uses (dpr folded in, 1 backing px per CSS px).
+const CSS_WIDTH = 820;
+async function renderPage(n) {
+  const page = await doc.getPage(n);
+  const probe = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: CSS_WIDTH / Math.max(1, probe.width) });
+  const canvas = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height));
+  const ctx = canvas.getContext('2d');
+  const t1 = Date.now();
+  await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+  await page.getTextContent();
+  return Date.now() - t1;
+}
+const firstMs = await renderPage(1);
+const lastMs = await renderPage(doc.numPages);
+
+process.stdout.write(
+  JSON.stringify({
+    pages: doc.numPages,
+    load_ms: loadMs,
+    render_first_ms: firstMs,
+    render_last_ms: lastMs,
+    rss_mb: Math.round(process.resourceUsage().maxRSS / 1024),
+  }) + '\n',
+);
+PROBE
+
 export DRIVER_LOG="${DRIVER_LOG:-/tmp/maleficium-driver-log.jsonl}"
 python3 - "$SCRATCH" <<'EOF'
 import json, os, subprocess, sys, time
@@ -140,6 +209,105 @@ check("failure names the cause", "Undefined control sequence" in flog, flog[:200
 check("failure writes no pdf", not fsc.get("pdf_path"), str(fsc.get("pdf_path")))
 _os.remove(ROOT + "/fail.tex")
 
+# ---- heavy-document probes: 1000-file open, cancel mid-compile, D.5 budgets ----
+stream = []
+def record(line):
+    stream.append(line)
+    logf.write(json.dumps({"stream": line}) + "\n"); logf.flush()
+
+PAGES_ROOT = os.environ["PAGES_ROOT"]
+TREE_ROOT = os.environ["TREE_ROOT"]
+
+gt = call("grant", {"root_id": "tree", "root": TREE_ROOT})
+check("grant 1000-file root", gt["ok"], str(gt))
+t = time.time()
+lr = call("list", {"root_id": "tree", "rel": "."})
+open_ms = (time.time() - t) * 1000
+names = [e["name"] for e in (lr.get("entries") or [])]
+check("1000-file open lists the whole level", lr["ok"] and len(names) == 1003, f"{len(names)} entries", ms=open_ms)
+check("1000-file open stays depth 1", "deep" in names and "d1.tex" not in names, ",".join(names[:5]))
+check("1000-file open under 750ms", open_ms < 750, f"{open_ms:.0f}ms", ms=open_ms)
+t = time.time()
+ls = call("list", {"root_id": "tree", "rel": "small"})
+small_ms = (time.time() - t) * 1000
+check(
+    "open cost tracks the listed level, not the tree",
+    ls["ok"] and len(ls.get("entries") or []) == 10 and small_ms <= open_ms + 5,
+    f"10-entry {small_ms:.1f}ms vs 1003-entry {open_ms:.1f}ms",
+    ms=small_ms,
+)
+
+gp = call("grant", {"root_id": "pages", "root": PAGES_ROOT})
+check("grant 3000pp root", gp["ok"], str(gp))
+cr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+cjob = cr.get("job_id") or ""
+check("cancel probe compile starts", cr["ok"] and bool(cjob), str(cr))
+cancel_t0 = time.time()
+time.sleep(0.3)
+cs = call("compile_poll", {"job_id": cjob, "tail_lines": 3})
+check("cancel probe finds the engine still running", cs.get("status") == "running", str(cs)[:200])
+# cancel only succeeds while the job still owns a live child, so an accepted
+# cancel is itself proof the engine was mid-run.
+cc = call("compile_cancel", {"job_id": cjob})
+check("cancel accepted mid-compile", cc["ok"], str(cc))
+for _ in range(100):
+    time.sleep(0.1)
+    cs = call("compile_poll", {"job_id": cjob, "tail_lines": 5})
+    if cs.get("status") != "running":
+        break
+cancel_ms = (time.time() - cancel_t0) * 1000
+check("cancelled compile reports cancelled", cs.get("status") == "cancelled", str(cs)[:200], ms=cancel_ms)
+check("cancelled compile writes no pdf", not cs.get("pdf_path"), str(cs.get("pdf_path")))
+
+hr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+hjob = hr.get("job_id") or ""
+check("3000pp compile starts", hr["ok"] and bool(hjob), str(hr))
+ht0 = time.time()
+hs = {"status": "running"}
+for _ in range(180):
+    time.sleep(1)
+    hs = call("compile_poll", {"job_id": hjob, "tail_lines": 5})
+    if hs.get("status") != "running":
+        break
+heavy_ms = (time.time() - ht0) * 1000
+check("3000pp compile succeeds", hs.get("status") == "success", str(hs)[:200], ms=heavy_ms)
+check(
+    "cancel returned long before the compile could finish",
+    cancel_ms * 2 < heavy_ms,
+    f"cancelled in {cancel_ms:.0f}ms vs {heavy_ms:.0f}ms full compile",
+)
+record(f"cancel mid-compile: settled cancelled in {cancel_ms:.0f}ms; same document compiles in {heavy_ms:.0f}ms")
+record(f"1000-file open in {open_ms:.0f}ms ({len(names)} entries, depth 1); 10-entry level {small_ms:.1f}ms")
+
+heavy_pdf = hs.get("pdf_path") or ""
+check("3000pp pdf exists outside the project", bool(heavy_pdf) and _os.path.exists(heavy_pdf) and not heavy_pdf.startswith(PAGES_ROOT), heavy_pdf)
+probe = subprocess.run(
+    ["node", os.environ["PDF_PROBE"], os.environ["DEVROOT"], heavy_pdf],
+    capture_output=True, text=True, timeout=600,
+)
+d5 = {}
+if probe.returncode == 0 and probe.stdout.strip():
+    d5 = json.loads(probe.stdout.strip().splitlines()[-1])
+check("D.5 probe runs", bool(d5), (probe.stderr or "no output")[-300:])
+if d5:
+    pages = d5["pages"]
+    check("3000pp fixture really is 3000 pages", pages >= 3000, str(pages))
+    check("pdf load within the 1313ms baseline", d5["load_ms"] <= 1313, f"{d5['load_ms']}ms", ms=d5["load_ms"])
+    check("far-page render within the 3806ms baseline", d5["render_last_ms"] <= 3806, f"{d5['render_last_ms']}ms", ms=d5["render_last_ms"])
+    check("first-page render within the 3806ms baseline", d5["render_first_ms"] <= 3806, f"{d5['render_first_ms']}ms", ms=d5["render_first_ms"])
+    check("pdf memory within the 294MB baseline", d5["rss_mb"] <= 294, f"{d5['rss_mb']}MB")
+    record(f"pdf loaded {pages} pages in {d5['load_ms']}ms (baseline 1313ms)")
+    record(f"page 1 rendered in {d5['render_first_ms']}ms (baseline 3806ms)")
+    record(f"page {pages} rendered in {d5['render_last_ms']}ms (baseline 3806ms)")
+    record(f"pager turn 1 -> {pages} costs {d5['render_last_ms']}ms")
+    record(f"peak rss {d5['rss_mb']}MB over load + render (baseline 294MB)")
+
+print("")
+print("D.5 BUDGETS + PROBES (observed vs recorded baseline):")
+for line in stream:
+    print("  stream: " + line)
+
+logf.close()
 p.kill()
 sys.exit(1 if fails else 0)
 EOF
