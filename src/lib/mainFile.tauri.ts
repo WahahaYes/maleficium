@@ -4,7 +4,7 @@
 
 import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
-import { getMainFileFor } from './mainFile.store';
+import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { joinPath } from './paths';
 
 async function listTexFilesRecursive(root: string): Promise<string[]> {
@@ -52,7 +52,6 @@ export async function resolveMainFileTauri(
  * Takes the project root + the file's path (absolute or rel); stores rel.
  */
 export async function setMainFile(root: string, absOrRelPath: string): Promise<void> {
-  const { setMainFileFor } = await import('./mainFile.store');
   const rel = absOrRelPath.startsWith(root + '/')
     ? absOrRelPath.slice(root.length + 1)
     : absOrRelPath;

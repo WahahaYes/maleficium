@@ -72,7 +72,8 @@ import {
 } from './lib/history.view';
 import { appOutDir, hashRoot } from './lib/paths';
 import { grantProjectAccess } from './lib/projectAccess';
-import { watch, readTextFile, mkdir, stat } from '@tauri-apps/plugin-fs';
+import { watch, readTextFile, mkdir, stat, readDir, remove } from '@tauri-apps/plugin-fs';
+import { appCacheDir } from '@tauri-apps/api/path';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
@@ -592,13 +593,11 @@ export default function App({
     }
     // App-local outdir over the app-cache dir: clean never touches the
     // project dir.
-    const { appCacheDir } = await import('@tauri-apps/api/path');
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
     const out = appOutDir(await appCacheDir(), dir);
     try {
       // Per-entry removal: build artifacts only, never sources. Missing
       // dir = already clean.
-      const { readDir, remove } = await import('@tauri-apps/plugin-fs');
       let entries = [];
       try {
         entries = await readDir(out);
@@ -1027,7 +1026,6 @@ export default function App({
       try {
         // App-local outdir over the app-cache dir: the engine log lives in
         // cache, never in the project.
-        const { appCacheDir } = await import('@tauri-apps/api/path');
         const out = appOutDir(await appCacheDir(), workdir!);
         return await readTextFile(`${out}/${main.replace(/\.tex$/, '.log')}`);
       } catch {
@@ -1103,12 +1101,10 @@ export default function App({
   // the engine does not reliably leave one beside every pdf.
   async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
     try {
-      const { appCacheDir } = await import('@tauri-apps/api/path');
       const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
       const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
       const out = appOutDir(await appCacheDir(), dir);
-      const { stat: statFile } = await import('@tauri-apps/plugin-fs');
-      await statFile(`${out}/${stem}.pdf`);
+      await stat(`${out}/${stem}.pdf`);
       return true;
     } catch {
       return false;
