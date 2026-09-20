@@ -96,6 +96,25 @@ touch "$OUT/main.pdf" "$OUT/main.log" "$OUT/main.synctex.gz"
 [[ -e "$ROOT/out" ]] && fail "in-project out/ re-created"
 pass "compile artifacts land in cache shard, porcelain clean, no in-project out/"
 
+# --- history home ---
+HIST="$APPDATA/maleficium-history/$HASH"
+[[ "$HIST" == "$ROOT"* ]] && fail "history home inside project: $HIST"
+pass "history home outside project: $HIST"
+# simulate one snapshot: index + one content-addressed blob
+mkdir -p "$HIST/blobs/ab"
+printf '{"v":1,"seq":1,"files":{}}' > "$HIST/index.json"
+printf 'snapshot bytes' > "$HIST/blobs/ab/abcdef"
+[[ -z "$(porcelain)" ]] || fail "project dirty after simulated snapshot"
+[[ -e "$ROOT/.maleficium-history" ]] && fail "in-project .maleficium-history re-created"
+if echo "$(porcelain)" | grep -q "maleficium-history"; then fail "history dir appeared in project"; fi
+pass "revision index + blobs land in app-data shard, porcelain clean"
+# history must derive its home from app-data, never from the project root
+HISTSRC="$APPSRC/lib/history.ts"
+[ -f "$HISTSRC" ] || fail "history store missing: $HISTSRC"
+grep -q "appHistoryDir" "$HISTSRC" || fail "history store does not use the app-local derivation"
+grep -q "appDataDir" "$HISTSRC" || fail "history store does not root itself in app-data"
+pass "history store derives its home from app-data only"
+
 # --- scope + CSP + opener pins (static, no window) ---
 # Static scope stays off $HOME, CSP stays an enforced object, opener stays
 # fully removed (lockfiles too).
@@ -128,5 +147,6 @@ echo "FOOTPRINT PROOFS COMPLETE: static audit green."
 echo "  root:   $ROOT"
 echo "  hash:   $HASH"
 echo "  trash:  $TRASH"
+echo "  hist:   $HIST"
 echo "  out:    $OUT"
 echo "  Live driver-driven run: e2e/driver-run.sh."
