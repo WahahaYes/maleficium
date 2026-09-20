@@ -1,7 +1,6 @@
 // trash.ts — Tauri-backed trash moves + undo via FileHistory references.
 //
-// Trash lives APP-LOCAL (`appDataDir/maleficium-trash/<hash>/`), never inside
-// the project. No in-project fallback (RULES §8: no legacy).
+// Trash lives app-local, never inside the project. No in-project fallback.
 
 import { mkdir, rename, readFile, writeFile, remove } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';

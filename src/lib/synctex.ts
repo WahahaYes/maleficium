@@ -2,18 +2,15 @@ import { invoke } from '@tauri-apps/api/core';
 export type ForwardResult = { ok: boolean; text: string };
 export type InverseResult = { ok: boolean; text: string };
 /**
- * SyncTeX via the bundled sidecar (`src-tauri/binaries/synctex-<triple>`,
- * built from `jlaurens/synctex` MIT — credit in About). The tool ships with
- * the app: no PATH lookup, no "not installed" branch. `{ok:false}` now means
- * only a genuine query failure (missing `.synctex.gz`, corrupt output).
+ * SyncTeX via the bundled sidecar. The tool ships with the app: no PATH
+ * lookup, no "not installed" branch. `{ok:false}` means only a genuine
+ * query failure (missing `.synctex.gz`, corrupt output).
  */
 /**
  * Forward SyncTeX (editor → PDF).
- * `pdfPath` is the absolute outdir pdf path (Rust splits it into
- * outdir + bare name and runs inside the outdir); `texPath` is the
- * ABSOLUTE path of the VISIBLE source file (`synctex view
- * -i <line>:1:<tex>`) — the gz stores absolute Input paths per file, so
- * callers pass the file the line belongs to, not the project main file.
+ * `pdfPath` is the absolute outdir pdf path; `texPath` is the absolute
+ * path of the visible source file — the gz stores absolute Input paths
+ * per file, so pass the file the line belongs to.
  */
 export async function forward_sync(
   pdfPath: string,
@@ -45,7 +42,7 @@ export function isForwardNoMatch(text: string): boolean {
 
 /**
  * Parse `synctex edit` output (`Input:<abs path>` + `Line:<n>` lines).
- * Missing fields stay null — callers treat `line == null` as no-match.
+ * Missing fields stay null (`line == null` is no-match).
  */
 export function parseInverseSync(text: string): { line: number | null; hitFile: string | null } {
   const lm = text.match(/^Line:\s*(\d+)\s*$/m);
@@ -56,10 +53,9 @@ export function parseInverseSync(text: string): { line: number | null; hitFile: 
   };
 }
 /**
- * Inverse SyncTeX. The Rust side runs `synctex edit` INSIDE the out dir (the
- * tool resolves `<pdf>.synctex.gz` relative to CWD), so callers pass the pdf's
- * absolute path and we split it into (outDir, pdfName) here.
- * Failure contract: `{ok:false}` — see `forward_sync` above.
+ * Inverse SyncTeX. The query runs inside the out dir (the tool resolves
+ * `<pdf>.synctex.gz` relative to CWD), so the pdf's absolute path is split
+ * into (outDir, pdfName) here. Failure contract: `{ok:false}`.
  */
 export async function inverse_sync(
   pdfAbsPath: string,

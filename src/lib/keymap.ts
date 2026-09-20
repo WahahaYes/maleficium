@@ -1,12 +1,12 @@
 // keymap.ts — single source for keyboard chords.
 //
-// Growth cap: static table, no state. CodeMirror reserves its own editing keys;
-// chords here are app-level (window keydown) and must not collide with them.
+// Static table, no state. Chords here are app-level (window keydown) and
+// must not collide with editing keys.
 
 export interface KeyChord {
   id: string;
   label: string;
-  /** e.g. "Ctrl+R". Display only; matching is explicit in App. */
+  /** e.g. "Ctrl+R". Display only. */
   keys: string;
 }
 

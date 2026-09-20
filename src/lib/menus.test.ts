@@ -84,7 +84,7 @@ describe('command registry', () => {
       'view.preset-preview',
     ]);
     expect(layout.children?.filter((k) => k.checked).length).toBe(1);
-    // Leaf ids stay unique even counting submenu children (MCP-safe).
+    // Leaf ids stay unique even counting submenu children.
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
   });
@@ -154,9 +154,8 @@ describe('command registry', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
   it('dialog renders the same KEYMAP table (no second key list)', () => {
-    // D-9: ShortcutsDialog imports KEYMAP directly (keep it that way) — this
-    // pin fails if anyone introduces a parallel key list for the dialog.
-    // The dialog renders one row per KEYMAP entry, same ids, same labels.
+    // The dialog renders one row per KEYMAP entry, same ids, same labels —
+    // this pin fails if anyone introduces a parallel key list.
     expect(KEYMAP.length).toBeGreaterThan(0);
     const ids = KEYMAP.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -174,9 +173,8 @@ describe('command registry', () => {
     }
   });
   it('outline submenu caps stay deliberate (25) and labeled honest', () => {
-    // D-3/D-4: submenu rows cap at PICK_CAP with the full outline one click
-    // away in the tree column. 101 sections → 25 rows, no silent truncation
-    // claim (the tree's `100+` label carries the honesty there).
+    // Submenu rows cap at PICK_CAP with the full outline one click away in
+    // the tree column. 101 sections → 25 rows, no silent truncation.
     const lines = Array.from({ length: 101 }, (_, i) => ({ line: i + 1, title: `S${i + 1}` }));
     const all = buildMenus({ ...baseCtx, outlineLines: lines }, actions).flatMap((s) => s.commands);
     expect(all.find((c) => c.id === 'selection.pick-one')!.children?.length).toBe(25);

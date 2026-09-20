@@ -1,9 +1,8 @@
 // previewNav.ts — pure navigation math for the windowed PDF preview.
 //
-// The Preview body keeps one lightweight shell per document page (stable
-// scroll height) and renders bitmaps only for a small window around the
-// visible page. These helpers own the window shape, the visible-page pick,
-// and scroll compensation. All pure and unit-tested; the component owns I/O.
+// One lightweight shell per document page (stable scroll height); bitmaps
+// only for a small window around the visible page. These helpers own the
+// window shape, the visible-page pick, and scroll compensation. All pure.
 
 /** Shells rendered above the anchor (neighbors kept as bitmaps). */
 // Idle prefetch ring (render-idle, outside the window + eviction set).
@@ -54,7 +53,7 @@ export interface VisibleEntry {
  * Pick the visible page from IntersectionObserver entries (largest
  * intersectionRatio wins; ties go to the smallest page so page 1 is always
  * reachable). Returns null when nothing intersects (fast fling between
- * callbacks) so the caller keeps the current page instead of guessing.
+ * callbacks) so the current page is kept instead of guessing.
  */
 export function pickVisible(entries: VisibleEntry[]): number | null {
   if (entries.length === 0) return null;

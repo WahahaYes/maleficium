@@ -1,9 +1,7 @@
 // theme.ts — single source for palette, type scale, density.
 //
-// Growth cap: scalars only. Dark default (Pitch-1 §light/dark, Linux-first);
-// a `light` palette ships in the same factory so light later is a mode flip,
-// never a rewrite. ONE density knob (comfortable/compact) — no per-component
-// density props (ideation-slim §7).
+// Scalars only. Dark default; `light` ships in the same factory. One
+// density knob (comfortable/compact), no per-component density props.
 
 import { createTheme } from '@mui/material';
 
@@ -24,8 +22,7 @@ export const typeScale = {
   editorFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 } as const;
 
-/** App theme factory: mode + density in, MUI theme out. Themes later = new
- *  palette branch here, never scattered `sx` edits. */
+/** App theme factory: mode + density in, MUI theme out. */
 export function createAppTheme(mode: ThemeMode, density: Density = 'comfortable') {
   return createTheme({
     palette: {

@@ -1,8 +1,8 @@
 // MenuBar.tsx — expandable top menus (File/Edit/Selection/View/Tools/Help).
 //
-// Growth cap: renders section titles + open menu only; commands are data from
-// `lib/commands.ts` (no per-command components). `checked` = radio/toggle
-// state; `children` = nested submenu (one level: pick-1 / pick-N / theme).
+// Renders section titles + open menu only; commands are data (no
+// per-command components). `checked` = radio/toggle state; `children` =
+// nested submenu (one level).
 
 import { useState } from 'react';
 import Box from '@mui/material/Box';
@@ -120,7 +120,7 @@ export default function MenuBar({
   status,
 }: {
   sections: MenuSection[];
-  /** Right-side cluster (compile icon + phase) — caller owns the contract. */
+  /** Right-side cluster (compile icon + phase). */
   status?: React.ReactNode;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);

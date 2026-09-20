@@ -1,10 +1,8 @@
 // pdfjs.ts — single pdf.js entry: worker setup + open helpers.
 //
-// Preview never imports pdf.js directly: this module owns the import (one
-// renderer, not two) and hands Preview the TextLayer constructor for the
-// selectable-text overlay via getPdfJs(). Canvas is paint, DOM spans are
-// the document. Filesystem knowledge (blob:/http:/asset: vs Tauri readFile)
-// lives here too, so components never branch on URL prefixes.
+// Owns the pdf.js import and exposes the TextLayer constructor for the
+// selectable-text overlay. Canvas is paint, DOM spans are the document.
+// Filesystem knowledge (blob:/http:/asset: vs Tauri readFile) lives here.
 import 'pdfjs-dist/web/pdf_viewer.css';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type {

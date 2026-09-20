@@ -1,11 +1,8 @@
 // LogStream.tsx — the single unified log event stream.
 //
-// Replaces the Problems/Log/Terminal tab trio: every surface (compile errors,
-// file ops, preview, synctex) emits to the bus (`lib/events.ts`), and this
-// component renders it. Problem entries carry data {file, line, clickable} and
-// render as click-to-jump rows.
-//
-// Growth cap: bus cap 500 + 4Hz flush + render slice 100.
+// Every surface emits here; problem entries carry {file, line, clickable}
+// and render as click-to-jump rows. Bus cap 500 + 4Hz flush + render
+// slice 100.
 
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';

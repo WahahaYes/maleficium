@@ -1,8 +1,6 @@
 // StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + history).
 //
-// Growth cap: constant height; scalar props only (mainFile string, phase enum,
-// timer number, history count); no payload. Compile state placed here
-// (contract preserved).
+// Constant height; scalar props only (no payload). Compile state lives here.
 
 import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -18,7 +16,7 @@ export default function StatusBar({
 }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
-  /** Undoable file-op depth (trash history size) — the visible version story. */
+  /** Undoable file-op depth. */
   historyCount?: number;
   phase: string;
   timer: number;

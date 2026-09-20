@@ -1,9 +1,8 @@
 // FileTree.tsx — project tree: 1-level root, expand-on-demand, search, CRUD.
 //
-// Growth cap: root renders 1 level only (O(depth 1) open); dirs expand via
-// onExpandDir (metadata only); visible-rows paging ("show more", 200/page);
-// filterHidden excludes .git/out/aux/log. Main-file Chip visible rows only.
-// Search filters LOADED rows (substring; full index deferred).
+// Root renders 1 level only; dirs expand on demand; visible-rows paging
+// ("show more", 200/page); hidden filter excludes .git/out/aux/log.
+// Search filters loaded rows (substring).
 
 import { useMemo, useState } from 'react';
 import {
@@ -338,9 +337,8 @@ export default function FileTree({
   maxDepth = 2,
   filterHidden = true,
 }: FileTreeProps) {
-  // NOTE: `lazy`/`filterHidden` are honored by the DATA layer: App opens
-  // with a 1-level root (`listDir1Level`) and expands via `onExpandDir`
-  // (filtering in `files.ts`).
+  // `lazy`/`filterHidden` are honored by the data layer: 1-level root,
+  // expand-on-demand, filtering at read time.
   void lazy;
   void filterHidden;
   const [limit, setLimit] = useState(ROW_PAGE);
@@ -351,7 +349,7 @@ export default function FileTree({
 
   const topLevel = useMemo(() => tree.slice(0, limit), [tree, limit]);
 
-  // Substring search over LOADED rows (cheap; full-project index deferred).
+  // Substring search over loaded rows.
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return topLevel;

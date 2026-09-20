@@ -1,6 +1,6 @@
 // ShortcutsDialog.tsx — discoverable keymap (`?` toolbar button).
 //
-// Growth cap: static table from `lib/keymap.ts`; unmounted when closed.
+// Static table; unmounted when closed.
 
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';

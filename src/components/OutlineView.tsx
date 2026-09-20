@@ -1,21 +1,13 @@
 // OutlineView.tsx — document outline, one visual section in the side column.
 //
-// NOT a nested sidebar: no panel chrome of its own (no card, no divider, no
-// header icon) — just a caption line, a search field, and rows in the same
-// List language as the file tree above it. The tree filters files; this
-// filters symbols; both read as one column with two finders, not panels
-// inside panels.
+// No panel chrome of its own: a caption line, a search field, and rows.
+// Entries are searched, filtered by kind segment, then sliced to a 100-row
+// view (search narrows first so the cap never eats the match; the `100+`
+// count line keeps the cut honest). Click → line reveal.
 //
-// Growth cap: entries from `parseOutline` (DATA cap 1000) searched, then
-// filtered by kind segment, then sliced to a VIEW cap of 100 rows (search
-// narrows first so the cap never eats the match). The `100+` count line
-// keeps the cut honest; the remainder stays reachable via Selection > Go to
-// Section… (25-row window over the same list). Click → line reveal.
-//
-// D-12 design: sections own the indent hierarchy; labels / floats / inputs
-// ride along as marker rows with a kind glyph + muted meta. Markers never
-// change a section's level (the parse guarantees it), so the indent column
-// stays a pure section tree and the kind segments stay truthful.
+// Sections own the indent hierarchy; labels / floats / inputs ride along
+// as marker rows with a kind glyph + muted meta. Markers never change a
+// section's level, so the indent column stays a pure section tree.
 
 import { useState } from 'react';
 import Box from '@mui/material/Box';
@@ -36,7 +28,7 @@ import { filterOutline, searchOutline } from '../lib/outline';
 const VIEW_CAP = 100;
 
 function KindGlyph({ kind }: { kind: OutlineKind }) {
-  // Sections need no glyph (indent IS their signal); markers get one small
+  // Sections need no glyph (indent is their signal); markers get one small
   // muted icon so a scan reads kind before text.
   switch (kind) {
     case 'label':
@@ -54,7 +46,7 @@ function KindGlyph({ kind }: { kind: OutlineKind }) {
 
 function RowMeta({ entry }: { entry: OutlineEntry }) {
   // One muted word per marker: label key / file path / input path. Sections
-  // show nothing (their title is the whole row — minimal, sleek).
+  // show nothing (their title is the whole row).
   if (entry.kind === 'section') return null;
   const meta =
     entry.kind === 'label' ? entry.detail : entry.kind === 'input' ? entry.detail : entry.detail;

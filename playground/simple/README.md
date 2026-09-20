@@ -31,5 +31,5 @@ Open in the app via **File → Open Project…** → this folder
    copy stays clean of app footprint.
 5. `stress/big.tex` → compile → Cancel mid-run; pager jump to page 40+.
 
-Regenerate: PNGs (script in `notes/07-verify/2026-09-13-playground.md`; now
-at `playground/simple/gen-figs.py`), `stress/big.tex` (section loop, same note).
+Regenerate: PNGs via `playground/simple/gen-figs.py`, `stress/big.tex` via
+a section + `\newpage` loop.

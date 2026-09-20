@@ -1,8 +1,7 @@
-// EditorViewport.tsx — CodeMirror 6 viewport editor (replaces Editor.tsx).
+// EditorViewport.tsx — CodeMirror 6 viewport editor.
 //
-// Growth cap: viewport-render O(visible) only — never measures full content
-// (kills the 4.4MB textarea freeze, 01 STATUS 7433ms). Stable prop identity via
-// memo + useCallback at call site. Emits `editor render 5MB file in Xms`.
+// Viewport-render O(visible) only — never measures full content. Stable
+// prop identity via memo + useCallback at call site.
 
 import { memo, useEffect, useRef } from 'react';
 import Paper from '@mui/material/Paper';
@@ -19,7 +18,7 @@ export interface EditorViewportProps {
   flashKey?: number;
 }
 
-/** Minimal viewport bridge (Selection menu + Go to Line + forward SyncTeX). */
+/** Minimal viewport bridge: selection ops + caret line + click hook. */
 export interface EditorViewportHandle {
   selectAll: () => void;
   expandSelection: () => void;
@@ -39,9 +38,9 @@ function EditorViewport({
   onDoubleClickRef,
   filePath,
 }: EditorViewportProps & {
-  /** Bridge for Selection menu: App drives select-all/expand/shrink/goto. */
+  /** Drives select-all/expand/shrink/goto on the live view. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
-  /** Double-click file + line → App runs forward SyncTeX (no editor fork). */
+  /** Double-click file + line for forward SyncTeX. */
   onDoubleClickRef?: React.MutableRefObject<((file: string, line: number) => void) | null>;
   /** Absolute path of the file in the viewport (captured at click time). */
   filePath?: string;
@@ -50,9 +49,8 @@ function EditorViewport({
   const viewRef = useRef<EditorView | null>(null);
   const filePathRef = useRef(filePath);
   filePathRef.current = filePath;
-  // Last value WE sent downstream (mount doc or external sync). Keystrokes
-  // update this synchronously in the updateListener so the [value] echo-back
-  // from App state never triggers a full-doc replace (cursor jump).
+  // Last value sent downstream. Keystrokes update it synchronously in the
+  // updateListener so an echo-back never triggers a full-doc replace.
   const lastSentRef = useRef(value);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -84,10 +82,9 @@ function EditorViewport({
             }
             return false;
           },
-          // Double-click = forward SyncTeX from the caret line. Single click
-          // stays caret-only; the PDF canvas owns single-click inverse.
-          // The file is captured at click time — fileName state may lag the
-          // visible buffer after a fast file switch + double-click.
+          // Double-click = forward SyncTeX from the caret line; single click
+          // stays caret-only. The file is captured at click time (state may
+          // lag the visible buffer after a fast file switch + double-click).
           dblclick: (_e, view) => {
             try {
               const head = view.state.selection.main.head;
@@ -133,7 +130,7 @@ function EditorViewport({
     }
   }, [value]);
 
-  // Line reveal (Problems jump / inverse SyncTeX) + amber flash on flashKey.
+  // Line reveal + amber flash on flashKey.
   const flashKeyRef = useRef(flashKey);
   useEffect(() => {
     const view = viewRef.current;
@@ -169,8 +166,8 @@ function EditorViewport({
     }
   }, [line, flashKey]);
 
-  // Viewport bridge: Selection menu drives the LIVE view (no-ops unmounted).
-  // App also wires double-click → forward SyncTeX via onDoubleClickRef.
+  // Viewport bridge drives the live view (no-ops unmounted); double-click
+  // is exposed via onDoubleClickRef.
   useEffect(() => {
     if (!viewportRef) return;
     const stepOut = (dir: 1 | -1) => {

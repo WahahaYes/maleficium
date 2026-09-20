@@ -20,9 +20,8 @@ fn git_branch(root: &str) -> Option<String> {
 
 #[tauri::command]
 pub fn git_status(app: tauri::AppHandle, root: String) -> Result<String, String> {
-    // Trust boundary (design §5): `root` becomes `git -C <root>`, so it must
-    // sit inside the live fs scope (project grant). Verdict on these commands
-    // belongs to 10-history — the guard applies regardless while they exist.
+    // `root` becomes `git -C <root>`, so it must sit inside the live fs
+    // scope.
     let root_canon = require_allowed(&app, &root)?;
     let root_str = root_canon.to_string_lossy().to_string();
     let status = Command::new("git")
@@ -52,9 +51,9 @@ pub fn git_status(app: tauri::AppHandle, root: String) -> Result<String, String>
 /// Working-copy vs HEAD diff for one file (honest empty on non-repo/binary).
 #[tauri::command]
 pub fn git_show_head(app: tauri::AppHandle, root: String, file: String) -> Result<String, String> {
-    // Trust boundary (design §5): `root` as above; `file` becomes
-    // `HEAD:<file>`, so it must be repo-relative with no `..`/absolute
-    // escape (lexical check — HEAD-only paths need not exist on disk).
+    // `root` as above; `file` becomes `HEAD:<file>`, so it must be
+    // repo-relative with no `..`/absolute escape (lexical check — HEAD-only
+    // paths need not exist on disk).
     let root_canon = require_allowed(&app, &root)?;
     let rel = require_repo_path(&file)?.to_string();
     let root_str = root_canon.to_string_lossy().to_string();

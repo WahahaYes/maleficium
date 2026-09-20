@@ -1,8 +1,8 @@
 // mainFile.ts — resolved LaTeX root document for a project.
 //
-// Growth cap: scalar path reference only, never file payload. Resolution order:
-// explicit association (app-local store) → `%!TEX root` magic → `\documentclass`
-// scan (first wins, deterministic) → single-.tex fallback → none. Never throws.
+// Scalar path reference only, never file payload. Resolution order:
+// explicit association → `%!TEX root` magic → `\documentclass` scan
+// (first wins, deterministic) → single-.tex fallback → none. Never throws.
 
 import { joinPath } from './paths';
 
@@ -19,11 +19,11 @@ export interface MainFileDeps {
   root: string;
   /** Absolute path of the currently opened file (may be non-main). */
   openedFile: string | null;
-  /** Read a text file; injected so tests can mock. */
+  /** Read a text file (injected). */
   readText: (absPath: string) => Promise<string>;
-  /** List absolute .tex paths under root (non-recursive walk is fine); injected. */
+  /** List absolute .tex paths under root (injected). */
   listTexFiles: (root: string) => Promise<string[]>;
-  /** Read raw association JSON from the app-local store; injected. */
+  /** Read raw association JSON from the app-local store (injected). */
   readConfig: (root: string) => Promise<string | null>;
 }
 
@@ -58,7 +58,7 @@ function parseConfigMain(raw: string | null, root: string): string | null {
   return null;
 }
 
-/** Resolve with injectable IO so vitest can drive every branch without Tauri. */
+/** Resolve with injectable IO. */
 export async function resolveMainFile(deps: MainFileDeps): Promise<MainFileResolution> {
   const { root, openedFile, readText, listTexFiles, readConfig } = deps;
   try {

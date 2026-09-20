@@ -1,17 +1,11 @@
-// outline.ts — document outline from the ACTIVE buffer only.
+// outline.ts — document outline from the active buffer only.
 //
-// Growth cap: O(buffer) scan, debounced by the caller (500ms). Two caps with
-// different owners, stated together so the next reader doesn't "fix" one:
-// parse caps at 1000 (the DATA bound — full fidelity for search/next
-// surfaces); the VIEW + Selection submenus cap at 100/25 (visible rows stay
-// O(visible); the counted label makes the remainder honest, not hidden).
-// Raising the submenu caps means paging or filtering them — never dumping
-// unbounded rows into a menu (scale law #2).
+// O(buffer) scan. Parse caps at 1000 rows; the view slices to 100 and the
+// Selection submenus to 25 (the counted label keeps the cut honest).
 //
-// D-12 symbols: sections carry the hierarchy; labels, floats, and \input
-// boundaries ride ALONG as non-hierarchical marker rows (they never change
-// a section's level — the indent column stays a pure section tree, and the
-// filter segments Sections/Labels/Figures/Inputs by marker kind).
+// Sections carry the hierarchy; labels, floats, and \input boundaries ride
+// along as non-hierarchical marker rows (the indent column stays a pure
+// section tree, and the filter segments by marker kind).
 
 /** What a row IS: a sectioning command, or a marker riding the tree. */
 export type OutlineKind = 'section' | 'label' | 'figure' | 'table' | 'input';

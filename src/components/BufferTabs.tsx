@@ -1,7 +1,6 @@
-// BufferTabs.tsx — visible open-file tabs (buffers Map made tangible).
+// BufferTabs.tsx — visible open-file tabs.
 //
-// Growth cap: tab strip renders one chip per OPEN buffer (bounded by user
-// behavior, not artifact size); labels are basenames; close evicts from map.
+// One chip per open buffer; labels are basenames; close evicts from the map.
 
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';

@@ -1,8 +1,7 @@
 // buffers.ts — multi-file edit buffers with per-file dirty tracking.
 //
-// Growth cap: Map reference held by App; switching files preserves unsaved
-// buffers (no prompt — dirty dot + autosave win). Binary/large files never
-// enter the map (caller shows placeholder).
+// Switching files preserves unsaved buffers (dirty dot, no prompt).
+// Binary/large files never enter the map.
 
 export interface BufferState {
   value: string;

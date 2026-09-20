@@ -6,18 +6,16 @@
 // shells that leave the window have their canvas backing cleared). The
 // visible page is picked by IntersectionObserver (largest ratio inside the
 // viewport middle band), free in BOTH directions, so page 1 stays reachable
-// by scroll AND by pager. The pager (App-owned pageNumber) only drives
-// jumps: a prop change that differs from the visible page scrolls AFTER the
-// target bitmap lands; neighbors then render idle. Programmatic scrolls
-// carry a flag so a user grab mid-jump cancels it. devicePixelRatio capped
-// at 2.
+// by scroll AND by pager. The pager only drives jumps: a prop change that
+// differs from the visible page scrolls AFTER the target bitmap lands;
+// neighbors then render idle. Programmatic scrolls carry a flag so a user
+// grab mid-jump cancels it. devicePixelRatio capped at 2.
 // Shell count never scales with the document (buffers + observers do): one
 // shell div per page is O(pages) DOM by design, and O(visible) work per
 // event holds because the observer callback only records ratios while the
 // rAF-throttled pick + idle-scheduled neighbors defer the rest.
 // At very large page counts the DOM itself is the cost (not the bitmaps —
-// those stay O(window)). The outline already covers long-doc navigation,
-// and full virtualization stays a non-goal (see closeout §C-3).
+// those stay O(window)).
 // Emits `pdf loaded N pages in Xms` + `page N rendered in Xms`.
 
 import { Box, Typography } from '@mui/material';
@@ -132,9 +130,8 @@ export default function Preview({
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dprRef = useRef(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
   const compRef = useRef<{ page: number; delta: number } | null>(null);
-  // TextLayer constructor owned by `lib/pdfjs` (resolved per document open,
-  // so lib never imports this component back). Instance-scoped, not module
-  // state: no cross-instance bleed, no mutable global.
+  // TextLayer constructor resolved per document open. Instance-scoped, not
+  // module state.
   const textLayerRef = useRef<PdfJsApi['TextLayer'] | null>(null);
 
   useEffect(
@@ -147,32 +144,25 @@ export default function Preview({
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
 
-  // Probe + render orchestration WITHOUT generation counters: every async
+  // Probe + render orchestration without generation counters: every async
   // task re-validates the exact thing it is about to touch (doc identity,
-  // page membership, mount state) instead of racing a shared counter. A
-  // counter is a single global loser-flag — ANY new effect run (StrictMode
-  // double-mount, probe batch, neighbor idle-callback) invalidates EVERY
-  // in-flight render, and on a real document the losers always outnumber
-  // the winners: perpetual `rendering...`, zero stuck pixels.
+  // page membership, mount state) instead of racing a shared counter.
 
-  // Render pdf.js pixels for one page onto a DETACHED canvas. Awaiting this
+  // Render pdf.js pixels for one page onto a detached canvas. Awaiting this
   // never touches mounted DOM: the caller commits via commitBitmap only when
   // the page still belongs to the live document and window. Skips pdf.js
   // work entirely when this revision already holds the page. Cancellation is
-  // by TOKEN, not generation: each render call takes its own `alive()` that
-  // is false only when its own document was superseded or a newer render of
-  // the SAME page started — never when an unrelated page renders.
+  // by token: each render call takes its own `alive()` that is false only
+  // when its own document was superseded or a newer render of the same page
+  // started.
   //
-  // VECTOR, not raster: the canvas carries the exact vector rasterization
-  // (scale = CSS px per PDF point, so 1 backing px per CSS px — no upscale
-  // blur), and the SELECTABLE TEXT comes from a pdf.js TextLayer (real DOM
-  // spans over the canvas, transparent, positioned by pdf.js itself). The
+  // Vector, not raster: the canvas carries the exact vector rasterization
+  // (1 backing px per CSS px — no upscale blur), and the selectable text
+  // comes from a pdf.js TextLayer (real DOM spans over the canvas). The
   // canvas is paint; the text div is the document: zooming re-renders the
   // vector at the new scale (never stretches pixels), and copy/paste +
-  // find-in-page work because the glyphs are DOM. There is no raster
-  // fallback — canvas + text layer is the single path (the SVG backend was
-  // removed upstream in pdf.js 4.0, and a second renderer would be legacy
-  // per RULES §8).
+  // find-in-page work because the glyphs are DOM. Canvas + text layer is
+  // the single path.
   const renderBitmap = useCallback(
     async (
       pdf: DocLike,
@@ -269,10 +259,9 @@ export default function Preview({
     if (sel && !sel.isCollapsed) return;
     const canvas = canvasRefs.current.get(n);
     const rect = (canvas ?? e.currentTarget).getBoundingClientRect();
-    // SyncTeX y grows DOWN from the page top (proven by y-sweep against
-    // the bundled sidecar: small y = top content, large y = bottom).
-    // Map through the scale-1 probe dims (true page points), never the
-    // DPR-folded render viewport. Falls back to canvas backing size.
+    // SyncTeX y grows down from the page top. Map through the scale-1
+    // probe dims (true page points), never the DPR-folded render viewport.
+    // Falls back to canvas backing size.
     const dims = dimsRef.current.get(n);
     const cssX = e.clientX - rect.left;
     const cssY = e.clientY - rect.top;
@@ -287,8 +276,7 @@ export default function Preview({
       x = cssX * scaleX;
       y = cssY * scaleY;
     }
-    // Hit feedback WITHOUT remount: toggle a class, remove after 300ms.
-    // (The old `key={flash}` trick recreated the canvas and blanked the view.)
+    // Hit feedback without remount: toggle a class, remove after 300ms.
     if (canvas) {
       canvas.classList.remove('synctex-hit');
       // Force reflow so rapid clicks retrigger the outline.
@@ -410,10 +398,10 @@ export default function Preview({
   );
 
   // Document open (per pdfUrl+stamp) + canonical reset to the pager page.
-  // Section-count state (numPages) commits TOGETHER with the doc identity so
-  // the shell list and the observer mount in the same pass. Per-task liveness
-  // (not a shared generation): a superseding document cancels the probe via
-  // docKey match; the load's own unmount cancels via the local flag.
+  // Section-count state (numPages) commits together with the doc identity so
+  // the shell list and the observer mount in the same pass. Per-task
+  // liveness: a superseding document cancels the probe via docKey match;
+  // the load's own unmount cancels via the local flag.
   useEffect(() => {
     if (!pdfUrl) return;
     let cancelled = false;
@@ -428,7 +416,7 @@ export default function Preview({
               PdfJsApi['TextLayer'] | null;
           }
         } catch {
-          /* headless/test env — canvas paint still commits without text */
+          /* no text layer here — canvas paint still commits */
         }
         const key = `${pdfUrl}#${stamp}`;
         let pdf: DocLike;
@@ -488,19 +476,15 @@ export default function Preview({
   }, [pdfUrl, stamp, probeDims, armJumpTimeout, bumpDims]);
 
   // Render the bitmap window: visible page immediately, neighbors idle.
-  // The jump scroll fires once the TARGET bitmap lands (not after the whole
+  // The jump scroll fires once the target bitmap lands (not after the whole
   // window), so pager jumps stick without waiting on neighbors. Awaited work
-  // NEVER touches canvas identity: render pixels offscreen, then commit —
-  // clearing a canvas whose bitmap is still referenced (same pass, other
-  // window) is what blanked every page but the window on large documents.
-  // Liveness is per-PAGE (inFlight token): a newer render of the SAME page
-  // supersedes the old one, but renders of OTHER pages never cancel each
-  // other — the generation-counter version of this effect starved itself on
-  // every StrictMode remount and every neighbor pass.
+  // never touches canvas identity: render pixels offscreen, then commit.
+  // Liveness is per-page (inFlight token): a newer render of the same page
+  // supersedes the old one; renders of other pages never cancel each other.
   const inFlightRef = useRef(new Map<string, number>());
-  // Phase is a COUNT of outstanding window renders, not a boolean: two
-  // overlapping passes (StrictMode remount, fast scroll) must not let the
-  // loser clear the winner's `rendering...` line while pixels are in flight.
+  // Phase is a count of outstanding window renders, not a boolean: two
+  // overlapping passes must not let the loser clear the winner's
+  // `rendering...` line while pixels are in flight.
   const phaseCountRef = useRef(0);
   const beginPhase = useCallback(() => {
     phaseCountRef.current++;
@@ -637,9 +621,8 @@ export default function Preview({
   // wins (rAF-throttled). The callback itself is O(changed) — it only
   // records ratios; the O(window) pick runs at most once per frame.
   // Shells mount per document, so observe on section count (numPages), not
-  // on doc identity: re-mounts re-fire this effect even when an idempotent
-  // recompile yields the SAME page count.
-  // Replaces all offsetTop math.
+  // on doc identity: re-mounts re-fire this effect even when a recompile
+  // yields the same page count.
   useEffect(() => {
     const box = scrollRef.current;
     if (!box || !docKey) return;

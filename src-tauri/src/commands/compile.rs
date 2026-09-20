@@ -25,11 +25,10 @@ pub fn compile_tex(
     input: String,
     workdir: String,
 ) -> Result<String, String> {
-    // Trust boundary (design §5): both strings come from the frontend, so
-    // each must resolve inside the live fs scope before anything else. The
-    // outdir derives from the app-cache dir server-side — safe by construction.
-    // Canonical forms drive the split (no raw-string slicing), so `..` /
-    // symlink games fail here, not at the engine spawn.
+    // Both strings arrive untrusted: each must resolve inside the live fs
+    // scope before anything else. The outdir derives from the app-cache
+    // dir server-side. Canonical forms drive the split (no raw-string
+    // slicing), so `..` / symlink escapes fail here, not at the spawn.
     let workdir_canon = require_allowed(&app, &workdir)?;
     let input_canon: Option<PathBuf> = if Path::new(&input).is_absolute() {
         Some(require_allowed(&app, &input)?)
@@ -101,10 +100,9 @@ pub fn compile_tex(
         }
     }
     let _ = stdout_handle.join();
-    // Hang-guard wait: ownership decided by ONE take() before the waiter
-    // starts (empty = cancel won → report cancelled; full = this waiter
-    // solely owns the child from here on). Exactly one owner reaps. The
-    // waiter itself is the shared core waiter the MCP jobs use.
+    // Ownership is decided by one take() before the waiter starts: empty
+    // means cancel won, full means this waiter solely owns the child.
+    // Exactly one owner reaps.
     let outcome = match state.0.lock().unwrap().take() {
         None => core::JobStatus::Cancelled,
         Some(c) => {

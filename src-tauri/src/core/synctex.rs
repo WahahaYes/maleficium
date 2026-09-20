@@ -1,11 +1,8 @@
 //! SyncTeX query arg-building against explicit session roots.
-//!
-//! The Tauri commands and the MCP tools share these builders: same CWD +
-//! argv derivation, same output tail. Only the transport differs.
 
 use std::path::PathBuf;
 
-/// Resolved forward-sync invocation: run INSIDE `dir` with `pdf_name`.
+/// Resolved forward-sync invocation: run inside `dir` with `pdf_name`.
 pub struct ForwardArgs {
     pub dir: PathBuf,
     pub pdf_name: String,
@@ -13,10 +10,8 @@ pub struct ForwardArgs {
     pub line: u32,
 }
 
-/// Derive forward-sync args: `pdf_path` is the absolute outdir pdf (the
-/// engine output the query runs against — outside any project root by
-/// design); `tex_rel` resolves inside the root (absolute visible source —
-/// the gz stores absolute Input paths).
+/// Derive forward-sync args: `pdf_path` is the absolute outdir pdf;
+/// `tex_rel` resolves inside the root (the gz stores absolute Input paths).
 pub fn forward_args(
     root_id: &str,
     pdf_path: &str,
@@ -42,15 +37,14 @@ pub fn forward_args(
     })
 }
 
-/// Resolved inverse-sync invocation: run INSIDE `dir` with the bare name.
+/// Resolved inverse-sync invocation: run inside `dir` with the bare name.
 pub struct InverseArgs {
     pub dir: PathBuf,
     pub pdf_name: String,
 }
 
-/// Derive inverse-sync args: `dir_path` is the absolute outdir (engine
-/// output, outside any project root by design); the pdf name is
-/// interpolated into the `page:x:y:name` tag, so it must be bare.
+/// Derive inverse-sync args: `dir_path` is the absolute outdir; the pdf name
+/// is interpolated into the `page:x:y:name` tag, so it must be bare.
 pub fn inverse_args(root_id: &str, dir_path: &str, pdf_name: &str) -> Result<InverseArgs, String> {
     crate::commands::guard::reject_empty_nul(dir_path)?;
     let dir_canon = PathBuf::from(dir_path)

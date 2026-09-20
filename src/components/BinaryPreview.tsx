@@ -1,10 +1,8 @@
 // BinaryPreview.tsx — rich preview for non-text files.
 //
-// Text stays in the editor; everything else lands here: images render,
-// video plays (native controls), PDFs reuse the continuous Preview,
-// anything unknown gets an honest binary notice (size + kind + warning).
-// Object URLs are revoked on path change/unmount (scale law: bytes stay at
-// the edge, never in shared state).
+// Images render, video plays (native controls), PDFs reuse the continuous
+// Preview, anything unknown gets an honest binary notice (size + kind).
+// Object URLs are revoked on path change/unmount.
 
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
@@ -42,8 +40,7 @@ export default function BinaryPreview({ path }: { path: string }) {
   }, [path, kind]);
 
   if (kind === 'pdf') {
-    // Source PDFs (figures, references) render through the same scroller as
-    // the compiled output: no separate viewer to learn or maintain.
+    // Source PDFs render through the same scroller as compiled output.
     return <Preview pdfUrl={path} stamp={0} />;
   }
 

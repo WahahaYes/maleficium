@@ -1,8 +1,7 @@
 // watcher.ts — live-tracking helpers: debounce + coalesce.
 //
-// Growth cap: coalesced latest-per-path only; a `git checkout` burst must not
-// trigger tree rebuilds, recompiles, or full re-reads per event.
-// Wiring to `watch()` from `@tauri-apps/plugin-fs` lives in App integration.
+// Coalesced latest-per-path only; bursts never trigger per-event rebuilds,
+// recompiles, or full re-reads.
 
 export type WatchKind = 'create' | 'modify' | 'delete';
 
@@ -18,7 +17,7 @@ export function coalesceEvents(events: WatchEventLike[]): WatchEventLike[] {
   return [...latest.values()];
 }
 
-/** Map a Tauri plugin-fs WatchEvent to our kinds; returns null for access/other noise. */
+/** Map a plugin-fs WatchEvent to our kinds; null for access/other noise. */
 export function classifyTauriEvent(ev: { type: unknown; paths: string[] }): WatchEventLike[] {
   const t = ev.type as unknown;
   let kind: WatchKind | null = null;

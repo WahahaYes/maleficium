@@ -1,8 +1,6 @@
-//! Filesystem operations against explicit session roots.
-//!
-//! The MCP sidecar is native code: Tauri capabilities do not gate it, so the
-//! session-root map below is the entire boundary. Every op resolves its path
-//! against a granted root and rejects escapes before touching the fs.
+//! Filesystem operations against explicit session roots. Every op resolves
+//! its path against a granted root and rejects escapes before touching
+//! the fs.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,8 +8,7 @@ use std::sync::{Mutex, OnceLock};
 
 use super::{hash_root, is_hidden_name, out_dir_for, FileEntry};
 
-/// Granted roots, keyed by session id. Additive per process: roots stay
-/// readable until quit; no forbid-on-close in v1.
+/// Granted roots, keyed by session id. Roots stay readable until quit.
 static ROOTS: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
 
 fn roots() -> &'static Mutex<HashMap<String, PathBuf>> {

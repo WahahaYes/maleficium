@@ -1,8 +1,7 @@
 // parseLog.ts — engine-log → clickable file:line entries (rebase-once).
 //
-// Pure function (tested). The producing command's dir is `base`; entries
-// resolving outside workspace `root` are shown, not clickable. Consumed by
-// `App.tsx` (Problems click-to-jump) and the `LogStream` event stream.
+// Pure function. The producing command's dir is `base`; entries resolving
+// outside workspace `root` are shown, not clickable.
 
 import { joinPath } from './paths';
 

@@ -1,8 +1,7 @@
 // file-history.ts — file-op undo (separate from text undo).
 //
-// Growth cap: 50-entry memory stack of path references only, never file bytes.
-// Inverse of every op is a move: delete MOVES to the app-local trash home
-// (`lib/paths.ts appTrashDir`; RULES §8: no legacy).
+// 50-entry memory stack of path references only, never file bytes.
+// Inverse of every op is a move: delete moves to the app-local trash home.
 
 export interface FileHistoryEntry {
   /** Original absolute path before the op. */

@@ -64,7 +64,7 @@ export function extOf(path: string): string {
   return dot >= 0 ? path.slice(dot).toLowerCase() : '';
 }
 
-/** MIME type for object-URL previews. Single ext→mime table (F-09). */
+/** MIME type for object-URL previews. Single ext→mime table. */
 const MIME_FOR_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -131,16 +131,15 @@ export function sortTreeEntries<T extends { name: string; type: string }>(entrie
 }
 
 export async function openProject(): Promise<string | null> {
-  // Dev-loop hook: `?project=/abs/dir` (or `#project=…`) preselects the root
-  // without a dialog (headless `tauri dev`, screenshots, scripted runs).
-  // Production path unchanged — dialog when no param is present.
+  // Preset hook: `?project=/abs/dir` (or `#project=…`) preselects the root
+  // without a dialog. No param → dialog.
   try {
     const q = new URLSearchParams(window.location.search);
     const h = window.location.hash.match(/project=([^&]+)/);
     const preset = q.get('project') ?? (h ? decodeURIComponent(h[1]) : null);
     if (preset) return preset;
   } catch {
-    /* non-browser/test env — fall through to dialog */
+    /* fall through to dialog */
   }
   const path = await openDialog({ directory: true, recursive: true });
   return path ?? null;
@@ -165,7 +164,7 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
 }
 
 /** Single-level listing for lazy tree expansion (metadata only, sorted). */
-/** Full recursive walk — main-file scan + watcher baseline ONLY, never the open path. */
+/** Full recursive walk for background scans — never on the open path. */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
   try {
     const entries = await readDir(root);

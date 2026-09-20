@@ -1,7 +1,7 @@
 // Pane.tsx — split wrapper (CSS split, no custom widget library).
 //
-// Growth cap: ratios are scalars (editorRatio/previewRatio 0..1); resizing never
-// grows content layers. (Popout/collapsed stubs cut — dead buttons lie.)
+// Ratios are scalars (editorRatio/previewRatio 0..1); resizing never
+// grows content layers.
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';

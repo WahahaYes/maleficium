@@ -36,7 +36,7 @@ export function parseGitPorcelain(text: string): {
     // Rename entries: `R  old -> new` — badge the new path.
     const arrow = path.indexOf(' -> ');
     if (arrow >= 0) path = path.slice(arrow + 4);
-    // Quoted paths from core.quotePath; strip quotes.
+    // Quoted paths arrive quoted; strip quotes.
     if (path.startsWith('"') && path.endsWith('"')) path = path.slice(1, -1);
     if (!path) continue;
     if (xy === '??') badges[path] = 'A';

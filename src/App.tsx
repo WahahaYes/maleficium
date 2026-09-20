@@ -94,19 +94,18 @@ export default function App({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStamp, setPdfStamp] = useState(0);
   const [currentLine, setCurrentLine] = useState(1);
-  // Ref mirror: forward SyncTeX reads via forwardSyncRef (subscribe-once
-  // listener) — state would go stale the same way compile did.
+  // Ref mirror: the subscribe-once listener reads forward SyncTeX via ref,
+  // never state.
   const currentLineRef = useRef(currentLine);
   currentLineRef.current = currentLine;
-  // Bumped on every inverse SyncTeX hit → EditorViewport flashes the line amber.
+  // Bumped on every inverse SyncTeX hit to flash the line amber.
   const [synctexFlash, setSynctexFlash] = useState(0);
-  // Ref mirror for the watcher closure (effect is [root]-scoped; fileName would go stale).
+  // Ref mirror for the watcher closure (the effect is root-scoped).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
   const buffersRef = useRef(buffers);
   buffersRef.current = buffers;
-  // Latest closures for the global keymap listener (subscribes once, never stale —
-  // untitled typing never touches `buffers`, so dep-driven resubscription misses it).
+  // Latest closures for the subscribe-once global keymap listener.
   const compileRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
@@ -216,9 +215,8 @@ export default function App({
     return res.mainFile;
   }, []);
 
-  // UI tree is 1 level + expand-on-demand. The recursive
-  // walk survives ONLY for main-file scan + watcher baseline (off open path).
-  // open timing emission proves O(depth 1) on large projects.
+  // UI tree is 1 level + expand-on-demand. The recursive walk runs only
+  // for main-file scan + watcher baseline, never on the open path.
   const reloadTree = useCallback(async (r: string, deep = false) => {
     const t0 = performance.now();
     const t = deep ? await listTreeDeep(r) : await listDir1Level(r);
@@ -279,15 +277,14 @@ export default function App({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);
 
-  // Recents for File > Open Recent: state (not derive-per-render — the menu
-  // reads it, openRoot writes it). Restored entries re-validate via stat.
+  // Recents for File > Open Recent as state. Restored entries re-validate
+  // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
   async function openRoot(r: string, opts?: { warm?: boolean }) {
-    // Trust-boundary Slice A: the runtime scope grant comes FIRST — under
-    // least-privilege static caps every fs call below (tree, stat, watch,
-    // main-file scan) resolves through this grant. The backend fails closed
-    // on invalid roots (empty/NUL/relative/missing/non-dir); a failed grant
-    // leaves the current project untouched (fail closed on the frontend too).
+    // The runtime scope grant comes first: every fs call below resolves
+    // through it. The backend fails closed on invalid roots
+    // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
+    // current project untouched.
     const grant = await grantProjectAccess(r);
     if (!grant.ok || !grant.path) {
       const msg = 'open refused: ' + (grant.error ?? 'grant failed').slice(0, 200);
@@ -304,17 +301,14 @@ export default function App({
     trash.clear();
     const m = await resolveMain(canon, null);
     setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
-    // Open the main file on project select (data-loss guard 2026-09-14:
-    // the editor must never sit on stale untitled content while the tree
-    // shows a project — a compile from that state wrote the HELLO stub
-    // over the real main file). No main → keep the current editor as-is.
+    // Open the main file on project select — the editor must never sit on
+    // stale untitled content while the tree shows a project. No main →
+    // keep the current editor as-is.
     if (m) await handleSelect(m);
-    // Cache-warm on open (user decision): a background compile starts AFTER
-    // the editor is populated — but ONLY when the engine cache is usable
-    // (previous output present). No cache → no surprise build; the preview
-    // waits for the user's explicit Ctrl+R. runCompile is reentrancy-safe
-    // (phase-ref gate) and reports through the normal stream — open never
-    // fails because warm failed.
+    // Cache-warm on open: a background compile starts after the editor is
+    // populated — but only when the engine cache is usable (previous output
+    // present). No cache → no surprise build; the preview waits for the
+    // user's explicit Ctrl+R. Open never fails because warm failed.
     if (opts?.warm && m) void warmCompile(m);
   }
 
@@ -328,10 +322,9 @@ export default function App({
     }
   }
 
-  // Restore-on-launch: the dev-loop `?project=` preset wins (scripted runs),
-  // else the most recent project that still resolves, else the Hello sample
-  // (current untitled state — no project forced). Runs once; only roots that
-  // ALL fail validation are pruned (a transient stat failure keeps entries).
+  // Restore-on-launch: the `?project=` preset wins, else the most recent
+  // project that still resolves, else the Hello sample (no project forced).
+  // Runs once; only roots that all fail validation are pruned.
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
@@ -348,10 +341,8 @@ export default function App({
       const stale: string[] = [];
       for (const r of recents) {
         try {
-          // Grant FIRST (design §4): under least-privilege static caps the
-          // validation stat below resolves only through the runtime grant.
-          // The grant fails closed on missing roots, so unreachable entries
-          // land in `stale` here — one grant-first path, no special cases.
+          // Grant first: the validation stat below resolves only through the
+          // runtime grant. Unreachable entries land in `stale` here.
           const grant = await grantProjectAccess(r);
           if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
           await stat(grant.path);
@@ -539,15 +530,15 @@ export default function App({
       });
       return;
     }
-    // App-local outdir (V-4, mirrors Rust `out_dir_for` over the app-cache
-    // dir): clean NEVER touches the project dir (RULES §8: no legacy).
+    // App-local outdir over the app-cache dir: clean never touches the
+    // project dir.
     const { appCacheDir } = await import('@tauri-apps/api/path');
     const { appOutDir } = await import('./lib/paths');
     const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
     const out = appOutDir(await appCacheDir(), dir);
     try {
-      // Per-entry removal (no recursive-remove capability needed): build
-      // artifacts only, never sources. Missing dir = already clean.
+      // Per-entry removal: build artifacts only, never sources. Missing
+      // dir = already clean.
       const { readDir, remove } = await import('@tauri-apps/plugin-fs');
       let entries = [];
       try {
@@ -601,9 +592,9 @@ export default function App({
     emit({ scope: 'fs', kind: 'success', message: 'main file set: ' + (m ?? '(none)') });
   }
 
-  // Main-file tie-break (D-7): the scan found >1 `\documentclass` and picked
-  // the first. Choosing here writes the explicit association (same path as
-  // Set as Main File), so the tie never reappears for this project.
+  // Main-file tie-break: the scan found >1 `\documentclass` and picked the
+  // first. Choosing here writes the explicit association, so the tie never
+  // reappears for this project.
   async function handlePickMain(path: string) {
     if (!root) return;
     await setMainFile(root, path);
@@ -639,12 +630,10 @@ export default function App({
     await runCompile(path);
   }
 
-  // (B) keymap listener subscribes ONCE and reads via refs. Adding
-  // a new global chord = extend `lib/keymap.ts` + this listener only (never a
-  // second window listener). Menu chords (Ctrl+O/W/G…) dispatch through the
-  // same command registry refs as MenuBar clicks — one path, no duplicates.
-  // Double-click in the editor = forward SyncTeX from the caret line
-  // (complements single-click inverse on the PDF canvas).
+  // Keymap listener subscribes once and reads via refs. Menu chords
+  // dispatch through the same command registry refs — one path, no
+  // duplicates. Double-click in the editor = forward SyncTeX from the
+  // caret line (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
   const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   useEffect(() => {
@@ -668,7 +657,7 @@ export default function App({
         e.preventDefault();
         setTreeVisible((v) => !v);
       } else if (mod && e.key === 'Tab') {
-        // Tab cycling is handled by BufferTabs when focused; global fallback:
+        // Tab cycling when the tab strip is not focused; global fallback:
         const keys = [...buffersRef.current.keys()];
         if (keys.length > 1) {
           e.preventDefault();
@@ -758,16 +747,14 @@ export default function App({
   }
 
   // Shared compile runner: `target` is the main-file target, or an explicit
-  // one-off file (compile-from-this-file bypasses the main association).
-  // `skipPersist` is the warm-open path only: the target was just loaded
-  // from disk, so there is nothing to persist — ownership is proven by the
-  // load itself, and warm never writes. All other callers persist through
-  // the ownership guard below.
+  // one-off file. `skipPersist` is the warm-open path only: the target was
+  // just loaded from disk, so there is nothing to persist — warm never
+  // writes. All other callers persist through the ownership check.
   // Reentrancy: a second call while `compiling` is a no-op returning false
   // (warm-on-open and double-Ctrl+R collapse into one run — never two
-  // engine children). Returns true when THIS call owned the run. The gate
-  // reads a REF (not state) so a warm run racing a user Ctrl+R in the same
-  // tick still collapses — state would be stale for both.
+  // engine children). Returns true when this call owned the run. The gate
+  // reads a ref (not state) so a warm run racing a user Ctrl+R in the same
+  // tick still collapses.
   const phaseRef = useRef('idle');
   async function runCompile(
     target: string | null,
@@ -831,13 +818,13 @@ export default function App({
       requestAnimationFrame(tickProbe);
     };
     requestAnimationFrame(tickProbe);
-    // DEFENSE IN DEPTH against clobbering (2026-09-14 data-loss bug): the
-    // persist step below writes editor content to `target`. Two invariants
-    // make that safe: (1) the visible editor must actually OWN `target`
-    // (buffered, or the untitled flow); (2) `target` must be a contained
-    // project file or an explicit one-off .tex — never a bare untitled name
-    // resolved against a project dir. Violations abort BEFORE any write.
-    // Warm skips both guard and persist (disk is fresh, warm never writes).
+    // Anti-clobber check: the persist step writes editor content to `target`.
+    // Two invariants make that safe: (1) the visible editor must actually
+    // own `target` (buffered, or the untitled flow); (2) `target` must be a
+    // contained project file or an explicit one-off .tex — never a bare
+    // untitled name resolved against a project dir. Violations abort before
+    // any write. Warm skips both check and persist (disk is fresh, warm
+    // never writes).
     const skipPersist = opts?.skipPersist === true;
     const ownsTarget =
       target == null ||
@@ -917,9 +904,8 @@ export default function App({
     setLog(r.ok ? (r.pdfPath ?? '') : r.log);
     const readEngineLog = async (): Promise<string | null> => {
       try {
-        // App-local outdir (V-4, mirrors Rust `out_dir_for` over the
-        // app-cache dir): the engine log lives in cache, never in the
-        // project (RULES §8: no legacy).
+        // App-local outdir over the app-cache dir: the engine log lives in
+        // cache, never in the project.
         const { appCacheDir } = await import('@tauri-apps/api/path');
         const { appOutDir } = await import('./lib/paths');
         const out = appOutDir(await appCacheDir(), workdir!);
@@ -940,7 +926,7 @@ export default function App({
       finish('failure');
       setCompileStart(null);
       setLogCollapsed(false);
-      setLog(r.log + ' (sidecar failed — see notes/01-compile-events/STATUS.md)');
+      setLog(r.log + ' (engine sidecar failed to start)');
       emit({ scope: 'compile', kind: 'error', message: String(r.log).slice(0, 300) });
       const c = await readEngineLog();
       publishProblems(c ?? r.log, mainDir, root || workdirHint);
@@ -968,14 +954,11 @@ export default function App({
   }
 
   // Cache-warm on open: a background compile of a freshly opened project's
-  // main file, AFTER the editor is populated (openRoot awaits handleSelect
-  // first). The write phase is skipped (skipPersist: disk is fresh, warm
-  // never writes), which also settles the handleSelect state race — the
-  // ownership guard reads pre-select closures, so warm bypasses it by
-  // construction instead of tripping it. Two honesty rules: (1) this runs
-  // only when the engine CACHE is usable — no cache entry means a full cold
-  // build, which is the user's explicit Ctrl+R to pay for, not open's;
-  // (2) a warm FAILURE is quiet (debug line only) — open must never look
+  // main file, after the editor is populated. The write phase is skipped
+  // (skipPersist: disk is fresh, warm never writes). Two rules: (1) this
+  // runs only when the engine cache is usable — no cache entry means a full
+  // cold build, which is the user's explicit Ctrl+R to pay for, not open's;
+  // (2) a warm failure is quiet (debug line only) — open must never look
   // broken because a background guess failed; the user's explicit Ctrl+R
   // reports loudly through the normal path.
   async function warmCompile(mainAbsPath: string) {
@@ -1130,13 +1113,10 @@ export default function App({
     });
   }
 
-  // (A) Latest-closure refs for the subscribe-once keymap listener below.
-  // The listener must never close over render state: assign every render and
-  // call only `*.current()`. Why: typing in an UNTITLED file (`hello.tex`, no
-  // `/`) updates `tex` alone — `buffers`/`fileName`/`root` never change, so a
-  // dep-driven listener never resubscribes and Ctrl+R compiles the mount-time
-  // buffer forever (the stale-compile bug). Placed after `compile` /
-  // `handleForwardSync` declarations so the names resolve.
+  // Latest-closure refs for the subscribe-once keymap listener. The listener
+  // never closes over render state: assign every render and call only
+  // `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
+  // listener would never resubscribe.
   compileRef.current = compile;
   forwardSyncRef.current = handleForwardSync;
   handleSelectRef.current = handleSelect;
@@ -1216,21 +1196,19 @@ export default function App({
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
-  // Anchor for the main-file tie-break menu (D-7): which element it opens from.
+  // Anchor for the main-file tie-break menu.
   const [mainAnchor, setMainAnchor] = useState<HTMLElement | null>(null);
-  // Rename dialog for the ACTIVE file (D-5): same persist-then-select path as
-  // the tree row dialog — the menu command opens it, the tree owns nothing.
+  // Rename dialog for the active file.
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
-  // Viewport bridge is assigned inside EditorViewport via viewportRef prop.
-  // Without it selectAll/expand/shrink/goToLine no-op (the Selection bug).
+  // Viewport bridge assigned via viewportRef prop. Without it
+  // selectAll/expand/shrink/goToLine no-op.
   const viewportRef = useRef<EditorViewportHandle | null>(null);
-  // Outline: active buffer only, debounced 500ms (scale law #3 — never per keystroke).
-  // Full-fidelity entries (parse DATA cap 1000); the VIEW slices to 100 per
-  // filter INSIDE OutlineView (filter-first, cap-second). Sections-only rows
-  // feed the Selection submenus (unchanged contract: sections navigate).
+  // Outline: active buffer only, debounced 500ms. Full-fidelity entries
+  // (parse cap 1000); the view slices to 100 per filter (filter-first,
+  // cap-second). Sections-only rows feed the Selection submenus.
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
-  // Multi-pick set for Selection > Pick Sections (choose-N demo + future batch ops).
+  // Multi-pick set for Selection > Pick Sections.
   const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1252,7 +1230,7 @@ export default function App({
     return () => clearTimeout(t);
   }, [tex, fileName]);
 
-  // Mirror compile bus → StatusBar phase/timer (placement only; 01 owns contract).
+  // Mirror compile bus → status bar phase/timer.
   useEffect(() => {
     const t = setInterval(() => {
       if (compileStart != null) setCompileTimer(Math.floor((Date.now() - compileStart) / 1000));
@@ -1267,7 +1245,7 @@ export default function App({
       if (fileName.includes('/')) {
         setBuffers((b) => updateBuffer(b, fileName, v));
       }
-      // Budget emission: keystroke-to-paint probe (target <50ms at 5MB).
+      // Keystroke-to-paint probe emission.
       requestAnimationFrame(() => {
         const dt = Math.round(performance.now() - t0);
         if (v.length > 1_000_000) {
@@ -1282,10 +1260,9 @@ export default function App({
     [fileName],
   );
 
-  // ---- Command registry binding (source of truth: lib/commands.ts) ----
-  // Menus, icon buttons, chords, and (later) MCP all invoke THESE actions.
-  // Rename needs the SAME project-file predicate the registry gates on —
-  // factored here so the menu action and buildMenus can't drift apart.
+  // ---- Command registry binding ----
+  // Menus, icon buttons, and chords invoke these actions. Rename uses the
+  // same project-file predicate the registry gates on.
   const isProjectFile = (p: string) => root != null && p.includes('/') && p.startsWith(root + '/');
   const compileTarget = mainFile ?? (fileName.includes('/') ? fileName : null);
   const workingLabel = (() => {
@@ -1304,8 +1281,7 @@ export default function App({
     preset: presetOf({ tree: treeVisible, editor: editorVisible, preview: previewOpen }),
     logCollapsed,
     outlineVisible,
-    // Selection submenus navigate SECTIONS (markers live in the outline view
-    // filter, not in menus — menus stay jump-targets, the view stays the map).
+    // Selection submenus navigate sections only.
     outlineLines: outline
       .filter((o) => o.kind === 'section')
       .map((o) => ({ line: o.line, title: o.title })),
@@ -1435,9 +1411,8 @@ export default function App({
     }
   };
 
-  // Quiet caption (D-6): the editor header names the file + its main file and
-  // nothing else. Buffer counts live on the tabs, trash depth on the StatusBar
-  // `↩ N`, transient outcomes in the LogStream — the caption never carries them.
+  // Quiet caption: the editor header names the file + its main file and
+  // nothing else.
   const mainLabel = relOf(mainFile) ?? '(none)';
   const mainTip =
     mainFile == null

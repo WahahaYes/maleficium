@@ -1,16 +1,10 @@
-// commands.ts — THE source of truth for app functionality.
+// commands.ts — every user-invokable action, registered once with a stable
+// namespaced id. Menus, buttons, chords, and tools invoke these entries;
+// no handler lives only inside a component.
 //
-// Architecture: every user-invokable action is a direct function registered
-// here with a stable namespaced id. The MenuBar, icon buttons, keyboard chords,
-// and (later) the MCP/agentic sidecar all invoke the SAME registry entries —
-// no handler lives only inside a component. `buildMenus(ctx, actions)` binds
-// pure command shapes to App's live handlers; UI renders sections only.
-//
-// Rules: ids `domain.verb-noun`; labels Title Case (`…` iff dialog); every
-// `accelerator` must exist in `lib/keymap.ts` KEYMAP (test asserts parity);
-// destructive commands confirm via MUI dialog (never `window.confirm`);
-// no disabled placeholders: every visible row runs (dead rows are deleted,
-// not dimmed — the inverse-hint row was cut for exactly this reason).
+// Ids are `domain.verb-noun`; labels are Title Case (`…` iff dialog); every
+// `accelerator` exists in the keymap; destructive commands confirm via
+// dialog; every visible row runs.
 
 export type CommandId =
   | 'file.open-project'
@@ -80,13 +74,13 @@ export interface MenuContext {
   outlineVisible: boolean;
   /** Outline section lines for the choose-1 / choose-N demo submenus. */
   outlineLines: { line: number; title: string }[];
-  /** Currently multi-picked outline lines (choose-N state lives in App). */
+  /** Currently multi-picked outline lines. */
   outlinePicks: number[];
   canUndoDelete: boolean;
   reloadPending: boolean;
   theme: 'dark' | 'light';
   density: Density;
-  /** Most-recent-first project roots for File > Open Recent (validated by App). */
+  /** Most-recent-first project roots for File > Open Recent. */
   recentProjects: string[];
 }
 
@@ -108,7 +102,7 @@ export interface CommandActions {
   goToLine: () => void;
   /** Choose-1-from-N: jump to one outline section. */
   pickOutlineSection: (line: number) => void;
-  /** Choose-N: toggle outline entries as a multi-pick set (demo + future batch ops). */
+  /** Choose-N: toggle outline entries as a multi-pick set. */
   toggleOutlinePick: (line: number) => void;
   setPreset: (p: Exclude<ViewPreset, 'custom'>) => void;
   toggleTree: () => void;
@@ -146,9 +140,7 @@ export interface MenuSection {
 }
 
 export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
-  // Outline submenus cap at 25 rows: a deliberate choice, not a stub — the
-  // full outline stays one click away in the tree column, and search-in-menu
-  // arrives with full-project search (closeout §C-3, still a non-goal).
+  // Outline submenus cap at 25 rows; the full outline lives in the tree column.
   const PICK_CAP = 25;
   return [
     {

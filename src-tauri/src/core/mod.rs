@@ -1,8 +1,5 @@
-//! Shared Rust core: guard validation, outdir derivation, sidecar
+//! Shared core: guard validation, outdir derivation, sidecar
 //! resolution, fs ops, compile orchestration, synctex arg-building.
-//!
-//! The Tauri commands (`commands/`) and the MCP tools (`mcp/`) are thin
-//! adapters over these functions — identical logic, two transports.
 
 pub mod compile;
 pub mod fs;
@@ -28,8 +25,6 @@ pub enum JobOutcome {
 }
 
 /// Own a child end-to-end: block on exit, kill + reap after `timeout_secs`.
-/// Shared by the Tauri command (Cancel races via the state slot) and the MCP
-/// job worker below.
 pub fn wait_for_child(mut child: Child, timeout_secs: u64) -> JobOutcome {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     loop {
@@ -54,7 +49,7 @@ pub fn wait_for_child(mut child: Child, timeout_secs: u64) -> JobOutcome {
     }
 }
 
-/// djb2 hex (8 chars) — mirrors `src/lib/paths.ts hashRoot`.
+/// djb2 hex (8 chars) for per-project dir sharding.
 pub fn hash_root(root: &str) -> String {
     let mut h: u32 = 5381;
     for b in root.bytes() {
@@ -68,9 +63,7 @@ pub fn out_dir_for(base: &Path, root: &str) -> PathBuf {
     base.join("maleficium-out").join(hash_root(root))
 }
 
-/// Base dir for all engine outputs: the OS app-cache dir, shared by the
-/// Tauri commands, the headless MCP sidecar, and the frontend log-read
-/// (which resolves the same location via `appCacheDir()`). Falls back to
+/// Base dir for all engine outputs: the OS app-cache dir. Falls back to
 /// the OS tmp tree when no cache location resolves.
 pub fn out_base_dir() -> PathBuf {
     const APP_ID: &str = "com.ethan.tauri-app";
@@ -87,7 +80,7 @@ pub fn out_base_dir() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Triple suffix matching `src-tauri/binaries/<name>-<triple>`.
+/// Triple suffix matching the bundled `<name>-<triple>` binaries.
 pub fn sidecar_triple() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
@@ -132,10 +125,8 @@ pub struct FileEntry {
 }
 
 /// Validate an engine outdir path: absolute, resolvable, a directory inside
-/// the app-cache tree. Outdirs live outside any project root by design (V-4),
-/// so they never validate against the project grant — containment here
-/// means "inside the app cache", which is exactly where `out_dir_for` puts
-/// them.
+/// the app-cache tree. Outdirs live outside any project root, so containment
+/// here means "inside the app cache".
 pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
     crate::commands::guard::reject_empty_nul(dir)?;
     let path = Path::new(dir);
@@ -158,7 +149,7 @@ pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
 }
 
 /// Validate an engine-output pdf path: absolute, resolvable, a `.pdf` file
-/// inside the app-cache tree. Same outdir story as `canonical_out_dir`.
+/// inside the app-cache tree.
 pub fn canonical_out_pdf(pdf: &str) -> Result<PathBuf, String> {
     crate::commands::guard::reject_empty_nul(pdf)?;
     let path = Path::new(pdf);

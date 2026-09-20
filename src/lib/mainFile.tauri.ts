@@ -1,6 +1,6 @@
 // mainFile.tauri.ts — Tauri-backed IO for mainFile resolution.
 //
-// Growth cap: metadata/paths only; file contents read transiently, never stored.
+// Metadata/paths only; file contents read transiently, never stored.
 
 import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
@@ -39,7 +39,7 @@ export async function resolveMainFileTauri(
     openedFile,
     readText: (p) => readTextFile(p),
     listTexFiles: listTexFilesRecursive,
-    // App-local store (V-3 clean cut — no in-project file read).
+    // App-local store read.
     readConfig: async (r) => {
       const rel = getMainFileFor(r);
       return rel ? JSON.stringify({ mainFile: rel }) : null;

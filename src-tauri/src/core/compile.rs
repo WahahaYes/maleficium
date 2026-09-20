@@ -1,8 +1,5 @@
-//! Compile orchestration against explicit session roots.
-//!
-//! The Tauri command and the MCP tool are thin adapters over `run` here:
-//! same sidecar resolution, same outdir shard, same hang guard, same
-//! `{ok, pdfPath, log}` contract as `src/lib/compile.ts`.
+//! Compile orchestration against explicit session roots: sidecar
+//! resolution, outdir sharding, hang guard, job table.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};

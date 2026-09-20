@@ -1,8 +1,7 @@
 // mainFile.store.ts — app-local main-file association.
 //
-// Clean cut per RULES §8: the explicit user association lives ONLY here
-// (`localStorage` map `maleficium.mainFile.v1`: project root → rel path).
-// The old in-project `.maleficium.json` is not read and not written.
+// The explicit user association lives only here (`localStorage` map:
+// project root → rel path). No in-project file is read or written.
 
 const KEY = 'maleficium.mainFile.v1';
 

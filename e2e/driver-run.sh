@@ -1,9 +1,8 @@
 #!/bin/bash
-# Driver-driven run over the MCP stdio sidecar (S0.3 proof, not static).
-# Spawns `maleficium-mcp`, scripts grant -> compile -> poll -> synctex ->
-# delete -> undo over JSON-RPC against a scratch copy of playground/simple/,
-# then asserts porcelain discipline + artifact homes. The static
-# `project-footprint.sh` stays as backstop; this proves the LIVE path.
+# Driver-driven run over the stdio sidecar. Spawns `maleficium-mcp`, scripts
+# grant -> compile -> poll -> synctex -> delete -> undo over JSON-RPC against
+# a scratch copy of playground/simple/, then asserts porcelain discipline +
+# artifact homes.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -2,11 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 /**
- * `compile_tex` backend contract (`src-tauri/src/commands/compile.rs`):
- * success returns the absolute outdir pdf path (`Ok(pdf…)`), failure
- * returns an error string. The engine log is NOT in this return — it
- * streams via `compile-line` events during the run, and the full `.log`
- * file lives in the app-local outdir (read separately).
+ * `compile_tex` backend contract: success returns the absolute outdir pdf
+ * path, failure returns an error string. The engine log is NOT in this
+ * return — it streams via `compile-line` events during the run, and the
+ * full `.log` file lives in the app-local outdir (read separately).
  *
  * Hence: `ok:true` → `pdfPath` is the pdf path, `log` is empty;
  * `ok:false` → `pdfPath` is null, `log` is the error message.

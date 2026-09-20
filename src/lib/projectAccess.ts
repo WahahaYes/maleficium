@@ -1,15 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /**
- * Runtime project-scope grant (trust-boundary Slice A).
+ * Runtime project-scope grant.
  *
  * Asks the backend to validate `root` (absolute, resolvable, a directory)
  * and mint a recursive fs-scope grant for it. Returns the backend's
- * canonical path on success — callers adopt it as `root` so later
- * comparisons are canonical-vs-canonical.
+ * canonical path on success.
  *
- * Failure contract (matches `compile.ts`/`synctex.ts` style):
- * `{ok:false}` with a message, never a throw.
+ * Failure contract: `{ok:false}` with a message, never a throw.
  */
 export type GrantResult = { ok: boolean; path: string | null; error: string | null };
 

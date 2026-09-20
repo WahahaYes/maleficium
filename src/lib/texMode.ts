@@ -1,7 +1,7 @@
 // texMode.ts — lightweight LaTeX grammar for CodeMirror (`StreamLanguage`).
 //
-// Growth cap: tokenize-only, no parse tree retained; viewport render unchanged.
-// Own grammar (ideas-only): commands, comments, math, braces.
+// Tokenize-only, no parse tree retained. Own grammar: commands, comments,
+// math, braces.
 
 import { StreamLanguage } from '@codemirror/language';
 

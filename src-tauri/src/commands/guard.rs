@@ -1,23 +1,15 @@
-//! Trust-boundary guards: input validation for IPC commands +
-//! the runtime project-scope grant.
+//! Input validation for IPC commands + the runtime project-scope grant.
 //!
-//! Rule (design §5): custom Rust commands validate inputs themselves and
-//! never trust the frontend. Validation lives server-side only — there is
-//! deliberately no frontend mirror.
-//!
-//! Layout: pure/testable helpers (`reject_empty_nul`, `require_absolute`,
-//! `is_bare_filename`, `require_repo_path`) + thin wrappers that touch the
-//! fs (`canonical_root`, `require_allowed` — both canonicalize and fail
-//! closed) + scope fetch (`live_scope`) + the one command that mints runtime
-//! scope (`grant_project_access`).
+//! Commands validate inputs themselves server-side and never trust the
+//! caller. There is no client-side mirror of these checks.
 
 use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 use tauri_plugin_fs::FsExt;
 
-/// Reject empty strings and anything containing a NUL byte. Every entry
-/// point below starts here — NUL would truncate at C boundaries downstream.
+/// Reject empty strings and anything containing a NUL byte. Every check
+/// below starts here — NUL would truncate at C boundaries downstream.
 pub fn reject_empty_nul(raw: &str) -> Result<&str, String> {
     if raw.is_empty() {
         return Err("forbidden path: empty".to_string());
@@ -28,7 +20,7 @@ pub fn reject_empty_nul(raw: &str) -> Result<&str, String> {
     Ok(raw)
 }
 
-/// Require an absolute path (pure — no fs access). Relative frontend strings
+/// Require an absolute path (pure — no fs access). Relative strings
 /// would resolve against an attacker-influenced CWD, so they never validate.
 pub fn require_absolute(path: &Path, raw: &str) -> Result<(), String> {
     if !path.is_absolute() {
@@ -38,13 +30,9 @@ pub fn require_absolute(path: &Path, raw: &str) -> Result<(), String> {
 }
 
 /// True when `name` is a bare filename: no `/`, `\`, or NUL, not
-/// empty, not `.`/`..`. Pure — no fs access. Used wherever a frontend
-/// string is interpolated into a tool argument rather than opened as a path
-/// (e.g. the synctex `page:x:y:name` tag, `HEAD:<file>`).
-///
-/// Note: path separators are rejected but interior dots are fine —
-/// `ch1..v2.tex` is a legal filename (`..` traverses only beside a
-/// separator, and separators never survive this check).
+/// empty, not `.`/`..`. Pure — no fs access. For strings interpolated
+/// into a tool argument rather than opened as a path.
+/// Path separators are rejected but interior dots are fine.
 pub fn is_bare_filename(name: &str) -> bool {
     if name.is_empty() || name.contains('\0') {
         return false;
@@ -60,8 +48,7 @@ pub fn is_bare_filename(name: &str) -> bool {
 
 /// Validate a candidate project root: non-empty, no NUL, absolute,
 /// canonicalizable (fails closed on missing paths — symlinks resolved), and
-/// a directory. Returns the canonical path, which callers adopt so later
-/// `starts_with` checks compare canonical-vs-canonical.
+/// a directory. Returns the canonical path.
 pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
     reject_empty_nul(raw)?;
     let path = Path::new(raw);
@@ -75,7 +62,7 @@ pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
-/// Validate a bare filename (no fs access). See `is_bare_filename`.
+/// Validate a bare filename (no fs access).
 pub fn require_bare_filename(name: &str) -> Result<&str, String> {
     if !is_bare_filename(name) {
         return Err(format!("forbidden name (not a bare filename): {}", name));
@@ -111,11 +98,9 @@ pub fn live_scope(app: &AppHandle) -> Result<tauri::fs::Scope, String> {
         .ok_or_else(|| "forbidden path: fs scope unavailable".to_string())
 }
 
-/// Validate that `candidate` canonicalizes to a path the LIVE fs scope
-/// currently allows (runtime grant from `grant_project_access`, dialog
-/// picks, or static capability homes). This is the enforcement behind
-/// every custom command: the scope is the source of truth, so commands
-/// accept exactly what the fs plugin itself would serve.
+/// Validate that `candidate` canonicalizes to a path the live fs scope
+/// currently allows. The scope is the source of truth: exactly what the
+/// fs plugin itself would serve is accepted.
 pub fn require_allowed(app: &AppHandle, candidate: &str) -> Result<PathBuf, String> {
     reject_empty_nul(candidate)?;
     let canon = Path::new(candidate)
@@ -129,15 +114,11 @@ pub fn require_allowed(app: &AppHandle, candidate: &str) -> Result<PathBuf, Stri
     }
 }
 
-/// Mint a recursive runtime fs-scope grant for one validated project root
-/// (design §4). Additive per session (design §7 Q2): previously opened roots
-/// stay readable until quit; no forbid-on-close in v1.
+/// Mint a recursive runtime fs-scope grant for one validated project root.
+/// Granted roots stay readable until quit. One unconditional code path for
+/// every open route (dialog pick, recent, restore, preset).
 ///
-/// The dialog-picked path also lands here unconditionally — the dialog grant
-/// is idempotent, and one unconditional code path beats four special cases
-/// (dialog pick, Open Recent, restore-on-launch, `?project=` preset).
-///
-/// Returns the canonical path string; the frontend adopts it as `root`.
+/// Returns the canonical path string.
 #[tauri::command]
 pub fn grant_project_access(app: AppHandle, root: String) -> Result<String, String> {
     let canon = canonical_root(&root)?;

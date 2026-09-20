@@ -1,8 +1,5 @@
-//! MCP sidecar: the production automation API in dev and prod.
-//!
-//! The Tauri commands (`commands/`) and these tools are thin adapters over
-//! the shared core (`core/`): identical functions, two transports. Guard
-//! containment is the entire boundary — capabilities do not gate native code.
+//! Automation API over stdio: every tool validates its session root and
+//! rejects escapes before touching the fs.
 
 use rmcp::{
     handler::server::wrapper::{Json, Parameters},

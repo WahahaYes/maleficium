@@ -1,11 +1,9 @@
 // recentProjects.ts — on-device store of opened projects + recents.
 //
-// The app remembers which project roots were opened (most-recent-first) so
-// launch can restore the last project instead of an empty shell. Storage is
-// app-local ONLY (localStorage, same pattern as mainFile.store): the project
-// dir is never touched. Entries are validated on read (absolute, trimmed,
-// deduped, capped) — stale roots (deleted/moved since) are pruned at restore
-// time by the caller, never here (this store never touches the fs).
+// Remembers opened project roots (most-recent-first) so launch restores the
+// last project instead of an empty shell. Storage is app-local only: the
+// project dir is never touched. Entries are validated on read (absolute,
+// trimmed, deduped, capped); stale roots are pruned at restore time.
 
 const KEY = 'maleficium.recentProjects.v1';
 
@@ -26,7 +24,7 @@ function clean(list: unknown): string[] {
   return out.slice(0, MAX_RECENT_PROJECTS);
 }
 
-/** Most-recent-first project roots (possibly stale — caller validates). */
+/** Most-recent-first project roots (possibly stale). */
 export function getRecentProjects(): string[] {
   try {
     const raw = localStorage.getItem(KEY);
@@ -49,7 +47,7 @@ export function touchRecentProject(root: string): string[] {
   return next;
 }
 
-/** Drop roots that no longer resolve (caller decides liveness). */
+/** Drop roots that no longer resolve. */
 export function pruneRecentProjects(keep: (root: string) => boolean): string[] {
   const next = getRecentProjects().filter(keep);
   try {
