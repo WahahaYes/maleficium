@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use super::guard::require_allowed;
+use super::guard::{require_allowed, require_bare_filename};
 use crate::core;
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
@@ -10,6 +10,33 @@ pub struct CompileState(pub Mutex<Option<std::process::Child>>);
 impl Default for CompileState {
     fn default() -> Self {
         Self(Mutex::new(None))
+    }
+}
+
+/// Derive the compile target from validated inputs. A relative `input` is
+/// never canonicalized, so it reaches the engine argv verbatim and must be a
+/// bare filename; an absolute one is split from its canonical form.
+fn derive_target(
+    workdir_canon: &Path,
+    input: &str,
+    input_canon: Option<PathBuf>,
+) -> Result<(PathBuf, String), String> {
+    match input_canon {
+        Some(canon) => {
+            let dir = canon
+                .parent()
+                .map(|d| d.to_path_buf())
+                .unwrap_or_else(|| workdir_canon.to_path_buf());
+            let file = canon
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .ok_or_else(|| format!("forbidden path (no file name): {}", input))?;
+            Ok((dir, file))
+        }
+        None => Ok((
+            workdir_canon.to_path_buf(),
+            require_bare_filename(input)?.to_string(),
+        )),
     }
 }
 
@@ -35,20 +62,7 @@ pub fn compile_tex(
     } else {
         None
     };
-    let (dir, main_file) = match input_canon {
-        Some(canon) => {
-            let d = canon
-                .parent()
-                .map(|d| d.to_path_buf())
-                .unwrap_or_else(|| workdir_canon.clone());
-            let f = canon
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| input.clone());
-            (d, f)
-        }
-        None => (workdir_canon.clone(), input.clone()),
-    };
+    let (dir, main_file) = derive_target(&workdir_canon, &input, input_canon)?;
     let outdir = core::out_dir_for(&core::out_base_dir(), &dir.to_string_lossy());
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
@@ -146,5 +160,31 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
             Ok(String::from("cancelled"))
         }
         None => Err(String::from("nothing to cancel")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_input_must_be_bare() {
+        let wd = PathBuf::from("/tmp/project");
+        assert!(derive_target(&wd, "../../escape.tex", None).is_err());
+        assert!(derive_target(&wd, "sub/main.tex", None).is_err());
+        assert!(derive_target(&wd, "..", None).is_err());
+        assert!(derive_target(&wd, "", None).is_err());
+        let (dir, file) = derive_target(&wd, "main.tex", None).unwrap();
+        assert_eq!(dir, wd);
+        assert_eq!(file, "main.tex");
+    }
+
+    #[test]
+    fn absolute_input_splits_canonical_path() {
+        let wd = PathBuf::from("/tmp/project");
+        let canon = PathBuf::from("/tmp/project/sub/main.tex");
+        let (dir, file) = derive_target(&wd, "/tmp/project/sub/main.tex", Some(canon)).unwrap();
+        assert_eq!(dir, PathBuf::from("/tmp/project/sub"));
+        assert_eq!(file, "main.tex");
     }
 }

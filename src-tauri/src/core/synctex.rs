@@ -10,18 +10,16 @@ pub struct ForwardArgs {
     pub line: u32,
 }
 
-/// Derive forward-sync args: `pdf_path` is the absolute outdir pdf;
-/// `tex_rel` resolves inside the root (the gz stores absolute Input paths).
+/// Derive forward-sync args: `pdf_path` is an engine-output pdf inside the
+/// app cache; `tex_rel` resolves inside the root (the gz stores absolute
+/// Input paths).
 pub fn forward_args(
     root_id: &str,
     pdf_path: &str,
     tex_rel: &str,
     line: u32,
 ) -> Result<ForwardArgs, String> {
-    crate::commands::guard::reject_empty_nul(pdf_path)?;
-    let pdf_canon = PathBuf::from(pdf_path)
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", pdf_path, e))?;
+    let pdf_canon = super::canonical_out_pdf(pdf_path)?;
     let tex_canon = super::fs::resolve_in(root_id, tex_rel)?;
     let (dir, name) = match (pdf_canon.parent(), pdf_canon.file_name()) {
         (Some(d), Some(n)) if !d.as_os_str().is_empty() => {
@@ -43,17 +41,12 @@ pub struct InverseArgs {
     pub pdf_name: String,
 }
 
-/// Derive inverse-sync args: `dir_path` is the absolute outdir; the pdf name
-/// is interpolated into the `page:x:y:name` tag, so it must be bare.
+/// Derive inverse-sync args: `dir_path` is an engine outdir inside the app
+/// cache; the pdf name is interpolated into the `page:x:y:name` tag, so it
+/// must be bare. A live session grant authorizes the query.
 pub fn inverse_args(root_id: &str, dir_path: &str, pdf_name: &str) -> Result<InverseArgs, String> {
-    crate::commands::guard::reject_empty_nul(dir_path)?;
-    let dir_canon = PathBuf::from(dir_path)
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", dir_path, e))?;
-    if !dir_canon.is_dir() {
-        return Err(format!("not a directory: {}", dir_path));
-    }
-    let _ = root_id;
+    super::fs::session_root(root_id)?;
+    let dir_canon = super::canonical_out_dir(dir_path)?;
     let name = crate::commands::guard::require_bare_filename(pdf_name)?.to_string();
     Ok(InverseArgs {
         dir: dir_canon,
@@ -146,5 +139,26 @@ mod tests {
         assert!(inverse_args(&id, "/tmp", "a/b.pdf").is_err());
         assert!(inverse_args(&id, "/tmp", "../x.pdf").is_err());
         assert!(inverse_args(&id, "/nonexistent-dir", "a.pdf").is_err());
+    }
+
+    #[test]
+    fn forward_rejects_pdf_outside_app_cache() {
+        let id = grant_tmp("outcache");
+        let root = crate::core::fs::session_root(&id).unwrap();
+        let pdf = root.join("main.pdf");
+        std::fs::write(&pdf, "%PDF").unwrap();
+        std::fs::write(root.join("a.tex"), "x").unwrap();
+        // Existing and canonicalizable, but not engine output: it must never
+        // become the sidecar CWD.
+        assert!(forward_args(&id, &pdf.to_string_lossy(), "a.tex", 1).is_err());
+    }
+
+    #[test]
+    fn inverse_rejects_dir_outside_app_cache() {
+        let id = grant_tmp("outcachedir");
+        let root = crate::core::fs::session_root(&id).unwrap();
+        // Existing dir plus a bare name: outdir containment is the only thing
+        // between this call and the sidecar.
+        assert!(inverse_args(&id, &root.to_string_lossy(), "main.pdf").is_err());
     }
 }
