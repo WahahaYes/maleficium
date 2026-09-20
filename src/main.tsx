@@ -4,27 +4,22 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App';
 import { createAppTheme } from './lib/theme';
 import { DEFAULT_PREFS } from './lib/appearance';
+import { DEVICE_PREF_KEYS, setAppStore, store } from './lib/app-store';
+import { localAppStore } from './lib/app-store.web';
 import { setProviders } from './lib/fs-provider';
 import { desktopFs, desktopDialog } from './lib/fs-provider.tauri';
 import './App.css';
 
+setAppStore(localAppStore);
 setProviders({ fs: desktopFs, dialog: desktopDialog });
 
 export function Root() {
-  const [mode, setMode] = React.useState<'dark' | 'light'>(() => {
-    try {
-      return localStorage.getItem('maleficium.theme') === 'light' ? 'light' : 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
-  const [density, setDensity] = React.useState<'comfortable' | 'compact'>(() => {
-    try {
-      return localStorage.getItem('maleficium.density') === 'compact' ? 'compact' : 'comfortable';
-    } catch {
-      return 'comfortable';
-    }
-  });
+  const [mode, setMode] = React.useState<'dark' | 'light'>(() =>
+    store().get(DEVICE_PREF_KEYS.theme) === 'light' ? 'light' : 'dark',
+  );
+  const [density, setDensity] = React.useState<'comfortable' | 'compact'>(() =>
+    store().get(DEVICE_PREF_KEYS.density) === 'compact' ? 'compact' : 'comfortable',
+  );
   const theme = React.useMemo(
     () => createAppTheme({ ...DEFAULT_PREFS, mode, density }),
     [mode, density],
@@ -36,20 +31,12 @@ export function Root() {
         themeMode={mode}
         onThemeMode={(m) => {
           setMode(m);
-          try {
-            localStorage.setItem('maleficium.theme', m);
-          } catch {
-            /* private mode */
-          }
+          store().set(DEVICE_PREF_KEYS.theme, m);
         }}
         density={density}
         onDensityMode={(d) => {
           setDensity(d);
-          try {
-            localStorage.setItem('maleficium.density', d);
-          } catch {
-            /* private mode */
-          }
+          store().set(DEVICE_PREF_KEYS.density, d);
         }}
       />
     </ThemeProvider>

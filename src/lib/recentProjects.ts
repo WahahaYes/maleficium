@@ -5,7 +5,9 @@
 // project dir is never touched. Entries are validated on read (absolute,
 // trimmed, deduped, capped); stale roots are pruned at restore time.
 
-const KEY = 'maleficium.recentProjects.v1';
+import { PROJECT_POINTER_KEYS, store } from './app-store';
+
+const KEY = PROJECT_POINTER_KEYS.recentProjects;
 
 /** Cap: recents are a short jump-list, not a log. */
 export const MAX_RECENT_PROJECTS = 10;
@@ -27,7 +29,7 @@ function clean(list: unknown): string[] {
 /** Most-recent-first project roots (possibly stale). */
 export function getRecentProjects(): string[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = store().get(KEY);
     if (!raw) return [];
     return clean(JSON.parse(raw));
   } catch {
@@ -39,21 +41,13 @@ export function getRecentProjects(): string[] {
 export function touchRecentProject(root: string): string[] {
   const p = root.trim();
   const next = clean([p, ...getRecentProjects()]);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    /* private mode — recents just won't persist */
-  }
+  store().set(KEY, JSON.stringify(next));
   return next;
 }
 
 /** Drop roots that no longer resolve. */
 export function pruneRecentProjects(keep: (root: string) => boolean): string[] {
   const next = getRecentProjects().filter(keep);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    /* private mode — recents just won't persist */
-  }
+  store().set(KEY, JSON.stringify(next));
   return next;
 }

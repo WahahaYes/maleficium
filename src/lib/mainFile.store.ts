@@ -1,13 +1,15 @@
 // mainFile.store.ts — app-local main-file association.
 //
-// The explicit user association lives only here (`localStorage` map:
-// project root → rel path). No in-project file is read or written.
+// The explicit user association lives only here (app-store map: project
+// root → rel path). No in-project file is read or written.
 
-const KEY = 'maleficium.mainFile.v1';
+import { PROJECT_POINTER_KEYS, store } from './app-store';
+
+const KEY = PROJECT_POINTER_KEYS.mainFileAssoc;
 
 function readAll(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = store().get(KEY);
     if (!raw) return {};
     const j = JSON.parse(raw) as unknown;
     if (typeof j !== 'object' || j === null) return {};
@@ -30,9 +32,5 @@ export function getMainFileFor(root: string): string | null {
 export function setMainFileFor(root: string, relPath: string): void {
   const all = readAll();
   all[root] = relPath;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(all));
-  } catch {
-    /* private mode — association just won't persist */
-  }
+  store().set(KEY, JSON.stringify(all));
 }

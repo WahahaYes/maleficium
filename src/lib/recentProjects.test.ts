@@ -5,6 +5,10 @@ import {
   pruneRecentProjects,
   MAX_RECENT_PROJECTS,
 } from './recentProjects';
+import { setAppStore } from './app-store';
+import { localAppStore } from './app-store.web';
+
+setAppStore(localAppStore);
 
 const store: Record<string, string> = {};
 vi.stubGlobal('localStorage', {

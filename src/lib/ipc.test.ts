@@ -3,6 +3,11 @@ import { classifyTauriEvent } from './watcher';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { matchesCompile, matchesForwardSync, menuChordId, KEYMAP } from './keymap';
 
+import { setAppStore } from './app-store';
+import { localAppStore } from './app-store.web';
+
+setAppStore(localAppStore);
+
 const store: Record<string, string> = {};
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => store[k] ?? null,

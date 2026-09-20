@@ -74,6 +74,7 @@ import {
 import { appOutDir, hashRoot } from './lib/paths';
 import { grantProjectAccess } from './lib/projectAccess';
 import { watch } from '@tauri-apps/plugin-fs';
+import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
 import { appCacheDir } from '@tauri-apps/api/path';
 import { coalesceEvents, classifyTauriEvent, debounce } from './lib/watcher';
@@ -1540,7 +1541,7 @@ export default function App({
   const [previewOpen, setPreviewOpen] = useState(true);
   const [layout, setLayout] = useState(() => {
     try {
-      const raw = localStorage.getItem('maleficium.layout');
+      const raw = store().get(DEVICE_PREF_KEYS.layout);
       if (raw) {
         const j = JSON.parse(raw) as Partial<{
           editorRatio: number;
@@ -1562,11 +1563,7 @@ export default function App({
     return { editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 };
   });
   useEffect(() => {
-    try {
-      localStorage.setItem('maleficium.layout', JSON.stringify(layout));
-    } catch {
-      /* private mode — layout just won't persist */
-    }
+    store().set(DEVICE_PREF_KEYS.layout, JSON.stringify(layout));
   }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
