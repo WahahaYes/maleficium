@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import process from 'node:process';
@@ -30,5 +31,13 @@ export default defineConfig(() => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ['**/src-tauri/**'],
     },
+  },
+  // Unit tests: pure logic and injected-IO hooks under src/. Node, not a DOM:
+  // nothing here renders; components are proven by the stills harness.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.{ts,tsx}'],
+    pool: 'forks',
+    testTimeout: 5_000,
   },
 }));
