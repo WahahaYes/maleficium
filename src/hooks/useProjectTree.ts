@@ -6,12 +6,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { watch } from '@tauri-apps/plugin-fs';
 import { emit } from '../lib/events';
 import { listDir1Level, listTreeDeep, openProject, type TreeEntry } from '../lib/files';
 import { grantProjectAccess } from '../lib/projectAccess';
 import { getRecentProjects, pruneRecentProjects, touchRecentProject } from '../lib/recentProjects';
-import { classifyTauriEvent, coalesceEvents, debounce } from '../lib/watcher';
+import { coalesceEvents, debounce } from '../lib/watcher';
+import { watchBackend, type WatchChangeEvent } from '../lib/watch-backend';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
@@ -70,7 +70,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     if (!root) return;
     let unwatch: (() => void) | null = null;
     let cancelled = false;
-    const pending: { kind: 'create' | 'modify' | 'delete'; path: string }[] = [];
+    const pending: WatchChangeEvent[] = [];
     const flush = debounce(() => {
       if (cancelled || pending.length === 0) return;
       const batch = coalesceEvents(pending.splice(0));
@@ -101,22 +101,20 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         });
       }
     }, 250);
-    watch(
-      root,
-      (ev) => {
-        for (const c of classifyTauriEvent(ev)) pending.push(c);
+    watchBackend()
+      .watch(root, (changes) => {
+        pending.push(...changes);
         flush();
-      },
-      { recursive: true, delayMs: 250 },
-    ).then(
-      (u) => {
-        if (!cancelled) unwatch = u;
-        else u();
-      },
-      () => {
-        /* watcher unavailable (web fallback) — tree still works via manual reload */
-      },
-    );
+      })
+      .then(
+        (u) => {
+          if (!cancelled) unwatch = u;
+          else u();
+        },
+        () => {
+          /* watcher unavailable — the tree still refreshes on manual reload */
+        },
+      );
     return () => {
       cancelled = true;
       if (unwatch) unwatch();

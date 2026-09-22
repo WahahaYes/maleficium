@@ -12,11 +12,14 @@ import { setProviders } from './lib/fs-provider';
 import { desktopFs, desktopDialog } from './lib/fs-provider.tauri';
 import { setStructure } from './lib/structure';
 import { desktopStructure } from './lib/structure.tauri';
+import { setWatchBackend } from './lib/watch-backend';
+import { desktopWatch } from './lib/watch-backend.tauri';
 import './App.css';
 
 setAppStore(localAppStore);
 setProviders({ fs: desktopFs, dialog: desktopDialog });
 setStructure(desktopStructure);
+setWatchBackend(desktopWatch);
 
 export function Root() {
   const [prefs, setPrefs] = React.useState<AppearancePrefs>(loadAppearance);

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyTauriEvent } from './watcher';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { hashRoot } from './paths';
 import { matchesCompile, matchesForwardSync, menuChordId, KEYMAP } from './keymap';
@@ -34,30 +33,6 @@ function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent
     ...init,
   } as KeyboardEvent;
 }
-
-describe('watcher classify', () => {
-  it('maps create/remove/modify shapes to watcher kinds', () => {
-    expect(classifyTauriEvent({ type: { create: true }, paths: ['/a'] })).toEqual([
-      { kind: 'create', path: '/a' },
-    ]);
-    expect(classifyTauriEvent({ type: { remove: true }, paths: ['/a'] })).toEqual([
-      { kind: 'delete', path: '/a' },
-    ]);
-    expect(classifyTauriEvent({ type: { modify: true }, paths: ['/a'] })).toEqual([
-      { kind: 'modify', path: '/a' },
-    ]);
-    expect(classifyTauriEvent({ type: 'any', paths: ['/a'] })).toEqual([
-      { kind: 'modify', path: '/a' },
-    ]);
-  });
-  it('drops access noise and fans out multiple paths', () => {
-    expect(classifyTauriEvent({ type: { access: true }, paths: ['/a'] })).toEqual([]);
-    expect(classifyTauriEvent({ type: { modify: true }, paths: ['/a', '/b'] })).toEqual([
-      { kind: 'modify', path: '/a' },
-      { kind: 'modify', path: '/b' },
-    ]);
-  });
-});
 
 describe('main-file store round-trip', () => {
   it('persists the explicit association per project root', () => {
