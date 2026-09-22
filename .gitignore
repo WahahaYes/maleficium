@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Engine sidecars: fetched/built by scripts/fetch-sidecars.sh, never tracked
+src-tauri/binaries/

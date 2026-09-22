@@ -58,12 +58,12 @@ else
     if [ -x "$ROOT/src-tauri/binaries/tectonic-$triple$exe" ]; then
         echo "freshness: tectonic sidecar present for $triple."
     else
-        warn "FRESHNESS ERROR: tectonic sidecar missing or not executable: src-tauri/binaries/tectonic-$triple$exe"
+        warn "FRESHNESS ERROR: tectonic sidecar missing or not executable: src-tauri/binaries/tectonic-$triple$exe — run: sh scripts/fetch-sidecars.sh"
     fi
     if [ -x "$ROOT/src-tauri/binaries/synctex-$triple$exe" ]; then
         echo "freshness: synctex sidecar present for $triple."
     else
-        warn "FRESHNESS WARN: synctex sidecar missing for $triple — SyncTeX degrades to an honest no-match on unbuilt triples."
+        warn "FRESHNESS WARN: synctex sidecar missing for $triple — SyncTeX degrades to an honest no-match on unbuilt triples (x86_64 Linux: sh scripts/fetch-sidecars.sh)."
     fi
 fi
 

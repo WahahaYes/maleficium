@@ -6,9 +6,10 @@ Pre-release: no shipped version, no user-data compatibility between builds.
 
 ## Develop
 
-Prerequisites: Node, Rust, and system webkit2gtk for Tauri.
+Prerequisites: Node, Rust, and system webkit2gtk for Tauri. The engine sidecars are not in git: fetching them needs network, curl, python3, and (for SyncTeX) git, gcc and static zlib.
 
 - `npm install`
+- `sh scripts/fetch-sidecars.sh` — once: Tectonic release binaries (sha256-checked) and SyncTeX built from pinned source into `src-tauri/binaries/`
 - `npm run dev:desktop` — desktop app
 - `npm run dev` — web-only Vite frontend
 
