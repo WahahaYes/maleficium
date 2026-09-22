@@ -235,6 +235,7 @@ check_log "log.open file.save revision.record fs.external"
 # stills through the warm run, then a settled done-still.
 log "pre-warming engine cache via driver"
 HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
+  DRIVER_CACHE="$FAKEHOME/.cache" \
   MCP_ROOT_OVERRIDE="$FIX/simple" DRIVER_LOG="$OUT/driver-warm.jsonl" \
   WARM_ONLY=1 POLL_ROUNDS=150 \
   bash "$ROOT/e2e/driver-run.sh" >>"$OUT/dev.log" 2>&1 || die "warm driver failed"
