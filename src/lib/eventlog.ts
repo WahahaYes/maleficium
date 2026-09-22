@@ -19,7 +19,8 @@
 import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { appEventLogDir, eventLogPath } from './paths';
-import { emit, list, subscribe } from './events';
+import { emit } from './events';
+import { transport } from './event-transport';
 import type { AppEvent, BusEvent, LogLine } from './generated/events';
 import type { RecordOutcome } from './history';
 
@@ -130,9 +131,9 @@ export function startEventLog(): EventLog {
   let recording = true;
   let flushing = false;
   const kept: string[] = [];
-  let pending: string[] = list().map(serializeEvent);
+  let pending: string[] = transport().snapshot().map(serializeEvent);
 
-  const unsub = subscribe((e) => {
+  const unsub = transport().subscribe((e) => {
     if (recording) pending.push(serializeEvent(e));
   });
 

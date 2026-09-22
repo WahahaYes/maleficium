@@ -32,7 +32,7 @@ import type { DocLike, TextLayerCtor } from '../hooks/usePdfDocument';
 import { useBitmapWindow } from '../hooks/useBitmapWindow';
 import { useSyncLock } from '../hooks/useSyncLock';
 
-interface PreviewProps {
+export interface PreviewProps {
   pdfUrl: string | null;
   stamp: number;
   pageNumber?: number;

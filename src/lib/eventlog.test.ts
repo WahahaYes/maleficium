@@ -12,6 +12,7 @@ vi.mock('@tauri-apps/api/path', () => ({
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { appDataDir } from '@tauri-apps/api/path';
 import * as events from './events';
+import { transport } from './event-transport';
 import { appEventLogDir, eventLogPath } from './paths';
 
 import { setProviders } from './fs-provider';
@@ -66,7 +67,7 @@ describe('event log path', () => {
 
 describe('event serialization', () => {
   beforeEach(() => {
-    events.clear();
+    transport().clear();
   });
 
   it('writes one parseable JSON line carrying the structured payload', () => {
@@ -140,10 +141,10 @@ describe('event log retention', () => {
 describe('event log recording', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    events.clear();
+    transport().clear();
   });
   afterEach(() => {
-    events.clear();
+    transport().clear();
   });
 
   it('starts the run from an empty file and appends the stream', async () => {
@@ -216,7 +217,11 @@ describe('event log recording', () => {
         event: { action: 'file.load', path: 'p' },
       });
       await expect(settle(log)).resolves.toBeUndefined();
-      expect(events.list().map((e) => e.message)).toContain('still runs');
+      expect(
+        transport()
+          .snapshot()
+          .map((e) => e.message),
+      ).toContain('still runs');
     } finally {
       log.stop();
     }

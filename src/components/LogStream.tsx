@@ -11,7 +11,8 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import Typography from '@mui/material/Typography';
-import { list, subscribe, clear, tailEvents, eventOf } from '../lib/events';
+import { tailEvents, eventOf } from '../lib/events';
+import { transport } from '../lib/event-transport';
 import type { BusEvent } from '../lib/generated/events';
 
 /** A problem's jump target: root-relative, inside a known session root. */
@@ -69,14 +70,14 @@ export default function LogStream({
   onToggleCollapse: () => void;
   onJump: (target: ProblemRef) => void;
 }) {
-  const [evts, setEvts] = useState<BusEvent[]>(() => list());
+  const [evts, setEvts] = useState<BusEvent[]>(() => transport().snapshot());
   const dirty = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ y: number; height: number } | null>(null);
 
   useEffect(
     () =>
-      subscribe(() => {
+      transport().subscribe(() => {
         dirty.current = true;
       }),
     [],
@@ -85,7 +86,7 @@ export default function LogStream({
     const t = setInterval(() => {
       if (dirty.current) {
         dirty.current = false;
-        setEvts(list());
+        setEvts(transport().snapshot());
       }
     }, 250);
     return () => clearInterval(t);
@@ -165,7 +166,7 @@ export default function LogStream({
         <Button
           size="small"
           onClick={() => {
-            clear();
+            transport().clear();
             setEvts([]);
           }}
         >

@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useFileOps, type UseFileOpsDeps } from './useFileOps';
 import { setProviders, type DirEntry, type FsProvider } from '../lib/fs-provider';
 import { FileHistory } from '../lib/file-history';
-import * as events from '../lib/events';
+import { transport } from '../lib/event-transport';
 import type { BufferState } from '../lib/buffers';
 
 /** Flat in-memory filesystem: path → text. Directories are implicit. */
@@ -109,13 +109,16 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
   return { state, trash, ops: () => useFileOps(deps()) };
 }
 
-const data = (i: number) => events.list()[i].event as Record<string, unknown>;
-const actions = () => events.list().map((_, i) => data(i).action);
+const data = (i: number) => transport().snapshot()[i].event as Record<string, unknown>;
+const actions = () =>
+  transport()
+    .snapshot()
+    .map((_, i) => data(i).action);
 
 let files: Map<string, string>;
 
 beforeEach(() => {
-  events.clear();
+  transport().clear();
   files = new Map([
     ['/p/main.tex', 'main'],
     ['/p/fig.tex', 'fig body'],
@@ -231,7 +234,7 @@ describe('useFileOps clean', () => {
       rootId: 's1',
       mainRel: 'untitled.tex',
     });
-    expect(events.list()[0].message).toBe('Clean: already clean');
+    expect(transport().snapshot()[0].message).toBe('Clean: already clean');
   });
 
   it('refuses a target outside every root without calling the backend', async () => {

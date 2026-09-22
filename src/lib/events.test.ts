@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as events from './events';
+import { transport } from './event-transport';
 import type { BusEvent } from './generated/events';
 
 describe('events bus', () => {
   beforeEach(() => {
-    events.clear();
+    transport().clear();
   });
 
   it('assigns Date.now-ish at when omitted', () => {
@@ -35,7 +36,7 @@ describe('events bus', () => {
   });
 
   it('keeps only 500 events, evicting oldest', () => {
-    events.clear();
+    transport().clear();
     for (let i = 1; i <= 600; i++) {
       events.emit({
         scope: 'app',
@@ -45,16 +46,16 @@ describe('events bus', () => {
         event: { action: 'file.load', path: 'p' },
       });
     }
-    const list = events.list();
+    const list = transport().snapshot();
     expect(list.length).toBe(500);
     expect(list[0].message).toBe('m101');
     expect(list[list.length - 1].message).toBe('m600');
   });
 
   it('subscriber receives events, unsub stops delivery', () => {
-    events.clear();
+    transport().clear();
     const received: BusEvent[] = [];
-    const unsub = events.subscribe((e) => {
+    const unsub = transport().subscribe((e) => {
       received.push(e);
     });
     events.emit({
@@ -86,7 +87,7 @@ describe('events bus', () => {
   });
 
   it('clear empties the list', () => {
-    events.clear();
+    transport().clear();
     events.emit({
       scope: 'app',
       kind: 'info',
@@ -94,13 +95,13 @@ describe('events bus', () => {
       message: 'test',
       event: { action: 'file.load', path: 'p' },
     });
-    expect(events.list().length).toBe(1);
-    events.clear();
-    expect(events.list().length).toBe(0);
+    expect(transport().snapshot().length).toBe(1);
+    transport().clear();
+    expect(transport().snapshot().length).toBe(0);
   });
 
   it('renders newest 100 oldest-first, passes short lists through', () => {
-    events.clear();
+    transport().clear();
     for (let i = 1; i <= 250; i++) {
       events.emit({
         scope: 'app',
@@ -110,11 +111,11 @@ describe('events bus', () => {
         event: { action: 'file.load', path: 'p' },
       });
     }
-    const tail = events.tailEvents(events.list());
+    const tail = events.tailEvents(transport().snapshot());
     expect(tail.length).toBe(100);
     expect(tail[0].message).toBe('m151');
     expect(tail[tail.length - 1].message).toBe('m250');
-    const short = events.tailEvents(events.list().slice(0, 3));
+    const short = events.tailEvents(transport().snapshot().slice(0, 3));
     expect(short.map((e) => e.message)).toEqual(['m1', 'm2', 'm3']);
   });
 });

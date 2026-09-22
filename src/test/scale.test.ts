@@ -1,5 +1,6 @@
 import { makeTmpRoot, makeSingle, makeMulti, makeImageDoc } from './fixtures';
-import { emit, list, clear } from '../lib/events';
+import { emit } from '../lib/events';
+import { transport } from '../lib/event-transport';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
@@ -30,7 +31,7 @@ describe('scale fixtures', () => {
 
 describe('scale budgets', () => {
   it('5000 bus emits stay capped at 500', () => {
-    clear();
+    transport().clear();
     for (let i = 0; i < 5000; i++) {
       emit({
         scope: 'compile',
@@ -40,7 +41,7 @@ describe('scale budgets', () => {
         event: { action: 'file.load', path: 'p' },
       });
     }
-    expect(list().length).toBe(500);
-    expect(list()[0].message).toBe('m4500');
+    expect(transport().snapshot().length).toBe(500);
+    expect(transport().snapshot()[0].message).toBe('m4500');
   });
 });
