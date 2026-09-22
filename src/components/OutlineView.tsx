@@ -24,6 +24,7 @@ import TableChartIcon from '@mui/icons-material/TableChart';
 import InputIcon from '@mui/icons-material/Input';
 import type { OutlineEntry, OutlineKind } from '../lib/generated/structure';
 import { filterOutline, searchOutline, type OutlineFilter } from '../lib/outline.view';
+import { typeScale } from '../lib/theme';
 
 const VIEW_CAP = 100;
 
@@ -101,7 +102,7 @@ export default function OutlineView({
           aria-label="Filter symbols"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+          sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: typeScale.dense } }}
         />
         <ToggleButtonGroup
           size="small"

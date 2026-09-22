@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import { tailEvents, eventOf } from '../lib/events';
 import { transport } from '../lib/event-transport';
 import type { BusEvent } from '../lib/generated/events';
+import { typeScale } from '../lib/theme';
 
 /** A problem's jump target: root-relative, inside a known session root. */
 export interface ProblemRef {
@@ -46,8 +47,8 @@ function RowText({ e }: { e: BusEvent }) {
     <Typography
       variant="body2"
       sx={{
-        fontFamily: 'monospace',
-        fontSize: 12,
+        fontFamily: typeScale.uiMonoFamily,
+        fontSize: typeScale.dense,
         color: kindColor(e.kind),
         overflowWrap: 'anywhere',
       }}

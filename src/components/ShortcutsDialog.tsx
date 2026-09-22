@@ -10,6 +10,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableRow from '@mui/material/TableRow';
 import { KEYMAP } from '../lib/keymap';
+import { typeScale } from '../lib/theme';
 
 export default function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -21,7 +22,7 @@ export default function ShortcutsDialog({ open, onClose }: { open: boolean; onCl
             {KEYMAP.map((k) => (
               <TableRow key={k.id}>
                 <TableCell>{k.label}</TableCell>
-                <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                <TableCell align="right" sx={{ fontFamily: typeScale.uiMonoFamily }}>
                   {k.keys}
                 </TableCell>
               </TableRow>

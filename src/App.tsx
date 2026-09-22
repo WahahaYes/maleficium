@@ -582,7 +582,6 @@ export default function App({
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  void previewCollapsed;
   const fileTreeVisible = treeVisible;
   const [outlineVisible, setOutlineVisible] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);

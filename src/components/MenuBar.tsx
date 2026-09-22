@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import type { MenuCommand, MenuSection } from '../lib/commands';
+import { typeScale } from '../lib/theme';
 
 function Row({ c, close }: { c: MenuCommand; close: () => void }) {
   const [subAnchor, setSubAnchor] = useState<HTMLElement | null>(null);
@@ -73,7 +74,7 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ ml: 3, fontFamily: 'monospace' }}
+                  sx={{ ml: 3, fontFamily: typeScale.uiMonoFamily }}
                 >
                   {k.accelerator}
                 </Typography>
@@ -106,7 +107,7 @@ function Row({ c, close }: { c: MenuCommand; close: () => void }) {
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ ml: 3, fontFamily: 'monospace' }}
+          sx={{ ml: 3, fontFamily: typeScale.uiMonoFamily }}
         >
           {c.accelerator}
         </Typography>

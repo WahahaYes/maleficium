@@ -12,17 +12,14 @@ import { parseVscodeTheme, resolveTier1 } from './vscodeTheme';
 export type Density = 'comfortable' | 'compact';
 export type ThemeMode = 'dark' | 'light';
 
-export const densitySpacing = (d: Density) => ({
-  railPadding: d === 'comfortable' ? 8 : 4,
-  toolbarGap: d === 'comfortable' ? 16 : 8,
-  editorPadding: d === 'comfortable' ? 16 : 8,
-  treeIndent: d === 'comfortable' ? 16 : 10,
-});
-
 export const typeScale = {
   editorMono: 14,
   ui: 13,
   caption: 11,
+  /** Dense rows: log lines, the outline filter field. */
+  dense: 12,
+  /** Chords, accelerators, and log lines outside the editor. */
+  uiMonoFamily: 'monospace',
   editorFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
 } as const;
 

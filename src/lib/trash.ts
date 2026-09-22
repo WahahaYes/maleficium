@@ -7,12 +7,6 @@ import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
 import { appTrashDir } from './paths';
 
-/** App-local trash home for this project. */
-export async function trashDir(root: string): Promise<string> {
-  const base = await appDataDir();
-  return appTrashDir(base, root);
-}
-
 export async function moveToTrash(
   history: FileHistory,
   root: string,
@@ -20,7 +14,7 @@ export async function moveToTrash(
 ): Promise<{ ok: boolean; error?: string }> {
   let dir: string;
   try {
-    dir = await trashDir(root);
+    dir = appTrashDir(await appDataDir(), root);
   } catch (e) {
     return { ok: false, error: String(e) };
   }
