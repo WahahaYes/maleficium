@@ -2,7 +2,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { FileHistory } from './file-history';
 import { coalesceEvents, debounce } from './watcher';
 import { sortTreeEntries, isHiddenName, LARGE_FILE_BYTES } from './files';
-import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './buffers';
+import {
+  getOrCreateBuffer,
+  updateBuffer,
+  markSaved,
+  enforceBufferCap,
+  renameBuffer,
+  dropBuffer,
+  reloadBuffer,
+} from './buffers';
 
 describe('FileHistory 50-entry cap', () => {
   it('evicts oldest past 50', () => {
@@ -93,5 +101,28 @@ describe('buffer cap', () => {
     expect(kept.size).toBe(10);
     expect(kept.get('/f10.tex')?.dirty).toBe(true);
     expect(kept.has('/f0.tex')).toBe(false);
+  });
+});
+
+describe('buffer file-op transforms', () => {
+  const b = { value: 'x', dirty: true, version: 2 };
+
+  it('renameBuffer re-keys and keeps the state object', () => {
+    const next = renameBuffer(new Map([['/a', b]]), '/a', '/b');
+    expect(next.get('/b')).toBe(b);
+    expect(next.has('/a')).toBe(false);
+  });
+
+  it('renameBuffer and dropBuffer return the same map when nothing matches', () => {
+    const m = new Map([['/a', b]]);
+    expect(renameBuffer(m, '/z', '/y')).toBe(m);
+    expect(dropBuffer(m, '/z')).toBe(m);
+    expect(dropBuffer(m, '/a').has('/a')).toBe(false);
+  });
+
+  it('reloadBuffer replaces with clean content and bumps the version', () => {
+    const next = reloadBuffer(new Map([['/a', b]]), '/a', 'disk');
+    expect(next.get('/a')).toEqual({ value: 'disk', dirty: false, version: 3 });
+    expect(reloadBuffer(new Map(), '/n', 'd').get('/n')?.version).toBe(1);
   });
 });

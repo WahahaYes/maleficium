@@ -7,7 +7,7 @@
 import { emit } from '../lib/events';
 import { createFile, loadTex, renamePath } from '../lib/files';
 import { moveToTrash, undoTrash } from '../lib/trash';
-import type { BufferState } from '../lib/buffers';
+import { dropBuffer, reloadBuffer, renameBuffer, type BufferState } from '../lib/buffers';
 import { fs } from '../lib/fs-provider';
 import { appOutDir } from '../lib/paths';
 import { appCacheDir } from '@tauri-apps/api/path';
@@ -75,14 +75,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
       const full = await renamePath(oldPath, newName);
       markOwnWrite(oldPath);
       markOwnWrite(full);
-      setBuffers((b) => {
-        const prev = b.get(oldPath);
-        if (!prev) return b;
-        const n = new Map(b);
-        n.delete(oldPath);
-        n.set(full, prev);
-        return n;
-      });
+      setBuffers((b) => renameBuffer(b, oldPath, full));
       if (fileName === oldPath) {
         setFileName(full);
         setReloadPath(null);
@@ -108,15 +101,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
     if (!reloadPath) return;
     try {
       const content = await loadTex(reloadPath);
-      setBuffers((b) => {
-        const n = new Map(b);
-        n.set(reloadPath, {
-          value: content,
-          dirty: false,
-          version: (n.get(reloadPath)?.version ?? 0) + 1,
-        });
-        return n;
-      });
+      setBuffers((b) => reloadBuffer(b, reloadPath, content));
       if (reloadPath === fileName) setTex(content);
       setReloadPath(null);
       emit({
@@ -145,11 +130,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
         message: `deleted ${path} (Edit → Undo Delete restores it)`,
         data: { action: 'file.delete', path },
       });
-      setBuffers((b) => {
-        const n = new Map(b);
-        n.delete(path);
-        return n;
-      });
+      setBuffers((b) => dropBuffer(b, path));
       if (previewFile === path) setPreviewFile(null);
       await reloadTree(root);
     } else {

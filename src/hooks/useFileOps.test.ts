@@ -1,0 +1,193 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@tauri-apps/api/path', () => ({
+  appDataDir: vi.fn(async () => '/app/data'),
+  appCacheDir: vi.fn(async () => '/app/cache'),
+}));
+
+import { useFileOps, type UseFileOpsDeps } from './useFileOps';
+import { setProviders, type DirEntry, type FsProvider } from '../lib/fs-provider';
+import { FileHistory } from '../lib/file-history';
+import * as events from '../lib/events';
+import type { BufferState } from '../lib/buffers';
+
+/** Flat in-memory filesystem: path → text. Directories are implicit. */
+function memoryFs(files: Map<string, string>): FsProvider {
+  const missing = (p: string) => new Error('ENOENT: ' + p);
+  return {
+    async readText(p) {
+      const v = files.get(p);
+      if (v === undefined) throw missing(p);
+      return v;
+    },
+    async writeText(p, c) {
+      files.set(p, c);
+    },
+    async readBytes(p) {
+      const v = files.get(p);
+      if (v === undefined) throw missing(p);
+      return new TextEncoder().encode(v);
+    },
+    async writeBytes(p, c) {
+      files.set(p, new TextDecoder().decode(c));
+    },
+    async listDir(dir) {
+      const out: DirEntry[] = [];
+      for (const p of files.keys()) {
+        if (p.startsWith(dir + '/') && !p.slice(dir.length + 1).includes('/')) {
+          out.push({ name: p.slice(dir.length + 1), isDirectory: false, isFile: true });
+        }
+      }
+      return out;
+    },
+    async rename(from, to) {
+      const v = files.get(from);
+      if (v === undefined) throw missing(from);
+      files.delete(from);
+      files.set(to, v);
+    },
+    async remove(p) {
+      if (!files.delete(p)) throw missing(p);
+    },
+    async mkdir() {},
+    async stat(p) {
+      return files.has(p) ? { size: files.get(p)!.length, isDirectory: false, isFile: true } : null;
+    },
+  };
+}
+
+const noDialog = { openDirectory: async () => null, saveFile: async () => null };
+
+/** Deps backed by plain variables so each handler's effects are observable. */
+function harness(over: Partial<UseFileOpsDeps> = {}) {
+  const state = {
+    fileName: '/p/main.tex',
+    previewFile: null as string | null,
+    reloadPath: null as string | null,
+    tex: '',
+    buffers: new Map<string, BufferState>(),
+    selected: [] as string[],
+    ownWrites: [] as string[],
+    reloads: 0,
+  };
+  const trash = new FileHistory();
+  const deps = (): UseFileOpsDeps => ({
+    root: '/p',
+    fileName: state.fileName,
+    reloadPath: state.reloadPath,
+    previewFile: state.previewFile,
+    setFileName: (v) => (state.fileName = v),
+    mainFile: '/p/main.tex',
+    setTex: (v) => (state.tex = v),
+    setPreviewFile: (v) => (state.previewFile = v),
+    setReloadPath: (v) => (state.reloadPath = v),
+    setBuffers: (u) => (state.buffers = typeof u === 'function' ? u(state.buffers) : u),
+    trash,
+    markOwnWrite: (p) => state.ownWrites.push(p),
+    reloadTree: async () => {
+      state.reloads++;
+    },
+    handleSelect: async (p) => {
+      state.selected.push(p);
+    },
+    ...over,
+  });
+  // useFileOps holds no React state, so its handlers are driven directly.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return { state, trash, ops: () => useFileOps(deps()) };
+}
+
+const data = (i: number) => events.list()[i].data as Record<string, unknown>;
+const actions = () => events.list().map((_, i) => data(i).action);
+
+let files: Map<string, string>;
+
+beforeEach(() => {
+  events.clear();
+  files = new Map([
+    ['/p/main.tex', 'main'],
+    ['/p/fig.tex', 'fig body'],
+  ]);
+  setProviders({ fs: memoryFs(files), dialog: noDialog });
+});
+
+describe('useFileOps delete → undo', () => {
+  it('moves the file to the app-local trash, then restores it', async () => {
+    const { state, trash, ops } = harness();
+    state.buffers.set('/p/fig.tex', { value: 'fig body', dirty: false, version: 1 });
+    state.previewFile = '/p/fig.tex';
+
+    await ops().handleDelete('/p/fig.tex');
+
+    expect(files.has('/p/fig.tex')).toBe(false);
+    const [entry] = trash.list();
+    expect(entry.originalPath).toBe('/p/fig.tex');
+    expect(entry.trashPath.startsWith('/app/data/maleficium-trash/')).toBe(true);
+    expect(files.get(entry.trashPath)).toBe('fig body');
+    expect(state.buffers.has('/p/fig.tex')).toBe(false);
+    expect(state.previewFile).toBeNull();
+
+    await ops().handleUndo();
+
+    expect(files.get('/p/fig.tex')).toBe('fig body');
+    expect(files.has(entry.trashPath)).toBe(false);
+    expect(trash.size).toBe(0);
+    expect(state.reloads).toBe(2);
+    expect(actions()).toEqual(['file.delete', 'file.undo-delete']);
+    expect(data(1).path).toBe('/p/fig.tex');
+  });
+
+  it('reports a failed delete and leaves the file and buffer alone', async () => {
+    const { state, trash, ops } = harness();
+    state.buffers.set('/p/gone.tex', { value: 'x', dirty: true, version: 1 });
+
+    await ops().handleDelete('/p/gone.tex');
+
+    expect(trash.size).toBe(0);
+    expect(state.buffers.has('/p/gone.tex')).toBe(true);
+    expect(actions()).toEqual(['file.delete-failed']);
+  });
+
+  it('reports undo with an empty trash as a failure', async () => {
+    const { ops } = harness();
+    await ops().handleUndo();
+    expect(actions()).toEqual(['file.undo-delete-failed']);
+  });
+});
+
+describe('useFileOps create and rename', () => {
+  it('creates an empty file, marks the own-write and opens it', async () => {
+    const { state, ops } = harness();
+
+    await ops().handleCreate('/p', 'intro.tex');
+
+    expect(files.get('/p/intro.tex')).toBe('');
+    expect(state.ownWrites).toEqual(['/p/intro.tex']);
+    expect(state.selected).toEqual(['/p/intro.tex']);
+    expect(actions()).toEqual(['file.create']);
+  });
+
+  it('renames the open file: disk, buffer key and active file all follow', async () => {
+    const { state, ops } = harness();
+    const buf = { value: 'main edited', dirty: true, version: 3 };
+    state.buffers.set('/p/main.tex', buf);
+
+    await ops().handleRename('/p/main.tex', 'paper.tex');
+
+    expect(files.has('/p/main.tex')).toBe(false);
+    expect(files.get('/p/paper.tex')).toBe('main');
+    expect(state.buffers.get('/p/paper.tex')).toBe(buf);
+    expect(state.buffers.has('/p/main.tex')).toBe(false);
+    expect(state.fileName).toBe('/p/paper.tex');
+    expect(state.ownWrites).toEqual(['/p/main.tex', '/p/paper.tex']);
+    expect(actions()).toEqual(['file.rename']);
+  });
+
+  it('rejects an empty rename without touching disk', async () => {
+    const { state, ops } = harness();
+    await ops().handleRename('/p/fig.tex', '   ');
+    expect(files.get('/p/fig.tex')).toBe('fig body');
+    expect(state.ownWrites).toEqual([]);
+    expect(actions()).toEqual(['file.rename-failed']);
+  });
+});

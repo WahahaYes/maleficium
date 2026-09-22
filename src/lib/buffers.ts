@@ -65,3 +65,38 @@ export function enforceBufferCap(
   }
   return next;
 }
+
+/** Re-key a buffer after a rename; untouched when the old path has none. */
+export function renameBuffer(
+  buffers: Map<string, BufferState>,
+  from: string,
+  to: string,
+): Map<string, BufferState> {
+  const prev = buffers.get(from);
+  if (!prev) return buffers;
+  const next = new Map(buffers);
+  next.delete(from);
+  next.set(to, prev);
+  return next;
+}
+
+export function dropBuffer(
+  buffers: Map<string, BufferState>,
+  path: string,
+): Map<string, BufferState> {
+  if (!buffers.has(path)) return buffers;
+  const next = new Map(buffers);
+  next.delete(path);
+  return next;
+}
+
+/** Replace a buffer with disk content: clean, version bumped. */
+export function reloadBuffer(
+  buffers: Map<string, BufferState>,
+  path: string,
+  content: string,
+): Map<string, BufferState> {
+  const next = new Map(buffers);
+  next.set(path, { value: content, dirty: false, version: (buffers.get(path)?.version ?? 0) + 1 });
+  return next;
+}
