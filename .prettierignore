@@ -8,3 +8,4 @@ public/*.svg
 src/assets/*.svg
 src/assets/themes/**/*.jsonc
 *.log
+src/lib/generated

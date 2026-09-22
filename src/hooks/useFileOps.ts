@@ -58,8 +58,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: 'created ' + full,
-        data: { action: 'file.create', path: full },
+        event: { action: 'file.create', path: full },
       });
       if (root) await reloadTree(root, false);
       await handleSelect(full);
@@ -67,8 +68,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: 'create failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.create-failed', dir: dirPath, name, error: String(e).slice(0, 200) },
+        event: { action: 'file.create-failed', dir: dirPath, name, error: String(e).slice(0, 200) },
       });
     }
   }
@@ -86,16 +88,18 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: `renamed to ${full}`,
-        data: { action: 'file.rename', from: oldPath, to: full },
+        event: { action: 'file.rename', from: oldPath, to: full },
       });
       if (root) await reloadTree(root, false);
     } catch (e) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: 'rename failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.rename-failed', from: oldPath, error: String(e).slice(0, 200) },
+        event: { action: 'file.rename-failed', from: oldPath, error: String(e).slice(0, 200) },
       });
     }
   }
@@ -110,15 +114,17 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: 'reloaded ' + reloadPath,
-        data: { action: 'file.reload', path: reloadPath, chars: content.length },
+        event: { action: 'file.reload', path: reloadPath, chars: content.length },
       });
     } catch (e) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: 'reload failed: ' + String(e).slice(0, 120),
-        data: { action: 'file.reload-failed', path: reloadPath, error: String(e).slice(0, 200) },
+        event: { action: 'file.reload-failed', path: reloadPath, error: String(e).slice(0, 200) },
       });
     }
   }
@@ -130,8 +136,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: `deleted ${path} (Edit → Undo Delete restores it)`,
-        data: { action: 'file.delete', path },
+        event: { action: 'file.delete', path },
       });
       setBuffers((b) => dropBuffer(b, path));
       if (previewFile === path) setPreviewFile(null);
@@ -140,8 +147,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: 'delete failed: ' + (r.error ?? '').slice(0, 120),
-        data: { action: 'file.delete-failed', path, error: (r.error ?? '').slice(0, 200) },
+        event: { action: 'file.delete-failed', path, error: (r.error ?? '').slice(0, 200) },
       });
     }
   }
@@ -154,8 +162,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'compile',
         kind: 'warn',
+        actor: 'user',
         message: 'Clean: nothing to clean (no project file)',
-        data: { action: 'compile.clean', removed: 0, reason: 'no-project-file' },
+        event: { action: 'compile.clean', removed: 0, reason: 'no-project-file' },
       });
       return;
     }
@@ -165,17 +174,19 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'compile',
         kind: r.removed > 0 ? 'success' : 'info',
+        actor: 'user',
         message:
           r.removed > 0 ? `Cleaned ${src.mainRel} (${r.removed} files)` : 'Clean: already clean',
-        data: { action: 'compile.clean', target: src.mainRel, removed: r.removed },
+        event: { action: 'compile.clean', target: src.mainRel, removed: r.removed },
       });
       if (root) await reloadTree(root, false);
     } else {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor: 'user',
         message: 'Clean failed: ' + (r.error ?? '').slice(0, 120),
-        data: {
+        event: {
           action: 'compile.clean-failed',
           target: src.mainRel,
           error: (r.error ?? '').slice(0, 200),
@@ -191,8 +202,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: 'restored ' + (entry?.originalPath ?? 'from trash'),
-        data: { action: 'file.undo-delete', path: entry?.originalPath ?? null },
+        event: { action: 'file.undo-delete', path: entry?.originalPath ?? null },
       });
       if (root) {
         await reloadTree(root);
@@ -201,8 +213,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: 'undo failed: ' + (r.error ?? '').slice(0, 120),
-        data: { action: 'file.undo-delete-failed', error: (r.error ?? '').slice(0, 200) },
+        event: { action: 'file.undo-delete-failed', error: (r.error ?? '').slice(0, 200) },
       });
     }
   }

@@ -56,8 +56,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       emit({
         scope: 'fs',
         kind: 'info',
+        actor: 'system',
         message: `tree ${deep ? 'full' : 'root'} loaded ${t.length} rows in ${dt}ms`,
-        data: { action: 'tree.load', rows: t.length, ms: dt, deep },
+        event: { action: 'tree.load', rows: t.length, ms: dt, deep },
       });
     },
     [setTree],
@@ -86,15 +87,17 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           emit({
             scope: 'fs',
             kind: 'warn',
+            actor: 'system',
             message: 'deleted on disk: ' + ev.path,
-            data: { action: 'fs.external-delete', path: ev.path },
+            event: { action: 'fs.external-delete', path: ev.path },
           });
         }
         emit({
           scope: 'fs',
           kind: 'info',
+          actor: 'system',
           message: `external ${ev.kind} ${ev.path}`,
-          data: { action: 'fs.external', change: ev.kind, path: ev.path },
+          event: { action: 'fs.external', change: ev.kind, path: ev.path },
         });
       }
     }, 250);
@@ -137,8 +140,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       emit({
         scope: 'fs',
         kind: 'error',
+        actor: 'user',
         message: msg,
-        data: { action: 'project.open-refused', root: r, error: reason },
+        event: { action: 'project.open-refused', root: r, error: reason },
       });
       return;
     }
@@ -151,8 +155,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     emit({
       scope: 'fs',
       kind: 'info',
+      actor: 'user',
       message: 'opened ' + canon,
-      data: { action: 'project.open', root: canon },
+      event: { action: 'project.open', root: canon },
     });
     trash.clear();
     const m = await resolveMain(canon, null);
@@ -160,8 +165,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     emit({
       scope: 'fs',
       kind: m ? 'success' : 'warn',
+      actor: 'system',
       message: m ? 'main file ' + m : 'no main file found in ' + canon,
-      data: { action: 'main.resolved', root: canon, mainFile: m },
+      event: { action: 'main.resolved', root: canon, mainFile: m },
     });
     // Open the main file on project select — the editor must never sit on
     // stale untitled content while the tree shows a project. No main →
@@ -183,8 +189,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       emit({
         scope: 'fs',
         kind: 'warn',
+        actor: 'user',
         message: 'cancelled',
-        data: { action: 'project.open-cancelled' },
+        event: { action: 'project.open-cancelled' },
       });
     }
   }

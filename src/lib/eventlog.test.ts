@@ -29,8 +29,8 @@ import {
   revisionRestoreData,
   serializeEvent,
   startEventLog,
-  type LoggedEvent,
 } from './eventlog';
+import type { LogLine } from './generated/events';
 
 const APP_DATA = '/app/data';
 const dec = new TextDecoder();
@@ -73,19 +73,21 @@ describe('event serialization', () => {
     const e = events.emit({
       scope: 'compile',
       kind: 'success',
+      actor: 'user',
       message: 'compiled /p/main.pdf',
-      data: { action: 'compile.finish', ok: true, ms: 1200 },
+      event: { action: 'compile.finish', target: '/p/main.tex', ok: true, ms: 1200 },
     });
     const line = serializeEvent(e);
     expect(line.endsWith('\n')).toBe(true);
     expect(line.indexOf('\n')).toBe(line.length - 1);
-    const parsed = JSON.parse(line) as LoggedEvent;
+    const parsed = JSON.parse(line) as LogLine;
     expect(parsed).toMatchObject({
       at: e.at,
       scope: 'compile',
       kind: 'success',
+      actor: 'user',
       message: 'compiled /p/main.pdf',
-      data: { action: 'compile.finish', ok: true, ms: 1200 },
+      event: { action: 'compile.finish', target: '/p/main.tex', ok: true, ms: 1200 },
     });
   });
 
@@ -93,18 +95,29 @@ describe('event serialization', () => {
     const e = events.emit({
       scope: 'compile',
       kind: 'error',
+      actor: 'user',
       message: 'x'.repeat(MAX_MESSAGE_CHARS * 2),
-      data: { action: 'compile.problem', blob: 'y'.repeat(MAX_LINE_BYTES * 2) },
+      event: {
+        action: 'compile.problem',
+        rootId: null,
+        line: 1,
+        message: 'y'.repeat(MAX_LINE_BYTES * 2),
+        severity: 'error',
+        external: true,
+      },
     });
     const line = serializeEvent(e);
     expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(MAX_LINE_BYTES);
-    const parsed = JSON.parse(line) as LoggedEvent;
+    const parsed = JSON.parse(line) as LogLine;
     expect(parsed.message.length).toBe(MAX_MESSAGE_CHARS);
-    expect(parsed.data).toEqual({ action: 'compile.problem', dropped: true });
+    expect(parsed.event).toBeUndefined();
+    expect(parsed.dropped).toBe('compile.problem');
+    expect(eventsFor([parsed], 'compile.problem')).toHaveLength(1);
   });
 
   it('skips lines that are not events, including a partial tail', () => {
-    const text = '{"at":1,"scope":"app","kind":"info","message":"a"}\n{"at":2,"sco';
+    const text =
+      '{"at":1,"scope":"app","kind":"info","actor":"system","message":"a"}\n{"at":2,"sco';
     expect(parseEventLog(text).map((e) => e.message)).toEqual(['a']);
   });
 });
@@ -137,14 +150,26 @@ describe('event log recording', () => {
     const files = fakeDisk();
     const log = startEventLog();
     try {
-      events.emit({ scope: 'app', kind: 'info', message: 'one' });
-      events.emit({ scope: 'fs', kind: 'success', message: 'two', data: { action: 'file.save' } });
+      events.emit({
+        scope: 'app',
+        kind: 'info',
+        actor: 'system',
+        message: 'one',
+        event: { action: 'file.load', path: 'p' },
+      });
+      events.emit({
+        scope: 'fs',
+        kind: 'success',
+        actor: 'user',
+        message: 'two',
+        event: { action: 'file.save', path: '/p/a.tex', chars: 1, mode: 'manual' },
+      });
       await settle(log);
       const parsed = parseEventLog(files.get(eventLogPath(APP_DATA)) ?? '');
       expect(parsed.filter((e) => e.message === 'one' || e.message === 'two')).toHaveLength(2);
       expect(parsed.map((e) => e.message)).toContain('event log ' + eventLogPath(APP_DATA));
       expect(eventsFor(parsed, 'file.save')).toHaveLength(1);
-      expect(eventsFor(parsed, 'log.open')[0].data).toMatchObject({
+      expect(eventsFor(parsed, 'log.open')[0].event).toMatchObject({
         path: eventLogPath(APP_DATA),
         maxEvents: MAX_LOG_EVENTS,
         maxLineBytes: MAX_LINE_BYTES,
@@ -160,7 +185,13 @@ describe('event log recording', () => {
     try {
       await settle(log);
       for (let i = 0; i < MAX_LOG_EVENTS + 100; i++) {
-        events.emit({ scope: 'app', kind: 'info', message: `m${i}` });
+        events.emit({
+          scope: 'app',
+          kind: 'info',
+          actor: 'system',
+          message: `m${i}`,
+          event: { action: 'file.load', path: 'p' },
+        });
         if (i % 500 === 0) await log.flush();
       }
       await log.flush();
@@ -177,7 +208,13 @@ describe('event log recording', () => {
     vi.mocked(writeFile).mockRejectedValue(new Error('no backend'));
     const log = startEventLog();
     try {
-      events.emit({ scope: 'app', kind: 'info', message: 'still runs' });
+      events.emit({
+        scope: 'app',
+        kind: 'info',
+        actor: 'system',
+        message: 'still runs',
+        event: { action: 'file.load', path: 'p' },
+      });
       await expect(settle(log)).resolves.toBeUndefined();
       expect(events.list().map((e) => e.message)).toContain('still runs');
     } finally {
@@ -202,16 +239,19 @@ describe('reading a run without watching the window', () => {
           scope: 'fs',
           kind: 'info',
           at: 1000 + i,
+          actor: 'system',
           message: `revision ${o.rev} of ${rel}`,
-          data: revisionRecordData(rel, o, i + 1),
+          event: revisionRecordData(rel, o, i + 1),
         }),
       )
       .join('');
 
-    const records = eventsFor(parseEventLog(lines), 'revision.record');
-    expect(records.map((e) => e.data?.revisions)).toEqual([1, 2, 3]);
-    expect(records.map((e) => e.data?.rev)).toEqual(['1', '2', '3']);
-    expect(records.every((e) => e.data?.rel === rel && e.data?.stored === true)).toBe(true);
+    const records = eventsFor(parseEventLog(lines), 'revision.record').map((e) =>
+      e.event?.action === 'revision.record' ? e.event : null,
+    );
+    expect(records.map((r) => r?.revisions)).toEqual([1, 2, 3]);
+    expect(records.map((r) => r?.rev)).toEqual(['1', '2', '3']);
+    expect(records.every((r) => r?.rel === rel && r.stored)).toBe(true);
   });
 
   it('proves an unchanged save keeps the count still', () => {
@@ -220,11 +260,12 @@ describe('reading a run without watching the window', () => {
       scope: 'fs',
       kind: 'info',
       at: 2000,
+      actor: 'system',
       message: `no revision for ${rel} (unchanged)`,
-      data: revisionRecordData(rel, { stored: false, reason: 'unchanged' }, 3),
+      event: revisionRecordData(rel, { stored: false, reason: 'unchanged' }, 3),
     });
     const [record] = eventsFor(parseEventLog(line), 'revision.record');
-    expect(record.data).toMatchObject({ stored: false, reason: 'unchanged', revisions: 3 });
+    expect(record.event).toMatchObject({ stored: false, reason: 'unchanged', revisions: 3 });
   });
 
   it('proves a restore round-trips and stays undoable', () => {
@@ -234,23 +275,25 @@ describe('reading a run without watching the window', () => {
         scope: 'fs',
         kind: 'success',
         at: 3000,
+        actor: 'system',
         message: 'restored ' + rel,
-        data: revisionRestoreData(rel, '1', 42),
+        event: revisionRestoreData(rel, '1', 42),
       }),
       serializeEvent({
         scope: 'fs',
         kind: 'info',
         at: 3001,
+        actor: 'system',
         message: `revision 4 of ${rel}`,
-        data: revisionRecordData(rel, { stored: true, rev: '4', deduped: false }, 4),
+        event: revisionRecordData(rel, { stored: true, rev: '4', deduped: false }, 4),
       }),
     ].join('');
 
     const parsed = parseEventLog(lines);
     const [restore] = eventsFor(parsed, 'revision.restore');
-    expect(restore.data).toMatchObject({ rel, rev: '1', chars: 42 });
+    expect(restore.event).toMatchObject({ rel, rev: '1', chars: 42 });
     // The replaced text is kept as a revision of its own, so the list grew.
     const [kept] = eventsFor(parsed, 'revision.record');
-    expect(kept.data).toMatchObject({ rel, stored: true, revisions: 4 });
+    expect(kept.event).toMatchObject({ rel, stored: true, revisions: 4 });
   });
 });

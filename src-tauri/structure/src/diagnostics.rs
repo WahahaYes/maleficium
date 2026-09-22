@@ -10,19 +10,23 @@ use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, schemars::JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema, TS,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
     Warning,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 pub struct Diagnostic {
     /// Root-relative source path; `None` when `external`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub path: Option<String>,
     pub line: u32,
     pub message: String,

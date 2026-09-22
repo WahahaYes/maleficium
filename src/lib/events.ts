@@ -1,31 +1,16 @@
-export type EventScope = 'compile' | 'preview' | 'fs' | 'app';
-export type EventKind = 'info' | 'progress' | 'success' | 'error' | 'warn';
-/** Payload of a `compile.problem` event: one diagnostic from the engine log. */
-export interface ProblemEvent {
-  file: string;
-  line: number;
-  msg: string;
-  clickable: boolean;
-}
+// events.ts — the app bus: every surface reports here with a typed event.
+//
+// Payload types are generated from the Rust catalog (src-tauri/events);
+// nothing here declares an event shape of its own.
 
-/** Narrow a bus event to a problem payload; null when it is not one. */
-export function problemOf(e: BusEvent): ProblemEvent | null {
-  const d = e.data as Partial<ProblemEvent> | null | undefined;
-  if (!d || typeof d.file !== 'string' || typeof d.line !== 'number') return null;
-  if (typeof d.msg !== 'string' || typeof d.clickable !== 'boolean') return null;
-  return { file: d.file, line: d.line, msg: d.msg, clickable: d.clickable };
-}
+import type { AppEvent, BusEvent } from './generated/events';
 
-export interface BusEvent {
-  scope: EventScope;
-  kind: EventKind;
-  at: number;
-  message: string;
-  data?: unknown;
-}
+/** An emit: `at` defaults to now. */
+type EmitInput = Omit<BusEvent, 'at'> & { at?: number };
+
 const buf: BusEvent[] = [];
 const subs = new Set<(e: BusEvent) => void>();
-export function emit(e: Omit<BusEvent, 'at'> & { at?: number }) {
+export function emit(e: EmitInput): BusEvent {
   const full: BusEvent = { ...e, at: e.at ?? Date.now() };
   buf.push(full);
   if (buf.length > 500) buf.splice(0, buf.length - 500);
@@ -43,6 +28,14 @@ export function list(): BusEvent[] {
 }
 export function clear() {
   buf.length = 0;
+}
+
+/** The event's payload when it carries `action`, else null. */
+export function eventOf<A extends AppEvent['action']>(
+  e: BusEvent,
+  action: A,
+): Extract<AppEvent, { action: A }> | null {
+  return e.event.action === action ? (e.event as Extract<AppEvent, { action: A }>) : null;
 }
 
 // Rendered window over the buffer: newest 100, oldest first.

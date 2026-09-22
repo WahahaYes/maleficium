@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
+use maleficium_events::{CompileLine, CompileStream};
+
 use crate::core;
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
@@ -30,7 +32,10 @@ pub fn compile_tex(
     let outdir_str = outdir.to_string_lossy().to_string();
     let _ = app.emit(
         "compile-line",
-        format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()),
+        CompileLine {
+            stream: CompileStream::Status,
+            text: format!("sidecar compile {} in {}", main_file, dir.to_string_lossy()),
+        },
     );
 
     const COMPILE_TIMEOUT_SECS: u64 = 120;
@@ -63,7 +68,13 @@ pub fn compile_tex(
         let reader = BufReader::new(stdout);
         let mut lines = Vec::new();
         for line in reader.lines().map_while(Result::ok) {
-            let _ = app_clone.emit("compile-line", line.clone());
+            let _ = app_clone.emit(
+                "compile-line",
+                CompileLine {
+                    stream: CompileStream::Stdout,
+                    text: line.clone(),
+                },
+            );
             lines.push(line);
         }
         lines
@@ -74,7 +85,13 @@ pub fn compile_tex(
         use std::io::{BufRead, BufReader};
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
-            let _ = app.emit("compile-line", line.clone());
+            let _ = app.emit(
+                "compile-line",
+                CompileLine {
+                    stream: CompileStream::Stderr,
+                    text: line.clone(),
+                },
+            );
             collected.push(line);
         }
     }

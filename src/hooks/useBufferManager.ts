@@ -53,8 +53,9 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     emit({
       scope: 'fs',
       kind: 'info',
+      actor: 'user',
       message: 'closed ' + path,
-      data: { action: 'file.close', path },
+      event: { action: 'file.close', path },
     });
   }
 
@@ -109,8 +110,9 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     emit({
       scope: 'fs',
       kind: 'info',
+      actor: 'user',
       message: `closed ${n} other file${n === 1 ? '' : 's'}`,
-      data: { action: 'file.close-many', count: n, kept: fileName },
+      event: { action: 'file.close-many', count: n, kept: fileName },
     });
   }
 
@@ -124,8 +126,9 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     emit({
       scope: 'fs',
       kind: 'info',
+      actor: 'user',
       message: `closed ${n} file${n === 1 ? '' : 's'}`,
-      data: { action: 'file.close-many', count: n },
+      event: { action: 'file.close-many', count: n },
     });
   }
 

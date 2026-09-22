@@ -17,7 +17,8 @@ import MenuBar from './components/MenuBar';
 import Preview from './components/Preview';
 import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
-import LogStream from './components/LogStream';
+import LogStream, { type ProblemRef } from './components/LogStream';
+import { joinPath } from './lib/paths';
 import OutlineView from './components/OutlineView';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -40,7 +41,8 @@ import { onPdf, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
-import { structure, type OutlineEntry } from './lib/structure';
+import { structure } from './lib/structure';
+import type { OutlineEntry } from './lib/generated/structure';
 import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
@@ -195,8 +197,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'info',
+          actor: 'user',
           message: 'previewing ' + path,
-          data: { action: 'file.preview', path },
+          event: { action: 'file.preview', path },
         });
         return;
       }
@@ -213,8 +216,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'info',
+          actor: 'user',
           message: 'switched ' + path,
-          data: { action: 'file.switch', path, dirty: kept.dirty },
+          event: { action: 'file.switch', path, dirty: kept.dirty },
         });
         if (root && path.endsWith('.tex')) void resolveMain(root, path);
         return;
@@ -222,8 +226,9 @@ export default function App({
       emit({
         scope: 'fs',
         kind: 'progress',
+        actor: 'user',
         message: 'loading ' + path,
-        data: { action: 'file.load', path },
+        event: { action: 'file.load', path },
       });
       setLog('loading ' + path);
       try {
@@ -237,8 +242,9 @@ export default function App({
           emit({
             scope: 'fs',
             kind: 'warn',
+            actor: 'user',
             message: `large file placeholder ${path} (${size}B)`,
-            data: { action: 'file.too-large', path, bytes: size },
+            event: { action: 'file.too-large', path, bytes: size },
           });
           return;
         }
@@ -258,8 +264,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'success',
+          actor: 'user',
           message: 'loaded ' + path,
-          data: { action: 'file.open', path, chars: content.length },
+          event: { action: 'file.open', path, chars: content.length },
         });
         if (root && path.endsWith('.tex')) void resolveMain(root, path);
       } catch (e) {
@@ -267,8 +274,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'error',
+          actor: 'user',
           message: 'load failed ' + path,
-          data: { action: 'file.load-failed', path, error: String(e).slice(0, 200) },
+          event: { action: 'file.load-failed', path, error: String(e).slice(0, 200) },
         });
       }
     },
@@ -295,8 +303,9 @@ export default function App({
     emit({
       scope: 'fs',
       kind: 'success',
+      actor: 'user',
       message: 'main file set: ' + (m ?? '(none)'),
-      data: { action: 'main.set', mainFile: m },
+      event: { action: 'main.set', mainFile: m },
     });
   }
 
@@ -311,8 +320,9 @@ export default function App({
     emit({
       scope: 'fs',
       kind: 'success',
+      actor: 'user',
       message: 'main file set: ' + path,
-      data: { action: 'main.set', mainFile: path },
+      event: { action: 'main.set', mainFile: path },
     });
   }
 
@@ -326,8 +336,9 @@ export default function App({
     emit({
       scope: 'fs',
       kind: 'success',
+      actor: 'user',
       message: 'main file set: ' + (m ?? '(none)'),
-      data: { action: 'main.set', mainFile: m },
+      event: { action: 'main.set', mainFile: m },
     });
   }
 
@@ -400,8 +411,9 @@ export default function App({
       emit({
         scope: 'fs',
         kind: 'warn',
+        actor: 'user',
         message: 'save blocked for large placeholder ' + largeFile,
-        data: { action: 'file.save-blocked', path: largeFile, reason: 'large-placeholder' },
+        event: { action: 'file.save-blocked', path: largeFile, reason: 'large-placeholder' },
       });
       return;
     }
@@ -416,8 +428,9 @@ export default function App({
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: 'saved ' + fileName,
-        data: { action: 'file.save', path: fileName, chars: text.length },
+        event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
       });
     } else {
       await saveTexToDisk(fileName, tex);
@@ -425,8 +438,9 @@ export default function App({
       emit({
         scope: 'fs',
         kind: 'success',
+        actor: 'user',
         message: 'saved ' + fileName,
-        data: { action: 'file.save', path: fileName, chars: tex.length, untitled: true },
+        event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
       });
     }
   }, [fileName, tex, buffers, setBuffers, largeFile, markOwnWrite, recordRevision]);
@@ -444,8 +458,9 @@ export default function App({
             emit({
               scope: 'fs',
               kind: 'info',
+              actor: 'system',
               message: 'autosaved ' + fileName,
-              data: { action: 'file.save', path: fileName, chars: cur.value.length, auto: true },
+              event: { action: 'file.save', path: fileName, chars: cur.value.length, mode: 'auto' },
             });
             setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
           })
@@ -458,6 +473,12 @@ export default function App({
   }, [tex, fileName, buffers, setBuffers, markOwnWrite, recordRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
+  /** Jump to a root-relative problem location inside a granted root. */
+  function handleProblemJump(t: ProblemRef) {
+    const base = t.rootId === projectId ? root : t.rootId === scratch?.rootId ? scratch.path : null;
+    if (base) handleJump(joinPath(base, t.path), t.line);
+  }
+
   function handleJump(absPath: string, line: number) {
     loadTex(absPath).then((content) => {
       setBuffers((b) => {
@@ -619,10 +640,13 @@ export default function App({
           if (stale) return;
           setOutline(entries);
           if (tex.length > 1_000_000) {
+            const ms = Math.round(performance.now() - t0);
             emit({
               scope: 'app',
               kind: 'info',
-              message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms`,
+              actor: 'system',
+              message: `outline parsed ${entries.length} entries in ${ms}ms`,
+              event: { action: 'outline.parse', entries: entries.length, ms },
             });
           }
         })
@@ -650,7 +674,9 @@ export default function App({
           emit({
             scope: 'app',
             kind: 'info',
+            actor: 'system',
             message: `editor render ${(v.length / 1_048_576).toFixed(1)}MB file in ${dt}ms`,
+            event: { action: 'editor.render', bytes: v.length, ms: dt },
           });
         }
       });
@@ -713,8 +739,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'warn',
+          actor: 'user',
           message: 'New File needs an open project',
-          data: { action: 'command.blocked', command: 'newFile', reason: 'no-project' },
+          event: { action: 'command.blocked', command: 'newFile', reason: 'no-project' },
         });
     },
     closeFile: () => {
@@ -747,8 +774,9 @@ export default function App({
         emit({
           scope: 'fs',
           kind: 'warn',
+          actor: 'user',
           message: 'Rename needs a project file (open one first)',
-          data: {
+          event: {
             action: 'command.blocked',
             command: 'renameActive',
             reason: 'not-a-project-file',
@@ -811,8 +839,9 @@ export default function App({
         emit({
           scope: 'compile',
           kind: 'error',
+          actor: 'user',
           message: 'cancel failed: ' + String(e).slice(0, 120),
-          data: { action: 'compile.cancel-failed', error: String(e).slice(0, 200) },
+          event: { action: 'compile.cancel-failed', error: String(e).slice(0, 200) },
         }),
       );
     },
@@ -1125,7 +1154,7 @@ export default function App({
         onHeight={(h) => setLayout((l) => ({ ...l, logHeight: h }))}
         collapsed={logCollapsed}
         onToggleCollapse={() => setLogCollapsed((c) => !c)}
-        onJump={handleJump}
+        onJump={handleProblemJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <SettingsDialog

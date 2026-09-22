@@ -185,10 +185,13 @@ export function usePdfDocument({
           setPhase('loading...');
           pdf = await openPdfSource(pdfUrl);
           if (cancelled) return;
+          const ms = Date.now() - t0;
           emit({
             scope: 'preview',
             kind: 'progress',
-            message: `pdf loaded ${pdf.numPages} pages in ${Date.now() - t0}ms`,
+            actor: 'system',
+            message: `pdf loaded ${pdf.numPages} pages in ${ms}ms`,
+            event: { action: 'preview.pdf-load', pages: pdf.numPages, ms },
           });
           docRef.current = { key, pdf };
         }

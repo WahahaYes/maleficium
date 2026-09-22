@@ -147,10 +147,13 @@ export function useBitmapWindow({
       if (!alive()) return null;
       const textContent = await pg.getTextContent();
       if (!alive()) return null;
+      const ms = Date.now() - t1;
       emit({
         scope: 'preview',
         kind: 'progress',
-        message: `page ${target} rendered in ${Date.now() - t1}ms`,
+        actor: 'system',
+        message: `page ${target} rendered in ${ms}ms`,
+        event: { action: 'preview.page-render', page: target, ms },
       });
       return { canvas: off, textContent, viewport };
     },

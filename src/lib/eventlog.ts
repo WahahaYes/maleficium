@@ -2,8 +2,9 @@
 //
 // One file, under the app-data dir, truncated when the run starts: it holds
 // the current run and nothing else. Every line is one JSON object
-// `{at, scope, kind, message, data?}`, and `data.action` names the fact so a
-// reader matches on the payload rather than on prose. Retention is the
+// `{at, scope, kind, actor, message, event}` (the `LogLine` type generated
+// from the Rust catalog), and `event.action` names the fact so a reader
+// matches on the payload rather than on prose. Retention is the
 // newest MAX_LOG_EVENTS lines, each at most MAX_LINE_BYTES.
 //
 // Nothing is written to the project dir, and a write that fails is dropped
@@ -18,7 +19,8 @@
 import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { appEventLogDir, eventLogPath } from './paths';
-import { emit, list, subscribe, type BusEvent } from './events';
+import { emit, list, subscribe } from './events';
+import type { AppEvent, BusEvent, LogLine } from './generated/events';
 import type { RecordOutcome } from './history';
 
 /** Newest events kept on disk for one run; older lines are dropped. */
@@ -30,30 +32,10 @@ export const MAX_MESSAGE_CHARS = 300;
 /** Pending lines are written at this interval. */
 const FLUSH_MS = 500;
 
-/** Structured payload: `action` names the fact, the other fields are it. */
-export interface EventData {
-  action: string;
-  [field: string]: unknown;
-}
-
-/** One line as it comes back off disk. */
-export interface LoggedEvent {
-  at: number;
-  scope: string;
-  kind: string;
-  message: string;
-  data?: EventData;
-}
-
 const enc = new TextEncoder();
 
 function byteLength(s: string): number {
   return enc.encode(s).length;
-}
-
-function actionOf(data: unknown): string {
-  const a = (data as EventData | undefined)?.action;
-  return typeof a === 'string' ? a.slice(0, 64) : 'unknown';
 }
 
 /**
@@ -65,11 +47,12 @@ export function serializeEvent(e: BusEvent): string {
     at: e.at,
     scope: e.scope,
     kind: e.kind,
+    actor: e.actor,
     message: e.message.slice(0, MAX_MESSAGE_CHARS),
   };
-  let line = JSON.stringify(e.data === undefined ? head : { ...head, data: e.data });
+  let line = JSON.stringify({ ...head, event: e.event } satisfies LogLine);
   if (byteLength(line) + 1 > MAX_LINE_BYTES) {
-    line = JSON.stringify({ ...head, data: { action: actionOf(e.data), dropped: true } });
+    line = JSON.stringify({ ...head, dropped: e.event.action } satisfies LogLine);
   }
   return line + '\n';
 }
@@ -88,12 +71,12 @@ export function retain(
 }
 
 /** Parse JSONL text; a line that is not one event is skipped. */
-export function parseEventLog(text: string): LoggedEvent[] {
-  const out: LoggedEvent[] = [];
+export function parseEventLog(text: string): LogLine[] {
+  const out: LogLine[] = [];
   for (const raw of text.split('\n')) {
     if (raw === '') continue;
     try {
-      const v = JSON.parse(raw) as LoggedEvent;
+      const v = JSON.parse(raw) as LogLine;
       if (typeof v.at === 'number' && typeof v.message === 'string') out.push(v);
     } catch {
       /* a partial line is not an event */
@@ -102,9 +85,9 @@ export function parseEventLog(text: string): LoggedEvent[] {
   return out;
 }
 
-/** Events whose payload names this action, oldest first. */
-export function eventsFor(log: readonly LoggedEvent[], action: string): LoggedEvent[] {
-  return log.filter((e) => e.data?.action === action);
+/** Lines whose event names this action (kept or dropped), oldest first. */
+export function eventsFor(log: readonly LogLine[], action: AppEvent['action']): LogLine[] {
+  return log.filter((e) => (e.event?.action ?? e.dropped) === action);
 }
 
 /** Payload for one snapshot attempt, from the store's own outcome. */
@@ -112,7 +95,7 @@ export function revisionRecordData(
   rel: string,
   outcome: RecordOutcome,
   revisions: number,
-): EventData {
+): AppEvent {
   return outcome.stored
     ? {
         action: 'revision.record',
@@ -126,7 +109,7 @@ export function revisionRecordData(
 }
 
 /** Payload for one restore, carrying the size of the text put back. */
-export function revisionRestoreData(rel: string, rev: string, chars: number): EventData {
+export function revisionRestoreData(rel: string, rev: string, chars: number): AppEvent {
   return { action: 'revision.restore', rel, rev, chars };
 }
 
@@ -184,8 +167,9 @@ export function startEventLog(): EventLog {
       emit({
         scope: 'app',
         kind: 'info',
+        actor: 'system',
         message: 'event log ' + path,
-        data: {
+        event: {
           action: 'log.open',
           path,
           maxEvents: MAX_LOG_EVENTS,

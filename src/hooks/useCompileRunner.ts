@@ -16,9 +16,9 @@ import {
   outputsFresh,
   type CompileResult,
 } from '../lib/compile';
-import { emit, type ProblemEvent } from '../lib/events';
+import { emit } from '../lib/events';
+import type { Actor } from '../lib/generated/events';
 import { saveTex } from '../lib/files';
-import { joinPath } from '../lib/paths';
 import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
 
@@ -81,23 +81,23 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     window.addEventListener('beforeunload', h);
     return () => window.removeEventListener('beforeunload', h);
   }, []);
-  const publishProblems = async (text: string, base: string, wsRoot: string) => {
+  /** Engine-log diagnostics onto the bus, root-relative to the run's root. */
+  const publishProblems = async (
+    text: string,
+    base: string,
+    src: { rootId: string; rootPath: string } | null,
+    actor: Actor,
+  ) => {
     try {
+      const wsRoot = src?.rootPath ?? (root || workdirHint);
       const entries = (await structure().diagnostics(text, wsRoot, base)).slice(0, 100);
       for (const d of entries) {
-        const clickable = !d.external && d.path !== undefined;
-        const file = clickable ? joinPath(wsRoot, d.path as string) : '';
         emit({
           scope: 'compile',
-          kind: clickable ? 'error' : 'warn',
+          kind: d.external ? 'warn' : 'error',
+          actor,
           message: `${d.path ?? '(outside project)'}:${d.line} ${d.message}`,
-          data: {
-            action: 'compile.problem',
-            file,
-            line: d.line,
-            msg: d.message,
-            clickable,
-          } satisfies ProblemEvent & { action: string },
+          event: { action: 'compile.problem', rootId: src?.rootId ?? null, ...d },
         });
       }
     } catch {
@@ -131,6 +131,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
+    // Warm-open runs on its own; every other run is someone's request.
+    const actor: Actor = opts?.skipPersist ? 'system' : 'user';
     const finish = (phase: CompilePhase) => {
       phaseRef.current = phase;
       setCompilePhase(phase);
@@ -139,8 +141,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor,
         message: 'compile blocked: open a .tex file first',
-        data: {
+        event: {
           action: 'compile.blocked',
           reason: largeFile ? 'large-placeholder' : 'non-text-selection',
         },
@@ -152,8 +155,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     emit({
       scope: 'compile',
       kind: 'progress',
+      actor,
       message: 'compiling ' + (target ?? fileName),
-      data: { action: 'compile.start', target: target ?? fileName },
+      event: { action: 'compile.start', target: target ?? fileName },
     });
     finish('compiling');
     setCompileStart(Date.now());
@@ -167,21 +171,23 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     const isDownloadLine = (l: string) => /(^|\s)downloading\s/i.test(l);
     try {
       unlisten = await onCompileLine((line) => {
-        const s = String(line);
+        const s = line.text;
         if (isDownloadLine(s)) {
           const pkg = s.replace(/^.*downloading\s+/i, '').slice(0, 120);
           emit({
             scope: 'compile',
             kind: 'info',
+            actor,
             message: 'downloading ' + pkg,
-            data: { action: 'compile.download', package: pkg },
+            event: { action: 'compile.download', package: pkg },
           });
         } else
           emit({
             scope: 'compile',
             kind: 'progress',
+            actor,
             message: s.slice(0, 300),
-            data: { action: 'compile.engine-line' },
+            event: { action: 'compile.engine-line', stream: line.stream },
           });
       });
     } catch {
@@ -193,8 +199,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         emit({
           scope: 'compile',
           kind: 'progress',
+          actor,
           message: `still compiling ${target ?? fileName} (${Math.floor((Date.now() - t0) / 1000)}s)`,
-          data: {
+          event: {
             action: 'compile.progress',
             target: target ?? fileName,
             elapsedMs: Date.now() - t0,
@@ -233,8 +240,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor,
         message: `compile refused: editor does not own ${target} (open it first)`,
-        data: { action: 'compile.refused', reason: 'editor-does-not-own-target', target },
+        event: { action: 'compile.refused', reason: 'editor-does-not-own-target', target },
       });
       setLog(`compile refused: editor does not own ${target}`);
       clearInterval(hb);
@@ -285,8 +293,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor,
         message: 'save failed: ' + String(e).slice(0, 200),
-        data: { action: 'compile.persist-failed', target, error: String(e).slice(0, 200) },
+        event: { action: 'compile.persist-failed', target, error: String(e).slice(0, 200) },
       });
       clearInterval(hb);
       try {
@@ -312,8 +321,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'success',
+        actor,
         message: 'compiled ' + String(r.pdfUrl),
-        data: {
+        event: {
           action: 'compile.finish',
           ok: true,
           target: activeTarget,
@@ -325,8 +335,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'preview',
         kind: 'success',
+        actor,
         message: 'preview ' + String(r.pdfUrl),
-        data: { action: 'preview.update', pdfUrl: String(r.pdfUrl) },
+        event: { action: 'preview.update', pdfUrl: String(r.pdfUrl) },
       });
     } else if (!r.ok && r.log.includes('spawn')) {
       finish('failure');
@@ -336,8 +347,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor,
         message: String(r.log).slice(0, 300),
-        data: {
+        event: {
           action: 'compile.finish',
           ok: false,
           target: activeTarget,
@@ -346,7 +358,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
       const c = await readEngineLog();
-      await publishProblems(c ?? r.log, mainDir, root || workdirHint);
+      await publishProblems(c ?? r.log, mainDir, src, actor);
     } else if (!r.ok) {
       finish('failure');
       setCompileStart(null);
@@ -354,8 +366,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor,
         message: String(r.log).slice(0, 300),
-        data: {
+        event: {
           action: 'compile.finish',
           ok: false,
           target: activeTarget,
@@ -364,7 +377,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
       const c = await readEngineLog();
-      await publishProblems(c ?? r.log, mainDir, root || workdirHint);
+      await publishProblems(c ?? r.log, mainDir, src, actor);
     }
     clearInterval(hb);
     try {
@@ -376,8 +389,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     emit({
       scope: 'compile',
       kind: 'info',
+      actor: 'system',
       message: `main-thread max frame ${Math.round(maxGap)}ms during compile`,
-      data: { action: 'compile.frame-probe', maxFrameMs: Math.round(maxGap) },
+      event: { action: 'compile.frame-probe', maxFrameMs: Math.round(maxGap) },
     });
     return true;
   }
@@ -399,16 +413,18 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'info',
+        actor: 'system',
         message: 'preview will build on first Compile (no cached output)',
-        data: { action: 'compile.warm-skipped', reason: 'no-cached-output', target: mainAbsPath },
+        event: { action: 'compile.warm-skipped', reason: 'no-cached-output', target: mainAbsPath },
       });
       return;
     }
     emit({
       scope: 'compile',
       kind: 'info',
+      actor: 'system',
       message: 'warming preview for ' + mainAbsPath,
-      data: { action: 'compile.warm', target: mainAbsPath },
+      event: { action: 'compile.warm', target: mainAbsPath },
     });
     await runCompile(mainAbsPath, { skipPersist: true, root: project });
     // Not owned (user raced us) → their stream wins; nothing to report.
@@ -419,16 +435,18 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       emit({
         scope: 'compile',
         kind: 'error',
+        actor: 'user',
         message: 'compile blocked: open a .tex file first',
-        data: { action: 'compile.blocked', reason: 'not-a-tex-file', target: path },
+        event: { action: 'compile.blocked', reason: 'not-a-tex-file', target: path },
       });
       return;
     }
     emit({
       scope: 'compile',
       kind: 'info',
+      actor: 'user',
       message: `compiling ${path} directly (one-off, not the main file)`,
-      data: { action: 'compile.one-off', target: path },
+      event: { action: 'compile.one-off', target: path },
     });
     await runCompile(path);
   }

@@ -1,7 +1,7 @@
 // LogStream.tsx — the single unified log event stream.
 //
-// Every surface emits here; problem entries carry {file, line, clickable}
-// and render as click-to-jump rows. Bus cap 500 + 4Hz flush + render
+// Every surface emits here; `compile.problem` entries inside a session root
+// render as click-to-jump rows. Bus cap 500 + 4Hz flush + render
 // slice 100.
 
 import { useEffect, useRef, useState } from 'react';
@@ -11,19 +11,20 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import Typography from '@mui/material/Typography';
-import {
-  list,
-  subscribe,
-  clear,
-  tailEvents,
-  problemOf,
-  type BusEvent,
-  type ProblemEvent,
-} from '../lib/events';
+import { list, subscribe, clear, tailEvents, eventOf } from '../lib/events';
+import type { BusEvent } from '../lib/generated/events';
 
-function problemRefOf(e: BusEvent): ProblemEvent | null {
-  const p = problemOf(e);
-  return p && p.clickable ? p : null;
+/** A problem's jump target: root-relative, inside a known session root. */
+export interface ProblemRef {
+  rootId: string;
+  path: string;
+  line: number;
+}
+
+function problemRefOf(e: BusEvent): ProblemRef | null {
+  const p = eventOf(e, 'compile.problem');
+  if (!p || p.external || p.rootId === null || p.path === undefined) return null;
+  return { rootId: p.rootId, path: p.path, line: p.line };
 }
 
 function kindColor(kind: BusEvent['kind']): string {
@@ -66,7 +67,7 @@ export default function LogStream({
   onHeight: (h: number) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onJump: (absPath: string, line: number) => void;
+  onJump: (target: ProblemRef) => void;
 }) {
   const [evts, setEvts] = useState<BusEvent[]>(() => list());
   const dirty = useRef(false);
@@ -189,8 +190,8 @@ export default function LogStream({
                 return (
                   <ListItem key={i} disablePadding>
                     <ListItemButton
-                      onClick={() => onJump(jump.file, jump.line)}
-                      title={`Jump to ${jump.file}:${jump.line}`}
+                      onClick={() => onJump(jump)}
+                      title={`Jump to ${jump.path}:${jump.line}`}
                     >
                       <RowText e={e} />
                     </ListItemButton>

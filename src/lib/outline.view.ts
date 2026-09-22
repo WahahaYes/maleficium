@@ -1,7 +1,7 @@
 // outline.view.ts — view-side narrowing of outline rows (search + kind
 // segments). Pure; parsing lives behind the structure seam.
 
-import type { OutlineEntry } from './structure';
+import type { OutlineEntry } from './generated/structure';
 
 /** Filter segments for the outline view (All = interleaved, document order). */
 export type OutlineFilter = 'all' | 'sections' | 'labels' | 'figures' | 'inputs';

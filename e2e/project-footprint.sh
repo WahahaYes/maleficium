@@ -128,7 +128,7 @@ LOGFILE="$LOGDIR/events.jsonl"
 [[ "$LOGFILE" == "$ROOT"* ]] && fail "event log inside project: $LOGFILE"
 pass "event log outside project: $LOGFILE"
 mkdir -p "$LOGDIR"
-printf '{"at":1,"scope":"fs","kind":"info","message":"revision 1 of main.tex","data":{"action":"revision.record","rel":"main.tex","stored":true,"rev":"1","revisions":1}}\n' > "$LOGFILE"
+printf '{"at":1,"scope":"fs","kind":"info","actor":"system","message":"revision 1 of main.tex","event":{"action":"revision.record","rel":"main.tex","stored":true,"rev":"1","revisions":1}}\n' > "$LOGFILE"
 [[ -z "$(porcelain)" ]] || fail "project dirty after simulated log write"
 [[ -e "$ROOT/maleficium-log" ]] && fail "in-project maleficium-log re-created"
 if echo "$(porcelain)" | grep -q "events.jsonl"; then fail "event log appeared in project"; fi

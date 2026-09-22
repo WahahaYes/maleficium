@@ -86,10 +86,11 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
       emit({
         scope: 'fs',
         kind: 'info',
+        actor: 'system',
         message: outcome.stored
           ? `revision ${outcome.rev} of ${rel} (${revisions} kept)`
           : `no revision for ${rel} (${outcome.reason})`,
-        data: revisionRecordData(rel, outcome, revisions),
+        event: revisionRecordData(rel, outcome, revisions),
       });
     },
     [history, projectId, relInProject, refreshRevisionCount],
@@ -139,8 +140,9 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
           emit({
             scope: 'fs',
             kind: 'warn',
+            actor: 'user',
             message: 'restore unavailable for ' + rel,
-            data: { action: 'revision.restore-unavailable', rel, rev },
+            event: { action: 'revision.restore-unavailable', rel, rev },
           });
           return;
         }
@@ -153,8 +155,9 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
         emit({
           scope: 'fs',
           kind: 'success',
+          actor: 'user',
           message: 'restored ' + rel,
-          data: revisionRestoreData(rel, rev, text.length),
+          event: revisionRestoreData(rel, rev, text.length),
         });
       } finally {
         setRestoringRev(null);

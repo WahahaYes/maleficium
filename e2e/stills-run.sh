@@ -164,7 +164,7 @@ stop_app() {
 }
 
 check_log() {
-  # $1 = space-separated data.action names this run's log must hold.
+  # $1 = space-separated event.action names this run's log must hold.
   # The app truncates the log at launch, so exactly one log.open proves
   # the file is this run's and nothing else's.
   APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
@@ -183,7 +183,9 @@ for i, l in enumerate(lines):
         sys.exit("line %d is not JSON: %s" % (i + 1, l[:120]))
     assert isinstance(e.get("at"), (int, float)) and isinstance(e.get("message"), str), "line %d lacks at/message" % (i + 1)
     events.append(e)
-actions = [e.get("data", {}).get("action") for e in events if isinstance(e.get("data"), dict)]
+actions = [e["event"].get("action") if isinstance(e.get("event"), dict) else e.get("dropped") for e in events]
+bad = [i + 1 for i, e in enumerate(events) if e.get("actor") not in ("user", "agent", "system")]
+assert not bad, "lines without an actor: %s" % bad[:10]
 assert actions.count("log.open") == 1, "expected exactly one log.open (truncation proof), got %d" % actions.count("log.open")
 missing = [a for a in req if a not in actions]
 assert not missing, "missing actions: %s (have %s)" % (missing, sorted(set(actions)))

@@ -1,0 +1,14 @@
+[package]
+name = "maleficium-events"
+version = "0.1.0"
+edition = "2021"
+description = "App event catalog: the one definition of every bus payload (pure, wasm32-ready); TypeScript is generated from it"
+
+[dependencies]
+maleficium-structure = { path = "../structure" }
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+ts-rs = "12"
+
+[dev-dependencies]
+serde_json = "1"

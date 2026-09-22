@@ -74,7 +74,13 @@ export function useSynctex(deps: UseSynctexDeps) {
   async function forwardPage(file: string, line: number): Promise<number | null> {
     const texRel = source ? relTo(source.rootPath, texPathFor(file, workdirHint)) : null;
     if (!source || !texRel) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: source is outside the project' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        actor: 'user',
+        message: 'SyncTeX: source is outside the project',
+        event: { action: 'synctex.outside', direction: 'forward' },
+      });
       return null;
     }
     const result = await forward_sync(source.rootId, source.mainRel, texRel, line);
@@ -82,12 +88,24 @@ export function useSynctex(deps: UseSynctexDeps) {
       emit({
         scope: 'preview',
         kind: 'warn',
+        actor: 'user',
         message: `SyncTeX query failed (${(result.error ?? '').slice(0, 200)})`,
+        event: {
+          action: 'synctex.failed',
+          direction: 'forward',
+          error: (result.error ?? '').slice(0, 200),
+        },
       });
       return null;
     }
     if (result.page == null) {
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        actor: 'user',
+        message: 'synctex_no_match',
+        event: { action: 'synctex.no-match', direction: 'forward', compiling: false },
+      });
     }
     return result.page;
   }
@@ -98,7 +116,9 @@ export function useSynctex(deps: UseSynctexDeps) {
       emit({
         scope: 'preview',
         kind: 'warn',
+        actor: 'user',
         message: 'SyncTeX unavailable while compiling (synctex_no_match)',
+        event: { action: 'synctex.no-match', direction: 'forward', compiling: true },
       });
       return;
     }
@@ -111,7 +131,13 @@ export function useSynctex(deps: UseSynctexDeps) {
     // arriving without moving is noise, not navigation — stay silent.
     if (!shouldTurnPage(target, pageNumberRef.current)) return;
     setPageNumber(target);
-    emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
+    emit({
+      scope: 'preview',
+      kind: 'info',
+      actor: 'user',
+      message: `forward SyncTeX → page ${target}`,
+      event: { action: 'synctex.forward', page: target },
+    });
   }
 
   async function handleInverseSync(page: number, x: number, y: number) {
@@ -120,12 +146,20 @@ export function useSynctex(deps: UseSynctexDeps) {
       emit({
         scope: 'preview',
         kind: 'warn',
+        actor: 'user',
         message: 'synctex_no_match: disabled during compile',
+        event: { action: 'synctex.no-match', direction: 'inverse', compiling: true },
       });
       return;
     }
     if (!source) {
-      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: output is outside the project' });
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        actor: 'user',
+        message: 'SyncTeX: output is outside the project',
+        event: { action: 'synctex.outside', direction: 'inverse' },
+      });
       return;
     }
     const result = await inverse_sync(source.rootId, source.mainRel, page, x, y);
@@ -133,7 +167,13 @@ export function useSynctex(deps: UseSynctexDeps) {
       emit({
         scope: 'preview',
         kind: 'warn',
+        actor: 'user',
         message: `SyncTeX query failed (${(result.error ?? '').slice(0, 200)})`,
+        event: {
+          action: 'synctex.failed',
+          direction: 'inverse',
+          error: (result.error ?? '').slice(0, 200),
+        },
       });
       return;
     }
@@ -164,13 +204,17 @@ export function useSynctex(deps: UseSynctexDeps) {
       emit({
         scope: 'preview',
         kind: 'success',
+        actor: 'user',
         message: `synctex inverse → ${hitFile ?? fileName}:${line}`,
+        event: { action: 'synctex.inverse', path: hitFile ?? fileName, line },
       });
     } else {
       emit({
         scope: 'preview',
         kind: 'warn',
+        actor: 'user',
         message: 'SyncTeX: no match at this position (synctex_no_match)',
+        event: { action: 'synctex.no-match', direction: 'inverse', compiling: false },
       });
     }
   }
@@ -182,7 +226,13 @@ export function useSynctex(deps: UseSynctexDeps) {
     void forwardPage(file, line).then((target) => {
       if (!shouldTurnPage(target, pageNumberRef.current)) return;
       setPageNumber(target);
-      emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });
+      emit({
+        scope: 'preview',
+        kind: 'info',
+        actor: 'user',
+        message: `forward SyncTeX → page ${target}`,
+        event: { action: 'synctex.forward', page: target },
+      });
     });
   };
 

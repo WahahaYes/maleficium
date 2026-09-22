@@ -102,7 +102,7 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
   return { state, trash, ops: () => useFileOps(deps()) };
 }
 
-const data = (i: number) => events.list()[i].data as Record<string, unknown>;
+const data = (i: number) => events.list()[i].event as Record<string, unknown>;
 const actions = () => events.list().map((_, i) => data(i).action);
 
 let files: Map<string, string>;

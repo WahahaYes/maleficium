@@ -9,7 +9,7 @@ default-run = "tauri-app"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["structure"]
+members = ["structure", "events"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -32,6 +32,7 @@ tokio = { version = "1", features = ["full"] }
 schemars = "1"
 anyhow = "1"
 maleficium-structure = { path = "structure" }
+maleficium-events = { path = "events" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

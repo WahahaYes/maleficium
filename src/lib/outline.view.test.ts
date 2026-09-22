@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filterOutline, searchOutline } from './outline.view';
-import type { OutlineEntry } from './structure';
+import type { OutlineEntry } from './generated/structure';
 
 // Rows as the structure crate emits them (parsing is tested in Rust).
 const ROWS: OutlineEntry[] = [

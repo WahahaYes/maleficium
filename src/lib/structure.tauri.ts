@@ -2,7 +2,8 @@
 // Rust crate over IPC.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { Diagnostic, Outline, StructureProvider } from './structure';
+import type { Diagnostic, Outline } from './generated/structure';
+import type { StructureProvider } from './structure';
 
 export const desktopStructure: StructureProvider = {
   outline: (text) => invoke<Outline>('structure_outline', { text }),

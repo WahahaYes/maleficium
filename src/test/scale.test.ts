@@ -32,7 +32,13 @@ describe('scale budgets', () => {
   it('5000 bus emits stay capped at 500', () => {
     clear();
     for (let i = 0; i < 5000; i++) {
-      emit({ scope: 'compile', kind: 'info', message: `m${i}` });
+      emit({
+        scope: 'compile',
+        kind: 'info',
+        actor: 'system',
+        message: `m${i}`,
+        event: { action: 'file.load', path: 'p' },
+      });
     }
     expect(list().length).toBe(500);
     expect(list()[0].message).toBe('m4500');

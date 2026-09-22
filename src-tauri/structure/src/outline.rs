@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::text::{base_name, strip_comments, Lines};
 
@@ -15,7 +16,7 @@ use crate::text::{base_name, strip_comments, Lines};
 pub const MAX_OUTLINE_ENTRIES: usize = 1000;
 
 /// What a row IS: a sectioning command, or a marker riding the tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum OutlineKind {
     Section,
@@ -25,7 +26,7 @@ pub enum OutlineKind {
     Input,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, TS)]
 pub struct OutlineEntry {
     pub level: u8,
     pub title: String,
@@ -33,10 +34,11 @@ pub struct OutlineEntry {
     pub kind: OutlineKind,
     /// Marker detail: label key, float graphics file, or input path.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub detail: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, TS)]
 pub struct Outline {
     pub entries: Vec<OutlineEntry>,
     /// Rows dropped by the cap.

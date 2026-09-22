@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { CompileLine } from './generated/events';
 
 /**
  * Compile backend contract, addressed by session root and the main file's
@@ -12,8 +13,8 @@ import { listen } from '@tauri-apps/api/event';
  */
 export type CompileResult = { ok: boolean; pdfUrl: string | null; log: string };
 
-export function onCompileLine(cb: (line: string) => void): Promise<() => void> {
-  return listen<string>('compile-line', (e) => cb(e.payload));
+export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => void> {
+  return listen<CompileLine>('compile-line', (e) => cb(e.payload));
 }
 
 export async function compileTex(rootId: string, mainRel: string): Promise<CompileResult> {
