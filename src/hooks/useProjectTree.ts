@@ -110,8 +110,18 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           if (!cancelled) unwatch = u;
           else u();
         },
-        () => {
-          /* watcher unavailable — the tree still refreshes on manual reload */
+        (e: unknown) => {
+          // The tree still refreshes on reload; say so rather than silently
+          // losing external changes.
+          if (cancelled) return;
+          emit({
+            scope: 'fs',
+            kind: 'warn',
+            actor: 'system',
+            message:
+              'live file tracking unavailable: external changes need File > Reload from Disk',
+            event: { action: 'fs.watch-unavailable', root, error: String(e).slice(0, 200) },
+          });
         },
       );
     return () => {

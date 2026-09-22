@@ -217,6 +217,9 @@ pub enum AppEvent {
     FsExternal { change: WatchChange, path: String },
     #[serde(rename = "fs.external-delete")]
     FsExternalDelete { path: String },
+    /// Live tracking could not start: external changes need a manual reload.
+    #[serde(rename = "fs.watch-unavailable")]
+    FsWatchUnavailable { root: String, error: String },
     #[serde(rename = "command.blocked")]
     CommandBlocked {
         command: String,
