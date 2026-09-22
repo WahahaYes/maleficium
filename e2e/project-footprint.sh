@@ -101,6 +101,13 @@ touch "$OUT/main.pdf" "$OUT/main.log" "$OUT/main.synctex.gz"
 [[ -e "$ROOT/out" ]] && fail "in-project out/ re-created"
 pass "compile artifacts land in cache shard, porcelain clean, no in-project out/"
 
+# --- engine cache ---
+ENGINE_CACHE="$CACHEDIR/maleficium-tectonic"
+[[ "$ENGINE_CACHE" == "$ROOT"* ]] && fail "engine cache inside project: $ENGINE_CACHE"
+grep -q '"TECTONIC_CACHE_DIR", cache' "$DEVROOT/src-tauri/src/core/engine.rs" \
+    || fail "engine spawn no longer sets TECTONIC_CACHE_DIR"
+pass "engine cache is app-owned, outside project: $ENGINE_CACHE"
+
 # --- history home ---
 HIST="$APPDATA/maleficium-history/$HASH"
 [[ "$HIST" == "$ROOT"* ]] && fail "history home inside project: $HIST"

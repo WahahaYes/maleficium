@@ -3,6 +3,7 @@
 //! document structure over the file graph.
 
 pub mod compile;
+pub mod engine;
 pub mod fs;
 pub mod outputs;
 pub mod structure;

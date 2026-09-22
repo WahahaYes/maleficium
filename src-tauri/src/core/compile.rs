@@ -1,10 +1,11 @@
-//! Compile orchestration against explicit session roots: sidecar
-//! resolution, outdir sharding, hang guard, job table.
+//! Compile jobs against explicit session roots: each job runs the engine on
+//! a worker thread and is polled or cancelled by id.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::process::Child;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use super::engine::{self, DigestCheck};
 
 /// How a compile job resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +40,8 @@ pub struct JobRecord {
 }
 
 struct LiveJob {
-    child: Option<Child>,
+    /// The running engine; a cancel takes it from here.
+    child: Arc<Mutex<Option<Child>>>,
     lines: Vec<String>,
     done_tx: Option<std::sync::mpsc::Sender<JobRecord>>,
     done_rx: Option<std::sync::mpsc::Receiver<JobRecord>>,
@@ -59,55 +61,37 @@ fn next_id() -> String {
     format!("job-{}", *n)
 }
 
-/// Spawn a compile job: resolves paths, spawns the sidecar, pumps output on
-/// a worker thread. Returns the job id immediately; poll for the record.
+/// The first 500 bytes of a failed run's stderr, as the failure message.
+pub fn failure_text(lines: &[maleficium_events::CompileLine]) -> String {
+    let tail = lines
+        .iter()
+        .filter(|l| l.stream == maleficium_events::CompileStream::Stderr)
+        .map(|l| l.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut end = 500.min(tail.len());
+    while !tail.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("bundled tectonic failed: {}", &tail[..end])
+}
+
+/// Start a compile job: resolves paths, then runs the engine on a worker
+/// thread. Returns the job id immediately; poll for the record.
 pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String> {
     let abs = super::fs::resolve_in(root_id, rel)?;
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
     }
-    let super::MainOutputs {
-        dir,
-        main_file,
-        outdir,
-        pdf_name,
-    } = super::main_outputs(&abs)?;
-    std::fs::create_dir_all(&outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
-    let outdir_str = outdir.to_string_lossy().to_string();
-    let bin = super::sidecar_path_for("tectonic")?;
-
-    let mut child = Command::new(&bin)
-        .args([
-            "-X",
-            "compile",
-            &main_file,
-            "--outdir",
-            &outdir_str,
-            "--synctex",
-        ])
-        .current_dir(&dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("bundled tectonic spawn failed: {}", e))?;
-
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let (stdout, stderr) = match (stdout, stderr) {
-        (Some(o), Some(e)) => (o, e),
-        _ => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(String::from("sidecar pipes unavailable"));
-        }
-    };
+    let out = super::main_outputs(&abs)?;
 
     let id = next_id();
+    let child = Arc::new(Mutex::new(None));
     let (tx, rx) = std::sync::mpsc::channel();
     jobs().lock().unwrap().insert(
         id.clone(),
         LiveJob {
-            child: Some(child),
+            child: child.clone(),
             lines: Vec::new(),
             done_tx: Some(tx),
             done_rx: Some(rx),
@@ -115,60 +99,55 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
     );
 
     let job_id = id.clone();
-    let log_file = super::log_file(&outdir, &main_file);
     std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        let pump_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
-        let err_reader = BufReader::new(stderr);
-        let mut collected: Vec<String> = Vec::new();
-        for line in err_reader.lines().map_while(Result::ok) {
-            collected.push(line);
-        }
-        let mut all = pump_lines;
-        all.extend(collected.iter().cloned());
-
-        let outcome = {
-            let mut guard = jobs().lock().unwrap();
-            match guard.get_mut(&job_id).and_then(|j| j.child.take()) {
-                None => JobStatus::Cancelled,
-                Some(c) => {
-                    drop(guard);
-                    match super::wait_for_child(c, timeout_secs) {
-                        super::JobOutcome::Cancelled => JobStatus::Cancelled,
-                        super::JobOutcome::TimedOut => JobStatus::TimedOut,
-                        super::JobOutcome::Exited(s) if s.success() => JobStatus::Success,
-                        super::JobOutcome::Exited(_) => JobStatus::Failed,
-                    }
+        let mut on_line = |l: &maleficium_events::CompileLine| {
+            if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
+                job.lines.push(l.text.clone());
+            }
+        };
+        let record = match engine::run(&out, &child, timeout_secs, &mut on_line) {
+            Err(e) => JobRecord {
+                status: JobStatus::Failed,
+                pdf_url: None,
+                log: e,
+                lines: Vec::new(),
+            },
+            Ok(a) => {
+                let lines = a.texts();
+                super::write_engine_log(&super::log_file(&out.outdir, &out.main_file), &lines);
+                let (status, pdf_url, log) = match (&a.status, &a.bundle) {
+                    (_, DigestCheck::Changed(d)) => (
+                        JobStatus::Failed,
+                        None,
+                        format!(
+                            "TeX bundle changed: {} now resolves to {}",
+                            engine::BUNDLE_URL,
+                            d
+                        ),
+                    ),
+                    (JobStatus::Success, _) => (
+                        JobStatus::Success,
+                        Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+                        String::new(),
+                    ),
+                    (JobStatus::Failed, _) => (JobStatus::Failed, None, failure_text(&a.lines)),
+                    (JobStatus::TimedOut, _) => (
+                        JobStatus::TimedOut,
+                        None,
+                        format!(
+                            "compile timed out after {}s (engine produced no exit — killed)",
+                            timeout_secs
+                        ),
+                    ),
+                    (s, _) => (s.clone(), None, String::from("compile cancelled")),
+                };
+                JobRecord {
+                    status,
+                    pdf_url,
+                    log,
+                    lines,
                 }
             }
-        };
-
-        let (pdf_url, log) = match outcome {
-            JobStatus::Success => {
-                let pdf = outdir.join(&pdf_name);
-                (Some(pdf.to_string_lossy().to_string()), String::new())
-            }
-            JobStatus::Failed => {
-                let tail = collected.join("\n");
-                let t = &tail[..500.min(tail.len())];
-                (None, format!("bundled tectonic failed: {}", t))
-            }
-            JobStatus::TimedOut => (
-                None,
-                format!(
-                    "compile timed out after {}s (engine produced no exit — killed)",
-                    timeout_secs
-                ),
-            ),
-            JobStatus::Cancelled => (None, String::from("compile cancelled")),
-            JobStatus::Running => (None, String::new()),
-        };
-        super::write_engine_log(&log_file, &all);
-        let record = JobRecord {
-            status: outcome,
-            pdf_url,
-            log,
-            lines: all,
         };
         if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
             job.lines = record.lines.clone();
@@ -224,7 +203,8 @@ pub fn cancel(job_id: &str) -> Result<String, String> {
     let job = guard
         .get_mut(job_id)
         .ok_or_else(|| format!("unknown job: {}", job_id))?;
-    match job.child.take() {
+    let taken = job.child.lock().unwrap().take();
+    match taken {
         Some(mut c) => {
             let _ = c.kill();
             let _ = c.wait();

@@ -39,6 +39,16 @@ porcelain() { git status --porcelain; }
 export MCP_BIN="$BIN" MCP_ROOT="$ROOT"
 export DEVROOT
 
+# The app cache home holds the engine cache (TECTONIC_CACHE_DIR) and the
+# output shards: keep it in OS tmp, reused across runs so only the first run
+# pays the cold bundle download.
+export XDG_CACHE_HOME="${DRIVER_CACHE:-${TMPDIR:-/tmp}/maleficium-driver-cache-$(id -u)}"
+ENGINE_RS="$DEVROOT/src-tauri/src/core/engine.rs"
+BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' "$ENGINE_RS")"
+[ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
+export ENGINE_CACHE="$XDG_CACHE_HOME/com.ethan.tauri-app/maleficium-tectonic/$BUNDLE_DIGEST"
+export BUNDLE_DIGEST
+
 # Heavy fixtures are generated megabytes: they live only in OS tmp (RULES §4)
 # and are rebuilt from src/test/fixtures.ts whenever they are absent.
 FIXTURES="${DRIVER_FIXTURES:-${TMPDIR:-/tmp}/maleficium-driver-fixtures-$(id -u)}"
@@ -126,7 +136,7 @@ PROBE
 
 export DRIVER_LOG="${DRIVER_LOG:-/tmp/maleficium-driver-log.jsonl}"
 python3 - "$SCRATCH" <<'EOF'
-import json, os, subprocess, sys, time
+import json, os, subprocess, sys, tempfile, time
 scratch = sys.argv[1]
 BIN = os.environ["MCP_BIN"]
 ROOT = os.environ["MCP_ROOT"]
@@ -191,6 +201,10 @@ if WARM_ONLY:
     logf.close()
     p.kill()
     sys.exit(0)
+EC = os.environ["ENGINE_CACHE"]
+pinned = os.path.join(EC, "bundles", "hashes", "https,58,,47,,47,data1b.fullyjustified.net,47,tlextras-2022.0r0.tar")
+check("engine cache is app-owned under OS tmp", EC.startswith(tempfile.gettempdir()) and os.path.isdir(EC), EC)
+check("compile resolved the pinned bundle", os.path.isfile(pinned) and open(pinned).read().strip() == os.environ["BUNDLE_DIGEST"], pinned)
 pdf = sc.get("pdf_url") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
