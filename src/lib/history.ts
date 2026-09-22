@@ -9,6 +9,7 @@ import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { appHistoryDir, historyBlobPath, joinPath } from './paths';
 import { previewKindFor } from './files';
+import type { RevisionSkipReason } from './generated/events';
 
 /** Hard cap per file. Oldest revisions are evicted first. */
 export const MAX_REVISIONS_PER_FILE = 50;
@@ -39,8 +40,7 @@ export interface RetentionInfo {
 
 /** Why a save produced no revision. `stored` means one was written. */
 export type RecordOutcome =
-  | { stored: true; rev: string; deduped: boolean }
-  | { stored: false; reason: 'not-text' | 'too-large' | 'unchanged' | 'unavailable' };
+  { stored: true; rev: string; deduped: boolean } | { stored: false; reason: RevisionSkipReason };
 
 export interface HistoryStore {
   recordRevision(projectId: string, relPath: string, bytes: Uint8Array): Promise<RecordOutcome>;
@@ -80,12 +80,18 @@ function indexPath(historyDir: string): string {
 }
 
 /** Parse a stored index, rejecting anything that is not the current shape. */
-function parseIndex(raw: string): Index {
+/**
+ * Parse a stored index. Another format version is simply not read (starts
+ * empty); a damaged index of this version throws, so no caller replaces
+ * history it could not read.
+ */
+export function parseIndex(raw: string): Index {
   const j = JSON.parse(raw) as unknown;
-  if (typeof j !== 'object' || j === null) return emptyIndex();
+  if (typeof j !== 'object' || j === null) throw new Error('history index is not an object');
   const o = j as Partial<Index>;
-  if (o.v !== 1 || typeof o.seq !== 'number' || typeof o.files !== 'object' || !o.files) {
-    return emptyIndex();
+  if (o.v !== 1) return emptyIndex();
+  if (typeof o.seq !== 'number' || typeof o.files !== 'object' || !o.files) {
+    throw new Error('history index is damaged');
   }
   const files: Record<string, Entry[]> = {};
   for (const [rel, list] of Object.entries(o.files)) {
@@ -173,14 +179,11 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
     return appHistoryDir(base, projectId);
   }
 
+  /** Missing means no history yet; anything unreadable throws. */
   async function readIndex(historyDir: string): Promise<Index> {
-    try {
-      if ((await fs().stat(indexPath(historyDir))) === null) return emptyIndex();
-      const raw = await fs().readBytes(indexPath(historyDir));
-      return parseIndex(new TextDecoder().decode(raw));
-    } catch {
-      return emptyIndex();
-    }
+    if ((await fs().stat(indexPath(historyDir))) === null) return emptyIndex();
+    const raw = await fs().readBytes(indexPath(historyDir));
+    return parseIndex(new TextDecoder().decode(raw));
   }
 
   async function writeIndex(historyDir: string, index: Index): Promise<void> {
@@ -213,9 +216,15 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         return { stored: false, reason: 'unavailable' };
       }
 
+      let index: Index;
+      try {
+        index = await readIndex(historyDir);
+      } catch {
+        return { stored: false, reason: 'index-unreadable' };
+      }
+
       try {
         const hash = await hashBytes(bytes);
-        const index = await readIndex(historyDir);
         const list = index.files[relPath] ?? [];
         const last = list[list.length - 1];
         if (last && last.hash === hash) return { stored: false, reason: 'unchanged' };
@@ -248,6 +257,7 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         const list = index.files[relPath] ?? [];
         return list.map((e) => ({ rev: e.rev, at: e.at, bytes: e.bytes })).reverse();
       } catch {
+        // No readable history: the panel shows none (nothing is written).
         return [];
       }
     },
@@ -260,6 +270,7 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         if (!entry) return null;
         return await fs().readBytes(historyBlobPath(historyDir, entry.hash));
       } catch {
+        // Revision or blob unreadable: restore reports it unavailable.
         return null;
       }
     },
@@ -291,6 +302,7 @@ export function createHistoryStore(rootFor: (projectId: string) => string | null
         const index = await readIndex(await dirFor(projectId));
         return { ...base, revisions: countRevisions(index), bytes: distinctBytes(index) };
       } catch {
+        // No readable history: report the limits with nothing held.
         return { ...base, revisions: 0, bytes: 0 };
       }
     },

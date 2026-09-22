@@ -102,6 +102,18 @@ pub enum RevisionSkipReason {
     TooLarge,
     Unchanged,
     Unavailable,
+    /// The project's history index exists but cannot be read; it is left
+    /// untouched rather than replaced.
+    IndexUnreadable,
+}
+
+/// A save the app made on the user's behalf (not an explicit Ctrl+S).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum SaveTrigger {
+    Switch,
+    Close,
+    Auto,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -164,6 +176,13 @@ pub enum AppEvent {
         chars: u64,
         mode: SaveMode,
     },
+    /// An implicit save failed; the buffer stays dirty.
+    #[serde(rename = "file.save-failed")]
+    FileSaveFailed {
+        path: String,
+        trigger: SaveTrigger,
+        error: String,
+    },
     #[serde(rename = "file.close")]
     FileClose { path: String },
     #[serde(rename = "file.close-many")]
@@ -213,6 +232,8 @@ pub enum AppEvent {
     ProjectOpenCancelled {},
     #[serde(rename = "tree.load")]
     TreeLoad { rows: u32, ms: u64, deep: bool },
+    #[serde(rename = "tree.load-failed")]
+    TreeLoadFailed { dir: String, error: String },
     #[serde(rename = "fs.external")]
     FsExternal { change: WatchChange, path: String },
     #[serde(rename = "fs.external-delete")]
@@ -403,6 +424,7 @@ pub fn typescript() -> String {
         WarmSkippedReason::decl(&cfg),
         CleanSkippedReason::decl(&cfg),
         RevisionSkipReason::decl(&cfg),
+        SaveTrigger::decl(&cfg),
         WatchChange::decl(&cfg),
         SyncDirection::decl(&cfg),
         CompileStream::decl(&cfg),

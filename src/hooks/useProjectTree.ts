@@ -51,7 +51,20 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   const reloadTree = useCallback(
     async (r: string, deep = false) => {
       const t0 = performance.now();
-      const t = deep ? await listTreeDeep(r) : await listDir1Level(r);
+      let t: TreeEntry[];
+      try {
+        t = deep ? await listTreeDeep(r) : await listDir1Level(r);
+      } catch (e) {
+        setTree([]);
+        emit({
+          scope: 'fs',
+          kind: 'error',
+          actor: 'system',
+          message: 'could not list ' + r,
+          event: { action: 'tree.load-failed', dir: r, error: String(e).slice(0, 200) },
+        });
+        return;
+      }
       setTree(t);
       const dt = Math.round(performance.now() - t0);
       emit({
@@ -230,6 +243,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           await openRoot(grant.path, { warm: true });
           return;
         } catch {
+          // Moved, deleted, or no longer grantable: pruned below.
           stale.push(r);
         }
       }

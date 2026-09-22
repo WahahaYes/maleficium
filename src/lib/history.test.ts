@@ -72,6 +72,28 @@ beforeEach(() => {
 });
 
 describe('recording revisions', () => {
+  it('refuses to replace a damaged index instead of starting history over', async () => {
+    const files = fakeDisk();
+    const h = store();
+    const first = await h.recordRevision(PROJECT, 'main.tex', bytes('one'));
+    expect(first.stored).toBe(true);
+    const indexPath = [...files.keys()].find((k) => k.endsWith('index.json'))!;
+    files.set(indexPath, bytes('{"v":1,"seq":'));
+    const out = await h.recordRevision(PROJECT, 'main.tex', bytes('two'));
+    expect(out).toEqual({ stored: false, reason: 'index-unreadable' });
+    expect(new TextDecoder().decode(files.get(indexPath))).toBe('{"v":1,"seq":');
+  });
+
+  it('starts empty on an index of another format version', async () => {
+    const files = fakeDisk();
+    const h = store();
+    await h.recordRevision(PROJECT, 'main.tex', bytes('one'));
+    const indexPath = [...files.keys()].find((k) => k.endsWith('index.json'))!;
+    files.set(indexPath, bytes('{"v":0,"entries":[]}'));
+    const out = await h.recordRevision(PROJECT, 'main.tex', bytes('two'));
+    expect(out).toMatchObject({ stored: true, rev: '1' });
+  });
+
   it('stores a revision on save and lists it back', async () => {
     fakeDisk();
     const h = store();

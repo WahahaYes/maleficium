@@ -45,8 +45,21 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
         try {
           await saveTex(fileName, cur.value);
           ownWrites.wrote(fileName, cur.value);
-        } catch {
-          /* keep dirty, still evict? no — stay */ return;
+        } catch (e) {
+          // Close never loses work: the file stays open and dirty.
+          emit({
+            scope: 'fs',
+            kind: 'error',
+            actor: 'user',
+            message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+            event: {
+              action: 'file.save-failed',
+              path: fileName,
+              trigger: 'close',
+              error: String(e).slice(0, 200),
+            },
+          });
+          return;
         }
       }
     }
@@ -68,8 +81,21 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
         try {
           await saveTex(fileName, cur.value);
           ownWrites.wrote(fileName, cur.value);
-        } catch {
-          /* persist failed — stay open */ return false;
+        } catch (e) {
+          // Close never loses work: the file stays open and dirty.
+          emit({
+            scope: 'fs',
+            kind: 'error',
+            actor: 'user',
+            message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+            event: {
+              action: 'file.save-failed',
+              path: fileName,
+              trigger: 'close',
+              error: String(e).slice(0, 200),
+            },
+          });
+          return false;
         }
       }
     }

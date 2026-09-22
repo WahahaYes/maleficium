@@ -178,8 +178,20 @@ export default function App({
             ownWrites.wrote(fileName, cur.value);
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
-          } catch {
-            /* keep dirty */
+          } catch (e) {
+            // The buffer stays dirty; say the save did not happen.
+            emit({
+              scope: 'fs',
+              kind: 'error',
+              actor: 'user',
+              message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+              event: {
+                action: 'file.save-failed',
+                path: fileName,
+                trigger: 'switch',
+                error: String(e).slice(0, 200),
+              },
+            });
           }
         }
       }
@@ -462,8 +474,20 @@ export default function App({
             });
             setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
           })
-          .catch(() => {
-            /* autosave best-effort — dirty flag stays */
+          .catch((e) => {
+            // The dirty flag stays, so the next edit retries.
+            emit({
+              scope: 'fs',
+              kind: 'error',
+              actor: 'system',
+              message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+              event: {
+                action: 'file.save-failed',
+                path: fileName,
+                trigger: 'auto',
+                error: String(e).slice(0, 200),
+              },
+            });
           });
       }
     }, 1200);
@@ -471,6 +495,22 @@ export default function App({
   }, [tex, fileName, buffers, setBuffers, ownWrites, recordRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
+  /** One tree level on expand; an unreadable folder says so and lists empty. */
+  async function expandDir(dir: string): Promise<TreeEntry[]> {
+    try {
+      return await listDir1Level(dir);
+    } catch (e) {
+      emit({
+        scope: 'fs',
+        kind: 'error',
+        actor: 'user',
+        message: 'could not list ' + dir,
+        event: { action: 'tree.load-failed', dir, error: String(e).slice(0, 200) },
+      });
+      return [];
+    }
+  }
+
   /** Jump to a root-relative problem location inside a granted root. */
   function handleProblemJump(t: ProblemRef) {
     const base = t.rootId === projectId ? root : t.rootId === scratch?.rootId ? scratch.path : null;
@@ -1059,7 +1099,7 @@ export default function App({
                     }}
                     onCreate={handleCreate}
                     onRename={handleRename}
-                    onExpandDir={listDir1Level}
+                    onExpandDir={expandDir}
                     rootDir={root}
                     mainFile={mainFile}
                     lazy

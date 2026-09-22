@@ -155,46 +155,41 @@ export async function renamePath(oldPath: string, newName: string): Promise<stri
   return full;
 }
 
-/** Single-level listing for lazy tree expansion (metadata only, sorted). */
-/** Full recursive walk for background scans — never on the open path. */
+/**
+ * Full recursive walk for background scans — never on the open path. An
+ * unreadable root throws; an unreadable subdirectory lists as empty so one
+ * bad folder does not hide the rest of the tree.
+ */
 export async function listTreeDeep(root: string): Promise<TreeEntry[]> {
-  try {
-    const entries = await fs().listDir(root);
-    const result: TreeEntry[] = [];
-    const dirs: TreeEntry[] = [];
-    for (const entry of entries) {
-      if (isHiddenName(entry.name)) continue;
-      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
-      const fullPath = joinPath(root, entry.name);
-      const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' };
-      if (isDir) {
-        const sub = await listTreeDeep(fullPath);
-        child.children = sub;
-        dirs.push(child);
-      } else {
-        result.push(child);
-      }
+  const entries = await fs().listDir(root);
+  const result: TreeEntry[] = [];
+  const dirs: TreeEntry[] = [];
+  for (const entry of entries) {
+    if (isHiddenName(entry.name)) continue;
+    const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
+    const fullPath = joinPath(root, entry.name);
+    const child: TreeEntry = { name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' };
+    if (isDir) {
+      child.children = await listTreeDeep(fullPath).catch(() => []);
+      dirs.push(child);
+    } else {
+      result.push(child);
     }
-    return [...sortTreeEntries(dirs), ...sortTreeEntries(result)];
-  } catch {
-    return [];
   }
+  return [...sortTreeEntries(dirs), ...sortTreeEntries(result)];
 }
 
+/** Single-level listing for lazy tree expansion (metadata only, sorted). Throws when unreadable. */
 export async function listDir1Level(dir: string): Promise<TreeEntry[]> {
-  try {
-    const entries = await fs().listDir(dir);
-    const out: TreeEntry[] = [];
-    for (const entry of entries) {
-      if (isHiddenName(entry.name)) continue;
-      const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
-      const fullPath = joinPath(dir, entry.name);
-      out.push({ name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' });
-    }
-    return sortTreeEntries(out);
-  } catch {
-    return [];
+  const entries = await fs().listDir(dir);
+  const out: TreeEntry[] = [];
+  for (const entry of entries) {
+    if (isHiddenName(entry.name)) continue;
+    const isDir = 'children' in entry ? !!entry.children : entry.isDirectory;
+    const fullPath = joinPath(dir, entry.name);
+    out.push({ name: entry.name, path: fullPath, type: isDir ? 'dir' : 'file' });
   }
+  return sortTreeEntries(out);
 }
 
 export async function loadTex(path: string): Promise<string> {
@@ -213,6 +208,7 @@ export async function saveTexToDisk(name: string, content: string): Promise<void
     });
     if (path) await fs().writeText(path, content);
   } catch {
+    // No native save dialog (plain browser): hand the text over as a download.
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
