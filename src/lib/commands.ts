@@ -41,6 +41,7 @@ export type CommandId =
   | 'view.density'
   | 'view.density-comfortable'
   | 'view.density-compact'
+  | 'appearance.settings'
   | 'tools.compile'
   | 'tools.compile-file'
   | 'tools.cancel'
@@ -98,6 +99,7 @@ export interface CommandActions {
   clean: () => void;
   undoDelete: () => void;
   showHistory: () => void;
+  showSettings: () => void;
   renameActive: () => void;
   deleteActive: () => void;
   selectAll: () => void;
@@ -384,6 +386,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
               run: () => a.setDensity('compact'),
             },
           ],
+        },
+        {
+          id: 'appearance.settings',
+          label: 'Appearance…',
+          enabled: true,
+          run: a.showSettings,
         },
       ],
     },

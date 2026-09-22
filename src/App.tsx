@@ -21,6 +21,8 @@ import LogStream from './components/LogStream';
 import OutlineView from './components/OutlineView';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
+import SettingsDialog from './components/SettingsDialog';
+import type { AppearancePrefs } from './lib/appearance';
 import StatusBar from './components/StatusBar';
 import Pane, { PaneSplitter } from './components/Pane';
 import {
@@ -61,11 +63,15 @@ export default function App({
   onThemeMode = () => {},
   density = 'comfortable',
   onDensityMode = () => {},
+  prefs,
+  onPrefs = () => {},
 }: {
   themeMode?: 'dark' | 'light';
   onThemeMode?: (m: 'dark' | 'light') => void;
   density?: 'comfortable' | 'compact';
   onDensityMode?: (d: 'comfortable' | 'compact') => void;
+  prefs: AppearancePrefs;
+  onPrefs?: (p: AppearancePrefs) => void;
 }) {
   const [tex, setTex] = useState(HELLO);
   const [root, setRoot] = useState<string | null>(null);
@@ -554,6 +560,7 @@ export default function App({
     });
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   void previewCollapsed;
   const fileTreeVisible = treeVisible;
   const [outlineVisible, setOutlineVisible] = useState(true);
@@ -721,6 +728,9 @@ export default function App({
     },
     showHistory: () => {
       void openHistory();
+    },
+    showSettings: () => {
+      setSettingsOpen(true);
     },
     renameActive: () => {
       if (!isProjectFile(fileName)) {
@@ -926,6 +936,7 @@ export default function App({
             viewportRef={viewportRef}
             onDoubleClickRef={forwardSyncLineRef}
             filePath={fileName}
+            prefs={prefs}
           />
         </Box>
       )}
@@ -1107,6 +1118,12 @@ export default function App({
         onJump={handleJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        prefs={prefs}
+        onChange={onPrefs}
+      />
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>
           Rename {fileName.slice(fileName.lastIndexOf('/') + 1) || fileName}

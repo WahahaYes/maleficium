@@ -35,6 +35,7 @@ const actions: CommandActions = {
   clean: noop,
   undoDelete: noop,
   showHistory: noop,
+  showSettings: noop,
   renameActive: noop,
   deleteActive: noop,
   selectAll: noop,

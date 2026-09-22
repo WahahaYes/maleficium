@@ -10,6 +10,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, EditorSelection } from '@codemirror/state';
 import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
+import type { AppearancePrefs } from '../lib/appearance';
 import { editorTheme } from '../lib/editorTheme';
 
 export interface EditorViewportProps {
@@ -40,6 +41,7 @@ function EditorViewport({
   viewportRef,
   onDoubleClickRef,
   filePath,
+  prefs,
 }: EditorViewportProps & {
   /** Drives select-all/expand/shrink/goto on the live view. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
@@ -47,9 +49,13 @@ function EditorViewport({
   onDoubleClickRef?: React.MutableRefObject<((file: string, line: number) => void) | null>;
   /** Absolute path of the file in the viewport (captured at click time). */
   filePath?: string;
+  /** Live appearance prefs driving editor font and size. */
+  prefs?: AppearancePrefs;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const prefsRef = useRef(prefs ?? DEFAULT_PREFS);
+  prefsRef.current = prefs ?? DEFAULT_PREFS;
   const filePathRef = useRef(filePath);
   filePathRef.current = filePath;
   // Last value sent downstream. Keystrokes update it synchronously in the
@@ -73,7 +79,7 @@ function EditorViewport({
         texMode,
         // Wrap long lines instead of horizontal scroll.
         EditorView.lineWrapping,
-        themeCompartment.of(editorTheme(DEFAULT_PREFS, muiTheme)),
+        themeCompartment.of(editorTheme(prefsRef.current, muiTheme)),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
             lastSentRef.current = u.state.doc.toString();
@@ -124,12 +130,12 @@ function EditorViewport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restyle the live view when the app theme changes (mode flip).
+  // Restyle the live view when prefs or app theme change (mode flip).
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: themeCompartment.reconfigure(editorTheme(DEFAULT_PREFS, muiTheme)),
+      effects: themeCompartment.reconfigure(editorTheme(prefsRef.current, muiTheme)),
     });
-  }, [muiTheme, themeCompartment]);
+  }, [muiTheme, prefs, themeCompartment]);
 
   // External value sync (file switch / reload / jump): replace doc, keep viewport.
   // Guarded by ref-equality with last-sent value so typing never resets cursor.

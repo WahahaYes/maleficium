@@ -18,8 +18,7 @@ export interface AppStore {
 
 /** Prefs scoped to this device. */
 export const DEVICE_PREF_KEYS = {
-  theme: 'maleficium.theme',
-  density: 'maleficium.density',
+  appearance: 'maleficium.appearance.v1',
   layout: 'maleficium.layout',
 } as const;
 

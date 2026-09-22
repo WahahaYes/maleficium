@@ -4,8 +4,9 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import App from './App';
 import { createAppTheme } from './lib/theme';
-import { DEFAULT_PREFS } from './lib/appearance';
-import { DEVICE_PREF_KEYS, setAppStore, store } from './lib/app-store';
+import { loadAppearance, saveAppearance } from './lib/appearance';
+import type { AppearancePrefs } from './lib/appearance';
+import { setAppStore } from './lib/app-store';
 import { localAppStore } from './lib/app-store.web';
 import { setProviders } from './lib/fs-provider';
 import { desktopFs, desktopDialog } from './lib/fs-provider.tauri';
@@ -15,36 +16,34 @@ setAppStore(localAppStore);
 setProviders({ fs: desktopFs, dialog: desktopDialog });
 
 export function Root() {
-  const [mode, setMode] = React.useState<'dark' | 'light'>(() =>
-    store().get(DEVICE_PREF_KEYS.theme) === 'light' ? 'light' : 'dark',
-  );
-  const [density, setDensity] = React.useState<'comfortable' | 'compact'>(() =>
-    store().get(DEVICE_PREF_KEYS.density) === 'compact' ? 'compact' : 'comfortable',
-  );
-  const theme = React.useMemo(
-    () => createAppTheme({ ...DEFAULT_PREFS, mode, density }),
-    [mode, density],
-  );
+  const [prefs, setPrefs] = React.useState<AppearancePrefs>(loadAppearance);
+  const theme = React.useMemo(() => createAppTheme(prefs), [prefs]);
   // Flash colors follow the warning token in both modes.
   React.useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--syn-flash', alpha(theme.palette.warning.main, 0.55));
     root.style.setProperty('--syn-hit', alpha(theme.palette.warning.main, 0.8));
   }, [theme]);
+  const updatePrefs = (p: AppearancePrefs) => {
+    setPrefs(p);
+    saveAppearance(p);
+  };
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <App
-        themeMode={mode}
-        onThemeMode={(m) => {
-          setMode(m);
-          store().set(DEVICE_PREF_KEYS.theme, m);
-        }}
-        density={density}
-        onDensityMode={(d) => {
-          setDensity(d);
-          store().set(DEVICE_PREF_KEYS.density, d);
-        }}
+        themeMode={
+          prefs.accent === 'default'
+            ? prefs.mode
+            : theme.palette.mode === 'light'
+              ? 'light'
+              : 'dark'
+        }
+        onThemeMode={(m) => updatePrefs({ ...prefs, accent: 'default', mode: m })}
+        density={prefs.density}
+        onDensityMode={(d) => updatePrefs({ ...prefs, density: d })}
+        prefs={prefs}
+        onPrefs={updatePrefs}
       />
     </ThemeProvider>
   );
