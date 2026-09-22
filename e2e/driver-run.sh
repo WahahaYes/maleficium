@@ -187,7 +187,7 @@ if WARM_ONLY:
     logf.close()
     p.kill()
     sys.exit(0)
-pdf = sc.get("pdf_path") or ""
+pdf = sc.get("pdf_url") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
 check("pdf exists", bool(pdf) and _os.path.exists(pdf), pdf)
@@ -227,7 +227,7 @@ fail_ms = (time.time() - ft0) * 1000
 flog = (fsc.get("log") or "") + "\n" + "\n".join(fsc.get("lines") or [])
 check("failure reports failed", fsc.get("status") == "failed", str(fsc)[:200], ms=fail_ms)
 check("failure names the cause", "Undefined control sequence" in flog, flog[:200])
-check("failure writes no pdf", not fsc.get("pdf_path"), str(fsc.get("pdf_path")))
+check("failure writes no pdf", not fsc.get("pdf_url"), str(fsc.get("pdf_url")))
 _os.remove(ROOT + "/fail.tex")
 
 # ---- heavy-document probes: 1000-file open, cancel mid-compile, D.5 budgets ----
@@ -278,7 +278,7 @@ for _ in range(100):
         break
 cancel_ms = (time.time() - cancel_t0) * 1000
 check("cancelled compile reports cancelled", cs.get("status") == "cancelled", str(cs)[:200], ms=cancel_ms)
-check("cancelled compile writes no pdf", not cs.get("pdf_path"), str(cs.get("pdf_path")))
+check("cancelled compile writes no pdf", not cs.get("pdf_url"), str(cs.get("pdf_url")))
 
 hr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
 hjob = hr.get("job_id") or ""
@@ -300,7 +300,7 @@ check(
 record(f"cancel mid-compile: settled cancelled in {cancel_ms:.0f}ms; same document compiles in {heavy_ms:.0f}ms")
 record(f"1000-file open in {open_ms:.0f}ms ({len(names)} entries, depth 1); 10-entry level {small_ms:.1f}ms")
 
-heavy_pdf = hs.get("pdf_path") or ""
+heavy_pdf = hs.get("pdf_url") or ""
 check("3000pp pdf exists outside the project", bool(heavy_pdf) and _os.path.exists(heavy_pdf) and not heavy_pdf.startswith(PAGES_ROOT), heavy_pdf)
 probe = subprocess.run(
     ["node", os.environ["PDF_PROBE"], os.environ["DEVROOT"], heavy_pdf],

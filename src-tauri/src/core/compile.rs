@@ -32,7 +32,8 @@ impl JobStatus {
 #[derive(Debug, Clone)]
 pub struct JobRecord {
     pub status: JobStatus,
-    pub pdf_path: Option<String>,
+    /// Locates the pdf: desktop, an absolute path; hosted, an opaque URL.
+    pub pdf_url: Option<String>,
     pub log: String,
     pub lines: Vec<String>,
 }
@@ -142,7 +143,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
             }
         };
 
-        let (pdf_path, log) = match outcome {
+        let (pdf_url, log) = match outcome {
             JobStatus::Success => {
                 let pdf = outdir.join(&pdf_name);
                 (Some(pdf.to_string_lossy().to_string()), String::new())
@@ -164,7 +165,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
         };
         let record = JobRecord {
             status: outcome,
-            pdf_path,
+            pdf_url,
             log,
             lines: all,
         };
@@ -199,7 +200,7 @@ pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 return Ok(JobRecord {
                     status: JobStatus::Failed,
-                    pdf_path: None,
+                    pdf_url: None,
                     log: String::from("compile worker lost"),
                     lines: job.lines.clone(),
                 });
@@ -210,7 +211,7 @@ pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
     let start = n.saturating_sub(tail_lines.max(1));
     Ok(JobRecord {
         status: JobStatus::Running,
-        pdf_path: None,
+        pdf_url: None,
         log: String::new(),
         lines: job.lines[start..].to_vec(),
     })

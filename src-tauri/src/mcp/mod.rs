@@ -94,7 +94,7 @@ struct CompilePollParams {
 struct CompilePollOut {
     ok: bool,
     status: String,
-    pdf_path: Option<String>,
+    pdf_url: Option<String>,
     log: String,
     lines: Vec<String>,
     error: Option<String>,
@@ -271,13 +271,15 @@ impl Maleficium {
         }
     }
 
-    #[tool(description = "Poll a compile job; running jobs report lines so far")]
+    #[tool(
+        description = "Poll a compile job; running jobs report lines so far. pdf_url locates the output: treat it as opaque"
+    )]
     fn compile_poll(&self, Parameters(p): Parameters<CompilePollParams>) -> Json<CompilePollOut> {
         match core::poll_job(&p.job_id, p.tail_lines.unwrap_or(50)) {
             Ok(r) => Json(CompilePollOut {
                 ok: true,
                 status: r.status.as_str().to_string(),
-                pdf_path: r.pdf_path,
+                pdf_url: r.pdf_url,
                 log: r.log,
                 lines: r.lines,
                 error: None,
@@ -285,7 +287,7 @@ impl Maleficium {
             Err(e) => Json(CompilePollOut {
                 ok: false,
                 status: "error".to_string(),
-                pdf_path: None,
+                pdf_url: None,
                 log: String::new(),
                 lines: Vec::new(),
                 error: Some(e),
