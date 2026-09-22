@@ -34,3 +34,7 @@ No users, no shipped release: nothing to be backward-compatible with. Moving a b
 ## Licenses
 
 Reference material is semantic inspiration only — never copy code or license text. Only MIT-style patterns may be followed closely.
+
+## Styling
+
+Theme tokens are the only styling source. Palette keys, spacing multipliers, and shape scale — never hardcoded hex, manual shadows, or custom CSS outside the SyncTeX exception in `App.css`. Depth comes from divider borders and the flattened shadow scale, not elevation. Appearance prefs flow through `AppearancePrefs` into the theme factory; vendored palettes live under `src/assets/themes/`. Full principles: `notes/frontend-design/DESIGN_PRINCIPLES.txt` in the dev workspace.

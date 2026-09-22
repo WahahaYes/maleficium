@@ -27,6 +27,24 @@ export default defineConfig([
       'react-hooks/purity': 'off',
       'react-hooks/preserve-manual-memoization': 'off',
       'react-hooks/set-state-in-effect': 'off',
+      // Theme tokens are the only styling source: no manual shadows and no
+      // ripple re-enables outside the theme factory.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Property[key.name="boxShadow"]',
+          message: 'Use theme elevation tokens instead of manual boxShadow.',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='disableRipple'] > JSXExpressionContainer > Literal[value=false]",
+          message: 'Ripples stay disabled globally; do not re-enable per component.',
+        },
+        {
+          selector: 'Property[key.name="disableRipple"][value.value=false]',
+          message: 'Ripples stay disabled globally; do not re-enable per component.',
+        },
+      ],
     },
   },
 ]);
