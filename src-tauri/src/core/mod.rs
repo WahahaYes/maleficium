@@ -97,21 +97,31 @@ pub fn untitled_dir() -> PathBuf {
     xdg_app_dir("XDG_DATA_HOME", ".local/share").join("maleficium-untitled")
 }
 
-/// Triple suffix matching the bundled `<name>-<triple>` binaries.
-pub fn sidecar_triple() -> &'static str {
+/// Triple suffix of the bundled `<name>-<triple>` binaries for this host;
+/// `None` where no engine is bundled.
+pub fn sidecar_triple() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
-        _ => "x86_64-unknown-linux-gnu",
+        ("linux", "x86_64") => Some("x86_64-unknown-linux-gnu"),
+        ("linux", "aarch64") => Some("aarch64-unknown-linux-musl"),
+        ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        ("macos", "x86_64") => Some("x86_64-apple-darwin"),
+        ("windows", "x86_64") => Some("x86_64-pc-windows-msvc"),
+        _ => None,
     }
 }
 
-/// Locate a bundled sidecar binary by name.
-pub fn sidecar_path_for(name: &str) -> Option<PathBuf> {
-    let triple = sidecar_triple();
+/// Locate a bundled sidecar binary by name: next to the app, else in the
+/// dev tree. Errors say whether this platform has no engine at all or the
+/// binary was never fetched.
+pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
+    let triple = sidecar_triple().ok_or_else(|| {
+        format!(
+            "no bundled {} for {}/{}",
+            name,
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
     let exe_name = if cfg!(windows) {
         format!("{}-{}.exe", name, triple)
     } else {
@@ -121,7 +131,7 @@ pub fn sidecar_path_for(name: &str) -> Option<PathBuf> {
         if let Some(dir) = exe.parent() {
             let p = dir.join(&exe_name);
             if p.exists() {
-                return Some(p);
+                return Ok(p);
             }
         }
     }
@@ -129,9 +139,12 @@ pub fn sidecar_path_for(name: &str) -> Option<PathBuf> {
         .join("binaries")
         .join(&exe_name);
     if dev.exists() {
-        return Some(dev);
+        return Ok(dev);
     }
-    None
+    Err(format!(
+        "bundled {} sidecar missing ({}): run scripts/fetch-sidecars.sh",
+        name, exe_name
+    ))
 }
 
 /// Entry kind for directory listings.
@@ -206,8 +219,15 @@ mod tests {
     }
 
     #[test]
-    fn sidecar_triple_returns_non_empty() {
-        assert!(!sidecar_triple().is_empty());
+    fn sidecar_triple_names_this_host() {
+        // CI and dev hosts are all bundled platforms.
+        assert!(sidecar_triple().is_some_and(|t| !t.is_empty()));
+    }
+
+    #[test]
+    fn missing_sidecar_names_the_fix() {
+        let err = sidecar_path_for("no-such-sidecar").unwrap_err();
+        assert!(err.contains("fetch-sidecars.sh"), "{err}");
     }
 
     #[test]

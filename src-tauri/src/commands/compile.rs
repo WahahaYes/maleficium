@@ -39,8 +39,7 @@ pub fn compile_tex(
     );
 
     const COMPILE_TIMEOUT_SECS: u64 = 120;
-    let bin = core::sidecar_path_for("tectonic")
-        .ok_or_else(|| String::from("bundled tectonic sidecar missing (src-tauri/binaries/)"))?;
+    let bin = core::sidecar_path_for("tectonic")?;
     let mut child = std::process::Command::new(&bin)
         .args([
             "-X",

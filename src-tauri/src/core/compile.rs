@@ -74,8 +74,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
     } = super::main_outputs(&abs)?;
     std::fs::create_dir_all(&outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
     let outdir_str = outdir.to_string_lossy().to_string();
-    let bin = super::sidecar_path_for("tectonic")
-        .ok_or_else(|| String::from("bundled tectonic sidecar missing (src-tauri/binaries/)"))?;
+    let bin = super::sidecar_path_for("tectonic")?;
 
     let mut child = Command::new(&bin)
         .args([
