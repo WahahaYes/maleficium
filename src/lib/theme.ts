@@ -85,7 +85,7 @@ export function createAppTheme(prefs: AppearancePrefs) {
       fontWeightBold: 700,
     },
     spacing: density === 'compact' ? 4 : 8,
-    shape: { borderRadius: prefs.radius },
+    shape: { borderRadius: 8 },
     shadows: flatShadows,
     transitions: {
       duration: {
@@ -102,13 +102,13 @@ export function createAppTheme(prefs: AppearancePrefs) {
       MuiButtonBase: { defaultProps: { disableRipple: true } },
       MuiButton: {
         defaultProps: { size: 'small' },
-        styleOverrides: { root: { borderRadius: Math.max(prefs.radius - 2, 2) } },
+        styleOverrides: { root: { borderRadius: 6 } },
       },
       MuiChip: { defaultProps: { size: 'small' } },
       MuiToolbar: { defaultProps: { variant: 'dense' } },
       MuiPaper: {
         styleOverrides: {
-          root: { borderRadius: prefs.radius + 4, backgroundImage: 'none' },
+          root: { borderRadius: 12, backgroundImage: 'none' },
         },
       },
     },

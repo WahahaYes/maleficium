@@ -1,31 +1,30 @@
 // SettingsDialog.tsx — appearance controls over the prefs object.
 //
-// Every control writes prefs; persistence lives with the caller. Themes
-// with both variants pair into one row; sizes offer named presets plus
-// a slider override.
+// Every control writes prefs; persistence lives with the caller. The
+// theme picker is a searchable dropdown grouped by family; sizes offer
+// named presets plus a slider override.
 
+import Autocomplete from '@mui/material/Autocomplete';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
-import Chip from '@mui/material/Chip';
-import List from '@mui/material/List';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemText from '@mui/material/ListItemText';
 import Slider from '@mui/material/Slider';
+import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import type { AppearancePrefs } from '../lib/appearance';
-import { THEME_CATALOG } from '../lib/themeCatalog';
+import { THEME_CATALOG, type ThemeEntry } from '../lib/themeCatalog';
 
-/** Theme families shipping both variants. */
-const PAIRS: { family: string; dark: string; light: string }[] = [
-  { family: 'Solarized', dark: 'solarized-dark', light: 'solarized-light' },
-  { family: 'Night Owl', dark: 'night-owl', light: 'owl-light' },
-];
+type ThemeOption = Pick<ThemeEntry, 'id' | 'name' | 'type' | 'family'>;
 
-const PAIRED_IDS = new Set(PAIRS.flatMap((p) => [p.dark, p.light]));
+const DEFAULT_OPTION: ThemeOption = {
+  id: 'default',
+  name: 'Default',
+  type: 'dark',
+  family: 'Built-in',
+};
 
 function SizeRow({
   label,
@@ -101,80 +100,42 @@ export default function SettingsDialog({
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Appearance</DialogTitle>
       <DialogContent>
-        <Box>
-          <Typography variant="caption">Theme</Typography>
-          <List dense disablePadding>
-            <ListItemButton
-              selected={prefs.accent === 'default'}
-              onClick={() => set({ accent: 'default' })}
-              sx={{ gap: 1.5, py: 1 }}
-            >
-              <ListItemText
-                primary="Default"
-                secondary="Dark + Light"
-                sx={{ minWidth: 0 }}
-                slotProps={{ primary: { noWrap: true } }}
+        <Box sx={{ mt: 2 }}>
+          <Autocomplete
+            size="small"
+            disableClearable
+            disableCloseOnSelect
+            options={[
+              { ...DEFAULT_OPTION, type: prefs.mode },
+              ...[...THEME_CATALOG].sort((a, b) => a.name.localeCompare(b.name)),
+            ]}
+            getOptionLabel={(o) => o.name}
+            isOptionEqualToValue={(o, v) => o.id === v.id}
+            value={
+              prefs.accent === 'default'
+                ? { ...DEFAULT_OPTION, type: prefs.mode }
+                : (THEME_CATALOG.find((t) => t.id === prefs.accent) ?? {
+                    ...DEFAULT_OPTION,
+                    type: prefs.mode,
+                  })
+            }
+            onChange={(_, v) =>
+              v.id === 'default' ? set({ accent: 'default' }) : set({ accent: v.id })
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                variant="outlined"
+                label="Theme"
+                placeholder="Search themes…"
               />
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={prefs.accent === 'default' ? prefs.mode : null}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(_, v) => v && set({ accent: 'default', mode: v })}
-                aria-label="Default variant"
-                sx={{ flexShrink: 0 }}
-              >
-                <ToggleButton value="dark">Dark</ToggleButton>
-                <ToggleButton value="light">Light</ToggleButton>
-              </ToggleButtonGroup>
-            </ListItemButton>
-            {PAIRS.map((p) => {
-              const active =
-                prefs.accent === p.dark ? 'dark' : prefs.accent === p.light ? 'light' : null;
-              return (
-                <ListItemButton
-                  key={p.family}
-                  selected={active !== null}
-                  onClick={() => active === null && set({ accent: p.dark })}
-                  sx={{ gap: 1.5, py: 1 }}
-                >
-                  <ListItemText
-                    primary={p.family}
-                    secondary="Dark + Light"
-                    sx={{ minWidth: 0 }}
-                    slotProps={{ primary: { noWrap: true } }}
-                  />
-                  <ToggleButtonGroup
-                    exclusive
-                    size="small"
-                    value={active}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(_, v) => v && set({ accent: v === 'dark' ? p.dark : p.light })}
-                    aria-label={`${p.family} variant`}
-                    sx={{ flexShrink: 0 }}
-                  >
-                    <ToggleButton value="dark">Dark</ToggleButton>
-                    <ToggleButton value="light">Light</ToggleButton>
-                  </ToggleButtonGroup>
-                </ListItemButton>
-              );
-            })}
-            {THEME_CATALOG.filter((t) => !PAIRED_IDS.has(t.id)).map((t) => (
-              <ListItemButton
-                key={t.id}
-                selected={prefs.accent === t.id}
-                onClick={() => set({ accent: t.id })}
-                sx={{ gap: 1.5, py: 1 }}
-              >
-                <ListItemText
-                  primary={t.name}
-                  sx={{ minWidth: 0 }}
-                  slotProps={{ primary: { noWrap: true } }}
-                />
-                <Chip size="small" label={t.type === 'dark' ? 'Dark' : 'Light'} />
-              </ListItemButton>
-            ))}
-          </List>
+            )}
+            renderOption={(props, o) => (
+              <li {...props} key={o.id}>
+                {o.name}
+              </li>
+            )}
+          />
         </Box>
         <Box sx={{ mt: 2 }}>
           <Typography variant="caption">Density</Typography>
@@ -189,24 +150,6 @@ export default function SettingsDialog({
           >
             <ToggleButton value="comfortable">Comfortable</ToggleButton>
             <ToggleButton value="compact">Compact</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="caption">Corner radius</Typography>
-          <ToggleButtonGroup
-            exclusive
-            fullWidth
-            size="small"
-            sx={{ '& .MuiToggleButton-root': { flex: 1 } }}
-            value={prefs.radius}
-            onChange={(_, v) => v && set({ radius: v })}
-            aria-label="Corner radius"
-          >
-            {[6, 8, 12].map((r) => (
-              <ToggleButton key={r} value={r}>
-                {r}
-              </ToggleButton>
-            ))}
           </ToggleButtonGroup>
         </Box>
         <SizeRow

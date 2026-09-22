@@ -18,7 +18,6 @@ export interface AppearancePrefs {
   ligatures: boolean;
   accent: string;
   contrast: ContrastStep;
-  radius: number;
 }
 
 export const DEFAULT_PREFS: AppearancePrefs = {
@@ -31,7 +30,6 @@ export const DEFAULT_PREFS: AppearancePrefs = {
   ligatures: false,
   accent: 'default',
   contrast: 'standard',
-  radius: 8,
 };
 
 /** Stored prefs merged over defaults; corrupt or missing storage wins nothing. */
@@ -58,7 +56,6 @@ export function loadAppearance(): AppearancePrefs {
     ligatures: parsed.ligatures === true,
     accent: typeof parsed.accent === 'string' && parsed.accent ? parsed.accent : 'default',
     contrast: parsed.contrast === 'high' ? 'high' : 'standard',
-    radius: num(parsed.radius, DEFAULT_PREFS.radius),
   };
 }
 
