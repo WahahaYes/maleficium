@@ -19,18 +19,18 @@ name = "tauri_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-fs = { version = "2", features = ["watch"] }
-tauri-plugin-dialog = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-fs = { version = "2.5.2", features = ["watch"] }
+tauri-plugin-dialog = "2.7.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 rmcp = { version = "3.4.0", features = ["server", "transport-io"] }
-tokio = { version = "1", features = ["full"] }
-schemars = "1"
-anyhow = "1"
+tokio = { version = "1.53.1", features = ["full"] }
+schemars = "1.2.2"
+anyhow = "1.0.104"
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 
