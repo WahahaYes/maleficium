@@ -46,6 +46,7 @@ import { FileHistory } from './lib/file-history';
 import { pruneRecentProjects } from './lib/recentProjects';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
+import { grantUntitledAccess } from './lib/projectAccess';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
 import { useProjectTree } from './hooks/useProjectTree';
@@ -369,9 +370,14 @@ export default function App({
     return () => window.removeEventListener('keydown', onKey);
   }, [buffersRef]);
 
+  // Untitled documents resolve against the backend-owned scratch root.
+  const [scratchDir, setScratchDir] = useState<string | null>(null);
+  useEffect(() => {
+    void grantUntitledAccess().then((g) => setScratchDir(g.path));
+  }, []);
   const workdirHint = fileName.includes('/')
     ? fileName.slice(0, fileName.lastIndexOf('/'))
-    : '/tmp/maleficium-untitled';
+    : (scratchDir ?? '');
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
   // Repo-relative for display (absolute kept in tooltips); plain language.
   const relOf = (abs: string | null): string | null => {

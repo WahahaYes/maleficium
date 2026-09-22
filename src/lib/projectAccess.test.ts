@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { grantProjectAccess } from './projectAccess';
+import { grantProjectAccess, grantUntitledAccess } from './projectAccess';
 
 describe('grantProjectAccess', () => {
   it('carries the backend-minted root id with the canonical path', async () => {
@@ -25,5 +25,13 @@ describe('grantProjectAccess', () => {
       rootId: null,
       error: 'forbidden path (not absolute): x',
     });
+  });
+});
+
+describe('grantUntitledAccess', () => {
+  it('asks the backend for its scratch root, never naming a path', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ path: '/data/untitled', rootId: 'aa11bb22' });
+    expect(await grantUntitledAccess()).toMatchObject({ ok: true, rootId: 'aa11bb22' });
+    expect(invoke).toHaveBeenLastCalledWith('grant_untitled_access', undefined);
   });
 });

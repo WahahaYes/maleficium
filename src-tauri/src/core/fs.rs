@@ -43,6 +43,13 @@ pub fn grant_project(root: &str) -> Result<(PathBuf, String), String> {
     Ok((canon, id))
 }
 
+/// Create the untitled scratch dir if needed and register it like a project.
+pub fn grant_untitled() -> Result<(PathBuf, String), String> {
+    let dir = super::untitled_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("scratch dir unavailable: {}", e))?;
+    grant_project(&dir.to_string_lossy())
+}
+
 /// Look up a session root by id.
 pub fn session_root(id: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;

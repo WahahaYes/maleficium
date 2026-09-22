@@ -7,8 +7,8 @@ pub mod synctex;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
-    grant_project, grant_root, list_dir, log_tail, read_text, resolve_in, resolve_read,
-    session_root, trash_file, undo_trash,
+    grant_project, grant_root, grant_untitled, list_dir, log_tail, read_text, resolve_in,
+    resolve_read, session_root, trash_file, undo_trash,
 };
 pub use synctex::{forward_query, inverse_query};
 
@@ -63,21 +63,32 @@ pub fn out_dir_for(base: &Path, root: &str) -> PathBuf {
     base.join("maleficium-out").join(hash_root(root))
 }
 
-/// Base dir for all engine outputs: the OS app-cache dir. Falls back to
-/// the OS tmp tree when no cache location resolves.
-pub fn out_base_dir() -> PathBuf {
-    const APP_ID: &str = "com.ethan.tauri-app";
-    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+const APP_ID: &str = "com.ethan.tauri-app";
+
+/// `$<xdg_var>/<app id>`, else `$HOME/<home_rel>/<app id>`, else the OS tmp
+/// tree when neither resolves.
+fn xdg_app_dir(xdg_var: &str, home_rel: &str) -> PathBuf {
+    if let Ok(xdg) = std::env::var(xdg_var) {
         if !xdg.is_empty() {
             return PathBuf::from(xdg).join(APP_ID);
         }
     }
     if let Ok(home) = std::env::var("HOME") {
         if !home.is_empty() {
-            return PathBuf::from(home).join(".cache").join(APP_ID);
+            return PathBuf::from(home).join(home_rel).join(APP_ID);
         }
     }
     std::env::temp_dir()
+}
+
+/// Base dir for all engine outputs: the OS app-cache dir.
+pub fn out_base_dir() -> PathBuf {
+    xdg_app_dir("XDG_CACHE_HOME", ".cache")
+}
+
+/// Scratch project for untitled documents: under the OS app-data dir.
+pub fn untitled_dir() -> PathBuf {
+    xdg_app_dir("XDG_DATA_HOME", ".local/share").join("maleficium-untitled")
 }
 
 /// Triple suffix matching the bundled `<name>-<triple>` binaries.
@@ -225,6 +236,15 @@ mod tests {
     fn out_base_dir_resolves_app_cache() {
         let base = out_base_dir();
         assert!(base.ends_with("com.ethan.tauri-app"));
+    }
+
+    #[test]
+    fn untitled_scratch_is_an_app_data_session_root() {
+        assert!(untitled_dir().ends_with("com.ethan.tauri-app/maleficium-untitled"));
+        let (canon, id) = grant_untitled().unwrap();
+        assert!(canon.is_dir());
+        assert_eq!(session_root(&id).unwrap(), canon);
+        assert!(!canon.starts_with(std::env::temp_dir()) || std::env::var("HOME").is_err());
     }
 
     #[test]

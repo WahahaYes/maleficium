@@ -14,6 +14,7 @@ import { emit, type ProblemEvent } from '../lib/events';
 import { saveTex } from '../lib/files';
 import { fs } from '../lib/fs-provider';
 import { parseLog } from '../lib/parseLog';
+import { grantUntitledAccess } from '../lib/projectAccess';
 import { appOutDir } from '../lib/paths';
 import { emitPdf } from '../lib/preview-bus';
 
@@ -256,10 +257,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             markOwnWrite(target);
           }
         }
-        workdir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
+        workdir = target.slice(0, target.lastIndexOf('/')) || '/';
       } else {
-        workdir = '/tmp/maleficium-untitled';
-        await fs().mkdir(workdir, { recursive: true });
+        const scratch = await grantUntitledAccess();
+        if (!scratch.ok || !scratch.path) throw new Error(scratch.error ?? 'scratch unavailable');
+        workdir = scratch.path;
         const t2 = workdir + '/' + fileName;
         await saveTex(t2, tex);
         markOwnWrite(t2);

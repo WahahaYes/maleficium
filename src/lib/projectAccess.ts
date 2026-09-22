@@ -16,11 +16,20 @@ export type GrantResult = {
   error: string | null;
 };
 
-export async function grantProjectAccess(root: string): Promise<GrantResult> {
+async function grant(cmd: string, args?: Record<string, unknown>): Promise<GrantResult> {
   try {
-    const g = await invoke<{ path: string; rootId: string }>('grant_project_access', { root });
+    const g = await invoke<{ path: string; rootId: string }>(cmd, args);
     return { ok: true, path: g.path, rootId: g.rootId, error: null };
   } catch (e) {
     return { ok: false, path: null, rootId: null, error: String(e) };
   }
+}
+
+export function grantProjectAccess(root: string): Promise<GrantResult> {
+  return grant('grant_project_access', { root });
+}
+
+/** The backend-owned scratch root untitled documents compile in. */
+export function grantUntitledAccess(): Promise<GrantResult> {
+  return grant('grant_untitled_access');
 }

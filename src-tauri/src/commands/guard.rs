@@ -102,6 +102,17 @@ pub struct ProjectGrant {
     pub root_id: String,
 }
 
+/// Open a registered root in the live fs scope, recursively.
+fn allow_granted(app: &AppHandle, canon: PathBuf, root_id: String) -> Result<ProjectGrant, String> {
+    live_scope(app)?
+        .allow_directory(&canon, true)
+        .map_err(|e| format!("grant failed for {}: {}", canon.display(), e))?;
+    Ok(ProjectGrant {
+        path: canon.to_string_lossy().to_string(),
+        root_id,
+    })
+}
+
 /// Mint a recursive runtime fs-scope grant for one validated project root and
 /// register it as a session root. Granted roots stay readable until quit. One
 /// unconditional code path for every open route (dialog pick, recent,
@@ -109,14 +120,14 @@ pub struct ProjectGrant {
 #[tauri::command]
 pub fn grant_project_access(app: AppHandle, root: String) -> Result<ProjectGrant, String> {
     let (canon, root_id) = crate::core::grant_project(&root)?;
-    let scope = live_scope(&app)?;
-    scope
-        .allow_directory(&canon, true)
-        .map_err(|e| format!("grant failed for {}: {}", canon.display(), e))?;
-    Ok(ProjectGrant {
-        path: canon.to_string_lossy().to_string(),
-        root_id,
-    })
+    allow_granted(&app, canon, root_id)
+}
+
+/// Grant the backend-owned scratch root that untitled documents compile in.
+#[tauri::command]
+pub fn grant_untitled_access(app: AppHandle) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = crate::core::grant_untitled()?;
+    allow_granted(&app, canon, root_id)
 }
 
 #[cfg(test)]
