@@ -6,8 +6,9 @@
   "scripts": {
     "predev": "sh scripts/reclaim.sh",
     "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh",
-    "dev": "vite",
-    "dev:desktop": "tauri dev",
+    "dev": "sh scripts/dev.sh web",
+    "dev:desktop": "sh scripts/dev.sh desktop",
+    "dev:serve": "vite",
     "prebuild": "sh scripts/check-freshness.sh --all",
     "build": "tsc && vite build",
     "preview": "vite preview",

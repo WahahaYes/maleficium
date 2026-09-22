@@ -4,7 +4,7 @@ Separated from `src/` and `src-tauri/`: this folder drives the built app or repl
 
 ## Isolation
 
-- `worktree-run.sh` — runs any harness from a pinned-commit scratch worktree: `./e2e/worktree-run.sh [<ref>] -- <command...>`. Freezes the source against live-checkout churn (another writer saving `src/` mid-run kills vite and wedges captures) and restores committed fixtures. Carries the uncommitted `e2e/` diff under test (tracked as a patch, untracked by copy); symlinks `node_modules`; shares the main checkout's Rust target dir via `CARGO_TARGET_DIR`. Removes the worktree on success, keeps it on failure. GUI harnesses still serialize on `:1420` (vite fixed port + `strictPort`) — isolation freezes the source, it does not multiplex the port.
+- `worktree-run.sh` — runs any harness from a pinned-commit scratch worktree: `./e2e/worktree-run.sh [<ref>] -- <command...>`. Freezes the source against live-checkout churn (another writer saving `src/` mid-run kills vite and wedges captures) and restores committed fixtures. Carries the uncommitted `e2e/` diff under test (tracked as a patch, untracked by copy); symlinks `node_modules`; shares the main checkout's Rust target dir via `CARGO_TARGET_DIR`. Removes the worktree on success, keeps it on failure. GUI harnesses still serialize on `:1420` (stills pins its devUrl there, vite binds it with `strictPort`) — isolation freezes the source, it does not multiplex the port. Dev loops pick a free port pair (`scripts/dev.sh`) but start at `:1420` too.
 
 ## Contents
 

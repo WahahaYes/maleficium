@@ -12,6 +12,8 @@ Prerequisites: Node, Rust, and system webkit2gtk for Tauri.
 - `npm run dev:desktop` — desktop app
 - `npm run dev` — web-only Vite frontend
 
+Both pick the first free port pair from 1420 (`scripts/dev.sh`), so parallel instances run side by side.
+
 ## Verify (run in this dir before claiming behavior change)
 
 - `./node_modules/.bin/tsc --noEmit --skipLibCheck`

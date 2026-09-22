@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import process from 'node:process';
 const host = process.env.TAURI_DEV_HOST;
+// scripts/dev.sh picks a free pair and exports DEV_PORT. Unset means a
+// bare `tauri dev` (e.g. e2e/stills-run.sh): tauri.conf.json's devUrl, 1420.
+const port = Number(process.env.DEV_PORT ?? 1420);
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
@@ -11,16 +14,16 @@ export default defineConfig(() => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // 2. the devUrl names this exact port, fail if it is not available
   server: {
-    port: 1420,
+    port,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: 'ws',
           host,
-          port: 1421,
+          port: port + 1,
         }
       : undefined,
     watch: {

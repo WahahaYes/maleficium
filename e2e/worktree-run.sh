@@ -11,11 +11,12 @@
 # the caller's job (e.g. stills reuses one STILLS_HOME so Tectonic bundles
 # download once).
 #
-# GUI harnesses still serialize on :1420 (vite fixed port + strictPort):
-# isolation freezes the source, it does not multiplex the port. A run whose
-# port is held binds-fails loudly instead of killing anyone: reclaim only
-# signals processes whose cwd is inside its own root, so a worktree run can
-# never TERM another checkout's dev server.
+# GUI harnesses still serialize on :1420: stills pins its devUrl there and
+# vite binds it with strictPort. Dev loops (scripts/dev.sh) pick a free
+# port pair instead, but the first one takes :1420 too. A run whose port is
+# held bind-fails loudly instead of killing anyone: reclaim only signals
+# orphans whose cwd is inside its own root, so a worktree run can never
+# TERM another checkout's (or a live) dev server.
 #
 # Usage: ./e2e/worktree-run.sh [<ref>] -- <command...>
 #   ref defaults to HEAD. The worktree lives in OS tmp; it is removed on
