@@ -27,3 +27,11 @@ path?: string, line: number, message: string, severity: Severity,
  * The source resolves outside the project root.
  */
 external: boolean, };
+
+export type FetchOutcome = "fetched" | "failed";
+
+export type MissingReason = "not-cached" | "fetch-failed" | "not-in-bundle" | "bundle-unreachable" | "bundle-invalid" | "cache-empty" | "bundle-changed" | "system-font" | "external-tool" | "shell-escape-required";
+
+export type MissingDependency = { file?: string, reason: MissingReason, };
+
+export type LineSignal = { "kind": "fetch", file: string, outcome: FetchOutcome, };

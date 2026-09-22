@@ -1,5 +1,6 @@
 //! Document structure of LaTeX text: outline, symbols (labels, refs, cites,
-//! inputs, bibliographies), bib keys, and engine-log diagnostics.
+//! inputs, bibliographies), bib keys, engine-log diagnostics, and the engine
+//! console's fetch and missing-dependency signals.
 //!
 //! The one implementation behind every surface: the desktop app calls it
 //! over a Tauri command, the MCP tools call it through `core::structure`,
@@ -8,11 +9,15 @@
 //! lives with the caller.
 
 mod diagnostics;
+mod engine;
 mod outline;
 mod symbols;
 mod text;
 
 pub use diagnostics::{diagnostics, Diagnostic, Severity};
+pub use engine::{
+    line_signal, missing_dependency, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+};
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
 pub use symbols::{bib_keys, symbols, InputAt, KeyAt, Symbols};
 
@@ -27,6 +32,10 @@ pub fn typescript() -> String {
         Outline::decl(&cfg),
         Severity::decl(&cfg),
         Diagnostic::decl(&cfg),
+        FetchOutcome::decl(&cfg),
+        MissingReason::decl(&cfg),
+        MissingDependency::decl(&cfg),
+        LineSignal::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from src-tauri/structure (maleficium-structure). Do not edit:\n\
