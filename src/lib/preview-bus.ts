@@ -11,11 +11,11 @@ export interface PreviewSource {
   mainRel: string;
 }
 
+/** A granted session root: the id commands take, and its desktop path. */
+export type SessionRoot = { rootId: string; path: string };
+
 /** The source whose root contains `abs`, or null when no root does. */
-export function sourceFor(
-  abs: string,
-  roots: readonly { rootId: string; path: string }[],
-): PreviewSource | null {
+export function sourceFor(abs: string, roots: readonly SessionRoot[]): PreviewSource | null {
   for (const r of roots) {
     if (abs.startsWith(r.path + '/')) {
       return { rootId: r.rootId, rootPath: r.path, mainRel: abs.slice(r.path.length + 1) };

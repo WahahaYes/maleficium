@@ -1,0 +1,112 @@
+//! Engine outputs of one main file, addressed by session root and
+//! root-relative path. The outdir is derived here and never crosses the seam.
+
+use std::path::PathBuf;
+
+use super::MainOutputs;
+
+/// Resolve a main file inside the root and derive where its outputs live.
+pub fn outputs_of(root_id: &str, main_rel: &str) -> Result<MainOutputs, String> {
+    let main = super::fs::resolve_in(root_id, main_rel)?;
+    if !main.is_file() {
+        return Err(format!("not a file: {}", main_rel));
+    }
+    super::main_outputs(&main)
+}
+
+fn log_path(o: &MainOutputs) -> PathBuf {
+    let stem = o.main_file.strip_suffix(".tex").unwrap_or(&o.main_file);
+    o.outdir.join(format!("{}.log", stem))
+}
+
+/// The full engine log of the last compile.
+pub fn engine_log(root_id: &str, main_rel: &str) -> Result<String, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    std::fs::read_to_string(log_path(&o)).map_err(|e| format!("log unavailable: {}", e))
+}
+
+/// The last `max_lines` lines of the engine log.
+pub fn log_tail(root_id: &str, main_rel: &str, max_lines: usize) -> Result<String, String> {
+    let text = engine_log(root_id, main_rel)?;
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(max_lines.max(1));
+    Ok(lines[start..].join("\n"))
+}
+
+/// Whether a previous compile left a pdf for this main file.
+pub fn outputs_fresh(root_id: &str, main_rel: &str) -> Result<bool, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    Ok(o.outdir.join(&o.pdf_name).is_file())
+}
+
+/// Remove the build artifacts of this main file's outdir; sources are never
+/// there. Returns how many files went. A missing outdir is already clean.
+pub fn clean_outputs(root_id: &str, main_rel: &str) -> Result<usize, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    let entries = match std::fs::read_dir(&o.outdir) {
+        Ok(e) => e,
+        Err(_) => return Ok(0),
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        if entry.file_type().is_ok_and(|t| t.is_file())
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(name: &str) -> (String, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "maleficium-outputs-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ch")).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        let canon = dir.canonicalize().unwrap();
+        let id = format!("out-{}", name);
+        crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        (id, canon)
+    }
+
+    #[test]
+    fn outputs_live_in_the_app_cache_and_round_trip() {
+        let (id, root) = project("rt");
+        assert!(!outputs_fresh(&id, "main.tex").unwrap());
+        assert_eq!(clean_outputs(&id, "main.tex").unwrap(), 0);
+        assert!(engine_log(&id, "main.tex").is_err());
+
+        let o = outputs_of(&id, "main.tex").unwrap();
+        assert!(!o.outdir.starts_with(&root));
+        std::fs::create_dir_all(o.outdir.join("keep")).unwrap();
+        std::fs::write(o.outdir.join("main.pdf"), "%PDF").unwrap();
+        std::fs::write(o.outdir.join("main.log"), "a\nb\nc").unwrap();
+        assert!(outputs_fresh(&id, "main.tex").unwrap());
+        assert_eq!(engine_log(&id, "main.tex").unwrap(), "a\nb\nc");
+        assert_eq!(log_tail(&id, "main.tex", 2).unwrap(), "b\nc");
+
+        assert_eq!(clean_outputs(&id, "main.tex").unwrap(), 2);
+        assert!(!outputs_fresh(&id, "main.tex").unwrap());
+        assert!(root.join("main.tex").is_file());
+        let _ = std::fs::remove_dir_all(&o.outdir);
+    }
+
+    #[test]
+    fn outputs_refuse_paths_outside_the_root() {
+        let (id, _) = project("esc");
+        for bad in ["../x.tex", "/etc/hostname", "ch", "missing.tex", ""] {
+            assert!(outputs_fresh(&id, bad).is_err(), "{}", bad);
+            assert!(clean_outputs(&id, bad).is_err(), "{}", bad);
+            assert!(engine_log(&id, bad).is_err(), "{}", bad);
+        }
+        assert!(clean_outputs("nope", "main.tex").is_err());
+    }
+}

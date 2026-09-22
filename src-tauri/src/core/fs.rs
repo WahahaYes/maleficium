@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use super::{hash_root, is_hidden_name, out_dir_for, FileEntry};
+use super::{hash_root, is_hidden_name, FileEntry};
 
 /// Granted roots, keyed by session id. Roots stay readable until quit.
 static ROOTS: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
@@ -256,24 +256,6 @@ pub fn list_dir(id: &str, rel: &str) -> Result<Vec<FileEntry>, String> {
 pub fn read_text(id: &str, rel: &str) -> Result<String, String> {
     let abs = resolve_in(id, rel)?;
     std::fs::read_to_string(&abs).map_err(|e| format!("read failed: {}", e))
-}
-
-/// Read the tail of the engine log for one main-file dir shard.
-pub fn log_tail(id: &str, rel: &str, max_lines: usize) -> Result<String, String> {
-    let abs = resolve_in(id, rel)?;
-    let dir = abs
-        .parent()
-        .ok_or_else(|| "no parent directory".to_string())?;
-    let stem = abs
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let outdir = out_dir_for(&super::out_base_dir(), &dir.to_string_lossy());
-    let log_path = outdir.join(format!("{}.log", stem));
-    let text = std::fs::read_to_string(&log_path).map_err(|e| format!("log unavailable: {}", e))?;
-    let lines: Vec<&str> = text.lines().collect();
-    let start = lines.len().saturating_sub(max_lines.max(1));
-    Ok(lines[start..].join("\n"))
 }
 
 #[cfg(test)]

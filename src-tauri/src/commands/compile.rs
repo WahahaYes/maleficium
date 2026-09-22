@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use super::guard::{require_allowed, require_bare_filename};
 use crate::core;
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
@@ -13,57 +11,21 @@ impl Default for CompileState {
     }
 }
 
-/// Derive the compile target from validated inputs. A relative `input` is
-/// never canonicalized, so it reaches the engine argv verbatim and must be a
-/// bare filename; an absolute one is split from its canonical form.
-fn derive_target(
-    workdir_canon: &Path,
-    input: &str,
-    input_canon: Option<PathBuf>,
-) -> Result<(PathBuf, String), String> {
-    match input_canon {
-        Some(canon) => {
-            let dir = canon
-                .parent()
-                .map(|d| d.to_path_buf())
-                .unwrap_or_else(|| workdir_canon.to_path_buf());
-            let file = canon
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .ok_or_else(|| format!("forbidden path (no file name): {}", input))?;
-            Ok((dir, file))
-        }
-        None => Ok((
-            workdir_canon.to_path_buf(),
-            require_bare_filename(input)?.to_string(),
-        )),
-    }
-}
-
-fn out_pdf(outdir: &Path, main_file: &str) -> PathBuf {
-    let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
-    outdir.join(format!("{}.pdf", stem))
-}
-
 #[tauri::command]
 pub fn compile_tex(
     app: AppHandle,
     state: State<'_, CompileState>,
-    input: String,
-    workdir: String,
+    root_id: String,
+    main_rel: String,
 ) -> Result<String, String> {
-    // Both strings arrive untrusted: each must resolve inside the live fs
-    // scope before anything else. The outdir derives from the app-cache
-    // dir server-side. Canonical forms drive the split (no raw-string
-    // slicing), so `..` / symlink escapes fail here, not at the spawn.
-    let workdir_canon = require_allowed(&app, &workdir)?;
-    let input_canon: Option<PathBuf> = if Path::new(&input).is_absolute() {
-        Some(require_allowed(&app, &input)?)
-    } else {
-        None
-    };
-    let (dir, main_file) = derive_target(&workdir_canon, &input, input_canon)?;
-    let outdir = core::out_dir_for(&core::out_base_dir(), &dir.to_string_lossy());
+    // The main file resolves inside the session root; the engine runs in its
+    // directory and writes to the app-cache outdir derived from it.
+    let core::MainOutputs {
+        dir,
+        main_file,
+        outdir,
+        pdf_name,
+    } = core::outputs_of(&root_id, &main_rel)?;
     let _ = std::fs::create_dir_all(&outdir);
     let outdir_str = outdir.to_string_lossy().to_string();
     let _ = app.emit(
@@ -138,10 +100,7 @@ pub fn compile_tex(
             "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
             COMPILE_TIMEOUT_SECS
         )),
-        core::JobStatus::Success => {
-            let pdf = out_pdf(&outdir, &main_file);
-            Ok(pdf.to_string_lossy().to_string())
-        }
+        core::JobStatus::Success => Ok(outdir.join(&pdf_name).to_string_lossy().to_string()),
         core::JobStatus::Failed => {
             let tail = collected.join("\n");
             let t = &tail[..500.min(tail.len())];
@@ -163,28 +122,17 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[tauri::command]
+pub fn engine_log(root_id: String, main_rel: String) -> Result<String, String> {
+    core::engine_log(&root_id, &main_rel)
+}
 
-    #[test]
-    fn relative_input_must_be_bare() {
-        let wd = PathBuf::from("/tmp/project");
-        assert!(derive_target(&wd, "../../escape.tex", None).is_err());
-        assert!(derive_target(&wd, "sub/main.tex", None).is_err());
-        assert!(derive_target(&wd, "..", None).is_err());
-        assert!(derive_target(&wd, "", None).is_err());
-        let (dir, file) = derive_target(&wd, "main.tex", None).unwrap();
-        assert_eq!(dir, wd);
-        assert_eq!(file, "main.tex");
-    }
+#[tauri::command]
+pub fn outputs_fresh(root_id: String, main_rel: String) -> Result<bool, String> {
+    core::outputs_fresh(&root_id, &main_rel)
+}
 
-    #[test]
-    fn absolute_input_splits_canonical_path() {
-        let wd = PathBuf::from("/tmp/project");
-        let canon = PathBuf::from("/tmp/project/sub/main.tex");
-        let (dir, file) = derive_target(&wd, "/tmp/project/sub/main.tex", Some(canon)).unwrap();
-        assert_eq!(dir, PathBuf::from("/tmp/project/sub"));
-        assert_eq!(file, "main.tex");
-    }
+#[tauri::command]
+pub fn clean_outputs(root_id: String, main_rel: String) -> Result<usize, String> {
+    core::clean_outputs(&root_id, &main_rel)
 }

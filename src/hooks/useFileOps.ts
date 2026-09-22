@@ -8,13 +8,14 @@ import { emit } from '../lib/events';
 import { createFile, loadTex, renamePath } from '../lib/files';
 import { moveToTrash, undoTrash } from '../lib/trash';
 import { dropBuffer, reloadBuffer, renameBuffer, type BufferState } from '../lib/buffers';
-import { fs } from '../lib/fs-provider';
-import { appOutDir } from '../lib/paths';
-import { appCacheDir } from '@tauri-apps/api/path';
+import { cleanOutputs } from '../lib/compile';
+import { sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { FileHistory } from '../lib/file-history';
 
 export interface UseFileOpsDeps {
   root: string | null;
+  projectId: string | null;
+  scratch: SessionRoot | null;
   fileName: string;
   reloadPath: string | null;
   previewFile: string | null;
@@ -33,6 +34,8 @@ export interface UseFileOpsDeps {
 export function useFileOps(deps: UseFileOpsDeps) {
   const {
     root,
+    projectId,
+    scratch,
     fileName,
     reloadPath,
     previewFile,
@@ -145,7 +148,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
 
   async function handleClean() {
     const target = mainFile ?? (fileName.includes('/') ? fileName : null);
-    if (!target || !target.includes('/')) {
+    const project = root && projectId ? [{ rootId: projectId, path: root }] : [];
+    const src = target ? sourceFor(target, scratch ? [...project, scratch] : project) : null;
+    if (!src) {
       emit({
         scope: 'compile',
         kind: 'warn',
@@ -154,48 +159,27 @@ export function useFileOps(deps: UseFileOpsDeps) {
       });
       return;
     }
-    // App-local outdir over the app-cache dir: clean never touches the
-    // project dir.
-    const dir = target.slice(0, target.lastIndexOf('/')) || '/tmp';
-    const out = appOutDir(await appCacheDir(), dir);
-    try {
-      // Per-entry removal: build artifacts only, never sources. Missing
-      // dir = already clean.
-      let entries = [];
-      try {
-        entries = await fs().listDir(out);
-      } catch {
-        emit({
-          scope: 'compile',
-          kind: 'info',
-          message: 'Clean: already clean',
-          data: { action: 'compile.clean', out, removed: 0 },
-        });
-        return;
-      }
-      let n = 0;
-      for (const e of entries) {
-        try {
-          await fs().remove(out + '/' + e.name);
-          n++;
-        } catch {
-          /* keep going — report count at end */
-        }
-      }
-      markOwnWrite(out);
+    // The backend owns the outdir: Clean names the main file, never a path.
+    const r = await cleanOutputs(src.rootId, src.mainRel);
+    if (r.ok) {
       emit({
         scope: 'compile',
-        kind: 'success',
-        message: `Cleaned ${out} (${n} files)`,
-        data: { action: 'compile.clean', out, removed: n },
+        kind: r.removed > 0 ? 'success' : 'info',
+        message:
+          r.removed > 0 ? `Cleaned ${src.mainRel} (${r.removed} files)` : 'Clean: already clean',
+        data: { action: 'compile.clean', target: src.mainRel, removed: r.removed },
       });
       if (root) await reloadTree(root, false);
-    } catch (e) {
+    } else {
       emit({
         scope: 'compile',
         kind: 'error',
-        message: 'Clean failed: ' + String(e).slice(0, 120),
-        data: { action: 'compile.clean-failed', out, error: String(e).slice(0, 200) },
+        message: 'Clean failed: ' + (r.error ?? '').slice(0, 120),
+        data: {
+          action: 'compile.clean-failed',
+          target: src.mainRel,
+          error: (r.error ?? '').slice(0, 200),
+        },
       });
     }
   }

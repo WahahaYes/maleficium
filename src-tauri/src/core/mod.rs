@@ -3,13 +3,15 @@
 
 pub mod compile;
 pub mod fs;
+pub mod outputs;
 pub mod synctex;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
-    grant_project, grant_root, grant_untitled, list_dir, log_tail, read_text, resolve_in,
-    resolve_read, session_root, trash_file, undo_trash,
+    grant_project, grant_root, grant_untitled, list_dir, read_text, resolve_in, resolve_read,
+    session_root, trash_file, undo_trash,
 };
+pub use outputs::{clean_outputs, engine_log, log_tail, outputs_fresh, outputs_of};
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 
 use std::path::{Path, PathBuf};

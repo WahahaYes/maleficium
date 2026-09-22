@@ -34,11 +34,7 @@ struct Query {
 /// Resolve the main file inside the root and require its compiled output.
 fn query_for(root_id: &str, main_rel: &str) -> Result<Query, String> {
     let root = super::fs::session_root(root_id)?;
-    let main = super::fs::resolve_in(root_id, main_rel)?;
-    if !main.is_file() {
-        return Err(format!("not a file: {}", main_rel));
-    }
-    let out = super::main_outputs(&main)?;
+    let out = super::outputs_of(root_id, main_rel)?;
     if !out.outdir.join(&out.pdf_name).is_file() {
         return Err(format!("no compiled output for {}", main_rel));
     }

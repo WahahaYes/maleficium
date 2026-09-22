@@ -14,6 +14,7 @@ import { getRecentProjects, pruneRecentProjects, touchRecentProject } from '../l
 import { classifyTauriEvent, coalesceEvents, debounce } from '../lib/watcher';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
+import type { SessionRoot } from '../lib/preview-bus';
 
 export interface UseProjectTreeDeps {
   root: string | null;
@@ -27,7 +28,7 @@ export interface UseProjectTreeDeps {
   trash: FileHistory;
   resolveMain: (r: string, opened: string | null) => Promise<string | null>;
   handleSelect: (path: string) => Promise<void>;
-  warmCompile: (mainAbsPath: string) => Promise<void>;
+  warmCompile: (mainAbsPath: string, project: SessionRoot) => Promise<void>;
 }
 
 export function useProjectTree(deps: UseProjectTreeDeps) {
@@ -170,7 +171,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // populated — but only when the engine cache is usable (previous output
     // present). No cache → no surprise build; the preview waits for the
     // user's explicit Ctrl+R. Open never fails because warm failed.
-    if (opts?.warm && m) void warmCompile(m);
+    if (opts?.warm && m) void warmCompile(m, { rootId: grant.rootId, path: canon });
   }
 
   async function open() {

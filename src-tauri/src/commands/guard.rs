@@ -62,35 +62,11 @@ pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
-/// Validate a bare filename (no fs access).
-pub fn require_bare_filename(name: &str) -> Result<&str, String> {
-    if !is_bare_filename(name) {
-        return Err(format!("forbidden name (not a bare filename): {}", name));
-    }
-    Ok(name)
-}
-
 /// Fetch the live fs scope, or fail closed when unavailable (never panic —
 /// `try_fs_scope` returns None outside a managed window context).
 pub fn live_scope(app: &AppHandle) -> Result<tauri::fs::Scope, String> {
     app.try_fs_scope()
         .ok_or_else(|| "forbidden path: fs scope unavailable".to_string())
-}
-
-/// Validate that `candidate` canonicalizes to a path the live fs scope
-/// currently allows. The scope is the source of truth: exactly what the
-/// fs plugin itself would serve is accepted.
-pub fn require_allowed(app: &AppHandle, candidate: &str) -> Result<PathBuf, String> {
-    reject_empty_nul(candidate)?;
-    let canon = Path::new(candidate)
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
-    let scope = live_scope(app)?;
-    if scope.is_allowed(&canon) {
-        Ok(canon)
-    } else {
-        Err(format!("forbidden path (outside scope): {}", candidate))
-    }
 }
 
 /// A granted project: its canonical path and the session-root id that the
@@ -151,7 +127,6 @@ mod tests {
         assert!(reject_empty_nul("/ok/path").is_ok());
         assert!(canonical_root("").is_err());
         assert!(canonical_root("/tmp/a\0b").is_err());
-        assert!(require_bare_filename("a\0b").is_err());
     }
 
     #[test]
@@ -193,7 +168,5 @@ mod tests {
         assert!(!is_bare_filename("../x"));
         assert!(is_bare_filename("a..b"));
         assert!(!is_bare_filename("a\0b"));
-        assert!(require_bare_filename("ok.tex").is_ok());
-        assert!(require_bare_filename("a/b").is_err());
     }
 }

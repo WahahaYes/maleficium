@@ -544,6 +544,8 @@ export default function App({
   const { handleCreate, handleRename, handleReload, handleDelete, handleClean, handleUndo } =
     useFileOps({
       root,
+      projectId,
+      scratch,
       fileName,
       reloadPath,
       previewFile,

@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+
 vi.mock('@tauri-apps/api/path', () => ({
   appDataDir: vi.fn(async () => '/app/data'),
   appCacheDir: vi.fn(async () => '/app/cache'),
 }));
 
+import { invoke } from '@tauri-apps/api/core';
 import { useFileOps, type UseFileOpsDeps } from './useFileOps';
 import { setProviders, type DirEntry, type FsProvider } from '../lib/fs-provider';
 import { FileHistory } from '../lib/file-history';
@@ -73,6 +76,8 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
   const trash = new FileHistory();
   const deps = (): UseFileOpsDeps => ({
     root: '/p',
+    projectId: 'p1',
+    scratch: null,
     fileName: state.fileName,
     reloadPath: state.reloadPath,
     previewFile: state.previewFile,
@@ -189,5 +194,51 @@ describe('useFileOps create and rename', () => {
     expect(files.get('/p/fig.tex')).toBe('fig body');
     expect(state.ownWrites).toEqual([]);
     expect(actions()).toEqual(['file.rename-failed']);
+  });
+});
+
+describe('useFileOps clean', () => {
+  it('asks the backend to clean the main file by root id, never naming the outdir', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(3);
+    const { ops } = harness();
+
+    await ops().handleClean();
+
+    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', { rootId: 'p1', mainRel: 'main.tex' });
+    expect(actions()).toEqual(['compile.clean']);
+    expect(data(0)).toEqual({ action: 'compile.clean', target: 'main.tex', removed: 3 });
+  });
+
+  it('cleans an untitled document through the scratch root', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(0);
+    const { ops } = harness({
+      root: null,
+      projectId: null,
+      mainFile: '/data/untitled/untitled.tex',
+      scratch: { rootId: 's1', path: '/data/untitled' },
+    });
+
+    await ops().handleClean();
+
+    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', {
+      rootId: 's1',
+      mainRel: 'untitled.tex',
+    });
+    expect(events.list()[0].message).toBe('Clean: already clean');
+  });
+
+  it('refuses a target outside every root without calling the backend', async () => {
+    vi.mocked(invoke).mockClear();
+    const { ops } = harness({ mainFile: '/elsewhere/main.tex' });
+    await ops().handleClean();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(data(0).reason).toBe('no-project-file');
+  });
+
+  it('reports a backend refusal', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce('forbidden path (outside project): main.tex');
+    const { ops } = harness();
+    await ops().handleClean();
+    expect(actions()).toEqual(['compile.clean-failed']);
   });
 });

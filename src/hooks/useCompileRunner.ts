@@ -7,15 +7,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { appCacheDir } from '@tauri-apps/api/path';
 import { markSaved, type BufferState } from '../lib/buffers';
-import { cancelCompile, compileTex, onCompileLine } from '../lib/compile';
+import {
+  cancelCompile,
+  compileTex,
+  engineLog,
+  onCompileLine,
+  outputsFresh,
+  type CompileResult,
+} from '../lib/compile';
 import { emit, type ProblemEvent } from '../lib/events';
 import { saveTex } from '../lib/files';
-import { fs } from '../lib/fs-provider';
 import { parseLog } from '../lib/parseLog';
-import { appOutDir } from '../lib/paths';
-import { emitPdf, sourceFor } from '../lib/preview-bus';
+import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
 export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
@@ -30,7 +34,7 @@ export interface UseCompileRunnerDeps {
   root: string | null;
   projectId: string | null;
   /** The untitled scratch root; null until its grant resolves. */
-  scratch: { rootId: string; path: string } | null;
+  scratch: SessionRoot | null;
   buffers: Map<string, BufferState>;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   largeFile: string | null;
@@ -98,6 +102,12 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     }
   };
 
+  /** Granted roots a target may sit in: the project (or `project`) and scratch. */
+  function sessionRoots(project?: SessionRoot): SessionRoot[] {
+    const p = project ?? (root && projectId ? { rootId: projectId, path: root } : null);
+    return [...(p ? [p] : []), ...(scratch ? [scratch] : [])];
+  }
+
   async function compile() {
     await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null));
   }
@@ -114,7 +124,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const phaseRef = useRef<CompilePhase>('idle');
   async function runCompile(
     target: string | null,
-    opts?: { skipPersist?: boolean },
+    opts?: { skipPersist?: boolean; root?: SessionRoot },
   ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
@@ -257,7 +267,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             markOwnWrite(target);
           }
         }
-        workdir = target.slice(0, target.lastIndexOf('/')) || '/';
       } else {
         if (!scratch) throw new Error('scratch root unavailable');
         workdir = scratch.path;
@@ -285,48 +294,36 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       return false;
     }
     const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
-    const main = activeTarget.slice(activeTarget.lastIndexOf('/') + 1);
-    const r = await compileTex(activeTarget, workdir!);
-    // `compile_tex` returns the pdf path on success, empty error string;
-    // the status line shows the pdf path or the failure message.
-    setLog(r.ok ? (r.pdfPath ?? '') : r.log);
-    const readEngineLog = async (): Promise<string | null> => {
-      try {
-        // App-local outdir over the app-cache dir: the engine log lives in
-        // cache, never in the project.
-        const out = appOutDir(await appCacheDir(), workdir!);
-        return await fs().readText(`${out}/${main.replace(/\.tex$/, '.log')}`);
-      } catch {
-        return null;
-      }
-    };
-    if (r.ok && r.pdfPath) {
+    // The backend compiles by session root: a target outside every granted
+    // root fails here, never reaching the engine.
+    const src = sourceFor(activeTarget, sessionRoots(opts?.root));
+    const r: CompileResult = src
+      ? await compileTex(src.rootId, src.mainRel)
+      : { ok: false, pdfUrl: null, log: 'compile target is outside the project: ' + activeTarget };
+    setLog(r.ok ? (r.pdfUrl ?? '') : r.log);
+    const readEngineLog = () => (src ? engineLog(src.rootId, src.mainRel) : Promise.resolve(null));
+    if (r.ok && r.pdfUrl) {
       finish('success');
       setCompileStart(null);
       setLogCollapsed(false);
       emit({
         scope: 'compile',
         kind: 'success',
-        message: 'compiled ' + String(r.pdfPath),
+        message: 'compiled ' + String(r.pdfUrl),
         data: {
           action: 'compile.finish',
           ok: true,
           target: activeTarget,
-          pdfPath: String(r.pdfPath),
+          pdfUrl: String(r.pdfUrl),
           ms: Date.now() - t0,
         },
       });
-      const roots = root && projectId ? [{ rootId: projectId, path: root }] : [];
-      emitPdf({
-        url: r.pdfPath,
-        source: sourceFor(activeTarget, scratch ? [...roots, scratch] : roots),
-        revision: null,
-      });
+      emitPdf({ url: r.pdfUrl, source: src, revision: null });
       emit({
         scope: 'preview',
         kind: 'success',
-        message: 'preview ' + String(r.pdfPath),
-        data: { action: 'preview.update', pdfPath: String(r.pdfPath) },
+        message: 'preview ' + String(r.pdfUrl),
+        data: { action: 'preview.update', pdfUrl: String(r.pdfUrl) },
       });
     } else if (!r.ok && r.log.includes('spawn')) {
       finish('failure');
@@ -390,8 +387,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   // (2) a warm failure is quiet (debug line only) — open must never look
   // broken because a background guess failed; the user's explicit Ctrl+R
   // reports loudly through the normal path.
-  async function warmCompile(mainAbsPath: string) {
-    const usable = await engineCacheUsable(mainAbsPath).catch(() => false);
+  // `project` is passed explicitly: warm runs right after an open, before
+  // this closure has seen the new root.
+  async function warmCompile(mainAbsPath: string, project: SessionRoot) {
+    const src = sourceFor(mainAbsPath, [project]);
+    const usable = src != null && (await outputsFresh(src.rootId, src.mainRel));
     if (!usable) {
       emit({
         scope: 'compile',
@@ -407,25 +407,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       message: 'warming preview for ' + mainAbsPath,
       data: { action: 'compile.warm', target: mainAbsPath },
     });
-    await runCompile(mainAbsPath, { skipPersist: true });
+    await runCompile(mainAbsPath, { skipPersist: true, root: project });
     // Not owned (user raced us) → their stream wins; nothing to report.
   }
 
-  // True when the app-local outdir already holds this target's engine output
-  // (pdf from a previous successful run): the warm compile then only
-  // verifies freshness instead of paying a full cold build on every open.
-  // Best-effort stat only — never throws. The log is not required here:
-  // the engine does not reliably leave one beside every pdf.
-  async function engineCacheUsable(targetAbsPath: string): Promise<boolean> {
-    try {
-      const dir = targetAbsPath.slice(0, targetAbsPath.lastIndexOf('/')) || '/tmp';
-      const stem = targetAbsPath.slice(targetAbsPath.lastIndexOf('/') + 1).replace(/\.tex$/, '');
-      const out = appOutDir(await appCacheDir(), dir);
-      return (await fs().stat(`${out}/${stem}.pdf`)) !== null;
-    } catch {
-      return false;
-    }
-  }
   async function handleCompileFile(path: string) {
     if (!path.endsWith('.tex')) {
       emit({

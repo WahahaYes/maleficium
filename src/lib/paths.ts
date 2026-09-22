@@ -1,7 +1,7 @@
 // paths.ts — app-local homes for state that must never litter the project dir.
 //
-// Trash, the main-file association cache root, and compile `out/` live outside
-// the user's folder. App-local paths are the only paths: no in-project
+// Trash, history, and the main-file association cache root live outside the
+// user's folder; compile outputs are the backend's. App-local paths are the only paths: no in-project
 // fallbacks.
 //
 // Path strings + one djb2 hex only; no file contents, no payload.
@@ -29,15 +29,6 @@ export function joinPath(...parts: string[]): string {
  */
 export function appTrashDir(appDataDir: string, root: string): string {
   return joinPath(appDataDir, 'maleficium-trash', hashRoot(root));
-}
-
-/**
- * App-local compile-output home for one project root. Same hash and layout
- * as the engine outdir, so log reads + Clean target the dir the engine
- * wrote. The base is the OS app-cache dir.
- */
-export function appOutDir(baseDir: string, root: string): string {
-  return joinPath(baseDir, 'maleficium-out', hashRoot(root));
 }
 
 /**

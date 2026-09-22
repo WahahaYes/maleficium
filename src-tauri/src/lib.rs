@@ -15,6 +15,9 @@ pub fn run() {
             commands::guard::grant_untitled_access,
             commands::compile::compile_tex,
             commands::compile::cancel_compile,
+            commands::compile::engine_log,
+            commands::compile::outputs_fresh,
+            commands::compile::clean_outputs,
             commands::synctex::forward_sync,
             commands::synctex::inverse_sync
         ])
