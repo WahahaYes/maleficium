@@ -1,9 +1,11 @@
 //! Shared core: guard validation, outdir derivation, sidecar
-//! resolution, fs ops, compile orchestration, synctex arg-building.
+//! resolution, fs ops, compile orchestration, synctex arg-building,
+//! document structure over the file graph.
 
 pub mod compile;
 pub mod fs;
 pub mod outputs;
+pub mod structure;
 pub mod synctex;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};

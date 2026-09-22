@@ -156,8 +156,12 @@ def send(method, params=None):
 def notify(m):
     p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": m}) + "\n"); p.stdin.flush()
 def call(name, args):
-    r = send("tools/call", {"name": name, "arguments": args})
-    return r["result"]["structuredContent"]
+    # Tool failures are isError results with the reason as text; successes
+    # carry the record as structuredContent. Flatten both into one dict.
+    r = send("tools/call", {"name": name, "arguments": args})["result"]
+    if r.get("isError"):
+        return {"ok": False, "error": "".join(c.get("text", "") for c in r.get("content") or [])}
+    return {"ok": True, **r["structuredContent"]}
 
 send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "driver", "version": "0"}})
 notify("notifications/initialized")
@@ -178,10 +182,10 @@ for _ in range(ROUNDS):
     time.sleep(4)
     polls += 1
     sc = call("compile_poll", {"job_id": job, "tail_lines": 3})
-    if sc["status"] != "running":
+    if sc.get("status") != "running":
         break
 compile_ms = (time.time() - t0) * 1000
-check("compile succeeds", sc["status"] == "success", str(sc)[:200], ms=compile_ms)
+check("compile succeeds", sc.get("status") == "success", str(sc)[:200], ms=compile_ms)
 check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
 if WARM_ONLY:
     logf.close()
@@ -193,12 +197,28 @@ import os as _os
 check("pdf exists", bool(pdf) and _os.path.exists(pdf), pdf)
 
 fw = call("synctex_forward", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
-check("forward query", fw["ok"] and (fw.get("hit") or {}).get("page", 0) >= 1, str(fw)[:120])
+check("forward query", fw["ok"] and (fw.get("page") or 0) >= 1, str(fw)[:120])
 
 iv = call("synctex_inverse", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
-ivh = iv.get("hit") or {}
+ivh = iv
 check("inverse query", iv["ok"] and (ivh.get("line") or 0) >= 1, str(iv)[:120])
 check("inverse hit is root-relative", bool(ivh.get("relPath")) and not ivh["relPath"].startswith("/"), str(ivh))
+
+st = call("file_graph", {"root_id": "drv", "main_rel": "main.tex"})
+st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}
+check("file graph walks inputs", st["ok"] and st_files.get("chapters/method.tex") is True and st_files.get("chapters/background.tex") is True, str(st)[:200])
+check("structure is disk-sourced + revisioned", st.get("source") == "disk" and len(st.get("revision") or "") == 16, str(st)[:120])
+check("structure paths are root-relative", ROOT not in json.dumps(st), json.dumps(st)[:200])
+ol = call("outline", {"root_id": "drv", "rel": "main.tex"})
+check("outline lists sections", ol["ok"] and any(e["kind"] == "section" and e["title"] == "Introduction" for e in ol.get("entries") or []), str(ol)[:200])
+lrf = call("labels_refs", {"root_id": "drv", "main_rel": "main.tex"})
+check("refs resolve", lrf["ok"] and any(r["key"] == "fig:diagram" and r["resolved"] for r in lrf.get("refs") or []), str(lrf)[:200])
+ci = call("citations", {"root_id": "drv", "main_rel": "main.tex"})
+check("cites resolve against refs.bib", ci["ok"] and any(c["key"] == "knuth1984texbook" and c["resolved"] for c in ci.get("cites") or []), str(ci)[:200])
+dg = call("diagnostics", {"root_id": "drv", "main_rel": "main.tex"})
+check("diagnostics after a clean compile", dg["ok"] and ROOT not in json.dumps(dg), str(dg)[:200])
+esc = call("outline", {"root_id": "drv", "rel": "../outside.tex"})
+check("structure escape is a tool error", not esc["ok"] and "forbidden" in esc.get("error", ""), str(esc))
 
 d0 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex"})
 check("delete needs confirm", not d0["ok"] and "confirm" in (d0.get("error") or ""), str(d0))
@@ -221,13 +241,16 @@ fsc = {"status": "running"}
 for _ in range(30):
     time.sleep(4)
     fsc = call("compile_poll", {"job_id": fjob, "tail_lines": 5})
-    if fsc["status"] != "running":
+    if fsc.get("status") != "running":
         break
 fail_ms = (time.time() - ft0) * 1000
 flog = (fsc.get("log") or "") + "\n" + "\n".join(fsc.get("lines") or [])
 check("failure reports failed", fsc.get("status") == "failed", str(fsc)[:200], ms=fail_ms)
 check("failure names the cause", "Undefined control sequence" in flog, flog[:200])
 check("failure writes no pdf", not fsc.get("pdf_url"), str(fsc.get("pdf_url")))
+fd = call("diagnostics", {"root_id": "drv", "main_rel": "fail.tex"})
+fdd = fd.get("diagnostics") or []
+check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
 
 # ---- heavy-document probes: 1000-file open, cancel mid-compile, D.5 budgets ----

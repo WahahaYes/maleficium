@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildMenus, type MenuContext, type CommandActions } from './commands';
 import { KEYMAP, menuChordId } from './keymap';
-import { parseOutline } from './outline';
 
 const baseCtx: MenuContext = {
   hasProject: true,
@@ -202,9 +201,6 @@ describe('command registry', () => {
     const all = buildMenus({ ...baseCtx, outlineLines: lines }, actions).flatMap((s) => s.commands);
     expect(all.find((c) => c.id === 'selection.pick-one')!.children?.length).toBe(25);
     expect(all.find((c) => c.id === 'selection.pick-many')!.children?.length).toBe(25);
-    // Parse itself keeps full fidelity (DATA cap 1000, not the view cap).
-    const text = Array.from({ length: 30 }, (_, i) => `\\section{S${i + 1}}`).join('\n');
-    expect(parseOutline(text).length).toBe(30);
   });
   it('disabled states match context (compiling / no-project / trash-empty)', () => {
     const find = (ctx: MenuContext, id: string) =>

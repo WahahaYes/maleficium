@@ -40,7 +40,7 @@ import { onPdf, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
-import { parseOutline, type OutlineEntry } from './lib/outline';
+import { structure, type OutlineEntry } from './lib/structure';
 import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
@@ -609,23 +609,31 @@ export default function App({
   // Multi-pick set for Selection > Pick Sections.
   const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
   useEffect(() => {
+    // A reply for a superseded buffer is dropped: parses resolve async.
+    let stale = false;
     const t = setTimeout(() => {
-      try {
-        const t0 = performance.now();
-        const entries = parseOutline(tex);
-        setOutline(entries);
-        if (tex.length > 1_000_000) {
-          emit({
-            scope: 'app',
-            kind: 'info',
-            message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms`,
-          });
-        }
-      } catch {
-        /* outline never blocks editing */
-      }
+      const t0 = performance.now();
+      structure()
+        .outline(tex)
+        .then(({ entries }) => {
+          if (stale) return;
+          setOutline(entries);
+          if (tex.length > 1_000_000) {
+            emit({
+              scope: 'app',
+              kind: 'info',
+              message: `outline parsed ${entries.length} entries in ${Math.round(performance.now() - t0)}ms`,
+            });
+          }
+        })
+        .catch(() => {
+          /* outline never blocks editing */
+        });
     }, 500);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [tex, fileName]);
 
   const handleTexChange = useCallback(

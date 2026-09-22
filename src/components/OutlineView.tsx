@@ -22,8 +22,8 @@ import TagIcon from '@mui/icons-material/Tag';
 import ImageIcon from '@mui/icons-material/Image';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import InputIcon from '@mui/icons-material/Input';
-import type { OutlineEntry, OutlineFilter, OutlineKind } from '../lib/outline';
-import { filterOutline, searchOutline } from '../lib/outline';
+import type { OutlineEntry, OutlineKind } from '../lib/structure';
+import { filterOutline, searchOutline, type OutlineFilter } from '../lib/outline.view';
 
 const VIEW_CAP = 100;
 

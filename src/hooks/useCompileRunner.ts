@@ -18,7 +18,8 @@ import {
 } from '../lib/compile';
 import { emit, type ProblemEvent } from '../lib/events';
 import { saveTex } from '../lib/files';
-import { parseLog } from '../lib/parseLog';
+import { joinPath } from '../lib/paths';
+import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
@@ -80,20 +81,22 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     window.addEventListener('beforeunload', h);
     return () => window.removeEventListener('beforeunload', h);
   }, []);
-  const publishProblems = (text: string, base: string, wsRoot: string) => {
+  const publishProblems = async (text: string, base: string, wsRoot: string) => {
     try {
-      const entries = parseLog(text, wsRoot, base).slice(0, 100);
-      for (const l of entries) {
+      const entries = (await structure().diagnostics(text, wsRoot, base)).slice(0, 100);
+      for (const d of entries) {
+        const clickable = !d.external && d.path !== undefined;
+        const file = clickable ? joinPath(wsRoot, d.path as string) : '';
         emit({
           scope: 'compile',
-          kind: l.clickable ? 'error' : 'warn',
-          message: `${l.file}:${l.line} ${l.msg}`,
+          kind: clickable ? 'error' : 'warn',
+          message: `${d.path ?? '(outside project)'}:${d.line} ${d.message}`,
           data: {
             action: 'compile.problem',
-            file: l.file,
-            line: l.line,
-            msg: l.msg,
-            clickable: l.clickable,
+            file,
+            line: d.line,
+            msg: d.message,
+            clickable,
           } satisfies ProblemEvent & { action: string },
         });
       }
@@ -343,7 +346,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
       const c = await readEngineLog();
-      publishProblems(c ?? r.log, mainDir, root || workdirHint);
+      await publishProblems(c ?? r.log, mainDir, root || workdirHint);
     } else if (!r.ok) {
       finish('failure');
       setCompileStart(null);
@@ -361,7 +364,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
       const c = await readEngineLog();
-      publishProblems(c ?? r.log, mainDir, root || workdirHint);
+      await publishProblems(c ?? r.log, mainDir, root || workdirHint);
     }
     clearInterval(hb);
     try {

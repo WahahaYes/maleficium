@@ -1,5 +1,4 @@
 import { makeTmpRoot, makeSingle, makeMulti, makeImageDoc } from './fixtures';
-import { parseLog } from '../lib/parseLog';
 import { emit, list, clear } from '../lib/events';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,15 +29,6 @@ describe('scale fixtures', () => {
 });
 
 describe('scale budgets', () => {
-  it('parseLog over 20000-line log completes', () => {
-    const lines: string[] = [];
-    for (let i = 1; i <= 20000; i++) {
-      lines.push(i % 5 === 0 ? `error: ch${i}.tex:${i}: msg${i}` : `filler line ${i}`);
-    }
-    const entries = parseLog(lines.join('\n'), '/tmp/scale', '/tmp/scale');
-    expect(entries.length).toBe(4000);
-  });
-
   it('5000 bus emits stay capped at 500', () => {
     clear();
     for (let i = 0; i < 5000; i++) {

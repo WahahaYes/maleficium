@@ -19,7 +19,9 @@ pub fn run() {
             commands::compile::outputs_fresh,
             commands::compile::clean_outputs,
             commands::synctex::forward_sync,
-            commands::synctex::inverse_sync
+            commands::synctex::inverse_sync,
+            commands::structure::structure_outline,
+            commands::structure::structure_diagnostics
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -10,10 +10,13 @@ import { setAppStore } from './lib/app-store';
 import { localAppStore } from './lib/app-store.web';
 import { setProviders } from './lib/fs-provider';
 import { desktopFs, desktopDialog } from './lib/fs-provider.tauri';
+import { setStructure } from './lib/structure';
+import { desktopStructure } from './lib/structure.tauri';
 import './App.css';
 
 setAppStore(localAppStore);
 setProviders({ fs: desktopFs, dialog: desktopDialog });
+setStructure(desktopStructure);
 
 export function Root() {
   const [prefs, setPrefs] = React.useState<AppearancePrefs>(loadAppearance);
