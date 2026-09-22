@@ -14,9 +14,8 @@ import { emit, type ProblemEvent } from '../lib/events';
 import { saveTex } from '../lib/files';
 import { fs } from '../lib/fs-provider';
 import { parseLog } from '../lib/parseLog';
-import { grantUntitledAccess } from '../lib/projectAccess';
 import { appOutDir } from '../lib/paths';
-import { emitPdf } from '../lib/preview-bus';
+import { emitPdf, sourceFor } from '../lib/preview-bus';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
 export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
@@ -30,7 +29,8 @@ export interface UseCompileRunnerDeps {
   workdirHint: string;
   root: string | null;
   projectId: string | null;
-  relInProject: (abs: string) => string | null;
+  /** The untitled scratch root; null until its grant resolves. */
+  scratch: { rootId: string; path: string } | null;
   buffers: Map<string, BufferState>;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   largeFile: string | null;
@@ -52,7 +52,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     workdirHint,
     root,
     projectId,
-    relInProject,
+    scratch,
     buffers,
     setBuffers,
     largeFile,
@@ -259,8 +259,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         }
         workdir = target.slice(0, target.lastIndexOf('/')) || '/';
       } else {
-        const scratch = await grantUntitledAccess();
-        if (!scratch.ok || !scratch.path) throw new Error(scratch.error ?? 'scratch unavailable');
+        if (!scratch) throw new Error('scratch root unavailable');
         workdir = scratch.path;
         const t2 = workdir + '/' + fileName;
         await saveTex(t2, tex);
@@ -317,10 +316,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           ms: Date.now() - t0,
         },
       });
-      const docRel = target ? relInProject(target) : null;
+      const roots = root && projectId ? [{ rootId: projectId, path: root }] : [];
       emitPdf({
         url: r.pdfPath,
-        docKey: projectId && docRel ? `${projectId}:${docRel}` : null,
+        source: sourceFor(activeTarget, scratch ? [...roots, scratch] : roots),
         revision: null,
       });
       emit({

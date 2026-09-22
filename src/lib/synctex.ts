@@ -1,77 +1,64 @@
 import { invoke } from '@tauri-apps/api/core';
-export type ForwardResult = { ok: boolean; text: string };
-export type InverseResult = { ok: boolean; text: string };
+
 /**
- * SyncTeX via the bundled sidecar. The tool ships with the app: no PATH
- * lookup, no "not installed" branch. `{ok:false}` means only a genuine
- * query failure (missing `.synctex.gz`, corrupt output).
+ * SyncTeX via the bundled sidecar, addressed by session root and
+ * root-relative paths. The backend derives the pdf from the main file and
+ * parses the tool's output. `{ok:false}` means a genuine query failure
+ * (no compiled output, missing `.synctex.gz`, refused path).
  */
-/**
- * Forward SyncTeX (editor → PDF).
- * `pdfPath` is the absolute outdir pdf path; `texPath` is the absolute
- * path of the visible source file — the gz stores absolute Input paths
- * per file, so pass the file the line belongs to.
- */
+export type ForwardResult = { ok: boolean; page: number | null; error: string | null };
+export type InverseResult = {
+  ok: boolean;
+  relPath: string | null;
+  line: number | null;
+  error: string | null;
+};
+
+/** Forward SyncTeX (editor → PDF): the page showing `line` of `texRel`. */
 export async function forward_sync(
-  pdfPath: string,
-  texPath: string,
+  rootId: string,
+  mainRel: string,
+  texRel: string,
   line: number,
 ): Promise<ForwardResult> {
   try {
-    const text = await invoke<string>('forward_sync', { pdf: pdfPath, tex: texPath, line });
-    return { ok: true, text };
+    const hit = await invoke<{ page: number | null }>('forward_sync', {
+      rootId,
+      mainRel,
+      texRel,
+      line,
+    });
+    return { ok: true, page: hit.page, error: null };
   } catch (e) {
-    return { ok: false, text: String(e) };
+    return { ok: false, page: null, error: String(e) };
   }
 }
-/**
- * Parse `synctex view` output for the target page (`Page: N` line).
- * Returns the 1-based page number, or null when no `Page:` line matches.
- */
-export function parseForwardSync(text: string): number | null {
-  const m = text.match(/^Page:\s*(\d+)\s*$/m);
-  return m ? Math.max(1, parseInt(m[1], 10)) : null;
-}
 
-/**
- * True when `synctex view` output is a genuine no-match response.
- */
-export function isForwardNoMatch(text: string): boolean {
-  return text.includes('no_match') || text.includes('No tag for') || text === '{}';
-}
-
-/**
- * Parse `synctex edit` output (`Input:<abs path>` + `Line:<n>` lines).
- * Missing fields stay null (`line == null` is no-match).
- */
-export function parseInverseSync(text: string): { line: number | null; hitFile: string | null } {
-  const lm = text.match(/^Line:\s*(\d+)\s*$/m);
-  const im = text.match(/^Input:\s*(.+?)\s*$/m);
-  return {
-    line: lm ? parseInt(lm[1], 10) : null,
-    hitFile: im ? im[1].trim() : null,
-  };
-}
-/**
- * Inverse SyncTeX. The query runs inside the out dir (the tool resolves
- * `<pdf>.synctex.gz` relative to CWD), so the pdf's absolute path is split
- * into (outDir, pdfName) here. Failure contract: `{ok:false}`.
- */
+/** Inverse SyncTeX (PDF → editor): the root-relative file and line at a point. */
 export async function inverse_sync(
-  pdfAbsPath: string,
+  rootId: string,
+  mainRel: string,
   page: number,
   x = 0,
   y = 0,
 ): Promise<InverseResult> {
-  const slash = pdfAbsPath.lastIndexOf('/');
-  const synctexDir = slash > 0 ? pdfAbsPath.slice(0, slash) : '.';
-  const pdfName = slash >= 0 ? pdfAbsPath.slice(slash + 1) : pdfAbsPath;
   try {
-    const text = await invoke<string>('inverse_sync', { synctexDir, pdfName, page, x, y });
-    return { ok: true, text };
+    const hit = await invoke<{ relPath: string | null; line: number | null }>('inverse_sync', {
+      rootId,
+      mainRel,
+      page,
+      x,
+      y,
+    });
+    return { ok: true, relPath: hit.relPath, line: hit.line, error: null };
   } catch (e) {
-    return { ok: false, text: String(e) };
+    return { ok: false, relPath: null, line: null, error: String(e) };
   }
+}
+
+/** Root-relative path of `abs`, or null when it lies outside `rootPath`. */
+export function relTo(rootPath: string, abs: string): string | null {
+  return abs.startsWith(rootPath + '/') ? abs.slice(rootPath.length + 1) : null;
 }
 
 /**

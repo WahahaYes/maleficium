@@ -10,7 +10,7 @@ pub use fs::{
     grant_project, grant_root, grant_untitled, list_dir, log_tail, read_text, resolve_in,
     resolve_read, session_root, trash_file, undo_trash,
 };
-pub use synctex::{forward_query, inverse_query};
+pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -135,54 +135,33 @@ pub struct FileEntry {
     pub entry_type: String,
 }
 
-/// Validate an engine outdir path: absolute, resolvable, a directory inside
-/// the app-cache tree. Outdirs live outside any project root, so containment
-/// here means "inside the app cache".
-pub fn canonical_out_dir(dir: &str) -> Result<PathBuf, String> {
-    crate::commands::guard::reject_empty_nul(dir)?;
-    let path = Path::new(dir);
-    if !path.is_absolute() {
-        return Err(format!("forbidden path (not absolute): {}", dir));
-    }
-    let canon = path
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", dir, e))?;
-    if !canon.is_dir() {
-        return Err(format!("not a directory: {}", dir));
-    }
-    let base = out_base_dir()
-        .canonicalize()
-        .unwrap_or_else(|_| out_base_dir());
-    if !canon.starts_with(&base) {
-        return Err(format!("forbidden path (outside app cache): {}", dir));
-    }
-    Ok(canon)
+/// Where the engine writes for one main file: it compiles inside the file's
+/// own directory, into an app-cache outdir keyed by that directory.
+pub struct MainOutputs {
+    pub dir: PathBuf,
+    pub main_file: String,
+    pub outdir: PathBuf,
+    pub pdf_name: String,
 }
 
-/// Validate an engine-output pdf path: absolute, resolvable, a `.pdf` file
-/// inside the app-cache tree.
-pub fn canonical_out_pdf(pdf: &str) -> Result<PathBuf, String> {
-    crate::commands::guard::reject_empty_nul(pdf)?;
-    let path = Path::new(pdf);
-    if !path.is_absolute() {
-        return Err(format!("forbidden path (not absolute): {}", pdf));
-    }
-    let canon = path
-        .canonicalize()
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", pdf, e))?;
-    if !canon.is_file() {
-        return Err(format!("not a file: {}", pdf));
-    }
-    if canon.extension().is_none_or(|e| e != "pdf") {
-        return Err(format!("not a pdf: {}", pdf));
-    }
-    let base = out_base_dir()
-        .canonicalize()
-        .unwrap_or_else(|_| out_base_dir());
-    if !canon.starts_with(&base) {
-        return Err(format!("forbidden path (outside app cache): {}", pdf));
-    }
-    Ok(canon)
+/// Derive the outputs of a canonical main-file path.
+pub fn main_outputs(main_canon: &Path) -> Result<MainOutputs, String> {
+    let dir = main_canon
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .ok_or_else(|| "no parent directory".to_string())?
+        .to_path_buf();
+    let main_file = main_canon
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .ok_or_else(|| "no file name".to_string())?;
+    let stem = main_file.strip_suffix(".tex").unwrap_or(&main_file);
+    Ok(MainOutputs {
+        outdir: out_dir_for(&out_base_dir(), &dir.to_string_lossy()),
+        pdf_name: format!("{}.pdf", stem),
+        dir,
+        main_file,
+    })
 }
 
 /// Names never shown in listings (build artifacts + trash).
@@ -248,26 +227,12 @@ mod tests {
     }
 
     #[test]
-    fn out_pdf_validates_cache_pdf_only() {
-        let dir = out_base_dir().join(format!("maleficium-outpdf-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let pdf = dir.join("main.pdf");
-        std::fs::write(&pdf, "%PDF").unwrap();
-        assert!(canonical_out_pdf(&pdf.to_string_lossy()).is_ok());
-        assert!(canonical_out_pdf(&dir.join("main.tex").to_string_lossy()).is_err());
-        assert!(canonical_out_pdf("/nonexistent/main.pdf").is_err());
-        assert!(canonical_out_pdf("relative/main.pdf").is_err());
-    }
-
-    #[test]
-    fn out_dir_validates_cache_dir_only() {
-        let dir = out_base_dir().join(format!("maleficium-outdir-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let canon = dir.canonicalize().unwrap();
-        assert!(canonical_out_dir(&canon.to_string_lossy()).is_ok());
-        assert!(canonical_out_dir("/nonexistent-dir").is_err());
-        assert!(canonical_out_dir("relative/dir").is_err());
+    fn main_outputs_key_by_directory() {
+        let o = main_outputs(Path::new("/home/u/paper/sub/main.tex")).unwrap();
+        assert_eq!(o.dir, PathBuf::from("/home/u/paper/sub"));
+        assert_eq!(o.main_file, "main.tex");
+        assert_eq!(o.pdf_name, "main.pdf");
+        assert_eq!(o.outdir, out_dir_for(&out_base_dir(), "/home/u/paper/sub"));
+        assert!(main_outputs(Path::new("main.tex")).is_err());
     }
 }

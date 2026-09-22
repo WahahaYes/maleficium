@@ -114,7 +114,7 @@ struct CancelOut {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ForwardParams {
     root_id: String,
-    pdf_rel: String,
+    main_rel: String,
     tex_rel: String,
     line: u32,
 }
@@ -122,14 +122,14 @@ struct ForwardParams {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct ForwardOut {
     ok: bool,
-    text: String,
+    hit: Option<core::ForwardHit>,
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct InverseParams {
     root_id: String,
-    dir_rel: String,
-    pdf_name: String,
+    main_rel: String,
     page: u32,
     x: Option<f32>,
     y: Option<f32>,
@@ -138,7 +138,8 @@ struct InverseParams {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct InverseOut {
     ok: bool,
-    text: String,
+    hit: Option<core::InverseHit>,
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -306,26 +307,45 @@ impl Maleficium {
         }
     }
 
-    #[tool(description = "Forward SyncTeX query (editor line to PDF page)")]
+    #[tool(
+        description = "Forward SyncTeX query: the PDF page showing a line of tex_rel, in the output of main_rel"
+    )]
     fn synctex_forward(&self, Parameters(p): Parameters<ForwardParams>) -> Json<ForwardOut> {
-        match core::forward_query(&p.root_id, &p.pdf_rel, &p.tex_rel, p.line) {
-            Ok(text) => Json(ForwardOut { ok: true, text }),
-            Err(e) => Json(ForwardOut { ok: false, text: e }),
+        match core::forward(&p.root_id, &p.main_rel, &p.tex_rel, p.line) {
+            Ok(hit) => Json(ForwardOut {
+                ok: true,
+                hit: Some(hit),
+                error: None,
+            }),
+            Err(e) => Json(ForwardOut {
+                ok: false,
+                hit: None,
+                error: Some(e),
+            }),
         }
     }
 
-    #[tool(description = "Inverse SyncTeX query (PDF position to editor line)")]
+    #[tool(
+        description = "Inverse SyncTeX query: the root-relative source file and line at a position in the output of main_rel"
+    )]
     fn synctex_inverse(&self, Parameters(p): Parameters<InverseParams>) -> Json<InverseOut> {
-        match core::inverse_query(
+        match core::inverse(
             &p.root_id,
-            &p.dir_rel,
-            &p.pdf_name,
+            &p.main_rel,
             p.page,
             p.x.unwrap_or(0.0),
             p.y.unwrap_or(0.0),
         ) {
-            Ok(text) => Json(InverseOut { ok: true, text }),
-            Err(e) => Json(InverseOut { ok: false, text: e }),
+            Ok(hit) => Json(InverseOut {
+                ok: true,
+                hit: Some(hit),
+                error: None,
+            }),
+            Err(e) => Json(InverseOut {
+                ok: false,
+                hit: None,
+                error: Some(e),
+            }),
         }
     }
 
@@ -385,4 +405,72 @@ pub async fn run_stdio() -> anyhow::Result<()> {
     let service = Maleficium.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::synctex::{forward_sync, inverse_sync};
+
+    /// Both adapters sit on one implementation: every escape the desktop
+    /// command refuses, the MCP tool refuses with the same error.
+    #[test]
+    fn synctex_adapters_reject_identically() {
+        let dir = std::env::temp_dir().join(format!("maleficium-sym-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        std::os::unix::fs::symlink("/etc/hostname", dir.join("link.tex")).unwrap();
+        let canon = dir.canonicalize().unwrap();
+        core::grant_root("sym", &canon.to_string_lossy()).unwrap();
+        // A compiled output, so tex_rel validation is reached.
+        let out = core::main_outputs(&canon.join("main.tex")).unwrap();
+        std::fs::create_dir_all(&out.outdir).unwrap();
+        std::fs::write(out.outdir.join(&out.pdf_name), "%PDF").unwrap();
+        let m = Maleficium;
+        let cases: &[(&str, &str, &str)] = &[
+            ("sym", "../x.tex", "main.tex"),
+            ("sym", "/etc/hostname", "main.tex"),
+            ("sym", "a\0b.tex", "main.tex"),
+            ("sym", "", "main.tex"),
+            ("sym", "link.tex", "main.tex"),
+            ("sym", "main.tex", "../x.tex"),
+            ("sym", "main.tex", "link.tex"),
+            ("sym", "main.tex", "missing.tex"),
+            ("nope", "main.tex", "main.tex"),
+            ("bad id!", "main.tex", "main.tex"),
+        ];
+        for (root_id, main_rel, tex_rel) in cases {
+            let main_rel = main_rel.to_string();
+            let desktop = forward_sync(
+                root_id.to_string(),
+                main_rel.clone(),
+                tex_rel.to_string(),
+                1,
+            );
+            let mcp = m.synctex_forward(Parameters(ForwardParams {
+                root_id: root_id.to_string(),
+                main_rel: main_rel.clone(),
+                tex_rel: tex_rel.to_string(),
+                line: 1,
+            }));
+            let err = desktop
+                .err()
+                .unwrap_or_else(|| panic!("accepted: {:?}", (root_id, &main_rel)));
+            assert!(!mcp.0.ok);
+            assert_eq!(mcp.0.error.as_deref(), Some(err.as_str()));
+
+            let desktop = inverse_sync(root_id.to_string(), main_rel.clone(), 1, 0.0, 0.0);
+            let mcp = m.synctex_inverse(Parameters(InverseParams {
+                root_id: root_id.to_string(),
+                main_rel: main_rel.clone(),
+                page: 1,
+                x: None,
+                y: None,
+            }));
+            assert_eq!(mcp.0.error, desktop.as_ref().err().cloned());
+            assert_eq!(mcp.0.hit, desktop.ok());
+        }
+        let _ = std::fs::remove_dir_all(&out.outdir);
+    }
 }

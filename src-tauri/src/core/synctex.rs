@@ -1,60 +1,56 @@
-//! SyncTeX query arg-building against explicit session roots.
+//! SyncTeX queries against explicit session roots. The one implementation:
+//! the Tauri command and the MCP tool are thin adapters over it. Callers name
+//! a main file and a source file by root-relative path; the pdf and outdir
+//! are derived here, and results cross back as root-relative paths.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// Resolved forward-sync invocation: run inside `dir` with `pdf_name`.
-pub struct ForwardArgs {
-    pub dir: PathBuf,
-    pub pdf_name: String,
-    pub tex_abs: String,
-    pub line: u32,
+use serde::Serialize;
+
+/// Forward result: the pdf page for a source line, `None` on no match.
+#[derive(Debug, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardHit {
+    pub page: Option<u32>,
 }
 
-/// Derive forward-sync args: `pdf_path` is an engine-output pdf inside the
-/// app cache; `tex_rel` resolves inside the root (the gz stores absolute
-/// Input paths).
-pub fn forward_args(
-    root_id: &str,
-    pdf_path: &str,
-    tex_rel: &str,
-    line: u32,
-) -> Result<ForwardArgs, String> {
-    let pdf_canon = super::canonical_out_pdf(pdf_path)?;
-    let tex_canon = super::fs::resolve_in(root_id, tex_rel)?;
-    let (dir, name) = match (pdf_canon.parent(), pdf_canon.file_name()) {
-        (Some(d), Some(n)) if !d.as_os_str().is_empty() => {
-            (d.to_path_buf(), n.to_string_lossy().to_string())
-        }
-        _ => return Err("forbidden path (pdf has no parent)".to_string()),
-    };
-    Ok(ForwardArgs {
-        dir,
-        pdf_name: name,
-        tex_abs: tex_canon.to_string_lossy().to_string(),
-        line,
+/// Inverse result: the source line for a pdf position. `rel_path` is `None`
+/// when the hit lies outside the root; `line` is `None` on no match.
+#[derive(Debug, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InverseHit {
+    pub rel_path: Option<String>,
+    pub line: Option<u32>,
+}
+
+/// A validated query: the sidecar runs inside `outdir` against `pdf_name`.
+struct Query {
+    root: PathBuf,
+    main_dir: PathBuf,
+    outdir: PathBuf,
+    pdf_name: String,
+}
+
+/// Resolve the main file inside the root and require its compiled output.
+fn query_for(root_id: &str, main_rel: &str) -> Result<Query, String> {
+    let root = super::fs::session_root(root_id)?;
+    let main = super::fs::resolve_in(root_id, main_rel)?;
+    if !main.is_file() {
+        return Err(format!("not a file: {}", main_rel));
+    }
+    let out = super::main_outputs(&main)?;
+    if !out.outdir.join(&out.pdf_name).is_file() {
+        return Err(format!("no compiled output for {}", main_rel));
+    }
+    Ok(Query {
+        root,
+        main_dir: out.dir,
+        outdir: out.outdir,
+        pdf_name: out.pdf_name,
     })
 }
 
-/// Resolved inverse-sync invocation: run inside `dir` with the bare name.
-pub struct InverseArgs {
-    pub dir: PathBuf,
-    pub pdf_name: String,
-}
-
-/// Derive inverse-sync args: `dir_path` is an engine outdir inside the app
-/// cache; the pdf name is interpolated into the `page:x:y:name` tag, so it
-/// must be bare. A live session grant authorizes the query.
-pub fn inverse_args(root_id: &str, dir_path: &str, pdf_name: &str) -> Result<InverseArgs, String> {
-    super::fs::session_root(root_id)?;
-    let dir_canon = super::canonical_out_dir(dir_path)?;
-    let name = crate::commands::guard::require_bare_filename(pdf_name)?.to_string();
-    Ok(InverseArgs {
-        dir: dir_canon,
-        pdf_name: name,
-    })
-}
-
-fn run_sidecar(dir: &PathBuf, args: &[String]) -> Result<String, String> {
+fn run_sidecar(dir: &Path, args: &[String]) -> Result<String, String> {
     let bin = super::sidecar_path_for("synctex")
         .ok_or_else(|| String::from("bundled synctex sidecar missing (src-tauri/binaries/)"))?;
     let output = std::process::Command::new(&bin)
@@ -71,51 +67,94 @@ fn run_sidecar(dir: &PathBuf, args: &[String]) -> Result<String, String> {
         .join("\n"))
 }
 
-/// Run a forward query through the bundled sidecar.
-pub fn forward_query(
+/// First `<key>:<value>` line's trimmed value.
+fn field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    text.lines()
+        .find_map(|l| l.strip_prefix(key)?.strip_prefix(':'))
+        .map(str::trim)
+}
+
+fn parse_forward(text: &str) -> ForwardHit {
+    if text.contains("no_match") || text.contains("No tag for") || text == "{}" {
+        return ForwardHit { page: None };
+    }
+    let page = field(text, "Page").and_then(|v| v.parse::<u32>().ok());
+    ForwardHit {
+        page: page.map(|p| p.max(1)),
+    }
+}
+
+/// Map an `Input:` path to a root-relative one. Relative inputs resolve
+/// against the main file's directory, where the engine ran.
+fn rel_in_root(root: &Path, main_dir: &Path, input: &str) -> Option<String> {
+    let p = Path::new(input);
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        main_dir.join(p)
+    };
+    let canon = abs.canonicalize().ok()?;
+    let rel = canon.strip_prefix(root).ok()?;
+    Some(rel.to_string_lossy().to_string())
+}
+
+fn parse_inverse(text: &str, root: &Path, main_dir: &Path) -> InverseHit {
+    InverseHit {
+        rel_path: field(text, "Input").and_then(|i| rel_in_root(root, main_dir, i)),
+        line: field(text, "Line").and_then(|v| v.parse::<u32>().ok()),
+    }
+}
+
+/// Forward (editor → PDF): the page showing `line` of `tex_rel`.
+pub fn forward(
     root_id: &str,
-    pdf_rel: &str,
+    main_rel: &str,
     tex_rel: &str,
     line: u32,
-) -> Result<String, String> {
-    let a = forward_args(root_id, pdf_rel, tex_rel, line)?;
-    run_sidecar(
-        &a.dir,
+) -> Result<ForwardHit, String> {
+    let q = query_for(root_id, main_rel)?;
+    let tex = super::fs::resolve_in(root_id, tex_rel)?;
+    // CWD=outdir with the bare pdf name: an absolute `-o` resolves the `-i`
+    // tag against the wrong file table. The gz stores absolute Input paths.
+    let text = run_sidecar(
+        &q.outdir,
         &[
             "view".to_string(),
             "-i".to_string(),
-            format!("{}:1:{}", a.line, a.tex_abs),
+            format!("{}:1:{}", line, tex.to_string_lossy()),
             "-o".to_string(),
-            a.pdf_name,
+            q.pdf_name,
         ],
-    )
+    )?;
+    Ok(parse_forward(&text))
 }
 
-/// Run an inverse query through the bundled sidecar.
-pub fn inverse_query(
+/// Inverse (PDF → editor): the source line at a position on `page`.
+pub fn inverse(
     root_id: &str,
-    dir_rel: &str,
-    pdf_name: &str,
+    main_rel: &str,
     page: u32,
     x: f32,
     y: f32,
-) -> Result<String, String> {
-    let a = inverse_args(root_id, dir_rel, pdf_name)?;
-    run_sidecar(
-        &a.dir,
+) -> Result<InverseHit, String> {
+    let q = query_for(root_id, main_rel)?;
+    // The tool resolves `<pdf>.synctex.gz` relative to CWD.
+    let text = run_sidecar(
+        &q.outdir,
         &[
             "edit".to_string(),
             "-o".to_string(),
-            format!("{}:{}:{}:{}", page, x, y, a.pdf_name),
+            format!("{}:{}:{}:{}", page, x, y, q.pdf_name),
         ],
-    )
+    )?;
+    Ok(parse_inverse(&text, &q.root, &q.main_dir))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn grant_tmp(name: &str) -> String {
+    fn grant_tmp(name: &str) -> (String, PathBuf) {
         let dir =
             std::env::temp_dir().join(format!("maleficium-sync-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&dir);
@@ -123,42 +162,65 @@ mod tests {
         let canon = dir.canonicalize().unwrap();
         let id = format!("sync-{}", name);
         crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
-        id
+        (id, canon)
     }
 
     #[test]
-    fn forward_rejects_bad_paths() {
-        let id = grant_tmp("escape");
-        assert!(forward_args(&id, "/nonexistent/out.pdf", "a.tex", 1).is_err());
-        assert!(forward_args(&id, "/tmp/maleficium-out", "/etc/hostname", 1).is_err());
+    fn query_requires_a_compiled_main_inside_the_root() {
+        let (id, root) = grant_tmp("query");
+        std::fs::write(root.join("main.tex"), "x").unwrap();
+        assert!(query_for(&id, "../escape.tex").is_err());
+        assert!(query_for(&id, "/etc/hostname").is_err());
+        assert!(query_for(&id, "missing.tex").is_err());
+        assert!(query_for("unknown-root", "main.tex").is_err());
+        let err = query_for(&id, "main.tex").err().unwrap();
+        assert!(err.contains("no compiled output"), "{}", err);
     }
 
     #[test]
-    fn inverse_rejects_non_bare_name() {
-        let id = grant_tmp("bare");
-        assert!(inverse_args(&id, "/tmp", "a/b.pdf").is_err());
-        assert!(inverse_args(&id, "/tmp", "../x.pdf").is_err());
-        assert!(inverse_args(&id, "/nonexistent-dir", "a.pdf").is_err());
+    fn forward_parse_matches_the_tool_output() {
+        let hit = "SyncTeX result begin\nOutput:/x/main.pdf\nPage:3\nx:1.0\nSyncTeX result end";
+        assert_eq!(parse_forward(hit), ForwardHit { page: Some(3) });
+        assert_eq!(parse_forward("Page: 0\n"), ForwardHit { page: Some(1) });
+        assert_eq!(parse_forward("synctex_no_match"), ForwardHit { page: None });
+        assert_eq!(
+            parse_forward("No tag for main.tex"),
+            ForwardHit { page: None }
+        );
+        assert_eq!(parse_forward("{}"), ForwardHit { page: None });
+        assert_eq!(parse_forward("Page:abc"), ForwardHit { page: None });
     }
 
     #[test]
-    fn forward_rejects_pdf_outside_app_cache() {
-        let id = grant_tmp("outcache");
-        let root = crate::core::fs::session_root(&id).unwrap();
-        let pdf = root.join("main.pdf");
-        std::fs::write(&pdf, "%PDF").unwrap();
-        std::fs::write(root.join("a.tex"), "x").unwrap();
-        // Existing and canonicalizable, but not engine output: it must never
-        // become the sidecar CWD.
-        assert!(forward_args(&id, &pdf.to_string_lossy(), "a.tex", 1).is_err());
-    }
-
-    #[test]
-    fn inverse_rejects_dir_outside_app_cache() {
-        let id = grant_tmp("outcachedir");
-        let root = crate::core::fs::session_root(&id).unwrap();
-        // Existing dir plus a bare name: outdir containment is the only thing
-        // between this call and the sidecar.
-        assert!(inverse_args(&id, &root.to_string_lossy(), "main.pdf").is_err());
+    fn inverse_parse_returns_root_relative_paths() {
+        let (_, root) = grant_tmp("inv");
+        std::fs::create_dir_all(root.join("ch")).unwrap();
+        std::fs::write(root.join("ch/a.tex"), "x").unwrap();
+        let abs = root.join("ch/a.tex");
+        let text = format!("Line:7\nInput:{}\n", abs.display());
+        assert_eq!(
+            parse_inverse(&text, &root, &root),
+            InverseHit {
+                rel_path: Some("ch/a.tex".into()),
+                line: Some(7)
+            }
+        );
+        let rel = parse_inverse("Input:./ch/a.tex\nLine:2", &root, &root);
+        assert_eq!(rel.rel_path.as_deref(), Some("ch/a.tex"));
+        let outside = parse_inverse("Input:/etc/hostname\nLine:1", &root, &root);
+        assert_eq!(
+            outside,
+            InverseHit {
+                rel_path: None,
+                line: Some(1)
+            }
+        );
+        assert_eq!(
+            parse_inverse("", &root, &root),
+            InverseHit {
+                rel_path: None,
+                line: None
+            }
+        );
     }
 }

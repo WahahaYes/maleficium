@@ -11,13 +11,12 @@ import type { CompilePhase } from './useCompileRunner';
 import { enforceBufferCap, getOrCreateBuffer, type BufferState } from '../lib/buffers';
 import { emit } from '../lib/events';
 import { loadTex } from '../lib/files';
+import type { PreviewSource } from '../lib/preview-bus';
 import {
   forward_sync,
   inverse_sync,
   isCrossFileHit,
-  isForwardNoMatch,
-  parseForwardSync,
-  parseInverseSync,
+  relTo,
   shouldTurnPage,
   syncAvailable,
   texPathFor,
@@ -25,6 +24,8 @@ import {
 
 export interface UseSynctexDeps {
   pdfUrl: string | null;
+  /** The main file behind the shown pdf; null when it has no session root. */
+  source: PreviewSource | null;
   compilePhase: CompilePhase;
   fileName: string;
   workdirHint: string;
@@ -45,6 +46,7 @@ export interface UseSynctexDeps {
 export function useSynctex(deps: UseSynctexDeps) {
   const {
     pdfUrl,
+    source,
     compilePhase,
     fileName,
     workdirHint,
@@ -68,6 +70,28 @@ export function useSynctex(deps: UseSynctexDeps) {
   const pageNumberRef = useRef(pageNumber);
   pageNumberRef.current = pageNumber;
 
+  /** Forward query for `file`: the target page, or null after reporting why. */
+  async function forwardPage(file: string, line: number): Promise<number | null> {
+    const texRel = source ? relTo(source.rootPath, texPathFor(file, workdirHint)) : null;
+    if (!source || !texRel) {
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: source is outside the project' });
+      return null;
+    }
+    const result = await forward_sync(source.rootId, source.mainRel, texRel, line);
+    if (!result.ok) {
+      emit({
+        scope: 'preview',
+        kind: 'warn',
+        message: `SyncTeX query failed (${(result.error ?? '').slice(0, 200)})`,
+      });
+      return null;
+    }
+    if (result.page == null) {
+      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
+    }
+    return result.page;
+  }
+
   async function handleForwardSync() {
     if (!pdfUrl) return;
     if (!syncAvailable(pdfUrl, compilePhase === 'compiling')) {
@@ -82,28 +106,7 @@ export function useSynctex(deps: UseSynctexDeps) {
     // the viewport bridge (currentLine only tracks jumps, not caret moves).
     const liveLine = viewportRef.current?.caretLine() ?? currentLineRef.current;
     if (liveLine !== currentLineRef.current) setCurrentLine(liveLine);
-    const result = await forward_sync(pdfUrl, texPathFor(fileName, workdirHint), liveLine);
-    if (!result.ok) {
-      emit({
-        scope: 'preview',
-        kind: 'warn',
-        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
-      });
-      return;
-    }
-    if (isForwardNoMatch(result.text)) {
-      emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
-      return;
-    }
-    const target = parseForwardSync(result.text);
-    if (target == null) {
-      emit({
-        scope: 'preview',
-        kind: 'info',
-        message: `forward SyncTeX → ${result.text.slice(0, 120)}`,
-      });
-      return;
-    }
+    const target = await forwardPage(fileName, liveLine);
     // Preamble/untagged lines resolve to a same-page rect with no movement:
     // arriving without moving is noise, not navigation — stay silent.
     if (!shouldTurnPage(target, pageNumberRef.current)) return;
@@ -121,18 +124,21 @@ export function useSynctex(deps: UseSynctexDeps) {
       });
       return;
     }
-    const result = await inverse_sync(pdfUrl, page, x, y);
+    if (!source) {
+      emit({ scope: 'preview', kind: 'warn', message: 'SyncTeX: output is outside the project' });
+      return;
+    }
+    const result = await inverse_sync(source.rootId, source.mainRel, page, x, y);
     if (!result.ok) {
       emit({
         scope: 'preview',
         kind: 'warn',
-        message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
+        message: `SyncTeX query failed (${(result.error ?? '').slice(0, 200)})`,
       });
       return;
     }
-    // Real `synctex edit` shape:
-    //   Input:/abs/path/hello.tex\nLine:7\n...
-    const { line, hitFile } = parseInverseSync(result.text);
+    const { line } = result;
+    const hitFile = result.relPath ? source.rootPath + '/' + result.relPath : null;
     if (line != null) {
       // Jump the owning file when SyncTeX names one (multi-file projects);
       // otherwise reveal the line in the current buffer.
@@ -173,20 +179,7 @@ export function useSynctex(deps: UseSynctexDeps) {
   forwardSyncLineRef.current = (file: string, line: number) => {
     if (!pdfUrl || !syncAvailable(pdfUrl, compilePhase === 'compiling')) return;
     if (line !== currentLineRef.current) setCurrentLine(line);
-    void forward_sync(pdfUrl, texPathFor(file, workdirHint), line).then((result) => {
-      if (isForwardNoMatch(result.text)) {
-        emit({ scope: 'preview', kind: 'warn', message: 'synctex_no_match' });
-        return;
-      }
-      if (!result.ok) {
-        emit({
-          scope: 'preview',
-          kind: 'warn',
-          message: `SyncTeX query failed (${result.text.slice(0, 200)})`,
-        });
-        return;
-      }
-      const target = parseForwardSync(result.text);
+    void forwardPage(file, line).then((target) => {
       if (!shouldTurnPage(target, pageNumberRef.current)) return;
       setPageNumber(target);
       emit({ scope: 'preview', kind: 'info', message: `forward SyncTeX → page ${target}` });

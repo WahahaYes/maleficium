@@ -65,15 +65,12 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
     }
-    let dir = abs
-        .parent()
-        .map(|d| d.to_path_buf())
-        .ok_or_else(|| "no parent directory".to_string())?;
-    let main_file = abs
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .ok_or_else(|| "no file name".to_string())?;
-    let outdir = super::out_dir_for(&super::out_base_dir(), &dir.to_string_lossy());
+    let super::MainOutputs {
+        dir,
+        main_file,
+        outdir,
+        pdf_name,
+    } = super::main_outputs(&abs)?;
     std::fs::create_dir_all(&outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
     let outdir_str = outdir.to_string_lossy().to_string();
     let bin = super::sidecar_path_for("tectonic")
@@ -147,8 +144,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
 
         let (pdf_path, log) = match outcome {
             JobStatus::Success => {
-                let stem = main_file.strip_suffix(".tex").unwrap_or(&main_file);
-                let pdf = outdir.join(format!("{}.pdf", stem));
+                let pdf = outdir.join(&pdf_name);
                 (Some(pdf.to_string_lossy().to_string()), String::new())
             }
             JobStatus::Failed => {

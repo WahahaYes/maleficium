@@ -371,13 +371,15 @@ export default function App({
   }, [buffersRef]);
 
   // Untitled documents resolve against the backend-owned scratch root.
-  const [scratchDir, setScratchDir] = useState<string | null>(null);
+  const [scratch, setScratch] = useState<{ rootId: string; path: string } | null>(null);
   useEffect(() => {
-    void grantUntitledAccess().then((g) => setScratchDir(g.path));
+    void grantUntitledAccess().then((g) => {
+      if (g.path && g.rootId) setScratch({ rootId: g.rootId, path: g.path });
+    });
   }, []);
   const workdirHint = fileName.includes('/')
     ? fileName.slice(0, fileName.lastIndexOf('/'))
-    : (scratchDir ?? '');
+    : (scratch?.path ?? '');
   const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
   // Repo-relative for display (absolute kept in tooltips); plain language.
   const relOf = (abs: string | null): string | null => {
@@ -509,7 +511,7 @@ export default function App({
     workdirHint,
     root,
     projectId,
-    relInProject,
+    scratch,
     buffers,
     setBuffers,
     largeFile,
@@ -576,6 +578,7 @@ export default function App({
     handleInverseSync,
   } = useSynctex({
     pdfUrl,
+    source: previewDoc?.source ?? null,
     compilePhase,
     fileName,
     workdirHint,

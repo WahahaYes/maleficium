@@ -192,12 +192,13 @@ check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
 check("pdf exists", bool(pdf) and _os.path.exists(pdf), pdf)
 
-fw = call("synctex_forward", {"root_id": "drv", "pdf_rel": pdf, "tex_rel": ROOT + "/main.tex", "line": 10})
-check("forward query", fw["ok"] and "Page:" in fw["text"], fw["text"][:120])
+fw = call("synctex_forward", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+check("forward query", fw["ok"] and (fw.get("hit") or {}).get("page", 0) >= 1, str(fw)[:120])
 
-outdir = pdf[: pdf.rfind("/")]
-iv = call("synctex_inverse", {"root_id": "drv", "dir_rel": outdir, "pdf_name": "main.pdf", "page": 1, "x": 100, "y": 600})
-check("inverse query", iv["ok"] and "Line:" in iv["text"], iv["text"][:120])
+iv = call("synctex_inverse", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
+ivh = iv.get("hit") or {}
+check("inverse query", iv["ok"] and (ivh.get("line") or 0) >= 1, str(iv)[:120])
+check("inverse hit is root-relative", bool(ivh.get("relPath")) and not ivh["relPath"].startswith("/"), str(ivh))
 
 d0 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex"})
 check("delete needs confirm", not d0["ok"] and "confirm" in (d0.get("error") or ""), str(d0))
