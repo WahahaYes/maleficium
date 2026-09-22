@@ -19,6 +19,7 @@ import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
 import { joinPath } from './lib/paths';
+import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -107,10 +108,7 @@ export default function App({
   const selectTokenRef = useRef(0);
   // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
   // our own writes must not raise the reload banner. Windowed suppression.
-  const ownWritesRef = useRef<Map<string, number>>(new Map());
-  const markOwnWrite = useCallback((p: string) => {
-    ownWritesRef.current.set(p, Date.now());
-  }, []);
+  const [ownWrites] = useState(() => createOwnWrites());
   const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
     useBufferManager({
       fileName,
@@ -120,7 +118,7 @@ export default function App({
       setTex,
       setLargeFile,
       setReloadPath,
-      markOwnWrite,
+      ownWrites,
     });
 
   // Revision history: app-local, keyed by the backend-minted project id. One
@@ -158,7 +156,7 @@ export default function App({
     setTex,
     setReloadPath,
     setLog,
-    markOwnWrite,
+    ownWrites,
   });
 
   // The bus is recorded to an app-local JSONL file for the length of the run.
@@ -177,7 +175,7 @@ export default function App({
         if (cur?.dirty) {
           try {
             await saveTex(fileName, cur.value);
-            markOwnWrite(fileName);
+            ownWrites.wrote(fileName, cur.value);
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
           } catch {
@@ -280,7 +278,7 @@ export default function App({
         });
       }
     },
-    [buffers, setBuffers, fileName, root, markOwnWrite, recordRevision],
+    [buffers, setBuffers, fileName, root, ownWrites, recordRevision],
   );
 
   const resolveMain = useCallback(async (r: string, opened: string | null) => {
@@ -421,7 +419,7 @@ export default function App({
       const cur = buffers.get(fileName);
       const text = cur?.value ?? tex;
       await saveTex(fileName, text);
-      markOwnWrite(fileName);
+      ownWrites.wrote(fileName, text);
       setBuffers((b) => markSaved(b, fileName));
       await recordRevision(fileName, text);
       setLog('saved ' + fileName);
@@ -443,14 +441,14 @@ export default function App({
         event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
       });
     }
-  }, [fileName, tex, buffers, setBuffers, largeFile, markOwnWrite, recordRevision]);
+  }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
 
   useEffect(() => {
     if (!fileName.includes('/')) return;
     const t = setTimeout(() => {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        markOwnWrite(fileName);
+        ownWrites.wrote(fileName, cur.value);
         saveTex(fileName, cur.value)
           .then(async () => {
             setBuffers((b) => markSaved(b, fileName));
@@ -470,7 +468,7 @@ export default function App({
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers, setBuffers, markOwnWrite, recordRevision]);
+  }, [tex, fileName, buffers, setBuffers, ownWrites, recordRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   /** Jump to a root-relative problem location inside a granted root. */
@@ -543,7 +541,7 @@ export default function App({
     setBuffers,
     largeFile,
     previewFile,
-    markOwnWrite,
+    ownWrites,
     setLog,
     setLogCollapsed,
     compileRef,
@@ -554,7 +552,7 @@ export default function App({
     setProjectId,
     setTree,
     fileNameRef,
-    ownWritesRef,
+    ownWrites,
     setReloadPath,
     setLog,
     trash,
@@ -577,7 +575,7 @@ export default function App({
       setReloadPath,
       setBuffers,
       trash,
-      markOwnWrite,
+      ownWrites,
       reloadTree,
       handleSelect,
     });

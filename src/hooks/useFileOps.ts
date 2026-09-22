@@ -11,6 +11,7 @@ import { dropBuffer, reloadBuffer, renameBuffer, type BufferState } from '../lib
 import { cleanOutputs } from '../lib/compile';
 import { sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { FileHistory } from '../lib/file-history';
+import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseFileOpsDeps {
   root: string | null;
@@ -26,7 +27,7 @@ export interface UseFileOpsDeps {
   setReloadPath: (v: string | null) => void;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   trash: FileHistory;
-  markOwnWrite: (p: string) => void;
+  ownWrites: OwnWrites;
   reloadTree: (r: string, deep?: boolean) => Promise<void>;
   handleSelect: (path: string) => Promise<void>;
 }
@@ -46,7 +47,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
     setReloadPath,
     setBuffers,
     trash,
-    markOwnWrite,
+    ownWrites,
     reloadTree,
     handleSelect,
   } = deps;
@@ -54,7 +55,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
   async function handleCreate(dirPath: string, name: string) {
     try {
       const full = await createFile(dirPath, name);
-      markOwnWrite(full);
+      ownWrites.wrote(full, '');
       emit({
         scope: 'fs',
         kind: 'success',
@@ -78,8 +79,8 @@ export function useFileOps(deps: UseFileOpsDeps) {
   async function handleRename(oldPath: string, newName: string) {
     try {
       const full = await renamePath(oldPath, newName);
-      markOwnWrite(oldPath);
-      markOwnWrite(full);
+      ownWrites.wrote(oldPath, null);
+      ownWrites.settled(full);
       setBuffers((b) => renameBuffer(b, oldPath, full));
       if (fileName === oldPath) {
         setFileName(full);

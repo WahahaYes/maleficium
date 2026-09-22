@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import type { BufferState } from '../lib/buffers';
 import { emit } from '../lib/events';
 import { saveTex } from '../lib/files';
+import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseBufferManagerDeps {
   fileName: string;
@@ -17,7 +18,7 @@ export interface UseBufferManagerDeps {
   setTex: (v: string) => void;
   setLargeFile: (v: string | null) => void;
   setReloadPath: (v: string | null) => void;
-  markOwnWrite: (p: string) => void;
+  ownWrites: OwnWrites;
 }
 
 export function useBufferManager(deps: UseBufferManagerDeps) {
@@ -29,7 +30,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     setTex,
     setLargeFile,
     setReloadPath,
-    markOwnWrite,
+    ownWrites,
   } = deps;
 
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
@@ -43,7 +44,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       if (cur?.dirty) {
         try {
           await saveTex(fileName, cur.value);
-          markOwnWrite(fileName);
+          ownWrites.wrote(fileName, cur.value);
         } catch {
           /* keep dirty, still evict? no — stay */ return;
         }
@@ -66,7 +67,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       if (cur?.dirty) {
         try {
           await saveTex(fileName, cur.value);
-          markOwnWrite(fileName);
+          ownWrites.wrote(fileName, cur.value);
         } catch {
           /* persist failed — stay open */ return false;
         }

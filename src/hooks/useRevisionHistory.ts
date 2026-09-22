@@ -19,6 +19,7 @@ import {
   type RevisionRow,
 } from '../lib/history.view';
 import { markSaved, updateBuffer, type BufferState } from '../lib/buffers';
+import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseRevisionHistoryDeps {
   root: string | null;
@@ -31,7 +32,7 @@ export interface UseRevisionHistoryDeps {
   setTex: (v: string) => void;
   setReloadPath: (v: string | null) => void;
   setLog: (v: string) => void;
-  markOwnWrite: (p: string) => void;
+  ownWrites: OwnWrites;
 }
 
 export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
@@ -46,7 +47,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
     setTex,
     setReloadPath,
     setLog,
-    markOwnWrite,
+    ownWrites,
   } = deps;
 
   const [revisionCount, setRevisionCount] = useState(0);
@@ -147,7 +148,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
           return;
         }
         const text = new TextDecoder().decode(bytes);
-        markOwnWrite(fileName);
+        ownWrites.wrote(fileName, text);
         setBuffers((b) => markSaved(updateBuffer(b, fileName, text), fileName));
         setTex(text);
         setReloadPath(null);
@@ -171,7 +172,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
       setReloadPath,
       setTex,
       history,
-      markOwnWrite,
+      ownWrites,
       openHistory,
       projectId,
       relInProject,

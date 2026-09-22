@@ -12,6 +12,7 @@ import { grantProjectAccess } from '../lib/projectAccess';
 import { getRecentProjects, pruneRecentProjects, touchRecentProject } from '../lib/recentProjects';
 import { coalesceEvents, debounce } from '../lib/watcher';
 import { watchBackend, type WatchChangeEvent } from '../lib/watch-backend';
+import type { OwnWrites } from '../lib/own-writes';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
@@ -22,7 +23,7 @@ export interface UseProjectTreeDeps {
   setProjectId: (v: string | null) => void;
   setTree: (v: TreeEntry[]) => void;
   fileNameRef: RefObject<string>;
-  ownWritesRef: RefObject<Map<string, number>>;
+  ownWrites: OwnWrites;
   setReloadPath: (v: string | null) => void;
   setLog: (v: string) => void;
   trash: FileHistory;
@@ -38,7 +39,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     setProjectId,
     setTree,
     fileNameRef,
-    ownWritesRef,
+    ownWrites,
     setReloadPath,
     setLog,
     trash,
@@ -71,16 +72,14 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     let unwatch: (() => void) | null = null;
     let cancelled = false;
     const pending: WatchChangeEvent[] = [];
-    const flush = debounce(() => {
+    const flush = debounce(async () => {
       if (cancelled || pending.length === 0) return;
       const batch = coalesceEvents(pending.splice(0));
       void reloadTree(root);
-      const now = Date.now();
       for (const ev of batch) {
-        // Suppress echoes of our own writes (5s window, pruned here).
-        const own = ownWritesRef.current.get(ev.path);
-        if (own != null && now - own < 5000) continue;
-        if (own != null) ownWritesRef.current.delete(ev.path);
+        // Echoes of our own writes: the disk still holds what we wrote.
+        if (await ownWrites.isEcho(ev.path)) continue;
+        if (cancelled) return;
         if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
         if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);

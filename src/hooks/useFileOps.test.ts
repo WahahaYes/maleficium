@@ -88,7 +88,14 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     setReloadPath: (v) => (state.reloadPath = v),
     setBuffers: (u) => (state.buffers = typeof u === 'function' ? u(state.buffers) : u),
     trash,
-    markOwnWrite: (p) => state.ownWrites.push(p),
+    ownWrites: {
+      wrote: (p, content) =>
+        state.ownWrites.push(
+          content === null ? `removed ${p}` : `wrote ${p} ${JSON.stringify(content)}`,
+        ),
+      settled: (p) => state.ownWrites.push(`settled ${p}`),
+      isEcho: async () => false,
+    },
     reloadTree: async () => {
       state.reloads++;
     },
@@ -167,7 +174,7 @@ describe('useFileOps create and rename', () => {
     await ops().handleCreate('/p', 'intro.tex');
 
     expect(files.get('/p/intro.tex')).toBe('');
-    expect(state.ownWrites).toEqual(['/p/intro.tex']);
+    expect(state.ownWrites).toEqual(['wrote /p/intro.tex ""']);
     expect(state.selected).toEqual(['/p/intro.tex']);
     expect(actions()).toEqual(['file.create']);
   });
@@ -184,7 +191,7 @@ describe('useFileOps create and rename', () => {
     expect(state.buffers.get('/p/paper.tex')).toBe(buf);
     expect(state.buffers.has('/p/main.tex')).toBe(false);
     expect(state.fileName).toBe('/p/paper.tex');
-    expect(state.ownWrites).toEqual(['/p/main.tex', '/p/paper.tex']);
+    expect(state.ownWrites).toEqual(['removed /p/main.tex', 'settled /p/paper.tex']);
     expect(actions()).toEqual(['file.rename']);
   });
 

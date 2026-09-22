@@ -21,6 +21,7 @@ import type { Actor } from '../lib/generated/events';
 import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
+import type { OwnWrites } from '../lib/own-writes';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
 export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
@@ -40,7 +41,7 @@ export interface UseCompileRunnerDeps {
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   largeFile: string | null;
   previewFile: string | null;
-  markOwnWrite: (p: string) => void;
+  ownWrites: OwnWrites;
   setLog: (v: string) => void;
   setLogCollapsed: (v: boolean) => void;
   /** Latest-closure handle for the keymap listener and the menu dispatcher. */
@@ -62,7 +63,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     setBuffers,
     largeFile,
     previewFile,
-    markOwnWrite,
+    ownWrites,
     setLog,
     setLogCollapsed,
     compileRef,
@@ -261,7 +262,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             if (buf.dirty) {
               try {
                 await saveTex(p, buf.value);
-                markOwnWrite(p);
+                ownWrites.wrote(p, buf.value);
               } catch {
                 /* keep dirty, reported at finish */
               }
@@ -275,7 +276,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           // Also persist the visible editor if it was never buffered (untitled flow).
           if (!buffers.has(target)) {
             await saveTex(target, tex);
-            markOwnWrite(target);
+            ownWrites.wrote(target, tex);
           }
         }
       } else {
@@ -283,7 +284,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         workdir = scratch.path;
         const t2 = workdir + '/' + fileName;
         await saveTex(t2, tex);
-        markOwnWrite(t2);
+        ownWrites.wrote(t2, tex);
         setMainFileState(t2);
       }
     } catch (e) {
