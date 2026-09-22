@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::process::Child;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::engine::{self, DigestCheck};
+use maleficium_structure::MissingDependency;
+
+use super::engine;
 
 /// How a compile job resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +39,9 @@ pub struct JobRecord {
     pub pdf_url: Option<String>,
     pub log: String,
     pub lines: Vec<String>,
+    /// The dependency the run lacked, when that is why it failed (or the
+    /// bundle changed under a clean run).
+    pub missing: Option<MissingDependency>,
 }
 
 struct LiveJob {
@@ -61,9 +66,14 @@ fn next_id() -> String {
     format!("job-{}", *n)
 }
 
-/// The first 500 bytes of a failed run's stderr, as the failure message.
-pub fn failure_text(lines: &[maleficium_events::CompileLine]) -> String {
-    let tail = lines
+/// The failure message: the first 500 bytes of the last run's stderr, or
+/// the flow's own account when it stopped before spawning.
+pub fn failure_text(c: &engine::Compiled) -> String {
+    if c.lines.is_empty() {
+        return String::from("no TeX support files are cached yet and there is no network");
+    }
+    let tail = c
+        .lines
         .iter()
         .filter(|l| l.stream == maleficium_events::CompileStream::Stderr)
         .map(|l| l.text.as_str())
@@ -105,50 +115,51 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
                 job.lines.push(l.text.clone());
             }
         };
-        let record = match engine::run(&out, &child, timeout_secs, &mut on_line) {
-            Err(e) => JobRecord {
-                status: JobStatus::Failed,
-                pdf_url: None,
-                log: e,
-                lines: Vec::new(),
-            },
-            Ok(a) => {
-                let lines = a.texts();
-                super::write_engine_log(&super::log_file(&out.outdir, &out.main_file), &lines);
-                let (status, pdf_url, log) = match (&a.status, &a.bundle) {
-                    (_, DigestCheck::Changed(d)) => (
-                        JobStatus::Failed,
-                        None,
-                        format!(
-                            "TeX bundle changed: {} now resolves to {}",
-                            engine::BUNDLE_URL,
-                            d
+        let record =
+            match engine::compile(&out, &child, timeout_secs, engine::online(), &mut on_line) {
+                Err(e) => JobRecord {
+                    status: JobStatus::Failed,
+                    pdf_url: None,
+                    log: e,
+                    lines: Vec::new(),
+                    missing: None,
+                },
+                Ok(c) => {
+                    super::write_engine_log(
+                        &super::log_file(&out.outdir, &out.main_file),
+                        &c.texts(),
+                    );
+                    // The record keeps the whole stream: every run and status line.
+                    let lines = jobs()
+                        .lock()
+                        .unwrap()
+                        .get(&job_id)
+                        .map(|j| j.lines.clone())
+                        .unwrap_or_default();
+                    let (pdf_url, log) = match c.status {
+                        JobStatus::Success => (
+                            Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+                            String::new(),
                         ),
-                    ),
-                    (JobStatus::Success, _) => (
-                        JobStatus::Success,
-                        Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
-                        String::new(),
-                    ),
-                    (JobStatus::Failed, _) => (JobStatus::Failed, None, failure_text(&a.lines)),
-                    (JobStatus::TimedOut, _) => (
-                        JobStatus::TimedOut,
-                        None,
-                        format!(
-                            "compile timed out after {}s (engine produced no exit — killed)",
-                            timeout_secs
+                        JobStatus::Failed => (None, failure_text(&c)),
+                        JobStatus::TimedOut => (
+                            None,
+                            format!(
+                                "compile timed out after {}s (engine produced no exit — killed)",
+                                timeout_secs
+                            ),
                         ),
-                    ),
-                    (s, _) => (s.clone(), None, String::from("compile cancelled")),
-                };
-                JobRecord {
-                    status,
-                    pdf_url,
-                    log,
-                    lines,
+                        _ => (None, String::from("compile cancelled")),
+                    };
+                    JobRecord {
+                        status: c.status,
+                        pdf_url,
+                        log,
+                        lines,
+                        missing: c.missing,
+                    }
                 }
-            }
-        };
+            };
         if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
             job.lines = record.lines.clone();
             if let Some(tx) = job.done_tx.take() {
@@ -183,6 +194,7 @@ pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
                     pdf_url: None,
                     log: String::from("compile worker lost"),
                     lines: job.lines.clone(),
+                    missing: None,
                 });
             }
         }
@@ -194,6 +206,7 @@ pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
         pdf_url: None,
         log: String::new(),
         lines: job.lines[start..].to_vec(),
+        missing: None,
     })
 }
 

@@ -5,7 +5,9 @@
 //! any future bridge or MCP App View read one schema. Pure by contract: no
 //! fs, no process, no Tauri.
 
-use maleficium_structure::Diagnostic;
+use maleficium_structure::{
+    Diagnostic, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+};
 use serde::{Deserialize, Serialize};
 use ts_rs::{Config, TS};
 
@@ -80,6 +82,8 @@ pub enum CompileRefusedReason {
 pub enum CompileFailure {
     SpawnFailed,
     EngineError,
+    /// The engine could not get a dependency; `compile.missing` says which.
+    MissingDependency,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -141,11 +145,28 @@ pub enum CompileStream {
     Status,
 }
 
-/// One line of a running compile, as the desktop backend streams it.
+/// One line of a running compile, as the desktop backend streams it, with
+/// what the line says when it says something typed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 pub struct CompileLine {
     pub stream: CompileStream,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub signal: Option<LineSignal>,
+}
+
+/// How a desktop compile ended. `pdfUrl` is set on success; `failure` says
+/// why there is none. `missing` names the dependency the run lacked, and is
+/// also set beside a pdf when the pinned bundle changed under it. `message`
+/// is the human-readable failure, empty on success.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CompileReport {
+    pub pdf_url: Option<String>,
+    pub failure: Option<CompileFailure>,
+    pub missing: Option<MissingDependency>,
+    pub message: String,
 }
 
 /// Every fact the app reports, tagged by `action`. Paths are as the
@@ -275,8 +296,16 @@ pub enum AppEvent {
         target: Option<String>,
         error: String,
     },
-    #[serde(rename = "compile.download")]
-    CompileDownload { package: String },
+    /// The engine fetched a bundle file, or failed to.
+    #[serde(rename = "compile.fetch")]
+    CompileFetch { file: String, outcome: FetchOutcome },
+    /// A dependency the compile lacked, and why.
+    #[serde(rename = "compile.missing")]
+    CompileMissing {
+        target: String,
+        file: Option<String>,
+        reason: MissingReason,
+    },
     #[serde(rename = "compile.engine-line")]
     CompileEngineLine { stream: CompileStream },
     #[serde(rename = "compile.progress")]
@@ -429,6 +458,7 @@ pub fn typescript() -> String {
         SyncDirection::decl(&cfg),
         CompileStream::decl(&cfg),
         CompileLine::decl(&cfg),
+        CompileReport::decl(&cfg),
         AppEvent::decl(&cfg),
         BusEvent::decl(&cfg),
         LogLine::decl(&cfg),
@@ -437,7 +467,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/events (maleficium-events). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { Severity } from './structure';\n",
+         import type {\n  FetchOutcome,\n  LineSignal,\n  MissingDependency,\n  MissingReason,\n  Severity,\n} from './structure';\n",
     );
     for d in decls {
         out.push_str("\nexport ");

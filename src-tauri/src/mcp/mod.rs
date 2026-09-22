@@ -79,6 +79,8 @@ struct CompilePollOut {
     pdf_url: Option<String>,
     log: String,
     lines: Vec<String>,
+    /// The dependency a finished run lacked, and why.
+    missing: Option<maleficium_structure::MissingDependency>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -182,7 +184,9 @@ impl Maleficium {
         Ok(Json(TextOut { text }))
     }
 
-    #[tool(description = "Start a compile job; poll for the result")]
+    #[tool(
+        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network"
+    )]
     fn compile_run(
         &self,
         Parameters(p): Parameters<FileParams>,
@@ -192,7 +196,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Poll a compile job; running jobs report lines so far. pdf_url locates the output: treat it as opaque"
+        description = "Poll a compile job; running jobs report lines so far. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required"
     )]
     fn compile_poll(
         &self,
@@ -204,6 +208,7 @@ impl Maleficium {
             pdf_url: r.pdf_url,
             log: r.log,
             lines: r.lines,
+            missing: r.missing,
         }))
     }
 
@@ -309,7 +314,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Structured diagnostics from main_rel's last compile log: root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. max caps rows (default 100)."
+        description = "Structured diagnostics from main_rel's last compile log: root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100)."
     )]
     fn diagnostics(
         &self,

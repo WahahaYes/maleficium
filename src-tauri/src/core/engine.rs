@@ -1,11 +1,13 @@
 //! The Tectonic engine: the pinned bundle, the app-owned cache it resolves
 //! into, and the one way a compile spawns the sidecar and pumps its output.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use maleficium_events::{CompileLine, CompileStream};
+use maleficium_structure::{self as ms, MissingDependency, MissingReason};
 
 use super::{JobOutcome, JobStatus, MainOutputs};
 
@@ -65,46 +67,196 @@ pub fn check_digest(cache: &Path) -> DigestCheck {
     }
 }
 
+/// The cached listing of every file in the pinned bundle: one name per line,
+/// ahead of its offset and length.
+pub fn index_path(cache: &Path) -> PathBuf {
+    cache
+        .join("bundles")
+        .join("data")
+        .join(format!("{BUNDLE_DIGEST}.index"))
+}
+
+/// One index file version (path, size, mtime) and the names it lists.
+type IndexMemo = (
+    (PathBuf, u64, Option<std::time::SystemTime>),
+    Arc<HashSet<String>>,
+);
+static INDEX: OnceLock<Mutex<Option<IndexMemo>>> = OnceLock::new();
+
+/// The names in the cached bundle index, read once per index file version;
+/// `None` until the bundle has been resolved.
+pub fn bundle_files(cache: &Path) -> Option<Arc<HashSet<String>>> {
+    let path = index_path(cache);
+    let meta = std::fs::metadata(&path).ok()?;
+    let key = (path.clone(), meta.len(), meta.modified().ok());
+    let mut memo = INDEX.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    if let Some((k, names)) = memo.as_ref() {
+        if *k == key {
+            return Some(names.clone());
+        }
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    let names: Arc<HashSet<String>> = Arc::new(
+        text.lines()
+            .filter_map(|l| l.split(' ').next())
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .collect(),
+    );
+    *memo = Some((key, names.clone()));
+    Some(names)
+}
+
+/// Whether this machine has a route off-host. A UDP connect is a local
+/// routing-table lookup: no packet leaves, so the app makes no network call.
+pub fn online() -> bool {
+    use std::net::UdpSocket;
+    let probe = |bind: &str, to: &str| UdpSocket::bind(bind).and_then(|s| s.connect(to)).is_ok();
+    probe("0.0.0.0:0", "192.0.2.1:443") || probe("[::]:0", "[2001:db8::1]:443")
+}
+
+/// Whether the engine may fetch: `CachedOnly` passes `-C`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheMode {
+    CachedOnly,
+    Online,
+}
+
 /// The engine's command line for one main file.
-fn command(out: &MainOutputs, cache: &Path) -> Result<Command, String> {
+fn command(out: &MainOutputs, cache: &Path, mode: CacheMode) -> Result<Command, String> {
     let mut cmd = Command::new(super::sidecar_path_for("tectonic")?);
     cmd.args(["-X", "compile", &out.main_file, "--outdir"])
         .arg(&out.outdir)
-        .args(["--synctex", "-b", BUNDLE_URL])
-        .env("TECTONIC_CACHE_DIR", cache)
+        .args(["--synctex", "-b", BUNDLE_URL]);
+    if mode == CacheMode::CachedOnly {
+        cmd.arg("-C");
+    }
+    cmd.env("TECTONIC_CACHE_DIR", cache)
         .current_dir(&out.dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     Ok(cmd)
 }
 
-/// One engine run: how it ended, every line it printed in arrival order,
-/// and how the cache stood against the pin afterwards.
-pub struct Attempt {
+/// How a compile ended: the last engine run's status and lines (nothing
+/// ran when the flow stopped before spawning), and the dependency it
+/// lacked. `missing` is `bundle-changed` beside an otherwise clean result
+/// when the pin resolved to another digest.
+pub struct Compiled {
     pub status: JobStatus,
     pub lines: Vec<CompileLine>,
-    pub bundle: DigestCheck,
+    pub missing: Option<MissingDependency>,
+    /// The last run used only cached files.
+    pub cached_only: bool,
 }
 
-impl Attempt {
+impl Compiled {
     pub fn texts(&self) -> Vec<String> {
         self.lines.iter().map(|l| l.text.clone()).collect()
+    }
+}
+
+fn status_line(text: String) -> CompileLine {
+    CompileLine {
+        stream: CompileStream::Status,
+        text,
+        signal: None,
+    }
+}
+
+/// Compile offline-first. With nothing resolved, compile online, or stop
+/// with `cache-empty` before spawning when there is no network. Otherwise
+/// compile from the cache alone; a file the cache lacks is fetched by one
+/// online rerun when there is network, else reported `not-cached`. A file
+/// the bundle does not carry is reported `not-in-bundle` without fetching.
+pub fn compile(
+    out: &MainOutputs,
+    slot: &Mutex<Option<Child>>,
+    timeout_secs: u64,
+    network: bool,
+    on_line: &mut dyn FnMut(&CompileLine),
+) -> Result<Compiled, String> {
+    let cache = cache_dir();
+    std::fs::create_dir_all(&cache).map_err(|e| format!("engine cache unreachable: {}", e))?;
+    std::fs::create_dir_all(&out.outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
+
+    let mut mode = CacheMode::CachedOnly;
+    if check_digest(&cache) == DigestCheck::Unresolved {
+        if !network {
+            on_line(&status_line(String::from(
+                "no TeX support files are cached yet and there is no network",
+            )));
+            return Ok(Compiled {
+                status: JobStatus::Failed,
+                lines: Vec::new(),
+                missing: Some(MissingDependency {
+                    file: None,
+                    reason: MissingReason::CacheEmpty,
+                }),
+                cached_only: true,
+            });
+        }
+        on_line(&status_line(String::from(
+            "first compile: downloading TeX support files",
+        )));
+        mode = CacheMode::Online;
+    }
+    loop {
+        let (status, lines) = run(out, &cache, mode, slot, timeout_secs, on_line)?;
+        let in_bundle = |f: &str| bundle_files(&cache).is_none_or(|names| names.contains(f));
+        let mut missing = match status {
+            JobStatus::Failed => ms::missing_dependency(
+                &lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+                false,
+                &in_bundle,
+            ),
+            _ => None,
+        };
+        let refetch = matches!(
+            missing.as_ref().map(|m| m.reason),
+            Some(MissingReason::NotCached | MissingReason::CacheEmpty)
+        );
+        if mode == CacheMode::CachedOnly && refetch && network {
+            let what = missing
+                .as_ref()
+                .and_then(|m| m.file.clone())
+                .unwrap_or_else(|| String::from("TeX support files"));
+            on_line(&status_line(format!("fetching {what}: not cached yet")));
+            mode = CacheMode::Online;
+            continue;
+        }
+        if missing.is_none() {
+            if let DigestCheck::Changed(d) = check_digest(&cache) {
+                on_line(&status_line(format!(
+                    "TeX bundle changed: {BUNDLE_URL} now resolves to {d}"
+                )));
+                missing = Some(MissingDependency {
+                    file: None,
+                    reason: MissingReason::BundleChanged,
+                });
+            }
+        }
+        return Ok(Compiled {
+            status,
+            lines,
+            missing,
+            cached_only: mode == CacheMode::CachedOnly,
+        });
     }
 }
 
 /// Spawn the engine, park the child in `slot` (whoever takes it from there
 /// owns reaping it: a cancel, or this call once output ends), hand each line
 /// to `on_line` as it arrives, then wait up to `timeout_secs`.
-pub fn run(
+fn run(
     out: &MainOutputs,
+    cache: &Path,
+    mode: CacheMode,
     slot: &Mutex<Option<Child>>,
     timeout_secs: u64,
     on_line: &mut dyn FnMut(&CompileLine),
-) -> Result<Attempt, String> {
-    let cache = cache_dir();
-    std::fs::create_dir_all(&cache).map_err(|e| format!("engine cache unreachable: {}", e))?;
-    std::fs::create_dir_all(&out.outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
-    let mut child = command(out, &cache)?
+) -> Result<(JobStatus, Vec<CompileLine>), String> {
+    let mut child = command(out, cache, mode)?
         .spawn()
         .map_err(|e| format!("bundled tectonic spawn failed: {}", e))?;
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
@@ -122,7 +274,15 @@ pub fn run(
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             for text in BufReader::new(pipe).lines().map_while(Result::ok) {
-                if tx.send(CompileLine { stream, text }).is_err() {
+                let signal = ms::line_signal(&text);
+                if tx
+                    .send(CompileLine {
+                        stream,
+                        text,
+                        signal,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -152,11 +312,7 @@ pub fn run(
             JobOutcome::Exited(_) => JobStatus::Failed,
         },
     };
-    Ok(Attempt {
-        status,
-        lines,
-        bundle: check_digest(&cache),
-    })
+    Ok((status, lines))
 }
 
 #[cfg(test)]
@@ -211,17 +367,20 @@ mod tests {
     fn command_pins_the_bundle_and_the_cache() {
         let out = super::super::main_outputs(Path::new("/home/u/paper/main.tex")).unwrap();
         let cache = Path::new("/c");
-        let cmd = command(&out, cache).unwrap();
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        let b = args.iter().position(|a| a == "-b").unwrap();
-        assert_eq!(args[b + 1], BUNDLE_URL);
-        let env: Vec<_> = cmd.get_envs().collect();
-        assert!(env
-            .iter()
-            .any(|(k, v)| *k == "TECTONIC_CACHE_DIR" && *v == Some(cache.as_os_str())));
-        assert_eq!(cmd.get_current_dir(), Some(Path::new("/home/u/paper")));
+        for (mode, cached_only) in [(CacheMode::CachedOnly, true), (CacheMode::Online, false)] {
+            let cmd = command(&out, cache, mode).unwrap();
+            let args: Vec<String> = cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().to_string())
+                .collect();
+            let b = args.iter().position(|a| a == "-b").unwrap();
+            assert_eq!(args[b + 1], BUNDLE_URL);
+            assert_eq!(args.iter().any(|a| a == "-C"), cached_only);
+            let env: Vec<_> = cmd.get_envs().collect();
+            assert!(env
+                .iter()
+                .any(|(k, v)| *k == "TECTONIC_CACHE_DIR" && *v == Some(cache.as_os_str())));
+            assert_eq!(cmd.get_current_dir(), Some(Path::new("/home/u/paper")));
+        }
     }
 }

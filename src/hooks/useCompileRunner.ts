@@ -11,6 +11,7 @@ import { markSaved, type BufferState } from '../lib/buffers';
 import {
   cancelCompile,
   compileTex,
+  describeMissing,
   engineLog,
   onCompileLine,
   outputsFresh,
@@ -167,27 +168,31 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
     let unlisten: () => void = () => {};
-    // `note: downloading <pkg>` lines get their own download-wait signal
-    // so a long first build reads as network-wait, not an engine hang.
-    const isDownloadLine = (l: string) => /(^|\s)downloading\s/i.test(l);
+    // Fetch lines arrive typed: each becomes `compile.fetch`, so a long first
+    // build reads as network-wait, not an engine hang. A failed fetch is
+    // reported once per file (the engine retries and repeats itself).
+    const failedFetches = new Set<string>();
     try {
       unlisten = await onCompileLine((line) => {
-        const s = line.text;
-        if (isDownloadLine(s)) {
-          const pkg = s.replace(/^.*downloading\s+/i, '').slice(0, 120);
+        const sig = line.signal;
+        if (sig?.kind === 'fetch') {
+          if (sig.outcome === 'failed') {
+            if (failedFetches.has(sig.file)) return;
+            failedFetches.add(sig.file);
+          }
           emit({
             scope: 'compile',
-            kind: 'info',
+            kind: sig.outcome === 'failed' ? 'warn' : 'info',
             actor,
-            message: 'downloading ' + pkg,
-            event: { action: 'compile.download', package: pkg },
+            message: (sig.outcome === 'failed' ? 'could not download ' : 'downloading ') + sig.file,
+            event: { action: 'compile.fetch', file: sig.file, outcome: sig.outcome },
           });
         } else
           emit({
             scope: 'compile',
             kind: 'progress',
             actor,
-            message: s.slice(0, 300),
+            message: line.text.slice(0, 300),
             event: { action: 'compile.engine-line', stream: line.stream },
           });
       });
@@ -312,8 +317,30 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     const src = sourceFor(activeTarget, sessionRoots(opts?.root));
     const r: CompileResult = src
       ? await compileTex(src.rootId, src.mainRel)
-      : { ok: false, pdfUrl: null, log: 'compile target is outside the project: ' + activeTarget };
+      : {
+          ok: false,
+          pdfUrl: null,
+          log: 'compile target is outside the project: ' + activeTarget,
+          failure: 'engine-error',
+          missing: null,
+        };
     setLog(r.ok ? (r.pdfUrl ?? '') : r.log);
+    if (r.missing) {
+      const m = r.missing;
+      emit({
+        scope: 'compile',
+        kind: r.ok ? 'warn' : 'error',
+        actor,
+        message: describeMissing(m),
+        event: {
+          action: 'compile.missing',
+          target: activeTarget,
+          file: m.file ?? null,
+          reason: m.reason,
+        },
+      });
+      if (!r.ok) setLog(describeMissing(m) + '\n' + r.log);
+    }
     const readEngineLog = () => (src ? engineLog(src.rootId, src.mainRel) : Promise.resolve(null));
     if (r.ok && r.pdfUrl) {
       finish('success');
@@ -340,7 +367,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         message: 'preview ' + String(r.pdfUrl),
         event: { action: 'preview.update', pdfUrl: String(r.pdfUrl) },
       });
-    } else if (!r.ok && r.log.includes('spawn')) {
+    } else if (!r.ok && r.failure === 'spawn-failed') {
       finish('failure');
       setCompileStart(null);
       setLogCollapsed(false);
@@ -373,7 +400,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           action: 'compile.finish',
           ok: false,
           target: activeTarget,
-          reason: 'engine-error',
+          reason: r.failure ?? 'engine-error',
           ms: Date.now() - t0,
         },
       });

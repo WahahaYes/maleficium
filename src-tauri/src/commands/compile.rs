@@ -1,12 +1,9 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use maleficium_events::{CompileLine, CompileStream};
+use maleficium_events::{CompileFailure, CompileLine, CompileReport, CompileStream};
 
-use crate::core::{
-    self,
-    engine::{self, DigestCheck},
-};
+use crate::core::{self, engine};
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
 
@@ -22,7 +19,7 @@ pub fn compile_tex(
     state: State<'_, CompileState>,
     root_id: String,
     main_rel: String,
-) -> Result<String, String> {
+) -> Result<CompileReport, String> {
     // The main file resolves inside the session root; the engine runs in its
     // directory and writes to the app-cache outdir derived from it.
     let out = core::outputs_of(&root_id, &main_rel)?;
@@ -35,6 +32,7 @@ pub fn compile_tex(
                 out.main_file,
                 out.dir.to_string_lossy()
             ),
+            signal: None,
         },
     );
 
@@ -42,26 +40,53 @@ pub fn compile_tex(
     let mut on_line = |l: &CompileLine| {
         let _ = app.emit("compile-line", l.clone());
     };
-    let a = engine::run(&out, &state.0, COMPILE_TIMEOUT_SECS, &mut on_line)?;
-    core::write_engine_log(&core::log_file(&out.outdir, &out.main_file), &a.texts());
-    if let DigestCheck::Changed(d) = &a.bundle {
-        return Err(format!(
-            "TeX bundle changed: {} now resolves to {}",
-            engine::BUNDLE_URL,
-            d
-        ));
-    }
-    match a.status {
-        core::JobStatus::TimedOut => Err(format!(
-            "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
-            COMPILE_TIMEOUT_SECS
-        )),
-        core::JobStatus::Success => Ok(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
-        core::JobStatus::Failed => Err(core::compile::failure_text(&a.lines)),
-        core::JobStatus::Cancelled | core::JobStatus::Running => {
-            Err(String::from("compile cancelled"))
+    let c = match engine::compile(
+        &out,
+        &state.0,
+        COMPILE_TIMEOUT_SECS,
+        engine::online(),
+        &mut on_line,
+    ) {
+        Ok(c) => c,
+        Err(message) => {
+            return Ok(CompileReport {
+                pdf_url: None,
+                failure: Some(CompileFailure::SpawnFailed),
+                missing: None,
+                message,
+            })
         }
-    }
+    };
+    core::write_engine_log(&core::log_file(&out.outdir, &out.main_file), &c.texts());
+    let failed = |failure, message| CompileReport {
+        pdf_url: None,
+        failure: Some(failure),
+        missing: c.missing.clone(),
+        message,
+    };
+    Ok(match c.status {
+        core::JobStatus::Success => CompileReport {
+            pdf_url: Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+            failure: None,
+            missing: c.missing.clone(),
+            message: String::new(),
+        },
+        core::JobStatus::Failed if c.missing.is_some() => failed(
+            CompileFailure::MissingDependency,
+            core::compile::failure_text(&c),
+        ),
+        core::JobStatus::Failed => failed(CompileFailure::EngineError, core::compile::failure_text(&c)),
+        core::JobStatus::TimedOut => failed(
+            CompileFailure::EngineError,
+            format!(
+                "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
+                COMPILE_TIMEOUT_SECS
+            ),
+        ),
+        core::JobStatus::Cancelled | core::JobStatus::Running => {
+            return Err(String::from("compile cancelled"))
+        }
+    })
 }
 
 #[tauri::command]

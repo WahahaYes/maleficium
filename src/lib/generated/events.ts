@@ -2,7 +2,13 @@
 // change the Rust types, then run
 //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace
 
-import type { Severity } from './structure';
+import type {
+  FetchOutcome,
+  LineSignal,
+  MissingDependency,
+  MissingReason,
+  Severity,
+} from './structure';
 
 export type Actor = "user" | "agent" | "system";
 
@@ -20,7 +26,7 @@ export type CompileBlockedReason = "large-placeholder" | "non-text-selection" | 
 
 export type CompileRefusedReason = "editor-does-not-own-target";
 
-export type CompileFailure = "spawn-failed" | "engine-error";
+export type CompileFailure = "spawn-failed" | "engine-error" | "missing-dependency";
 
 export type WarmSkippedReason = "no-cached-output";
 
@@ -36,9 +42,11 @@ export type SyncDirection = "forward" | "inverse";
 
 export type CompileStream = "stdout" | "stderr" | "status";
 
-export type CompileLine = { stream: CompileStream, text: string, };
+export type CompileLine = { stream: CompileStream, text: string, signal?: LineSignal, };
 
-export type AppEvent = { "action": "file.preview", path: string, } | { "action": "file.switch", path: string, dirty: boolean, } | { "action": "file.load", path: string, } | { "action": "file.too-large", path: string, bytes: number, } | { "action": "file.open", path: string, chars: number, } | { "action": "file.load-failed", path: string, error: string, } | { "action": "file.save-blocked", path: string, reason: SaveBlockedReason, } | { "action": "file.save", path: string, chars: number, mode: SaveMode, } | { "action": "file.save-failed", path: string, trigger: SaveTrigger, error: string, } | { "action": "file.close", path: string, } | { "action": "file.close-many", count: number, kept?: string, } | { "action": "file.create", path: string, } | { "action": "file.create-failed", dir: string, name: string, error: string, } | { "action": "file.rename", from: string, to: string, } | { "action": "file.rename-failed", from: string, error: string, } | { "action": "file.reload", path: string, chars: number, } | { "action": "file.reload-failed", path: string, error: string, } | { "action": "file.delete", path: string, } | { "action": "file.delete-failed", path: string, error: string, } | { "action": "file.undo-delete", path: string | null, } | { "action": "file.undo-delete-failed", error: string, } | { "action": "main.set", mainFile: string | null, } | { "action": "main.resolved", root: string, mainFile: string | null, } | { "action": "project.open", root: string, } | { "action": "project.open-refused", root: string, error: string, } | { "action": "project.open-cancelled", } | { "action": "tree.load", rows: number, ms: number, deep: boolean, } | { "action": "tree.load-failed", dir: string, error: string, } | { "action": "fs.external", change: WatchChange, path: string, } | { "action": "fs.external-delete", path: string, } | { "action": "fs.watch-unavailable", root: string, error: string, } | { "action": "command.blocked", command: string, reason: CommandBlockedReason, } | { "action": "compile.start", target: string, } | { "action": "compile.one-off", target: string, } | { "action": "compile.warm", target: string, } | { "action": "compile.warm-skipped", reason: WarmSkippedReason, target: string, } | { "action": "compile.blocked", reason: CompileBlockedReason, target?: string, } | { "action": "compile.refused", reason: CompileRefusedReason, target: string, } | { "action": "compile.persist-failed", target: string | null, error: string, } | { "action": "compile.download", package: string, } | { "action": "compile.engine-line", stream: CompileStream, } | { "action": "compile.progress", target: string, elapsedMs: number, } | { "action": "compile.finish", target: string, ok: boolean, ms: number, pdfUrl?: string, reason?: CompileFailure, } | { "action": "compile.problem", rootId: string | null, 
+export type CompileReport = { pdfUrl: string | null, failure: CompileFailure | null, missing: MissingDependency | null, message: string, };
+
+export type AppEvent = { "action": "file.preview", path: string, } | { "action": "file.switch", path: string, dirty: boolean, } | { "action": "file.load", path: string, } | { "action": "file.too-large", path: string, bytes: number, } | { "action": "file.open", path: string, chars: number, } | { "action": "file.load-failed", path: string, error: string, } | { "action": "file.save-blocked", path: string, reason: SaveBlockedReason, } | { "action": "file.save", path: string, chars: number, mode: SaveMode, } | { "action": "file.save-failed", path: string, trigger: SaveTrigger, error: string, } | { "action": "file.close", path: string, } | { "action": "file.close-many", count: number, kept?: string, } | { "action": "file.create", path: string, } | { "action": "file.create-failed", dir: string, name: string, error: string, } | { "action": "file.rename", from: string, to: string, } | { "action": "file.rename-failed", from: string, error: string, } | { "action": "file.reload", path: string, chars: number, } | { "action": "file.reload-failed", path: string, error: string, } | { "action": "file.delete", path: string, } | { "action": "file.delete-failed", path: string, error: string, } | { "action": "file.undo-delete", path: string | null, } | { "action": "file.undo-delete-failed", error: string, } | { "action": "main.set", mainFile: string | null, } | { "action": "main.resolved", root: string, mainFile: string | null, } | { "action": "project.open", root: string, } | { "action": "project.open-refused", root: string, error: string, } | { "action": "project.open-cancelled", } | { "action": "tree.load", rows: number, ms: number, deep: boolean, } | { "action": "tree.load-failed", dir: string, error: string, } | { "action": "fs.external", change: WatchChange, path: string, } | { "action": "fs.external-delete", path: string, } | { "action": "fs.watch-unavailable", root: string, error: string, } | { "action": "command.blocked", command: string, reason: CommandBlockedReason, } | { "action": "compile.start", target: string, } | { "action": "compile.one-off", target: string, } | { "action": "compile.warm", target: string, } | { "action": "compile.warm-skipped", reason: WarmSkippedReason, target: string, } | { "action": "compile.blocked", reason: CompileBlockedReason, target?: string, } | { "action": "compile.refused", reason: CompileRefusedReason, target: string, } | { "action": "compile.persist-failed", target: string | null, error: string, } | { "action": "compile.fetch", file: string, outcome: FetchOutcome, } | { "action": "compile.missing", target: string, file: string | null, reason: MissingReason, } | { "action": "compile.engine-line", stream: CompileStream, } | { "action": "compile.progress", target: string, elapsedMs: number, } | { "action": "compile.finish", target: string, ok: boolean, ms: number, pdfUrl?: string, reason?: CompileFailure, } | { "action": "compile.problem", rootId: string | null, 
 /**
  * Root-relative source path; `None` when `external`.
  */

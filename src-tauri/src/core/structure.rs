@@ -121,6 +121,8 @@ pub struct Diagnostics {
     pub main: String,
     pub diagnostics: Vec<ms::Diagnostic>,
     pub truncated: usize,
+    /// The dependency the last compile lacked, and why.
+    pub missing: Option<ms::MissingDependency>,
 }
 
 /// Root-relative `/`-string of a path already inside `root`.
@@ -415,7 +417,26 @@ pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnost
         main,
         diagnostics,
         truncated: over,
+        missing: missing_of(&log),
     })
+}
+
+/// What the compile that wrote `log` lacked: read from its console lines,
+/// else from the cache (an empty log with nothing cached means the compile
+/// stopped before spawning; a drifted digest distrusts a clean run).
+fn missing_of(log: &str) -> Option<ms::MissingDependency> {
+    use super::engine::{self, DigestCheck};
+    let cache = engine::cache_dir();
+    let lines: Vec<&str> = log.lines().collect();
+    let failed = lines.iter().any(|l| l.starts_with("error:"));
+    let in_bundle = |f: &str| engine::bundle_files(&cache).is_none_or(|n| n.contains(f));
+    let reason = match engine::check_digest(&cache) {
+        DigestCheck::Unresolved if lines.is_empty() => Some(ms::MissingReason::CacheEmpty),
+        DigestCheck::Changed(_) => Some(ms::MissingReason::BundleChanged),
+        _ => None,
+    };
+    ms::missing_dependency(&lines, !failed, &in_bundle)
+        .or(reason.map(|reason| ms::MissingDependency { file: None, reason }))
 }
 
 #[cfg(test)]

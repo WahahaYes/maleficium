@@ -267,6 +267,98 @@ fdd = fd.get("diagnostics") or []
 check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
 
+# ---- offline-first: -C first, typed missing dependencies, true offline ----
+first_lines = sc.get("lines") or []
+check("warm compile runs from the cache first", "note: using only cached resource files" in first_lines, str(first_lines[:3]))
+
+def session(env, offline):
+    # A second sidecar with its own cache home; offline ones run in a fresh
+    # network namespace (no routes, so the engine cannot fetch).
+    argv = (["unshare", "-rn"] if offline else []) + [BIN]
+    q = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
+    n = [0]
+    def rpc(method, params=None, notify_only=False):
+        msg = {"jsonrpc": "2.0", "method": method}
+        if not notify_only:
+            n[0] += 1
+            msg["id"] = n[0]
+        if params is not None:
+            msg["params"] = params
+        q.stdin.write(json.dumps(msg) + "\n"); q.stdin.flush()
+        return None if notify_only else json.loads(q.stdout.readline())
+    rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "driver", "version": "0"}})
+    rpc("notifications/initialized", notify_only=True)
+    def tool(name, args):
+        r = rpc("tools/call", {"name": name, "arguments": args})["result"]
+        if r.get("isError"):
+            return {"ok": False, "error": "".join(c.get("text", "") for c in r.get("content") or [])}
+        return {"ok": True, **r["structuredContent"]}
+    def compile_doc(rel):
+        j = tool("compile_run", {"root_id": "off", "rel": rel}).get("job_id") or ""
+        rec = {"status": "running"}
+        for _ in range(60):
+            time.sleep(1)
+            rec = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+            if rec.get("status") != "running":
+                break
+        return rec
+    g = tool("grant", {"root_id": "off", "root": ROOT})
+    return q, tool, compile_doc, g["ok"]
+
+BIN = os.environ["MCP_BIN"]
+has_netns = subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode == 0
+if not has_netns:
+    print("skip: true-offline proofs (unshare -rn unavailable: no unprivileged network namespaces)")
+else:
+    import shutil
+    xc = os.path.join(scratch, "xc")
+    ec = os.path.join(xc, "com.ethan.tauri-app", "maleficium-tectonic", os.environ["BUNDLE_DIGEST"])
+    shutil.copytree(os.environ["ENGINE_CACHE"], ec, symlinks=True)
+    index = set(l.split(" ", 1)[0] for l in open(os.path.join(ec, "bundles", "data", os.environ["BUNDLE_DIGEST"] + ".index")))
+    cached = set(os.listdir(os.path.join(ec, "bundles", "data", os.environ["BUNDLE_DIGEST"])))
+    pick = next((p for p in ["booktabs", "multirow", "tabularx", "enumitem", "xspace", "siunitx", "microtype"]
+                 if p + ".sty" in index and p + ".sty" not in cached), None)
+    check("an uncached bundle package exists to probe", pick is not None, sorted(cached)[:5])
+    env = dict(os.environ, XDG_CACHE_HOME=xc)
+    with open(ROOT + "/pkg.tex", "w") as f:
+        f.write("\\documentclass{article}\n\\usepackage{%s}\n\\begin{document}\nx\n\\end{document}\n" % pick)
+    with open(ROOT + "/nib.tex", "w") as f:
+        f.write("\\documentclass{article}\n\\usepackage{nonexistentpkgxyz}\n\\begin{document}\nx\n\\end{document}\n")
+
+    q, tool, compile_doc, granted = session(env, offline=True)
+    check("offline session grants the project", granted)
+    r = compile_doc("main.tex")
+    check("true-offline recompile succeeds from the cache", r.get("status") == "success" and bool(r.get("pdf_url")), str(r)[:300])
+    r = compile_doc("pkg.tex")
+    check("offline: an uncached bundle package is not-cached", r.get("status") == "failed" and r.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(r.get("missing")) + " " + str(r.get("log"))[:200])
+    d = tool("diagnostics", {"root_id": "off", "main_rel": "pkg.tex"})
+    check("diagnostics report the missing dependency", d.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(d)[:300])
+    r = compile_doc("nib.tex")
+    check("offline: a package outside the bundle is not-in-bundle", r.get("status") == "failed" and r.get("missing") == {"file": "nonexistentpkgxyz.sty", "reason": "not-in-bundle"}, str(r.get("missing")))
+    q.kill()
+
+    q, tool, compile_doc, granted = session(env, offline=False)
+    r = compile_doc("nib.tex")
+    lines = r.get("lines") or []
+    check("online: not-in-bundle stops without fetching", r.get("missing") == {"file": "nonexistentpkgxyz.sty", "reason": "not-in-bundle"} and not any(l.startswith("note: downloading") for l in lines), str(r.get("missing")))
+    r = compile_doc("pkg.tex")
+    lines = r.get("lines") or []
+    check("online: a cache miss is fetched by one online rerun", r.get("status") == "success" and "note: using only cached resource files" in lines and ("note: downloading " + pick + ".sty") in lines, str(r)[:300])
+    q.kill()
+
+    q, tool, compile_doc, granted = session(env, offline=True)
+    r = compile_doc("pkg.tex")
+    check("offline again: once fetched, it compiles offline", r.get("status") == "success", str(r)[:300])
+    q.kill()
+
+    empty = os.path.join(scratch, "xc-empty")
+    q, tool, compile_doc, granted = session(dict(os.environ, XDG_CACHE_HOME=empty), offline=True)
+    r = compile_doc("main.tex")
+    check("offline with nothing cached is cache-empty without spawning", r.get("status") == "failed" and r.get("missing") == {"reason": "cache-empty"} and not any(l.startswith("note:") for l in (r.get("lines") or [])), str(r)[:300])
+    q.kill()
+    for f in ("pkg.tex", "nib.tex"):
+        _os.remove(ROOT + "/" + f)
+
 # ---- heavy-document probes: 1000-file open, cancel mid-compile, D.5 budgets ----
 stream = []
 def record(line):

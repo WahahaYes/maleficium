@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { CompileLine } from './generated/events';
+import type { CompileFailure, CompileLine, CompileReport } from './generated/events';
+import type { MissingDependency } from './generated/structure';
 
 /**
  * Compile backend contract, addressed by session root and the main file's
@@ -9,9 +10,17 @@ import type { CompileLine } from './generated/events';
  *
  * `ok:true` → `pdfUrl` locates the pdf (desktop: an absolute path; hosted:
  * an opaque URL), `log` is empty. `ok:false` → `pdfUrl` is null, `log` is
- * the error message. Engine lines stream via `compile-line` during the run.
+ * the error message, `failure` says why. `missing` names the dependency the
+ * run lacked (beside a pdf only when the pinned bundle changed). Engine
+ * lines stream via `compile-line` during the run.
  */
-export type CompileResult = { ok: boolean; pdfUrl: string | null; log: string };
+export type CompileResult = {
+  ok: boolean;
+  pdfUrl: string | null;
+  log: string;
+  failure: CompileFailure | null;
+  missing: MissingDependency | null;
+};
 
 export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => void> {
   return listen<CompileLine>('compile-line', (e) => cb(e.payload));
@@ -19,10 +28,46 @@ export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => vo
 
 export async function compileTex(rootId: string, mainRel: string): Promise<CompileResult> {
   try {
-    const pdfUrl = await invoke<string>('compile_tex', { rootId, mainRel });
-    return { ok: true, pdfUrl, log: '' };
+    const r = await invoke<CompileReport>('compile_tex', { rootId, mainRel });
+    return {
+      ok: r.pdfUrl != null,
+      pdfUrl: r.pdfUrl,
+      log: r.message,
+      failure: r.failure,
+      missing: r.missing,
+    };
   } catch (e) {
-    return { ok: false, pdfUrl: null, log: String(e) };
+    // Refused before the engine ran (target outside the root) or cancelled.
+    return { ok: false, pdfUrl: null, log: String(e), failure: 'engine-error', missing: null };
+  }
+}
+
+/** One sentence naming what a compile lacked and what would fix it. */
+export function describeMissing(m: MissingDependency): string {
+  const f = m.file ?? 'a file';
+  switch (m.reason) {
+    case 'not-cached':
+      return `${f} is not cached yet and there is no network to fetch it`;
+    case 'fetch-failed':
+      return `could not download ${f}: check the network connection`;
+    case 'not-in-bundle':
+      return `${f} is not in the TeX bundle: fetching cannot help`;
+    case 'bundle-unreachable':
+      return 'the TeX bundle is not cached and cannot be reached';
+    case 'bundle-invalid':
+      return 'the TeX bundle location is not a bundle';
+    case 'cache-empty':
+      return 'the first compile needs network: no TeX support files are cached yet';
+    case 'bundle-changed':
+      return 'the pinned TeX bundle changed upstream: offline readiness is no longer trusted';
+    case 'system-font':
+      return `font "${f}" is not installed on this machine`;
+    case 'external-tool':
+      return f === 'biber'
+        ? 'biber is not installed: use \\usepackage[backend=bibtex]{biblatex} to compile without it'
+        : `${f} is not installed on this machine`;
+    case 'shell-escape-required':
+      return `${f} needs shell escape, which compiles never enable`;
   }
 }
 
