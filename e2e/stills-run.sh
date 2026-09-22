@@ -194,6 +194,22 @@ EOF
   log "checked $APPLOG ($1 present)"
 }
 
+saved_external() {
+  # Echo: the file the last Ctrl+S saved, and how many fs.external events
+  # the log holds for it. Own-write suppression is content-matched, so the
+  # save alone must leave that count at 0; an edit behind the app's back
+  # must raise it.
+  python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF'
+import json, sys
+evs = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+acts = [e.get("event") or {} for e in evs]
+saves = [a["path"] for a in acts if a.get("action") == "file.save"]
+assert saves, "no file.save in the log"
+p = saves[-1]
+print(p, sum(1 for a in acts if a.get("action") == "fs.external" and a.get("path") == p))
+EOF
+}
+
 # State 1 — Default: open, no compile. Idle shell + quiet preview.
 # Ctrl+S forces a save so the log carries file.save + revision.record live.
 start_app "$FIX/simple"; wait_window 300
@@ -201,8 +217,18 @@ key ctrl+o; sleep 6
 click_editor
 key ctrl+s; sleep 3
 shot 01-default
+# Revision-echo: the save must not read as an external change; a real
+# external edit right after it must.
+# shellcheck disable=SC2046
+set -- $(saved_external)
+[ "$2" = 0 ] || die "own save reported as external ($2 fs.external for $1)"
+printf '%% external edit\n' >>"$1"; sleep 4
+# shellcheck disable=SC2046
+set -- $(saved_external)
+[ "$2" -ge 1 ] || die "external edit after a save was swallowed ($1)"
+log "echo check: save silent, external edit reported ($2) for $1"
 stop_app
-check_log "log.open file.save revision.record"
+check_log "log.open file.save revision.record fs.external"
 
 # State 2 — Compiling: pre-compile the fixture through the sidecar so
 # OPEN warms into a live compile by itself (no keystroke race). Rapid
