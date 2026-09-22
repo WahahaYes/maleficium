@@ -44,7 +44,6 @@ import { buildMenus, presetOf, type CommandActions, type MenuContext } from './l
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { pruneRecentProjects } from './lib/recentProjects';
-import { hashRoot } from './lib/paths';
 import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
 import { useBufferManager } from './hooks/useBufferManager';
@@ -69,6 +68,7 @@ export default function App({
 }) {
   const [tex, setTex] = useState(HELLO);
   const [root, setRoot] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [fileName, setFileName] = useState('hello.tex');
   const [mainFile, setMainFileState] = useState<string | null>(null);
@@ -114,12 +114,12 @@ export default function App({
       markOwnWrite,
     });
 
-  // Revision history: app-local, keyed by a project id that never resolves to
-  // a path outside the store. One project is open at a time, so `rootFor`
-  // answers for that id alone.
+  // Revision history: app-local, keyed by the backend-minted project id. One
+  // project is open at a time, so `rootFor` answers for that id alone.
   const rootRef = useRef<string | null>(root);
   rootRef.current = root;
-  const projectId = root ? hashRoot(root) : null;
+  const projectIdRef = useRef<string | null>(projectId);
+  projectIdRef.current = projectId;
 
   /** Project-relative path for a file inside the open project, else null. */
   const relInProject = useCallback((abs: string): string | null => {
@@ -142,6 +142,7 @@ export default function App({
     root,
     rootRef,
     projectId,
+    projectIdRef,
     relInProject,
     fileName,
     setBuffers,
@@ -515,6 +516,7 @@ export default function App({
   const { reloadTree, openRoot, open, recentProjects, setRecentProjects } = useProjectTree({
     root,
     setRoot,
+    setProjectId,
     setTree,
     fileNameRef,
     ownWritesRef,

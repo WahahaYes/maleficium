@@ -18,12 +18,12 @@ import {
   type HistoryAvailability,
   type RevisionRow,
 } from '../lib/history.view';
-import { hashRoot } from '../lib/paths';
 import { markSaved, updateBuffer, type BufferState } from '../lib/buffers';
 
 export interface UseRevisionHistoryDeps {
   root: string | null;
   rootRef: RefObject<string | null>;
+  projectIdRef: RefObject<string | null>;
   projectId: string | null;
   relInProject: (abs: string) => string | null;
   fileName: string;
@@ -38,6 +38,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
   const {
     root,
     rootRef,
+    projectIdRef,
     projectId,
     relInProject,
     fileName,
@@ -58,10 +59,9 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
   const history = useMemo(
     () =>
       createHistoryStore((id) => {
-        const r = rootRef.current;
-        return r && hashRoot(r) === id ? r : null;
+        return id === projectIdRef.current ? rootRef.current : null;
       }),
-    [rootRef],
+    [rootRef, projectIdRef],
   );
   const refreshRevisionCount = useCallback(
     async (path: string): Promise<number> => {

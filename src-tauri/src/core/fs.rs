@@ -34,6 +34,15 @@ pub fn grant_root(id: &str, root: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
+/// Register a project root under its own id (djb2 of the canonical path).
+/// Returns the canonical root and the id that names it across the seam.
+pub fn grant_project(root: &str) -> Result<(PathBuf, String), String> {
+    let canon = crate::commands::guard::canonical_root(root)?;
+    let id = hash_root(&canon.to_string_lossy());
+    grant_root(&id, &canon.to_string_lossy())?;
+    Ok((canon, id))
+}
+
 /// Look up a session root by id.
 pub fn session_root(id: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;
@@ -273,6 +282,20 @@ mod tests {
         let id = format!("t-{}", name);
         grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
+    }
+
+    #[test]
+    fn grant_project_mints_byte_hash_id() {
+        let dir = std::env::temp_dir().join(format!("maleficium-fs-{}-proj-ü", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (canon, id) = grant_project(&dir.to_string_lossy()).unwrap();
+        assert_eq!(id, hash_root(&canon.to_string_lossy()));
+        assert_eq!(session_root(&id).unwrap(), canon);
+        std::fs::write(canon.join("main.tex"), "x").unwrap();
+        assert!(resolve_in(&id, "main.tex").is_ok());
+        assert!(resolve_in(&id, "../x").is_err());
+        assert!(grant_project("relative/dir").is_err());
     }
 
     #[test]

@@ -7,8 +7,8 @@ pub mod synctex;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
-    grant_root, list_dir, log_tail, read_text, resolve_in, resolve_read, session_root, trash_file,
-    undo_trash,
+    grant_project, grant_root, list_dir, log_tail, read_text, resolve_in, resolve_read,
+    session_root, trash_file, undo_trash,
 };
 pub use synctex::{forward_query, inverse_query};
 

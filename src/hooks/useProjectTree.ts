@@ -18,6 +18,7 @@ import type { FileHistory } from '../lib/file-history';
 export interface UseProjectTreeDeps {
   root: string | null;
   setRoot: (v: string | null) => void;
+  setProjectId: (v: string | null) => void;
   setTree: (v: TreeEntry[]) => void;
   fileNameRef: RefObject<string>;
   ownWritesRef: RefObject<Map<string, number>>;
@@ -33,6 +34,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   const {
     root,
     setRoot,
+    setProjectId,
     setTree,
     fileNameRef,
     ownWritesRef,
@@ -127,7 +129,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
     // current project untouched.
     const grant = await grantProjectAccess(r);
-    if (!grant.ok || !grant.path) {
+    if (!grant.ok || !grant.path || !grant.rootId) {
       const reason = (grant.error ?? 'grant failed').slice(0, 200);
       const msg = 'open refused: ' + reason;
       setLog(msg);
@@ -141,6 +143,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     }
     const canon = grant.path;
     setRoot(canon);
+    setProjectId(grant.rootId);
     setRecentProjects(touchRecentProject(canon));
     await reloadTree(canon, false);
     setLog('opened ' + canon);

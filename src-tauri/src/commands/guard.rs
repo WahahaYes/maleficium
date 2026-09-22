@@ -93,19 +93,30 @@ pub fn require_allowed(app: &AppHandle, candidate: &str) -> Result<PathBuf, Stri
     }
 }
 
-/// Mint a recursive runtime fs-scope grant for one validated project root.
-/// Granted roots stay readable until quit. One unconditional code path for
-/// every open route (dialog pick, recent, restore, preset).
-///
-/// Returns the canonical path string.
+/// A granted project: its canonical path and the session-root id that the
+/// compile and SyncTeX commands take.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGrant {
+    pub path: String,
+    pub root_id: String,
+}
+
+/// Mint a recursive runtime fs-scope grant for one validated project root and
+/// register it as a session root. Granted roots stay readable until quit. One
+/// unconditional code path for every open route (dialog pick, recent,
+/// restore, preset).
 #[tauri::command]
-pub fn grant_project_access(app: AppHandle, root: String) -> Result<String, String> {
-    let canon = canonical_root(&root)?;
+pub fn grant_project_access(app: AppHandle, root: String) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = crate::core::grant_project(&root)?;
     let scope = live_scope(&app)?;
     scope
         .allow_directory(&canon, true)
         .map_err(|e| format!("grant failed for {}: {}", canon.display(), e))?;
-    Ok(canon.to_string_lossy().to_string())
+    Ok(ProjectGrant {
+        path: canon.to_string_lossy().to_string(),
+        root_id,
+    })
 }
 
 #[cfg(test)]
