@@ -166,7 +166,17 @@ describe('command registry', () => {
       .flatMap((s) => s.commands)
       .find((c) => c.id === 'file.recent')!;
     expect(withRecents.enabled).toBe(true);
-    expect(withRecents.children?.map((k) => k.label)).toEqual(['thesis', 'paper']);
+    expect(withRecents.children?.map((k) => k.label)).toEqual(['thesis', 'paper', 'Clear Recents']);
+    expect(withRecents.children?.at(-1)?.id).toBe('file.recent-clear');
+    let cleared = 0;
+    buildMenus(
+      { ...baseCtx, recentProjects: ['/a/paper'] },
+      { ...actions, clearRecents: () => cleared++ },
+    )
+      .flatMap((s) => s.commands)
+      .find((c) => c.id === 'file.recent')!
+      .children!.find((k) => k.id === 'file.recent-clear')!.run!();
+    expect(cleared).toBe(1);
     for (const k of withRecents.children ?? []) {
       expect(typeof k.run, k.label).toBe('function');
     }

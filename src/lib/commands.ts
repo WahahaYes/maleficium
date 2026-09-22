@@ -164,12 +164,24 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           id: 'file.recent',
           label: 'Open Recent',
           enabled: ctx.recentProjects.length > 0,
-          children: ctx.recentProjects.map((r) => ({
-            id: 'file.recent' as const,
-            label: r.split('/').pop() || r,
-            enabled: true,
-            run: () => a.openRecent(r),
-          })),
+          children: [
+            ...ctx.recentProjects.map((r) => ({
+              id: 'file.recent' as const,
+              label: r.split('/').pop() || r,
+              enabled: true,
+              run: () => a.openRecent(r),
+            })),
+            ...(ctx.recentProjects.length > 0
+              ? [
+                  {
+                    id: 'file.recent-clear' as const,
+                    label: 'Clear Recents',
+                    enabled: true,
+                    run: a.clearRecents,
+                  },
+                ]
+              : []),
+          ],
         },
         { id: 'file.new-file', label: 'New File…', enabled: ctx.hasProject, run: a.newFile },
         {
