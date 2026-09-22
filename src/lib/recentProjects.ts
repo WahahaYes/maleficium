@@ -33,6 +33,7 @@ export function getRecentProjects(): string[] {
     if (!raw) return [];
     return clean(JSON.parse(raw));
   } catch {
+    // Unparseable stored recents: start with none.
     return [];
   }
 }

@@ -53,7 +53,7 @@ function parseConfigMain(raw: string | null, root: string): string | null {
       return v.startsWith('/') ? v : joinPath(root, v);
     }
   } catch {
-    /* malformed config is not fatal — fall through */
+    /* unparseable stored association — fall through to detection */
   }
   return null;
 }
@@ -87,6 +87,7 @@ export async function resolveMainFile(deps: MainFileDeps): Promise<MainFileResol
     try {
       texFiles = (await listTexFiles(root)).slice().sort();
     } catch {
+      // Project unlistable: only the magic comment could have named a main file.
       texFiles = [];
     }
     const withClass: string[] = [];
@@ -112,6 +113,7 @@ export async function resolveMainFile(deps: MainFileDeps): Promise<MainFileResol
     }
     return { mainFile: null, source: 'none', candidates: [] };
   } catch {
+    // Resolution never throws: an unexpected IO failure reads as "no main file".
     return { mainFile: null, source: 'none', candidates: [] };
   }
 }

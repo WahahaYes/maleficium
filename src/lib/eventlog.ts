@@ -178,6 +178,7 @@ export function startEventLog(): EventLog {
         },
       });
     } catch {
+      // No app-data dir (or not writable): the bus runs, the file stays off.
       recording = false;
     }
   })();

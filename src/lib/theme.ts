@@ -35,6 +35,7 @@ function tier1For(accent: string) {
   try {
     return resolveTier1(parseVscodeTheme(entry.source));
   } catch {
+    // A bundled theme that does not parse falls back to the default palette.
     return null;
   }
 }

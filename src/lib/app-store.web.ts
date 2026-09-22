@@ -10,6 +10,7 @@ export const localAppStore: AppStore = {
     try {
       return localStorage.getItem(key);
     } catch {
+      /* storage unavailable (private mode) — read as unset */
       return null;
     }
   },

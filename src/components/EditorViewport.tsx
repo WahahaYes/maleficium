@@ -170,6 +170,7 @@ function EditorViewport({
               try {
                 return view.state.doc.line(Math.min(line, view.state.doc.lines)).from;
               } catch {
+                // The document shrank under the request: reveal the top.
                 return 0;
               }
             })()
@@ -233,6 +234,7 @@ function EditorViewport({
         try {
           return view.state.doc.lineAt(view.state.selection.main.head).number;
         } catch {
+          // Selection outside a document mid-replace: report line 1.
           return 1;
         }
       },

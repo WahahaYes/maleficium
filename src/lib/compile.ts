@@ -35,6 +35,7 @@ export async function engineLog(rootId: string, mainRel: string): Promise<string
   try {
     return await invoke<string>('engine_log', { rootId, mainRel });
   } catch {
+    // No log kept for this main file yet; callers fall back to the run's own output.
     return null;
   }
 }
@@ -44,6 +45,7 @@ export async function outputsFresh(rootId: string, mainRel: string): Promise<boo
   try {
     return await invoke<boolean>('outputs_fresh', { rootId, mainRel });
   } catch {
+    // Main file no longer resolvable: nothing to warm, the next Compile reports why.
     return false;
   }
 }

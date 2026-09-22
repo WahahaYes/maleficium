@@ -39,6 +39,7 @@ export const desktopFs: FsProvider = {
       const info = await stat(path);
       return { size: info.size, isDirectory: info.isDirectory, isFile: info.isFile };
     } catch {
+      // The seam's contract: a path that cannot be stat'ed reads as absent.
       return null;
     }
   },

@@ -15,6 +15,7 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
     try {
       entries = await fs().listDir(dir);
     } catch {
+      // Unreadable folder: the scan covers the rest of the project.
       return;
     }
     for (const e of entries) {

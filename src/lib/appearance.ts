@@ -39,6 +39,7 @@ export function loadAppearance(): AppearancePrefs {
     const raw = store().get(DEVICE_PREF_KEYS.appearance);
     if (raw) parsed = JSON.parse(raw) as Partial<AppearancePrefs>;
   } catch {
+    // Unparseable stored prefs: defaults win.
     parsed = {};
   }
   const num = (v: unknown, fallback: number) =>

@@ -21,6 +21,7 @@ function readAll(): Record<string, string> {
     }
     return out;
   } catch {
+    // Unparseable stored associations: start with none.
     return {};
   }
 }
