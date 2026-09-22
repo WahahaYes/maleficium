@@ -237,7 +237,10 @@ function EditorViewport({
   }, [viewportRef]);
 
   return (
-    <Paper elevation={0} sx={{ p: 1, fontSize: 14, overflow: 'auto' }}>
+    <Paper
+      elevation={0}
+      sx={{ p: 1, fontSize: 14, overflow: 'auto', border: 1, borderColor: 'divider' }}
+    >
       <div ref={hostRef} />
     </Paper>
   );

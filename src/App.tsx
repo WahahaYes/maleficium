@@ -1105,6 +1105,7 @@ export default function App({
             autoFocus
             fullWidth
             size="small"
+            variant="outlined"
             aria-label="New file name"
             value={renameDraft}
             onChange={(e) => setRenameDraft(e.target.value)}
@@ -1137,6 +1138,7 @@ export default function App({
             autoFocus
             fullWidth
             size="small"
+            variant="outlined"
             aria-label="Line number"
             value={goToDraft}
             onChange={(e) => setGoToDraft(e.target.value)}
