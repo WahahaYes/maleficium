@@ -1,7 +1,7 @@
 //! Engine outputs of one main file, addressed by session root and
 //! root-relative path. The outdir is derived here and never crosses the seam.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::MainOutputs;
 
@@ -14,9 +14,23 @@ pub fn outputs_of(root_id: &str, main_rel: &str) -> Result<MainOutputs, String> 
     super::main_outputs(&main)
 }
 
+/// Where one main file's engine log lives: the engine's console output
+/// (`error:`/`warning: file:line:` records plus the TeX transcript on
+/// failure), written by the compile paths. The engine runs without
+/// `--keep-logs`, so this name never collides with its own transcript.
+pub fn log_file(outdir: &Path, main_file: &str) -> PathBuf {
+    let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
+    outdir.join(format!("{}.log", stem))
+}
+
 fn log_path(o: &MainOutputs) -> PathBuf {
-    let stem = o.main_file.strip_suffix(".tex").unwrap_or(&o.main_file);
-    o.outdir.join(format!("{}.log", stem))
+    log_file(&o.outdir, &o.main_file)
+}
+
+/// Keep a finished run's console output as the engine log. Best effort: a
+/// failed write only costs the log, never the compile result.
+pub fn write_engine_log(log: &Path, lines: &[String]) {
+    let _ = std::fs::write(log, lines.join("\n"));
 }
 
 /// The full engine log of the last compile.

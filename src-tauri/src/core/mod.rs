@@ -11,7 +11,9 @@ pub use fs::{
     grant_project, grant_root, grant_untitled, list_dir, read_text, resolve_in, resolve_read,
     session_root, trash_file, undo_trash,
 };
-pub use outputs::{clean_outputs, engine_log, log_tail, outputs_fresh, outputs_of};
+pub use outputs::{
+    clean_outputs, engine_log, log_file, log_tail, outputs_fresh, outputs_of, write_engine_log,
+};
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 
 use std::path::{Path, PathBuf};

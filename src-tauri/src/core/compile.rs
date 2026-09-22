@@ -116,6 +116,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
     );
 
     let job_id = id.clone();
+    let log_file = super::log_file(&outdir, &main_file);
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let pump_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
@@ -163,6 +164,7 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
             JobStatus::Cancelled => (None, String::from("compile cancelled")),
             JobStatus::Running => (None, String::new()),
         };
+        super::write_engine_log(&log_file, &all);
         let record = JobRecord {
             status: outcome,
             pdf_url,

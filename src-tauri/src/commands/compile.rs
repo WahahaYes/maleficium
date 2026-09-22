@@ -61,9 +61,12 @@ pub fn compile_tex(
     let stdout_handle = std::thread::spawn(move || {
         use std::io::{BufRead, BufReader};
         let reader = BufReader::new(stdout);
+        let mut lines = Vec::new();
         for line in reader.lines().map_while(Result::ok) {
-            let _ = app_clone.emit("compile-line", line);
+            let _ = app_clone.emit("compile-line", line.clone());
+            lines.push(line);
         }
+        lines
     });
 
     let mut collected: Vec<String> = Vec::new();
@@ -75,7 +78,9 @@ pub fn compile_tex(
             collected.push(line);
         }
     }
-    let _ = stdout_handle.join();
+    let mut console = stdout_handle.join().unwrap_or_default();
+    console.extend(collected.iter().cloned());
+    core::write_engine_log(&core::log_file(&outdir, &main_file), &console);
     // Ownership is decided by one take() before the waiter starts: empty
     // means cancel won, full means this waiter solely owns the child.
     // Exactly one owner reaps.
