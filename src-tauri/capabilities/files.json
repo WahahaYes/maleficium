@@ -10,7 +10,6 @@
       "identifier": "fs:allow-read-file",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -20,7 +19,6 @@
       "identifier": "fs:allow-read-text-file",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -30,7 +28,6 @@
       "identifier": "fs:allow-write-file",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -40,7 +37,6 @@
       "identifier": "fs:allow-write-text-file",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -50,7 +46,6 @@
       "identifier": "fs:allow-read-dir",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -60,7 +55,6 @@
       "identifier": "fs:allow-exists",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -70,7 +64,6 @@
       "identifier": "fs:allow-mkdir",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -80,7 +73,6 @@
       "identifier": "fs:allow-remove",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -90,7 +82,6 @@
       "identifier": "fs:allow-rename",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
@@ -100,7 +91,6 @@
       "identifier": "fs:allow-stat",
       "allow": [
         { "path": "$TEMP/**" },
-        { "path": "/tmp/**" },
         { "path": "$APPDATA/**" },
         { "path": "$APPLOCALDATA/**" },
         { "path": "$APPCACHE/**" }
