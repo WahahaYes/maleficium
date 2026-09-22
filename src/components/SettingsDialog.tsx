@@ -5,6 +5,8 @@
 // named presets plus a slider override.
 
 import Autocomplete from '@mui/material/Autocomplete';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -132,7 +134,12 @@ export default function SettingsDialog({
             )}
             renderOption={(props, o) => (
               <li {...props} key={o.id}>
-                {o.name}
+                <Box sx={{ flexGrow: 1 }}>{o.name}</Box>
+                {o.type === 'dark' ? (
+                  <DarkModeIcon fontSize="small" color="action" />
+                ) : (
+                  <LightModeIcon fontSize="small" color="action" />
+                )}
               </li>
             )}
           />
