@@ -4,7 +4,7 @@
 
 @keyframes synctex-flash {
   0% {
-    background-color: rgba(255, 176, 0, 0.55);
+    background-color: var(--syn-flash, rgba(255, 176, 0, 0.55));
   }
   100% {
     background-color: transparent;
@@ -19,7 +19,7 @@
 }
 
 .synctex-canvas.synctex-hit {
-  box-shadow: 0 0 0 3px rgba(255, 176, 0, 0.8);
+  box-shadow: 0 0 0 3px var(--syn-hit, rgba(255, 176, 0, 0.8));
 }
 
 .cm-synctex-flash {

@@ -5,9 +5,12 @@
 
 import { memo, useEffect, useRef } from 'react';
 import Paper from '@mui/material/Paper';
+import { useTheme } from '@mui/material/styles';
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState, EditorSelection } from '@codemirror/state';
+import { Compartment, EditorState, EditorSelection } from '@codemirror/state';
 import { texMode } from '../lib/texMode';
+import { DEFAULT_PREFS } from '../lib/appearance';
+import { editorTheme } from '../lib/editorTheme';
 
 export interface EditorViewportProps {
   value: string;
@@ -56,6 +59,9 @@ function EditorViewport({
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const muiTheme = useTheme();
+  // Theme compartment: prefs + tokens restyle the live view on mode flip.
+  const themeCompartment = useRef(new Compartment()).current;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -67,6 +73,7 @@ function EditorViewport({
         texMode,
         // Wrap long lines instead of horizontal scroll.
         EditorView.lineWrapping,
+        themeCompartment.of(editorTheme(DEFAULT_PREFS, muiTheme)),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
             lastSentRef.current = u.state.doc.toString();
@@ -116,6 +123,13 @@ function EditorViewport({
     // Mount once; external value/line sync below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Restyle the live view when the app theme changes (mode flip).
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: themeCompartment.reconfigure(editorTheme(DEFAULT_PREFS, muiTheme)),
+    });
+  }, [muiTheme, themeCompartment]);
 
   // External value sync (file switch / reload / jump): replace doc, keep viewport.
   // Guarded by ref-equality with last-sent value so typing never resets cursor.

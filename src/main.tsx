@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ThemeProvider, CssBaseline } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import App from './App';
 import { createAppTheme } from './lib/theme';
 import { DEFAULT_PREFS } from './lib/appearance';
@@ -24,6 +25,12 @@ export function Root() {
     () => createAppTheme({ ...DEFAULT_PREFS, mode, density }),
     [mode, density],
   );
+  // Flash colors follow the warning token in both modes.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--syn-flash', alpha(theme.palette.warning.main, 0.55));
+    root.style.setProperty('--syn-hit', alpha(theme.palette.warning.main, 0.8));
+  }, [theme]);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
