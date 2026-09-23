@@ -211,6 +211,16 @@ EC = os.environ["ENGINE_CACHE"]
 pinned = os.path.join(EC, "bundles", "hashes", "https,58,,47,,47,data1b.fullyjustified.net,47,tlextras-2022.0r0.tar")
 check("engine cache is app-owned under OS tmp", EC.startswith(tempfile.gettempdir()) and os.path.isdir(EC), EC)
 check("compile resolved the pinned bundle", os.path.isfile(pinned) and open(pinned).read().strip() == os.environ["BUNDLE_DIGEST"], pinned)
+st1 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+check("output stamp names the compiled pdf", bool(st1) and st1.get("bytes", 0) > 0, str(st1))
+time.sleep(1.1)
+rj = call("compile_run", {"root_id": "drv", "rel": "main.tex"}).get("job_id") or ""
+for _ in range(30):
+    time.sleep(1)
+    if call("compile_poll", {"job_id": rj, "tail_lines": 1}).get("status") != "running":
+        break
+st2 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+check("an MCP recompile moves the output stamp (what the app polls)", bool(st2) and st2 != st1, f"{st1} -> {st2}")
 pdf = sc.get("pdf_url") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
