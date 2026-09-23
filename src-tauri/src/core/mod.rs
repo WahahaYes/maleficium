@@ -4,6 +4,7 @@
 
 pub mod compile;
 pub mod engine;
+pub mod export;
 pub mod fs;
 pub mod history;
 pub mod index;

@@ -131,6 +131,22 @@ pub fn output_stamp(
     core::output_stamp(&root_id, &main_rel)
 }
 
+/// Copy the compiled pdf to `dest` (absolute, outside the project).
+#[tauri::command]
+pub fn export_pdf(
+    root_id: String,
+    main_rel: String,
+    dest: String,
+) -> Result<core::export::Exported, String> {
+    core::export::export_pdf(&root_id, &main_rel, &dest)
+}
+
+/// Zip the project's sources to `dest` (absolute, outside the project).
+#[tauri::command(async)]
+pub fn export_zip(root_id: String, dest: String) -> Result<core::export::Exported, String> {
+    core::export::export_zip(&root_id, &dest)
+}
+
 #[tauri::command]
 pub fn outputs_fresh(root_id: String, main_rel: String) -> Result<bool, String> {
     core::outputs_fresh(&root_id, &main_rel)

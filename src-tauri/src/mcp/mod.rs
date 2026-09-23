@@ -98,6 +98,21 @@ struct OutputStampOut {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ExportPdfParams {
+    root_id: String,
+    main_rel: String,
+    /// Absolute path outside the project.
+    dest: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ExportZipParams {
+    root_id: String,
+    /// Absolute path outside the project.
+    dest: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct CancelParams {
     job_id: String,
 }
@@ -304,6 +319,30 @@ impl Maleficium {
         Ok(Json(OutputStampOut {
             stamp: core::output_stamp(&p.root_id, &p.main_rel)?,
         }))
+    }
+
+    #[tool(
+        description = "Copy main_rel's compiled pdf to dest, an absolute path outside the project. Fails before any compile."
+    )]
+    fn export_pdf(
+        &self,
+        Parameters(p): Parameters<ExportPdfParams>,
+    ) -> Result<Json<core::export::Exported>, String> {
+        Ok(Json(core::export::export_pdf(
+            &p.root_id,
+            &p.main_rel,
+            &p.dest,
+        )?))
+    }
+
+    #[tool(
+        description = "Zip the project's sources to dest, an absolute path outside the project: every file but build outputs, trash, dot files and symlinks, listed root-relative in files."
+    )]
+    fn export_zip(
+        &self,
+        Parameters(p): Parameters<ExportZipParams>,
+    ) -> Result<Json<core::export::Exported>, String> {
+        Ok(Json(core::export::export_zip(&p.root_id, &p.dest)?))
     }
 
     #[tool(description = "Cancel a running compile job")]

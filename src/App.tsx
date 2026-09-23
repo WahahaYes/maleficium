@@ -58,6 +58,7 @@ import {
   zoomChord,
 } from './lib/keymap';
 import type { ZoomAction } from './lib/zoom';
+import { useExport } from './hooks/useExport';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
@@ -900,6 +901,10 @@ export default function App({
     const base = t.slice(t.lastIndexOf('/') + 1) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
+  const exporter = useExport({
+    pdf: previewDoc?.source ?? null,
+    project: root && projectId ? { rootId: projectId, path: root } : null,
+  });
   const menuCtx: MenuContext = {
     hasProject: root != null,
     isProjectFile: isProjectFile(fileName),
@@ -1058,6 +1063,8 @@ export default function App({
       void makeOffline();
     },
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
+    exportPdf: () => void exporter.exportPdfAs(),
+    exportZip: () => void exporter.exportZipAs(),
     cancelCompile: () => {
       void cancelCompile().catch((e) =>
         emit({

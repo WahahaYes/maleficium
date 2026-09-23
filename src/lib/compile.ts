@@ -104,6 +104,19 @@ export async function outputStamp(rootId: string, mainRel: string): Promise<Outp
   return await invoke<OutputStamp | null>('output_stamp', { rootId, mainRel });
 }
 
+/** What an export wrote. */
+export type Exported = { path: string; bytes: number; files: string[] };
+
+/** Copy the compiled pdf to `dest` (absolute, outside the project). */
+export async function exportPdf(rootId: string, mainRel: string, dest: string): Promise<Exported> {
+  return await invoke<Exported>('export_pdf', { rootId, mainRel, dest });
+}
+
+/** Zip the project's sources to `dest` (absolute, outside the project). */
+export async function exportZip(rootId: string, dest: string): Promise<Exported> {
+  return await invoke<Exported>('export_zip', { rootId, dest });
+}
+
 /** Whether a previous compile left a pdf. Never throws. */
 export async function outputsFresh(rootId: string, mainRel: string): Promise<boolean> {
   try {

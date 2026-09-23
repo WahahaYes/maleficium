@@ -283,6 +283,20 @@ fdd = fd.get("diagnostics") or []
 check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
 
+# ---- export: pdf copy and source zip, always outside the project ----
+import zipfile
+xp = os.path.join(scratch, "export")
+os.makedirs(xp, exist_ok=True)
+ep = call("export_pdf", {"root_id": "drv", "main_rel": "main.tex", "dest": xp + "/paper.pdf"})
+check("export pdf copies the compiled bytes", ep["ok"] and open(xp + "/paper.pdf", "rb").read() == open(pdf, "rb").read() and ep.get("bytes") == os.path.getsize(pdf), str(ep)[:200])
+ez = call("export_zip", {"root_id": "drv", "dest": xp + "/proj.zip"})
+names = sorted(zipfile.ZipFile(xp + "/proj.zip").namelist()) if ez["ok"] else []
+want = sorted(subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split())
+check("export zip holds exactly the sources (a standard reader agrees)", names == want and zipfile.ZipFile(xp + "/proj.zip").testzip() is None, f"{len(names)} vs {len(want)}: {sorted(set(names) ^ set(want))[:5]}")
+check("export zip leaves out outputs, trash and dot files", not any(n.endswith((".aux", ".log", ".pdf")) or n.startswith(".") or "/." in n for n in names), str(names[:10]))
+ei = call("export_zip", {"root_id": "drv", "dest": ROOT + "/inside.zip"})
+check("export into the project is refused", not ei["ok"] and "inside the project" in ei.get("error", "") and not os.path.exists(ROOT + "/inside.zip"), str(ei))
+
 # ---- pre-compile checks: every missing dependency at once ----
 with open(ROOT + "/three.tex", "w") as f:
     f.write("\\documentclass{article}\n\\usepackage{amsmath,nopkga}\n\\usepackage{nopkgb}\n\\usepackage[style=alpha]{biblatex}\n\\RequirePackage{nopkgc}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n")

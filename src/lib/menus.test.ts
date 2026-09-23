@@ -63,6 +63,8 @@ const actions: CommandActions = {
   compileFile: noop,
   makeOffline: noop,
   toggleAutoCompile: noop,
+  exportPdf: noop,
+  exportZip: noop,
   zoomPreview: noop,
   cancelCompile: noop,
   forwardSync: noop,

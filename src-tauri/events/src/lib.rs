@@ -178,6 +178,14 @@ pub enum ZoomKind {
     Percent,
 }
 
+/// What an export wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportKind {
+    Pdf,
+    Zip,
+}
+
 /// Whether a project compiles without network, as far as its last compiles
 /// and this machine show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -483,6 +491,14 @@ pub enum AppEvent {
     /// The pdf's stamp could not be read: outside rewrites go unnoticed.
     #[serde(rename = "preview.stamp-failed")]
     PreviewStampFailed { error: String },
+    #[serde(rename = "export.done")]
+    ExportDone {
+        kind: ExportKind,
+        path: String,
+        bytes: u64,
+    },
+    #[serde(rename = "export.failed")]
+    ExportFailed { kind: ExportKind, error: String },
     /// The preview zoom changed; `percent` is what a page now shows at.
     #[serde(rename = "preview.zoom")]
     PreviewZoom { mode: ZoomKind, percent: u32 },
@@ -610,6 +626,7 @@ pub fn typescript() -> String {
         CompileLine::decl(&cfg),
         CompileReport::decl(&cfg),
         ZoomKind::decl(&cfg),
+        ExportKind::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
         Revision::decl(&cfg),

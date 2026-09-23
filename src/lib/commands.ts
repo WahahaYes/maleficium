@@ -13,6 +13,8 @@ export type CommandId =
   | 'file.close-file'
   | 'file.save'
   | 'file.set-main'
+  | 'file.export-pdf'
+  | 'file.export-zip'
   | 'file.reload'
   | 'file.keep-mine'
   | 'file.clean'
@@ -145,6 +147,8 @@ export interface CommandActions {
   compileFile: () => void;
   makeOffline: () => void;
   toggleAutoCompile: () => void;
+  exportPdf: () => void;
+  exportZip: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -223,6 +227,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           run: a.closeFile,
         },
         { id: 'file.save', label: 'Save', accelerator: 'Ctrl+S', enabled: true, run: a.save },
+        { id: 'file.export-pdf', label: 'Export PDF…', enabled: ctx.pdfOpen, run: a.exportPdf },
+        {
+          id: 'file.export-zip',
+          label: 'Export Project as Zip…',
+          enabled: ctx.hasProject,
+          run: a.exportZip,
+        },
         {
           id: 'file.set-main',
           label: 'Set as Main File',
