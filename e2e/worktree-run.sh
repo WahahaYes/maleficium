@@ -7,7 +7,9 @@
 # (default: uncommitted e2e/ edits under test); untracked files stay behind
 # by design. Heavy state is reused, never rebuilt: node_modules is symlinked
 # in, Rust shares the main checkout's target dir via CARGO_TARGET_DIR (cargo
-# serializes concurrent builds on its own lock), and app/runtime caches stay
+# serializes concurrent builds on its own lock), vite's dep cache lives in the
+# worktree (VITE_CACHE_DIR) so the shared node_modules/.vite a live dev server
+# serves is never rewritten, and app/runtime caches stay
 # the caller's job (e.g. stills reuses one STILLS_HOME so Tectonic bundles
 # download once).
 #
@@ -89,6 +91,9 @@ for b in "$ROOT"/src-tauri/binaries/*; do
 done
 export WORKTREE_ACTIVE=1
 export CARGO_TARGET_DIR="$ROOT/src-tauri/target"
+# Vite optimizes deps into the worktree's own cache: the shared
+# node_modules/.vite belongs to the main checkout's dev server.
+export VITE_CACHE_DIR="$WT/.vite-cache"
 
 set +e
 (cd "$WT" && "$@")

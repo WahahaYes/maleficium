@@ -10,6 +10,9 @@ const port = Number(process.env.DEV_PORT ?? 1420);
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react()],
+  // A scratch worktree shares node_modules by symlink: its dep optimizer writes
+  // to VITE_CACHE_DIR, never the node_modules/.vite a live dev server serves.
+  cacheDir: process.env.VITE_CACHE_DIR ?? 'node_modules/.vite',
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
