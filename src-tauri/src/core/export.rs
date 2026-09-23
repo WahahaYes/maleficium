@@ -61,7 +61,7 @@ pub fn export_pdf(root_id: &str, main_rel: &str, dest: &str) -> Result<Exported,
 
 /// The project's source files, root-relative and sorted: hidden names
 /// (outputs, trash, dot files) and symlinks are left out.
-fn source_files(root: &Path) -> Result<Vec<String>, String> {
+pub(crate) fn source_files(root: &Path) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {

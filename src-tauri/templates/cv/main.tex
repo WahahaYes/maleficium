@@ -1,0 +1,39 @@
+\documentclass[11pt,a4paper,sans]{moderncv}
+\moderncvstyle{classic}
+\moderncvcolor{blue}
+\usepackage[scale=0.8]{geometry}
+
+\name{First}{Last}
+\title{Curriculum Vitae}
+\address{1 Example Street}{City, Postcode}{Country}
+\phone[mobile]{+1~(555)~123~4567}
+\email{first.last@example.org}
+\homepage{example.org}
+
+\begin{document}
+\makecvtitle
+
+\section{Education}
+\cventry{2018--2022}{PhD in Your Field}{University Name}{City}{}{Thesis: \emph{Title of the thesis}}
+\cventry{2014--2018}{BSc in Your Field}{University Name}{City}{}{}
+
+\section{Experience}
+\cventry{2022--now}{Job Title}{Employer}{City}{}{%
+  \begin{itemize}
+    \item What you did, and what came of it
+    \item A second responsibility or result
+  \end{itemize}}
+
+\section{Publications}
+\cvitem{2023}{Author, A., \& Author, B. \emph{Paper title}. Venue.}
+\cvitem{2021}{Author, A. \emph{Another paper}. Venue.}
+
+\section{Skills}
+\cvitem{Languages}{Python, C++, \LaTeX}
+\cvitem{Methods}{Statistics, experiment design}
+
+\section{Languages}
+\cvitemwithcomment{English}{Native}{}
+\cvitemwithcomment{German}{Fluent}{}
+
+\end{document}

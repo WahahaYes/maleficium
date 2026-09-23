@@ -1,0 +1,7 @@
+{
+  "id": "report",
+  "name": "Report",
+  "description": "A longer document in chapters, one file per chapter, with a table of contents and an appendix.",
+  "category": "Long documents",
+  "main": "main.tex"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "welcome",
+  "name": "Welcome to Maleficium",
+  "description": "A short tour of the editor, compiled from this document.",
+  "category": "Welcome",
+  "main": "welcome.tex"
+}

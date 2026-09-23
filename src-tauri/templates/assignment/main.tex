@@ -1,0 +1,41 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{enumitem}
+
+\newcounter{problem}
+\newenvironment{problem}[1][]
+  {\refstepcounter{problem}\par\medskip\noindent\textbf{Problem \theproblem}%
+   \ifx\relax#1\relax\else\ (#1)\fi.\ }
+  {\par}
+\newenvironment{solution}{\begin{proof}[Solution]}{\end{proof}}
+
+\begin{document}
+\noindent
+\textbf{Course 101: Assignment 1} \hfill Your Name \\
+Due: \today \hfill Student ID: 0000000
+\medskip\hrule
+
+\begin{problem}[5 points]
+Show that $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$ for every $n \ge 1$.
+\end{problem}
+\begin{solution}
+By induction on $n$. The case $n = 1$ holds. If it holds for $n$, then
+\[ \sum_{k=1}^{n+1} k = \frac{n(n+1)}{2} + (n+1) = \frac{(n+1)(n+2)}{2}. \qedhere \]
+\end{solution}
+
+\begin{problem}
+Answer each part.
+\begin{enumerate}[label=(\alph*)]
+  \item First part.
+  \item Second part.
+\end{enumerate}
+\end{problem}
+\begin{solution}
+\begin{enumerate}[label=(\alph*)]
+  \item Your answer.
+  \item Your answer.
+\end{enumerate}
+\end{solution}
+
+\end{document}

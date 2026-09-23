@@ -1,0 +1,7 @@
+{
+  "id": "resume",
+  "name": "Resume",
+  "description": "A polished one-page resume: name header with contact icons, experience, projects, education and skills.",
+  "category": "Career",
+  "main": "main.tex"
+}

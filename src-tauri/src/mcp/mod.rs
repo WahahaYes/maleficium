@@ -113,6 +113,16 @@ struct ExportZipParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct NewFromTemplateParams {
+    /// A template id from `templates` (or "welcome").
+    template: String,
+    /// Absolute folder the new project goes in.
+    parent_dir: String,
+    /// The new project's folder name.
+    name: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct CancelParams {
     job_id: String,
 }
@@ -364,6 +374,27 @@ impl Maleficium {
         Parameters(p): Parameters<ExportZipParams>,
     ) -> Result<Json<core::export::Exported>, String> {
         Ok(Json(core::export::export_zip(&p.root_id, &p.dest)?))
+    }
+
+    #[tool(
+        description = "Project templates: the bundled set (article, report, book, letter, beamer, assignment, cv, resume, journal) and the user's own, each with name, description, category and main file"
+    )]
+    fn templates(&self) -> Result<Json<core::templates::TemplateList>, String> {
+        Ok(Json(core::templates::list()))
+    }
+
+    #[tool(
+        description = "Create parent_dir/name from a template (refused when that folder exists and is not empty). Returns the new root and its main file; grant the root to work in it."
+    )]
+    fn new_from_template(
+        &self,
+        Parameters(p): Parameters<NewFromTemplateParams>,
+    ) -> Result<Json<core::templates::Created>, String> {
+        Ok(Json(core::templates::instantiate(
+            &p.template,
+            &p.parent_dir,
+            &p.name,
+        )?))
     }
 
     #[tool(description = "Cancel a running compile job")]

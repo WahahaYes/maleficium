@@ -297,6 +297,32 @@ check("export zip leaves out outputs, trash and dot files", not any(n.endswith((
 ei = call("export_zip", {"root_id": "drv", "dest": ROOT + "/inside.zip"})
 check("export into the project is refused", not ei["ok"] and "inside the project" in ei.get("error", "") and not os.path.exists(ROOT + "/inside.zip"), str(ei))
 
+# ---- templates: every bundled template (and the welcome tour) compiles ----
+tl = call("templates", {})
+tids = [t["id"] for t in tl.get("templates") or [] if not t.get("user")]
+check("templates list the bundled set, not the welcome tour", tl["ok"] and set(["article", "report", "book", "letter", "beamer", "assignment", "cv", "resume", "journal"]) <= set(tids) and "welcome" not in tids, str(tids))
+tp = os.path.join(scratch, "from-templates")
+os.makedirs(tp, exist_ok=True)
+bad = []
+for tid in tids + ["welcome"]:
+    nc = call("new_from_template", {"template": tid, "parent_dir": tp, "name": tid})
+    if not nc["ok"]:
+        bad.append(f"{tid}: {nc.get('error')}")
+        continue
+    g = call("grant", {"root_id": "tpl-" + tid, "root": nc["root"]})
+    j = call("compile_run", {"root_id": "tpl-" + tid, "rel": nc["main"]}).get("job_id") or ""
+    rec = {"status": "running"}
+    for _ in range(150):
+        time.sleep(2)
+        rec = call("compile_poll", {"job_id": j, "tail_lines": 5})
+        if rec.get("status") != "running":
+            break
+    if rec.get("status") != "success" or not os.path.exists(rec.get("pdf_url") or ""):
+        bad.append(f"{tid}: {rec.get('status')} {rec.get('missing')} {str(rec.get('log'))[:160]}")
+check("every bundled template and the welcome tour compiles to a pdf", not bad, "; ".join(bad))
+again = call("new_from_template", {"template": "article", "parent_dir": tp, "name": "article"})
+check("a template never writes into a folder that is in use", not again["ok"] and "not empty" in again.get("error", ""), str(again))
+
 # ---- pre-compile checks: every missing dependency at once ----
 with open(ROOT + "/three.tex", "w") as f:
     f.write("\\documentclass{article}\n\\usepackage{amsmath,nopkga}\n\\usepackage{nopkgb}\n\\usepackage[style=alpha]{biblatex}\n\\RequirePackage{nopkgc}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n")

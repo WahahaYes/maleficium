@@ -1,0 +1,7 @@
+{
+  "id": "journal",
+  "name": "Journal Paper (IEEEtran)",
+  "description": "An IEEE-style two-column journal paper with abstract, keywords, sections and an IEEEtran bibliography.",
+  "category": "Papers",
+  "main": "main.tex"
+}

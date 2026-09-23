@@ -1,0 +1,27 @@
+\documentclass[11pt,openany]{book}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+
+\title{Book Title}
+\author{Author Name}
+\date{}
+
+\begin{document}
+\frontmatter
+\maketitle
+\chapter{Preface}
+Why this book exists and how to read it.
+\tableofcontents
+
+\mainmatter
+\part{Foundations}
+\include{chapters/first}
+
+\part{Going Further}
+\include{chapters/second}
+
+\backmatter
+\chapter{Afterword}
+Closing thoughts.
+
+\end{document}

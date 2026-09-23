@@ -1,0 +1,67 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usepackage[backend=bibtex]{biblatex}
+\usepackage{hyperref}
+\addbibresource{references.bib}
+
+\title{The Title of Your Article}
+\author{Your Name \\ \small Your Institution}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+One paragraph that says what you did, why it matters and what you found.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+State the problem and your contribution. Cite prior work like
+this~\cite{knuth1984}, and point ahead to Section~\ref{sec:method}.
+
+\section{Method}
+\label{sec:method}
+Number the equations you refer to:
+\begin{equation}
+  \label{eq:energy}
+  E = m c^2 .
+\end{equation}
+Equation~\eqref{eq:energy} is then easy to point back to.
+
+\section{Results}
+Table~\ref{tab:results} and Figure~\ref{fig:sketch} summarise the outcome.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lrr}
+    \toprule
+    Method   & Accuracy & Time (s) \\
+    \midrule
+    Baseline & 0.81     & 12.0     \\
+    Ours     & 0.93     & 9.5      \\
+    \bottomrule
+  \end{tabular}
+  \caption{Replace these numbers with yours.}
+  \label{tab:results}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}
+    \draw[->] (0,0) -- (4,0) node[right] {$x$};
+    \draw[->] (0,0) -- (0,2.5) node[above] {$y$};
+    \draw[thick, blue] (0,0.2) .. controls (1.5,2.4) and (2.5,0.4) .. (4,2);
+  \end{tikzpicture}
+  \caption{A figure drawn in TikZ; use \texttt{\textbackslash includegraphics} for images.}
+  \label{fig:sketch}
+\end{figure}
+
+\section{Conclusion}
+Say what the reader should remember.
+
+\printbibliography
+\end{document}

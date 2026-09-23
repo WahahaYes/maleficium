@@ -1,0 +1,7 @@
+{
+  "id": "assignment",
+  "name": "Assignment",
+  "description": "Homework or problem sets: a header with course and due date, numbered problems and solutions.",
+  "category": "Coursework",
+  "main": "main.tex"
+}

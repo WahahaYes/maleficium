@@ -1,0 +1,7 @@
+{
+  "id": "beamer",
+  "name": "Presentation",
+  "description": "Beamer slides: title page, outline, bullet points revealed step by step, two columns and a block.",
+  "category": "Presentations",
+  "main": "main.tex"
+}

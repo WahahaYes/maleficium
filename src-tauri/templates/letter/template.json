@@ -1,0 +1,7 @@
+{
+  "id": "letter",
+  "name": "Letter",
+  "description": "A formal letter with sender and recipient addresses, opening, closing and enclosures.",
+  "category": "Correspondence",
+  "main": "main.tex"
+}

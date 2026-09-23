@@ -1,0 +1,7 @@
+{
+  "id": "cv",
+  "name": "Curriculum Vitae",
+  "description": "An academic or long-form CV in moderncv: education, experience, publications, skills and languages.",
+  "category": "Career",
+  "main": "main.tex"
+}

@@ -1,0 +1,64 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.6in]{geometry}
+\usepackage{fontspec}
+% Fonts by file name come from the TeX bundle, so the resume looks the same
+% on every machine.
+\setmainfont{texgyreheros-regular.otf}[
+  BoldFont = texgyreheros-bold.otf,
+  ItalicFont = texgyreheros-italic.otf,
+  BoldItalicFont = texgyreheros-bolditalic.otf]
+\usepackage{fontawesome5}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{accent}{HTML}{1F4E79}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0pt}{}[\vspace{-0.6ex}\color{accent}\rule{\linewidth}{0.6pt}]
+\titlespacing*{\section}{0pt}{1.4ex}{0.8ex}
+\setlist[itemize]{leftmargin=1.2em, itemsep=0.2ex, topsep=0.3ex, after=\vspace{0.8ex}}
+
+% \role{Title}{Organisation}{Place}{Dates}
+\newcommand{\role}[4]{\textbf{#1} \hfill #4 \\ \textit{#2} \hfill \textit{#3}}
+
+\begin{document}
+
+\begin{center}
+  {\Huge\bfseries First Last} \\[0.6ex]
+  {\large Role you want} \\[1ex]
+  \faEnvelope\ \href{mailto:first.last@example.org}{first.last@example.org} \quad
+  \faPhone\ +1 555 123 4567 \quad
+  \faMapMarker*\ City, Country \quad
+  \faGithub\ \href{https://github.com/example}{github.com/example} \quad
+  \faLinkedin\ \href{https://linkedin.com/in/example}{in/example}
+\end{center}
+
+\section{Experience}
+\role{Senior Engineer}{Company Name}{City}{2022 -- Present}
+\begin{itemize}
+  \item Led a change that did something measurable, e.g.\ cut build time by 40\%.
+  \item Owned a system end to end; name the scale (users, requests, data).
+\end{itemize}
+
+\role{Engineer}{Earlier Company}{City}{2019 -- 2022}
+\begin{itemize}
+  \item Start each line with a verb and end it with a result.
+  \item Keep it to one or two lines.
+\end{itemize}
+
+\section{Projects}
+\textbf{Project Name} \textperiodcentered\ \textit{Python, Rust} \hfill \href{https://example.org}{example.org}
+\begin{itemize}
+  \item What it does, and why anyone uses it.
+\end{itemize}
+
+\section{Education}
+\role{BSc in Computer Science}{University Name}{City}{2015 -- 2019}
+
+\section{Skills}
+\textbf{Languages:} Python, Rust, TypeScript, SQL \\
+\textbf{Tools:} Git, Docker, Linux, \LaTeX
+
+\end{document}

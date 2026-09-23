@@ -1,0 +1,7 @@
+{
+  "id": "article",
+  "name": "Article",
+  "description": "A short paper: title, abstract, sections, an equation, a table, a drawn figure and a bibliography.",
+  "category": "Papers",
+  "main": "main.tex"
+}

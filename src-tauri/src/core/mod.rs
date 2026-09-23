@@ -14,6 +14,7 @@ pub mod replace;
 pub mod search;
 pub mod structure;
 pub mod synctex;
+pub mod templates;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{

@@ -1,0 +1,7 @@
+{
+  "id": "book",
+  "name": "Book",
+  "description": "A book with front matter, parts and chapters, and back matter; each chapter in its own file.",
+  "category": "Long documents",
+  "main": "main.tex"
+}

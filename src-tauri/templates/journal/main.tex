@@ -1,0 +1,47 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{cite}
+
+\begin{document}
+
+\title{Title of the Paper}
+\author{First~Author,~\IEEEmembership{Member,~IEEE,}
+        and~Second~Author%
+\thanks{Manuscript received on a date to be filled in.}}
+
+\markboth{Journal Name,~Vol.~1, No.~1, Month~Year}%
+{Author \MakeLowercase{\textit{et al.}}: Short Title}
+
+\maketitle
+
+\begin{abstract}
+The abstract states the problem, the method, the main result and why it
+matters, in one paragraph.
+\end{abstract}
+
+\begin{IEEEkeywords}
+First keyword, second keyword, third keyword.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\IEEEPARstart{T}{his} template follows IEEE journal conventions. Cite work
+with numbered references~\cite{knuth1984, lamport1994}.
+
+\section{Method}
+\begin{equation}
+  y = W x + b
+  \label{eq:model}
+\end{equation}
+Equation~\eqref{eq:model} is the model.
+
+\section{Results}
+Report what you measured.
+
+\section{Conclusion}
+Summarise the contribution.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
