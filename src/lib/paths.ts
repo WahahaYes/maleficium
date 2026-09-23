@@ -1,6 +1,6 @@
 // paths.ts — app-local homes for state that must never litter the project dir.
 //
-// Trash, history, and the main-file association cache root live outside the
+// Trash, the event log, and the main-file association cache root live outside the
 // user's folder; compile outputs are the backend's. App-local paths are the only paths: no in-project
 // fallbacks.
 //
@@ -29,19 +29,6 @@ export function joinPath(...parts: string[]): string {
  */
 export function appTrashDir(appDataDir: string, root: string): string {
   return joinPath(appDataDir, 'maleficium-trash', hashRoot(root));
-}
-
-/**
- * App-local history home for one project id. Holds the revision index and
- * the content-addressed blob tree. Nothing is written to the project dir.
- */
-export function appHistoryDir(appDataDir: string, projectId: string): string {
-  return joinPath(appDataDir, 'maleficium-history', projectId);
-}
-
-/** Blob path for one content hash: two-char fan-out under the history home. */
-export function historyBlobPath(historyDir: string, hash: string): string {
-  return joinPath(historyDir, 'blobs', hash.slice(0, 2), hash);
 }
 
 /**
