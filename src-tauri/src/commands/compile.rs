@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use maleficium_events::{CompileFailure, CompileLine, CompileReport, CompileStream};
+use maleficium_events::{
+    CompileFailure, CompileLine, CompileReport, CompileStream, OfflineReadiness,
+};
 
 use crate::core::{self, engine};
 
@@ -19,6 +21,7 @@ pub fn compile_tex(
     state: State<'_, CompileState>,
     root_id: String,
     main_rel: String,
+    networked: Option<bool>,
 ) -> Result<CompileReport, String> {
     // The main file resolves inside the session root; the engine runs in its
     // directory and writes to the app-cache outdir derived from it.
@@ -45,6 +48,7 @@ pub fn compile_tex(
         &state.0,
         COMPILE_TIMEOUT_SECS,
         engine::online(),
+        networked.unwrap_or(false),
         &mut on_line,
     ) {
         Ok(c) => c,
@@ -57,7 +61,7 @@ pub fn compile_tex(
             })
         }
     };
-    core::write_engine_log(&core::log_file(&out.outdir, &out.main_file), &c.texts());
+    core::compile::settle(&root_id, &main_rel, &out, &c);
     let failed = |failure, message| CompileReport {
         pdf_url: None,
         failure: Some(failure),
@@ -99,6 +103,11 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
         }
         None => Err(String::from("nothing to cancel")),
     }
+}
+
+#[tauri::command]
+pub fn offline_readiness(root_id: String) -> Result<OfflineReadiness, String> {
+    core::compile::offline_readiness(&root_id)
 }
 
 #[tauri::command]

@@ -16,7 +16,8 @@ mod text;
 
 pub use diagnostics::{diagnostics, Diagnostic, Severity};
 pub use engine::{
-    line_signal, missing_dependency, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+    external_needs, line_signal, missing_dependency, ExternalNeeds, FetchOutcome, LineSignal,
+    MissingDependency, MissingReason,
 };
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
 pub use symbols::{bib_keys, symbols, InputAt, KeyAt, Symbols};

@@ -43,6 +43,8 @@ export DEVROOT
 # output shards: keep it in OS tmp, reused across runs so only the first run
 # pays the cold bundle download.
 export XDG_CACHE_HOME="${DRIVER_CACHE:-${TMPDIR:-/tmp}/maleficium-driver-cache-$(id -u)}"
+# App data (trash, readiness records) is per run: the scratch dir holds it.
+export XDG_DATA_HOME="$SCRATCH/data"
 ENGINE_RS="$DEVROOT/src-tauri/src/core/engine.rs"
 BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' "$ENGINE_RS")"
 [ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
@@ -336,10 +338,14 @@ else:
     check("offline session grants the project", granted)
     r = compile_doc("main.tex")
     check("true-offline recompile succeeds from the cache", r.get("status") == "success" and bool(r.get("pdf_url")), str(r)[:300])
+    rd = tool("offline_readiness", {"root_id": "off"})
+    check("an offline recompile makes the project ready offline", rd.get("state") == "ready" and rd.get("needs") == [], str(rd))
     r = compile_doc("pkg.tex")
     check("offline: an uncached bundle package is not-cached", r.get("status") == "failed" and r.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(r.get("missing")) + " " + str(r.get("log"))[:200])
     d = tool("diagnostics", {"root_id": "off", "main_rel": "pkg.tex"})
     check("diagnostics report the missing dependency", d.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(d)[:300])
+    rd = tool("offline_readiness", {"root_id": "off"})
+    check("readiness names what needs network", rd.get("state") == "needs-network" and rd.get("needs") == [pick + ".sty"], str(rd))
     r = compile_doc("nib.tex")
     check("offline: a package outside the bundle is not-in-bundle", r.get("status") == "failed" and r.get("missing") == {"file": "nonexistentpkgxyz.sty", "reason": "not-in-bundle"}, str(r.get("missing")))
     q.kill()
@@ -351,6 +357,19 @@ else:
     r = compile_doc("pkg.tex")
     lines = r.get("lines") or []
     check("online: a cache miss is fetched by one online rerun", r.get("status") == "success" and "note: using only cached resource files" in lines and ("note: downloading " + pick + ".sty") in lines, str(r)[:300])
+    rd = tool("offline_readiness", {"root_id": "off"})
+    check("an online success leaves readiness unverified", rd.get("state") == "unverified", str(rd))
+    j = tool("compile_run", {"root_id": "off", "rel": "pkg.tex", "networked": True}).get("job_id") or ""
+    r = {"status": "running"}
+    for _ in range(60):
+        time.sleep(1)
+        r = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+        if r.get("status") != "running":
+            break
+    lines = r.get("lines") or []
+    check("make available offline: one networked compile, then a cached-only proof", r.get("status") == "success" and lines.index("verifying offline: compiling from cached files only") < max(i for i, l in enumerate(lines) if l == "note: using only cached resource files"), str(lines[:4]))
+    rd = tool("offline_readiness", {"root_id": "off"})
+    check("make available offline leaves the project ready offline", rd.get("state") == "ready", str(rd))
     q.kill()
 
     q, tool, compile_doc, granted = session(env, offline=True)

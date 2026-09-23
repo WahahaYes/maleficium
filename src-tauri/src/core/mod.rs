@@ -6,6 +6,7 @@ pub mod compile;
 pub mod engine;
 pub mod fs;
 pub mod outputs;
+pub mod readiness;
 pub mod structure;
 pub mod synctex;
 
@@ -93,9 +94,14 @@ pub fn out_base_dir() -> PathBuf {
     xdg_app_dir("XDG_CACHE_HOME", ".cache")
 }
 
+/// The OS app-data dir: state the app keeps about projects.
+pub fn data_base_dir() -> PathBuf {
+    xdg_app_dir("XDG_DATA_HOME", ".local/share")
+}
+
 /// Scratch project for untitled documents: under the OS app-data dir.
 pub fn untitled_dir() -> PathBuf {
-    xdg_app_dir("XDG_DATA_HOME", ".local/share").join("maleficium-untitled")
+    data_base_dir().join("maleficium-untitled")
 }
 
 /// Triple suffix of the bundled `<name>-<triple>` binaries for this host;

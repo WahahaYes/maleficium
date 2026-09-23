@@ -169,6 +169,36 @@ pub struct CompileReport {
     pub message: String,
 }
 
+/// Whether a project compiles without network, as far as its last compiles
+/// and this machine show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum OfflineState {
+    /// The last compile succeeded from the cache alone against the pinned
+    /// bundle, and every tool and system file it used is present.
+    Ready,
+    /// A fetch would fix it: `needs` names the files.
+    NeedsNetwork,
+    /// A program the document runs is not installed.
+    NeedsTool,
+    /// A system font the document uses is not installed.
+    NeedsFont,
+    /// Neither network nor installs fix it (outside the bundle, needs
+    /// shell escape, bad bundle).
+    Blocked,
+    /// No compile has shown it yet, or the pinned bundle changed.
+    Unverified,
+}
+
+/// A project's offline readiness: the state, what it needs (files, tools,
+/// fonts, as names), and the dependency its last compile lacked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+pub struct OfflineReadiness {
+    pub state: OfflineState,
+    pub needs: Vec<String>,
+    pub missing: Option<MissingDependency>,
+}
+
 /// Every fact the app reports, tagged by `action`. Paths are as the
 /// emitting surface holds them; `compile.problem` is root-relative.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -306,6 +336,15 @@ pub enum AppEvent {
         file: Option<String>,
         reason: MissingReason,
     },
+    #[serde(rename = "offline.readiness")]
+    OfflineReadiness {
+        root: String,
+        state: OfflineState,
+        needs: Vec<String>,
+    },
+    /// The readiness record could not be read: the badge shows nothing.
+    #[serde(rename = "offline.readiness-failed")]
+    OfflineReadinessFailed { root: String, error: String },
     #[serde(rename = "compile.engine-line")]
     CompileEngineLine { stream: CompileStream },
     #[serde(rename = "compile.progress")]
@@ -459,6 +498,8 @@ pub fn typescript() -> String {
         CompileStream::decl(&cfg),
         CompileLine::decl(&cfg),
         CompileReport::decl(&cfg),
+        OfflineState::decl(&cfg),
+        OfflineReadiness::decl(&cfg),
         AppEvent::decl(&cfg),
         BusEvent::decl(&cfg),
         LogLine::decl(&cfg),

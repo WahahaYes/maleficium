@@ -62,6 +62,15 @@ struct TextOut {
     text: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CompileRunParams {
+    root_id: String,
+    rel: String,
+    /// Fetch everything online first, then prove it compiles from the cache
+    /// alone (Make available offline).
+    networked: Option<bool>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CompileRunOut {
     job_id: String,
@@ -189,9 +198,9 @@ impl Maleficium {
     )]
     fn compile_run(
         &self,
-        Parameters(p): Parameters<FileParams>,
+        Parameters(p): Parameters<CompileRunParams>,
     ) -> Result<Json<CompileRunOut>, String> {
-        let job_id = core::run_job(&p.root_id, &p.rel, 120)?;
+        let job_id = core::run_job(&p.root_id, &p.rel, p.networked.unwrap_or(false), 120)?;
         Ok(Json(CompileRunOut { job_id }))
     }
 
@@ -210,6 +219,16 @@ impl Maleficium {
             lines: r.lines,
             missing: r.missing,
         }))
+    }
+
+    #[tool(
+        description = "Offline readiness of a project: ready (its last compile succeeded from cached TeX files alone, and every tool and system font it used is present), needs-network, needs-tool, needs-font, blocked or unverified, with what it needs and the dependency its last compile lacked"
+    )]
+    fn offline_readiness(
+        &self,
+        Parameters(p): Parameters<RootParams>,
+    ) -> Result<Json<maleficium_events::OfflineReadiness>, String> {
+        Ok(Json(core::compile::offline_readiness(&p.root_id)?))
     }
 
     #[tool(description = "Cancel a running compile job")]

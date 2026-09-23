@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use maleficium_structure::MissingDependency;
 
-use super::engine;
+use maleficium_events::OfflineReadiness;
+
+use super::{engine, readiness};
 
 /// How a compile job resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,9 +88,46 @@ pub fn failure_text(c: &engine::Compiled) -> String {
     format!("bundled tectonic failed: {}", &tail[..end])
 }
 
+/// Keep what one compile showed: its engine log, and what it says about
+/// the project's offline readiness. Best effort: a failed write only costs
+/// the record, never the compile result.
+pub fn settle(root_id: &str, main_rel: &str, out: &super::MainOutputs, c: &engine::Compiled) {
+    let lines = c.texts();
+    super::write_engine_log(&super::log_file(&out.outdir, &out.main_file), &lines);
+    let Ok(root) = super::fs::session_root(root_id) else {
+        return;
+    };
+    let revision = super::structure::file_graph(root_id, main_rel)
+        .ok()
+        .map(|g| g.revision);
+    let outcome = readiness::Outcome {
+        status: &c.status,
+        missing: &c.missing,
+        cached_only: c.cached_only,
+        needs: maleficium_structure::external_needs(&lines),
+        main: main_rel,
+        revision,
+    };
+    if let Some(r) = readiness::next(readiness::load(&root), outcome) {
+        let _ = readiness::store(&root, &r);
+    }
+}
+
+/// A project's offline readiness from its record, the engine cache, and
+/// this machine's tools and fonts.
+pub fn offline_readiness(root_id: &str) -> Result<OfflineReadiness, String> {
+    let root = super::fs::session_root(root_id)?;
+    Ok(readiness::assess(
+        readiness::load(&root).as_ref(),
+        &engine::check_digest(&engine::cache_dir()),
+        &readiness::on_path,
+        &|f| std::path::Path::new(f).exists(),
+    ))
+}
+
 /// Start a compile job: resolves paths, then runs the engine on a worker
 /// thread. Returns the job id immediately; poll for the record.
-pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String> {
+pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Result<String, String> {
     let abs = super::fs::resolve_in(root_id, rel)?;
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
@@ -109,57 +148,61 @@ pub fn run(root_id: &str, rel: &str, timeout_secs: u64) -> Result<String, String
     );
 
     let job_id = id.clone();
+    let (root_id, rel) = (root_id.to_string(), rel.to_string());
     std::thread::spawn(move || {
         let mut on_line = |l: &maleficium_events::CompileLine| {
             if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
                 job.lines.push(l.text.clone());
             }
         };
-        let record =
-            match engine::compile(&out, &child, timeout_secs, engine::online(), &mut on_line) {
-                Err(e) => JobRecord {
-                    status: JobStatus::Failed,
-                    pdf_url: None,
-                    log: e,
-                    lines: Vec::new(),
-                    missing: None,
-                },
-                Ok(c) => {
-                    super::write_engine_log(
-                        &super::log_file(&out.outdir, &out.main_file),
-                        &c.texts(),
-                    );
-                    // The record keeps the whole stream: every run and status line.
-                    let lines = jobs()
-                        .lock()
-                        .unwrap()
-                        .get(&job_id)
-                        .map(|j| j.lines.clone())
-                        .unwrap_or_default();
-                    let (pdf_url, log) = match c.status {
-                        JobStatus::Success => (
-                            Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
-                            String::new(),
+        let record = match engine::compile(
+            &out,
+            &child,
+            timeout_secs,
+            engine::online(),
+            networked,
+            &mut on_line,
+        ) {
+            Err(e) => JobRecord {
+                status: JobStatus::Failed,
+                pdf_url: None,
+                log: e,
+                lines: Vec::new(),
+                missing: None,
+            },
+            Ok(c) => {
+                settle(&root_id, &rel, &out, &c);
+                // The record keeps the whole stream: every run and status line.
+                let lines = jobs()
+                    .lock()
+                    .unwrap()
+                    .get(&job_id)
+                    .map(|j| j.lines.clone())
+                    .unwrap_or_default();
+                let (pdf_url, log) = match c.status {
+                    JobStatus::Success => (
+                        Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+                        String::new(),
+                    ),
+                    JobStatus::Failed => (None, failure_text(&c)),
+                    JobStatus::TimedOut => (
+                        None,
+                        format!(
+                            "compile timed out after {}s (engine produced no exit — killed)",
+                            timeout_secs
                         ),
-                        JobStatus::Failed => (None, failure_text(&c)),
-                        JobStatus::TimedOut => (
-                            None,
-                            format!(
-                                "compile timed out after {}s (engine produced no exit — killed)",
-                                timeout_secs
-                            ),
-                        ),
-                        _ => (None, String::from("compile cancelled")),
-                    };
-                    JobRecord {
-                        status: c.status,
-                        pdf_url,
-                        log,
-                        lines,
-                        missing: c.missing,
-                    }
+                    ),
+                    _ => (None, String::from("compile cancelled")),
+                };
+                JobRecord {
+                    status: c.status,
+                    pdf_url,
+                    log,
+                    lines,
+                    missing: c.missing,
                 }
-            };
+            }
+        };
         if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
             job.lines = record.lines.clone();
             if let Some(tx) = job.done_tx.take() {
@@ -257,7 +300,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dir.canonicalize().unwrap();
         super::super::fs::grant_root("job-escape", &canon.to_string_lossy()).unwrap();
-        assert!(run("job-escape", "../outside.tex", 5).is_err());
-        assert!(run("job-escape", "/etc/hostname", 5).is_err());
+        assert!(run("job-escape", "../outside.tex", false, 5).is_err());
+        assert!(run("job-escape", "/etc/hostname", false, 5).is_err());
     }
 }

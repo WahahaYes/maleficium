@@ -169,11 +169,14 @@ fn status_line(text: String) -> CompileLine {
 /// compile from the cache alone; a file the cache lacks is fetched by one
 /// online rerun when there is network, else reported `not-cached`. A file
 /// the bundle does not carry is reported `not-in-bundle` without fetching.
+/// `networked` (with network) compiles online first, then proves the result
+/// by compiling again from the cache alone.
 pub fn compile(
     out: &MainOutputs,
     slot: &Mutex<Option<Child>>,
     timeout_secs: u64,
     network: bool,
+    networked: bool,
     on_line: &mut dyn FnMut(&CompileLine),
 ) -> Result<Compiled, String> {
     let cache = cache_dir();
@@ -181,7 +184,13 @@ pub fn compile(
     std::fs::create_dir_all(&out.outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
 
     let mut mode = CacheMode::CachedOnly;
-    if check_digest(&cache) == DigestCheck::Unresolved {
+    let mut verify = networked && network;
+    if verify {
+        on_line(&status_line(String::from(
+            "making available offline: fetching everything this document needs",
+        )));
+        mode = CacheMode::Online;
+    } else if check_digest(&cache) == DigestCheck::Unresolved {
         if !network {
             on_line(&status_line(String::from(
                 "no TeX support files are cached yet and there is no network",
@@ -216,6 +225,14 @@ pub fn compile(
             missing.as_ref().map(|m| m.reason),
             Some(MissingReason::NotCached | MissingReason::CacheEmpty)
         );
+        if verify && mode == CacheMode::Online && status == JobStatus::Success {
+            on_line(&status_line(String::from(
+                "verifying offline: compiling from cached files only",
+            )));
+            verify = false;
+            mode = CacheMode::CachedOnly;
+            continue;
+        }
         if mode == CacheMode::CachedOnly && refetch && network {
             let what = missing
                 .as_ref()

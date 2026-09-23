@@ -77,6 +77,8 @@ static SHELL_ESCAPE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^error: .*Package (\S+) Error: You must invoke LaTeX with the -shell-escape flag")
         .unwrap()
 });
+static ABSOLUTE_PATH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^warning: accessing absolute path `([^`]+)`").unwrap());
 static EXTERNAL_TOOL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^note: Running external tool (\S+)").unwrap());
 
@@ -106,6 +108,31 @@ pub fn line_signal(text: &str) -> Option<LineSignal> {
         file: m[1].to_string(),
         outcome: FetchOutcome::Failed,
     })
+}
+
+/// What a run used from outside the bundle: programs it ran and files it
+/// read by absolute path (system fonts), each once, in first-use order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExternalNeeds {
+    pub tools: Vec<String>,
+    pub files: Vec<String>,
+}
+
+pub fn external_needs<S: AsRef<str>>(lines: &[S]) -> ExternalNeeds {
+    let mut needs = ExternalNeeds::default();
+    for l in console_lines(lines) {
+        let (re, list) = if l.starts_with("note:") {
+            (&*EXTERNAL_TOOL, &mut needs.tools)
+        } else {
+            (&*ABSOLUTE_PATH, &mut needs.files)
+        };
+        if let Some(m) = re.captures(l) {
+            if !list.iter().any(|x| x == &m[1]) {
+                list.push(m[1].to_string());
+            }
+        }
+    }
+    needs
 }
 
 /// The engine's own lines: everything but the TeX transcript it embeds
@@ -399,6 +426,28 @@ error: the XeTeX engine had an unrecoverable error";
         let retried = "warning: failure fetching \"x.sty\" from network (1/3)
 caused by: failed to download \"x.sty\"; please check your network connection.";
         assert_eq!(verdict(retried, true), None);
+    }
+
+    #[test]
+    fn external_needs_list_tools_and_absolute_files_once() {
+        let c = "note: Running TeX ...
+warning: accessing absolute path `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`; build may not be reproducible in other environments
+note: Running external tool biber ...
+warning: accessing absolute path `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`; build may not be reproducible in other environments
+note: Running external tool biber ...
+note: Running xdvipdfmx ...";
+        let lines: Vec<&str> = c.lines().collect();
+        assert_eq!(
+            external_needs(&lines),
+            ExternalNeeds {
+                tools: vec!["biber".into()],
+                files: vec!["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf".into()],
+            }
+        );
+        assert_eq!(
+            external_needs(&["note: Running TeX ..."]),
+            ExternalNeeds::default()
+        );
     }
 
     #[test]
