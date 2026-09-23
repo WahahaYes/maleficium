@@ -1,5 +1,6 @@
 import { dialog, fs } from './fs-provider';
 import { joinPath } from './paths';
+import { TEXT_EXTENSIONS } from './generated/structure';
 
 export type TreeEntry = {
   name: string;
@@ -16,44 +17,13 @@ const PDF_EXT = new Set(['.pdf']);
 export type PreviewKind = 'text' | 'image' | 'video' | 'pdf' | 'binary';
 
 /** Extensions that open as editable text (everything else previews). */
-const TEXT_EXT = new Set([
-  '.tex',
-  '.bib',
-  '.sty',
-  '.cls',
-  '.md',
-  '.markdown',
-  '.txt',
-  '.log',
-  '.aux',
-  '.toc',
-  '.lof',
-  '.lot',
-  '.out',
-  '.fls',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.toml',
-  '.xml',
-  '.html',
-  '.htm',
-  '.css',
-  '.js',
-  '.ts',
-  '.tsx',
-  '.jsx',
-  '.py',
-  '.sh',
-  '.csv',
-  '.r',
-  '.jl',
-]);
+const TEXT_EXT = new Set(TEXT_EXTENSIONS);
 
 /** Classify a path for the editor-vs-preview decision (extension only, cheap). */
 export function extOf(path: string): string {
-  const dot = path.lastIndexOf('.');
-  return dot >= 0 ? path.slice(dot).toLowerCase() : '';
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot).toLowerCase() : '';
 }
 
 /** MIME type for object-URL previews. Single ext→mime table. */

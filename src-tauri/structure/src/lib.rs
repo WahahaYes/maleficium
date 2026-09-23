@@ -12,6 +12,7 @@
 mod checks;
 mod diagnostics;
 mod engine;
+mod files;
 mod outline;
 mod symbols;
 mod text;
@@ -22,6 +23,7 @@ pub use engine::{
     external_needs, line_signal, missing_dependency, CompilePhase, ExternalNeeds, FetchOutcome,
     LineSignal, MissingDependency, MissingReason,
 };
+pub use files::{ext_of, is_text_path, TEXT_EXTENSIONS};
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
 pub use symbols::{bib_keys, symbols, InputAt, KeyAt, PackageAt, Symbols};
 
@@ -54,6 +56,11 @@ pub fn typescript() -> String {
         out.push_str(&d);
         out.push('\n');
     }
+    out.push_str("\n/** Extensions (lowercase, with the dot) of files that open as text. */\nexport const TEXT_EXTENSIONS: readonly string[] = [\n");
+    for e in TEXT_EXTENSIONS {
+        out.push_str(&format!("  '{}',\n", e));
+    }
+    out.push_str("];\n");
     out
 }
 
