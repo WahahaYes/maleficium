@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeMissing, offlineBadge } from './compile';
+import { describeFinding, describeMissing, offlineBadge } from './compile';
 import type { MissingReason } from './generated/structure';
 
 const REASONS: MissingReason[] = [
@@ -62,5 +62,27 @@ describe('offlineBadge', () => {
   it('tones blocked as an error and unverified as neutral', () => {
     expect(offlineBadge({ state: 'blocked', needs: ['x.sty'], missing: null }).tone).toBe('error');
     expect(offlineBadge({ state: 'unverified', needs: [], missing: null }).tone).toBe('neutral');
+  });
+});
+
+describe('describeFinding', () => {
+  it('names the dependency and where the document asks for it', () => {
+    expect(
+      describeFinding({ kind: 'not-in-bundle', name: 'nopkga.sty', path: 'main.tex', line: 2 }),
+    ).toBe('nopkga.sty is in neither the TeX bundle nor the project (main.tex:2)');
+    const biber = describeFinding({
+      kind: 'external-tool',
+      name: 'biber',
+      path: 'main.tex',
+      line: 3,
+      suggestion: '\\usepackage[backend=bibtex]{biblatex} compiles from the bundle alone',
+    });
+    expect(biber).toContain('backend=bibtex');
+    expect(
+      describeFinding({ kind: 'shell-escape', name: 'minted', path: 'a.tex', line: 1 }),
+    ).toContain('shell escape');
+    expect(
+      describeFinding({ kind: 'system-font', name: 'Nope', path: 'a.tex', line: 4 }),
+    ).toContain('"Nope"');
   });
 });

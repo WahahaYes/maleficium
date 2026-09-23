@@ -11,8 +11,10 @@ import { markSaved, type BufferState } from '../lib/buffers';
 import {
   cancelCompile,
   compileTex,
+  describeFinding,
   describeMissing,
   engineLog,
+  precompileChecks,
   offlineBadge,
   offlineReadiness,
   type OfflineBadge,
@@ -363,6 +365,33 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     // The backend compiles by session root: a target outside every granted
     // root fails here, never reaching the engine.
     const src = sourceFor(activeTarget, sessionRoots(opts?.root));
+    // Pre-compile checks list every dependency problem at once; the compile
+    // itself stops at the first. They inform, never block.
+    if (src) {
+      try {
+        for (const f of await precompileChecks(src.rootId, src.mainRel)) {
+          emit({
+            scope: 'compile',
+            kind: 'warn',
+            actor,
+            message: describeFinding(f),
+            event: { action: 'compile.precheck', target: activeTarget, ...f },
+          });
+        }
+      } catch (e) {
+        emit({
+          scope: 'compile',
+          kind: 'warn',
+          actor,
+          message: 'pre-compile checks unavailable: ' + String(e).slice(0, 200),
+          event: {
+            action: 'compile.precheck-failed',
+            target: activeTarget,
+            error: String(e).slice(0, 200),
+          },
+        });
+      }
+    }
     const r: CompileResult = src
       ? await compileTex(src.rootId, src.mainRel, opts?.networked === true)
       : {

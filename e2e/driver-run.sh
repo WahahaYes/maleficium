@@ -273,6 +273,25 @@ fdd = fd.get("diagnostics") or []
 check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
 
+# ---- pre-compile checks: every missing dependency at once ----
+with open(ROOT + "/three.tex", "w") as f:
+    f.write("\\documentclass{article}\n\\usepackage{amsmath,nopkga}\n\\usepackage{nopkgb}\n\\usepackage[style=alpha]{biblatex}\n\\RequirePackage{nopkgc}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n")
+pc = call("precompile_checks", {"root_id": "drv", "main_rel": "three.tex"})
+found = [(f["kind"], f["name"], f["line"]) for f in pc.get("findings") or []]
+check("pre-compile checks ran against the bundle index", pc["ok"] and pc.get("bundleChecked") is True, str(pc)[:200])
+check("a doc with 3 missing packages lists all 3 before compiling", [x for x in found if x[0] == "not-in-bundle"] == [("not-in-bundle", "nopkga.sty", 2), ("not-in-bundle", "nopkgb.sty", 3), ("not-in-bundle", "nopkgc.sty", 5)], str(found))
+check("pre-compile checks flag biber and shell escape", ("external-tool", "biber", 4) in found and ("shell-escape", "minted", 6) in found, str(found))
+tr = call("compile_run", {"root_id": "drv", "rel": "three.tex"})
+tj = tr.get("job_id") or ""
+ts = {"status": "running"}
+for _ in range(30):
+    time.sleep(2)
+    ts = call("compile_poll", {"job_id": tj, "tail_lines": 5})
+    if ts.get("status") != "running":
+        break
+check("the compile itself stops at the first of them", ts.get("missing") == {"file": "nopkga.sty", "reason": "not-in-bundle"}, str(ts.get("missing")))
+_os.remove(ROOT + "/three.tex")
+
 # ---- offline-first: -C first, typed missing dependencies, true offline ----
 first_lines = sc.get("lines") or []
 if os.environ["COLD_ROUNDS"] == "30":

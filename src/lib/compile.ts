@@ -6,7 +6,7 @@ import type {
   CompileReport,
   OfflineReadiness,
 } from './generated/events';
-import type { MissingDependency } from './generated/structure';
+import type { Finding, MissingDependency } from './generated/structure';
 
 /**
  * Compile backend contract, addressed by session root and the main file's
@@ -168,5 +168,33 @@ export function offlineBadge(r: OfflineReadiness): OfflineBadge {
         title: 'Compile, or use Tools → Make Available Offline, to check this project offline',
         tone: 'neutral',
       };
+  }
+}
+
+/**
+ * Dependency findings over the saved document, before compiling: every
+ * package the bundle and project lack (all at once), biber, shell escape,
+ * missing fonts. Rejects when the checks cannot run.
+ */
+export async function precompileChecks(rootId: string, mainRel: string): Promise<Finding[]> {
+  const r = await invoke<{ findings: Finding[] }>('precompile_checks', { rootId, mainRel });
+  return r.findings;
+}
+
+/** One sentence for a pre-compile finding, with where the document asks. */
+export function describeFinding(f: Finding): string {
+  const at = `${f.path}:${f.line}`;
+  switch (f.kind) {
+    case 'not-in-bundle':
+      return `${f.name} is in neither the TeX bundle nor the project (${at})`;
+    case 'external-tool':
+      return (
+        `${at} needs ${f.name}, a program outside the TeX bundle` +
+        (f.suggestion ? `: ${f.suggestion}` : '')
+      );
+    case 'shell-escape':
+      return `${f.name} needs shell escape, which compiles never enable (${at})`;
+    case 'system-font':
+      return `font "${f.name}" is not installed on this machine (${at})`;
   }
 }

@@ -402,6 +402,80 @@ pub fn citations(root_id: &str, main_rel: &str) -> Result<Citations, String> {
     })
 }
 
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Precheck {
+    pub source: String,
+    pub revision: String,
+    pub main: String,
+    pub findings: Vec<ms::Finding>,
+    /// Packages were checked against the cached bundle index (false until
+    /// the first compile has cached it).
+    pub bundle_checked: bool,
+    /// Fonts were checked against this machine's font database.
+    pub fonts_checked: bool,
+}
+
+/// Installed font families, lowercased, from fontconfig; `None` where
+/// fontconfig is absent.
+fn font_families() -> Option<HashSet<String>> {
+    let out = std::process::Command::new("fc-list")
+        .args([":", "family"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .flat_map(|l| l.split(','))
+            .map(|f| f.trim().to_lowercase())
+            .filter(|f| !f.is_empty())
+            .collect(),
+    )
+}
+
+/// Dependency checks over the whole document before compiling: every
+/// package or class neither the project nor the bundle provides, biblatex
+/// needing biber, shell escape, and fontspec fonts this machine lacks.
+pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, String> {
+    let root = super::fs::session_root(root_id)?;
+    let doc = Document::load(root_id, main_rel)?;
+    let symbols: Vec<(String, ms::Symbols)> = doc
+        .texts()
+        .map(|(rel, t)| (rel.to_string(), ms::symbols(t)))
+        .collect();
+    let files: Vec<(String, &ms::Symbols)> = symbols.iter().map(|(r, s)| (r.clone(), s)).collect();
+    let bundle = super::engine::bundle_files(&super::engine::cache_dir());
+    let in_bundle = |f: &str| bundle.as_ref().is_some_and(|b| b.contains(f));
+    let main_dir = root.join(&doc.main_dir);
+    let in_project = |f: &str| !f.contains('/') && main_dir.join(f).is_file();
+    let wants_fonts = symbols.iter().any(|(_, s)| !s.fonts.is_empty());
+    let families = if wants_fonts { font_families() } else { None };
+    let font_installed = |f: &str| {
+        families
+            .as_ref()
+            .is_some_and(|fs| fs.contains(&f.to_lowercase()))
+    };
+    let env = ms::CheckEnv {
+        in_bundle: bundle
+            .is_some()
+            .then_some(&in_bundle as &dyn Fn(&str) -> bool),
+        in_project: &in_project,
+        font_installed: families
+            .is_some()
+            .then_some(&font_installed as &dyn Fn(&str) -> bool),
+    };
+    let findings = ms::precompile_checks(&files, &env);
+    Ok(Precheck {
+        source: SOURCE.into(),
+        revision: doc.revision(&[]),
+        main: doc.main.clone(),
+        findings,
+        bundle_checked: bundle.is_some(),
+        fonts_checked: !wants_fonts || families.is_some(),
+    })
+}
+
 /// Structured diagnostics from the last compile's engine log.
 pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnostics, String> {
     let root = super::fs::session_root(root_id)?;

@@ -5,7 +5,7 @@ use maleficium_events::{
     CompileFailure, CompileLine, CompileReport, CompileStream, OfflineReadiness,
 };
 
-use crate::core::{self, engine};
+use crate::core::{self, engine, structure::Precheck};
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
 
@@ -105,6 +105,12 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
         }
         None => Err(String::from("nothing to cancel")),
     }
+}
+
+/// Dependency checks over the saved document from `main_rel`, before compiling.
+#[tauri::command]
+pub fn precompile_checks(root_id: String, main_rel: String) -> Result<Precheck, String> {
+    core::structure::precompile_checks(&root_id, &main_rel)
 }
 
 #[tauri::command]

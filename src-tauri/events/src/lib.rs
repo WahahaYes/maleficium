@@ -6,7 +6,7 @@
 //! fs, no process, no Tauri.
 
 use maleficium_structure::{
-    CompilePhase, Diagnostic, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+    CompilePhase, Diagnostic, FetchOutcome, Finding, LineSignal, MissingDependency, MissingReason,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::{Config, TS};
@@ -326,6 +326,16 @@ pub enum AppEvent {
         target: Option<String>,
         error: String,
     },
+    /// A dependency problem found before compiling; `path` is root-relative.
+    #[serde(rename = "compile.precheck")]
+    CompilePrecheck {
+        target: String,
+        #[serde(flatten)]
+        finding: Finding,
+    },
+    /// The pre-compile checks could not run; the compile goes ahead.
+    #[serde(rename = "compile.precheck-failed")]
+    CompilePrecheckFailed { target: String, error: String },
     /// The engine entered a phase of the run.
     #[serde(rename = "compile.phase")]
     CompilePhase {
@@ -516,7 +526,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/events (maleficium-events). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type {\n  CompilePhase,\n  FetchOutcome,\n  LineSignal,\n  MissingDependency,\n  MissingReason,\n  Severity,\n} from './structure';\n",
+         import type {\n  CheckKind,\n  CompilePhase,\n  FetchOutcome,\n  LineSignal,\n  MissingDependency,\n  MissingReason,\n  Severity,\n} from './structure';\n",
     );
     for d in decls {
         out.push_str("\nexport ");

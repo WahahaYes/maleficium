@@ -333,6 +333,19 @@ impl Maleficium {
     }
 
     #[tool(
+        description = "Dependency checks over the whole document from main_rel, before compiling: every package or class neither the project nor the TeX bundle provides (all at once), biblatex needing biber (suggests backend=bibtex), shell-escape packages and \\write18, and fontspec fonts not installed. bundleChecked is false until a first compile has cached the bundle index."
+    )]
+    fn precompile_checks(
+        &self,
+        Parameters(p): Parameters<MainParams>,
+    ) -> Result<Json<core::structure::Precheck>, String> {
+        Ok(Json(core::structure::precompile_checks(
+            &p.root_id,
+            &p.main_rel,
+        )?))
+    }
+
+    #[tool(
         description = "Structured diagnostics from main_rel's last compile log: root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100)."
     )]
     fn diagnostics(
