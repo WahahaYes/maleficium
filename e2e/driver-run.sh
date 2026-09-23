@@ -48,6 +48,10 @@ BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/
 [ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
 export ENGINE_CACHE="$XDG_CACHE_HOME/com.ethan.tauri-app/maleficium-tectonic/$BUNDLE_DIGEST"
 export BUNDLE_DIGEST
+# A cold cache means the first compile downloads the bundle's support files
+# (minutes, not seconds): give that compile a longer poll budget.
+if [ -f "$ENGINE_CACHE/bundles/data/$BUNDLE_DIGEST.index" ]; then COLD_ROUNDS=30; else COLD_ROUNDS=90; fi
+export COLD_ROUNDS
 
 # Heavy fixtures are generated megabytes: they live only in OS tmp (RULES §4)
 # and are rebuilt from src/test/fixtures.ts whenever they are absent.
@@ -142,7 +146,7 @@ BIN = os.environ["MCP_BIN"]
 ROOT = os.environ["MCP_ROOT"]
 LOG = os.environ["DRIVER_LOG"]
 WARM_ONLY = os.environ.get("WARM_ONLY") == "1"
-ROUNDS = int(os.environ.get("POLL_ROUNDS", "30"))
+ROUNDS = int(os.environ.get("POLL_ROUNDS", os.environ["COLD_ROUNDS"]))
 fails = []
 logf = open(LOG, "w")
 def check(name, cond, detail="", ms=None):
@@ -269,7 +273,10 @@ _os.remove(ROOT + "/fail.tex")
 
 # ---- offline-first: -C first, typed missing dependencies, true offline ----
 first_lines = sc.get("lines") or []
-check("warm compile runs from the cache first", "note: using only cached resource files" in first_lines, str(first_lines[:3]))
+if os.environ["COLD_ROUNDS"] == "30":
+    check("warm compile runs from the cache first", "note: using only cached resource files" in first_lines, str(first_lines[:3]))
+else:
+    check("cold compile resolves the bundle online first", first_lines[:1] == ["first compile: downloading TeX support files"] and "note: using only cached resource files" not in first_lines and any(l.startswith("note: downloading ") for l in first_lines), str(first_lines[:3]))
 
 def session(env, offline):
     # A second sidecar with its own cache home; offline ones run in a fresh
