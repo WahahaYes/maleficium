@@ -145,14 +145,6 @@ pub fn undo(root_id: &str, batch: &str) -> Result<Vec<BatchFile>, String> {
     Ok(done)
 }
 
-/// Plans held per root (for tests and diagnostics).
-pub fn held_count(root_id: &str) -> usize {
-    plans()
-        .lock()
-        .map(|p| p.iter().filter(|(_, h)| h.root_id == root_id).count())
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +164,13 @@ mod tests {
         let id = format!("rp-{}", name);
         super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
+    }
+
+    fn held_count(root_id: &str) -> usize {
+        plans()
+            .lock()
+            .map(|p| p.iter().filter(|(_, h)| h.root_id == root_id).count())
+            .unwrap_or(0)
     }
 
     fn q(p: &str) -> Query {
