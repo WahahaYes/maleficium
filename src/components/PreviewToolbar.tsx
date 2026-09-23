@@ -1,6 +1,7 @@
 // PreviewToolbar.tsx — toolbar pager (prev/jump/total/next + sync) and zoom.
 //
-// Constant height. Pager jumps drive the preview target; the preview scrolls
+// Wraps onto a second row in a narrow pane rather than clipping controls.
+// Pager jumps drive the preview target; the preview scrolls
 // after the target bitmap lands (never onto blank shells).
 
 import Toolbar from '@mui/material/Toolbar';
@@ -54,7 +55,11 @@ export default function PreviewToolbar({
     if (Number.isFinite(n)) onPage(Math.min(totalPages, Math.max(1, n)));
   };
   return (
-    <Toolbar disableGutters variant="dense" sx={{ gap: 1, minHeight: 40 }}>
+    <Toolbar
+      disableGutters
+      variant="dense"
+      sx={{ gap: 1, rowGap: 0.5, minHeight: 40, flexWrap: 'wrap', py: 0.5 }}
+    >
       <ButtonGroup size="small">
         <Button
           aria-label="Previous page"
