@@ -31,6 +31,7 @@ rmcp = { version = "3.4.0", features = ["server", "transport-io"] }
 tokio = { version = "1.53.1", features = ["full"] }
 schemars = "1.2.2"
 anyhow = "1.0.104"
+sha2 = "0.10.9"
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 

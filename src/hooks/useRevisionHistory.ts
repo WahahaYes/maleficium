@@ -5,11 +5,10 @@
 // disk and the store keeps the replaced state as a revision of its own, so
 // the list is always the way back.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { RefObject } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { emit } from '../lib/events';
 import { revisionRecordData, revisionRestoreData } from '../lib/eventlog';
-import { createHistoryStore } from '../lib/history';
+import { historyStore } from '../lib/history';
 import {
   buildRevisionRows,
   historyAvailability,
@@ -23,8 +22,6 @@ import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseRevisionHistoryDeps {
   root: string | null;
-  rootRef: RefObject<string | null>;
-  projectIdRef: RefObject<string | null>;
   projectId: string | null;
   relInProject: (abs: string) => string | null;
   fileName: string;
@@ -38,8 +35,6 @@ export interface UseRevisionHistoryDeps {
 export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
   const {
     root,
-    rootRef,
-    projectIdRef,
     projectId,
     relInProject,
     fileName,
@@ -57,13 +52,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
   const [historySummary, setHistorySummary] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [restoringRev, setRestoringRev] = useState<string | null>(null);
-  const history = useMemo(
-    () =>
-      createHistoryStore((id) => {
-        return id === projectIdRef.current ? rootRef.current : null;
-      }),
-    [rootRef, projectIdRef],
-  );
+  const history = historyStore();
   const refreshRevisionCount = useCallback(
     async (path: string): Promise<number> => {
       const rel = relInProject(path);
@@ -82,7 +71,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
     async (path: string, text: string) => {
       const rel = relInProject(path);
       if (!projectId || !rel) return;
-      const outcome = await history.recordRevision(projectId, rel, new TextEncoder().encode(text));
+      const outcome = await history.recordRevision(projectId, rel, text);
       const revisions = await refreshRevisionCount(path);
       emit({
         scope: 'fs',

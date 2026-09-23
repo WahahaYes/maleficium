@@ -97,16 +97,7 @@ export function revisionRecordData(
   outcome: RecordOutcome,
   revisions: number,
 ): AppEvent {
-  return outcome.stored
-    ? {
-        action: 'revision.record',
-        rel,
-        stored: true,
-        rev: outcome.rev,
-        deduped: outcome.deduped,
-        revisions,
-      }
-    : { action: 'revision.record', rel, stored: false, reason: outcome.reason, revisions };
+  return { action: 'revision.record', rel, ...outcome, revisions };
 }
 
 /** Payload for one restore, carrying the size of the text put back. */

@@ -121,12 +121,9 @@ export default function App({
       ownWrites,
     });
 
-  // Revision history: app-local, keyed by the backend-minted project id. One
-  // project is open at a time, so `rootFor` answers for that id alone.
+  // Revision history: app-local, keyed by the backend-minted project id.
   const rootRef = useRef<string | null>(root);
   rootRef.current = root;
-  const projectIdRef = useRef<string | null>(projectId);
-  projectIdRef.current = projectId;
 
   /** Project-relative path for a file inside the open project, else null. */
   const relInProject = useCallback((abs: string): string | null => {
@@ -147,9 +144,7 @@ export default function App({
     restoreRevision,
   } = useRevisionHistory({
     root,
-    rootRef,
     projectId,
-    projectIdRef,
     relInProject,
     fileName,
     setBuffers,

@@ -8,7 +8,6 @@
 // a save is never swallowed.
 
 import { fs } from './fs-provider';
-import { hashBytes } from './history';
 
 /** What a path should hold after our write: a content hash, or null (absent). */
 type Signature = string | null;
@@ -28,6 +27,14 @@ export interface OwnWrites {
 }
 
 const enc = new TextEncoder();
+
+/** SHA-256 hex over the exact bytes. Web Crypto: no added dependency. */
+async function hashBytes(bytes: Uint8Array): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 async function signatureOf(bytes: Uint8Array | null): Promise<Signature> {
   return bytes === null ? null : hashBytes(bytes);

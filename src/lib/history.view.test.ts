@@ -9,19 +9,13 @@ import {
   retentionSummary,
   truncationNotice,
 } from './history.view';
-import {
-  MAX_HISTORY_BYTES_PER_PROJECT,
-  MAX_REVISIONS_PER_FILE,
-  MIN_REVISIONS_KEPT_PER_FILE,
-  SNAPSHOT_MAX_FILE_BYTES,
-  type RetentionInfo,
-} from './history';
+import type { RetentionInfo } from './history';
 
 const info = (over: Partial<RetentionInfo> = {}): RetentionInfo => ({
-  maxRevisionsPerFile: MAX_REVISIONS_PER_FILE,
-  maxHistoryBytesPerProject: MAX_HISTORY_BYTES_PER_PROJECT,
-  minRevisionsKeptPerFile: MIN_REVISIONS_KEPT_PER_FILE,
-  snapshotMaxFileBytes: SNAPSHOT_MAX_FILE_BYTES,
+  maxRevisionsPerFile: 50,
+  maxHistoryBytesPerProject: 256 * 1024 * 1024,
+  minRevisionsKeptPerFile: 5,
+  snapshotMaxFileBytes: 2 * 1024 * 1024,
   revisions: 3,
   bytes: 4096,
   ...over,
@@ -89,9 +83,9 @@ describe('retention honesty', () => {
     );
   });
   it('names the per-file cap only when the list is standing at it', () => {
-    expect(truncationNotice(MAX_REVISIONS_PER_FILE - 1, info())).toBeNull();
-    const notice = truncationNotice(MAX_REVISIONS_PER_FILE, info());
-    expect(notice).toContain(String(MAX_REVISIONS_PER_FILE));
+    expect(truncationNotice(info().maxRevisionsPerFile - 1, info())).toBeNull();
+    const notice = truncationNotice(info().maxRevisionsPerFile, info());
+    expect(notice).toContain(String(info().maxRevisionsPerFile));
     expect(notice).toMatch(/older ones are removed automatically/);
   });
 });

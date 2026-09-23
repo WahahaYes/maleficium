@@ -23,7 +23,13 @@ pub fn run() {
             commands::synctex::forward_sync,
             commands::synctex::inverse_sync,
             commands::structure::structure_outline,
-            commands::structure::structure_diagnostics
+            commands::structure::structure_diagnostics,
+            commands::history::history_record,
+            commands::history::history_list,
+            commands::history::history_get,
+            commands::history::history_restore,
+            commands::history::history_retention,
+            commands::history::history_batch_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

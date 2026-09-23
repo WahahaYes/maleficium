@@ -199,6 +199,56 @@ pub struct OfflineReadiness {
     pub missing: Option<MissingDependency>,
 }
 
+/// One stored revision as it crosses the seam: opaque id, no hash, no path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+pub struct Revision {
+    pub rev: String,
+    /// Milliseconds since the Unix epoch.
+    pub at: u64,
+    pub bytes: u64,
+    /// The replace batch this revision was taken for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub batch: Option<String>,
+}
+
+/// History caps and what one project currently holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionInfo {
+    pub max_revisions_per_file: u32,
+    pub max_history_bytes_per_project: u64,
+    pub min_revisions_kept_per_file: u32,
+    pub snapshot_max_file_bytes: u64,
+    /// Revisions currently held across the project.
+    pub revisions: u32,
+    /// Summed distinct blob bytes currently held.
+    pub bytes: u64,
+}
+
+/// What recording one revision did: stored (possibly reusing a blob), or
+/// why nothing was stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+pub struct RecordOutcome {
+    pub stored: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rev: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub deduped: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<RevisionSkipReason>,
+}
+
+/// One file of a replace batch and the revision holding its prior content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+pub struct BatchFile {
+    pub rel: String,
+    pub rev: String,
+}
+
 /// Every fact the app reports, tagged by `action`. Paths are as the
 /// emitting surface holds them; `compile.problem` is root-relative.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -518,6 +568,10 @@ pub fn typescript() -> String {
         CompileReport::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
+        Revision::decl(&cfg),
+        RetentionInfo::decl(&cfg),
+        RecordOutcome::decl(&cfg),
+        BatchFile::decl(&cfg),
         AppEvent::decl(&cfg),
         BusEvent::decl(&cfg),
         LogLine::decl(&cfg),
