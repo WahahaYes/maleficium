@@ -21,6 +21,9 @@ import LogStream, { type ProblemRef } from './components/LogStream';
 import { joinPath } from './lib/paths';
 import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
+import SearchPanel from './components/SearchPanel';
+import { projectIndex, type Query } from './lib/project-index';
+import type { Hit } from './lib/generated/index';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import SettingsDialog from './components/SettingsDialog';
@@ -642,6 +645,33 @@ export default function App({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const fileTreeVisible = treeVisible;
   const [outlineVisible, setOutlineVisible] = useState(true);
+  // Project search replaces the tree + outline in the side column while open.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocus, setSearchFocus] = useState(0);
+  const [hitSelect, setHitSelect] = useState<{
+    path: string;
+    line: number;
+    col: number;
+    len: number;
+    key: number;
+  } | null>(null);
+  const runSearch = useCallback(
+    (q: Query) => {
+      if (!projectId) return Promise.reject(new Error('no project open'));
+      const main = mainFile ? relInProject(mainFile) : null;
+      return projectIndex().search(projectId, q, main);
+    },
+    [projectId, mainFile, relInProject],
+  );
+  const openHit = useCallback(
+    async (rel: string, hit: Hit) => {
+      if (!root) return;
+      const abs = joinPath(root, rel);
+      if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
+      setHitSelect({ path: abs, line: hit.line, col: hit.col, len: hit.len, key: Date.now() });
+    },
+    [root],
+  );
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
@@ -780,6 +810,12 @@ export default function App({
   const menuActions: CommandActions = {
     openProject: () => {
       void open();
+    },
+    findInFile: () => viewportRef.current?.openFind(),
+    findInProject: () => {
+      setTreeVisible(true);
+      setSearchOpen(true);
+      setSearchFocus((k) => k + 1);
     },
     openRecent: (r) => {
       void openRoot(r, { warm: true });
@@ -1031,6 +1067,7 @@ export default function App({
             onSave={save}
             line={currentLine}
             flashKey={synctexFlash}
+            select={hitSelect && hitSelect.path === fileName ? hitSelect : undefined}
             viewportRef={viewportRef}
             onDoubleClickRef={forwardSyncLineRef}
             filePath={fileName}
@@ -1112,7 +1149,14 @@ export default function App({
               flexDirection: 'column',
             }}
           >
-            {root ? (
+            {root && searchOpen ? (
+              <SearchPanel
+                runSearch={runSearch}
+                onOpenHit={(rel, hit) => void openHit(rel, hit)}
+                onClose={() => setSearchOpen(false)}
+                focusKey={searchFocus}
+              />
+            ) : root ? (
               <>
                 <Box sx={{ flexShrink: 0 }}>
                   <FileTree

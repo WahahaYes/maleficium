@@ -33,6 +33,8 @@ const actions: CommandActions = {
   keepMine: noop,
   clean: noop,
   undoDelete: noop,
+  findInFile: noop,
+  findInProject: noop,
   showHistory: noop,
   showSettings: noop,
   renameActive: noop,

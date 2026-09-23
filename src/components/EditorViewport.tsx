@@ -8,6 +8,7 @@ import Paper from '@mui/material/Paper';
 import { useTheme } from '@mui/material/styles';
 import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, EditorSelection } from '@codemirror/state';
+import { openSearchPanel } from '@codemirror/search';
 import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
 import type { AppearancePrefs } from '../lib/appearance';
@@ -20,6 +21,8 @@ export interface EditorViewportProps {
   line?: number;
   /** Bumped by inverse SyncTeX: flashes the revealed line amber 1.4s. */
   flashKey?: number;
+  /** Select a range (1-based line, UTF-16 column and length) once per key. */
+  select?: { line: number; col: number; len: number; key: number };
 }
 
 /** Minimal viewport bridge: selection ops + caret line + click hook. */
@@ -28,6 +31,8 @@ export interface EditorViewportHandle {
   expandSelection: () => void;
   shrinkSelection: () => void;
   goToLine: (line: number) => void;
+  /** Open the in-file find panel. */
+  openFind: () => void;
   /** Current caret line (1-based) — drives double-click forward SyncTeX. */
   caretLine: () => number;
 }
@@ -38,6 +43,7 @@ function EditorViewport({
   onSave,
   line,
   flashKey,
+  select,
   viewportRef,
   onDoubleClickRef,
   filePath,
@@ -150,6 +156,24 @@ function EditorViewport({
     }
   }, [value]);
 
+  // Range reveal (a search hit): applied once per key, after the value sync
+  // above has loaded the file it belongs to.
+  const selectKeyRef = useRef<number | null>(null);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !select || selectKeyRef.current === select.key) return;
+    selectKeyRef.current = select.key;
+    try {
+      const ln = view.state.doc.line(Math.min(Math.max(1, select.line), view.state.doc.lines));
+      const from = Math.min(ln.from + select.col, ln.to);
+      const to = Math.min(from + select.len, view.state.doc.length);
+      view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true });
+      view.focus();
+    } catch {
+      /* the document changed under the hit — ignore */
+    }
+  }, [select, value]);
+
   // Line reveal + amber flash on flashKey.
   const flashKeyRef = useRef(flashKey);
   useEffect(() => {
@@ -227,6 +251,11 @@ function EditorViewport({
         } catch {
           /* out of range — ignore */
         }
+      },
+      openFind: () => {
+        const view = viewRef.current;
+        if (!view) return;
+        openSearchPanel(view);
       },
       caretLine: () => {
         const view = viewRef.current;

@@ -53,13 +53,18 @@ describe('keymap chords', () => {
   it('matches compile and forward-sync chords', () => {
     expect(matchesCompile(keyEvent({ key: 'r', ctrlKey: true }))).toBe(true);
     expect(matchesCompile(keyEvent({ key: 'r', ctrlKey: true, shiftKey: true }))).toBe(false);
-    expect(matchesForwardSync(keyEvent({ key: 'F', ctrlKey: true, shiftKey: true }))).toBe(true);
-    expect(matchesForwardSync(keyEvent({ key: 'f' }))).toBe(false);
+    expect(matchesForwardSync(keyEvent({ key: 'j', ctrlKey: true, altKey: true }))).toBe(true);
+    expect(matchesForwardSync(keyEvent({ key: 'F', ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(matchesForwardSync(keyEvent({ key: 'j' }))).toBe(false);
   });
   it('maps menu chords to registry ids', () => {
     expect(menuChordId(keyEvent({ key: 'o', ctrlKey: true }))).toBe('file.open-project');
     expect(menuChordId(keyEvent({ key: 's', ctrlKey: true }))).toBe('file.save');
     expect(menuChordId(keyEvent({ key: 'g', ctrlKey: true }))).toBe('selection.go-to-line');
+    expect(menuChordId(keyEvent({ key: 'F', ctrlKey: true, shiftKey: true }))).toBe(
+      'search.find-in-project',
+    );
+    expect(menuChordId(keyEvent({ key: 'f', ctrlKey: true }))).toBe('edit.find');
     expect(menuChordId(keyEvent({ key: 'x', ctrlKey: true }))).toBeNull();
   });
   it('chord table stays unique and labeled', () => {

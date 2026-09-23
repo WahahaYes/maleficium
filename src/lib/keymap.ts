@@ -18,7 +18,9 @@ export const KEYMAP: KeyChord[] = [
   { id: 'toggle-tree', label: 'Toggle file tree', keys: 'Ctrl+B' },
   { id: 'next-buffer', label: 'Next open file', keys: 'Ctrl+Tab' },
   { id: 'prev-buffer', label: 'Previous open file', keys: 'Ctrl+Shift+Tab' },
-  { id: 'forward-sync', label: 'SyncTeX: editor → PDF', keys: 'Ctrl+Shift+F' },
+  { id: 'forward-sync', label: 'SyncTeX: editor → PDF', keys: 'Ctrl+Alt+J' },
+  { id: 'find', label: 'Find in File', keys: 'Ctrl+F' },
+  { id: 'find-in-project', label: 'Find in Project', keys: 'Ctrl+Shift+F' },
   { id: 'inverse-sync', label: 'SyncTeX: PDF → editor (click PDF)', keys: 'Click' },
   { id: 'resize-pane', label: 'Resize editor/preview (splitter focused)', keys: '← / →' },
   { id: 'select-all', label: 'Select All', keys: 'Ctrl+A' },
@@ -37,7 +39,7 @@ export function matchesCompile(e: KeyboardEvent): boolean {
 }
 
 export function matchesForwardSync(e: KeyboardEvent): boolean {
-  return (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f';
+  return (e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'j';
 }
 
 /** Preview zoom chords: Ctrl+= (or Ctrl++) in, Ctrl+- out, Ctrl+0 fit width. */
@@ -57,11 +59,14 @@ export type MenuChordId =
   | 'selection.select-all'
   | 'selection.expand'
   | 'selection.shrink'
-  | 'selection.go-to-line';
+  | 'selection.go-to-line'
+  | 'edit.find'
+  | 'search.find-in-project';
 
 /** Menu-owned chords. Returns the registry id, or null. CodeMirror text inputs
- *  keep Ctrl+A (native select-all) — the menu command and the native behavior
- *  coincide, so we only claim it when focus is OUTSIDE the editor. */
+ *  keep Ctrl+A (native select-all) and Ctrl+F (its own find panel) — the menu
+ *  command and the native behavior coincide, so we only claim them when focus
+ *  is OUTSIDE the editor. */
 export function menuChordId(e: KeyboardEvent): MenuChordId | null {
   const mod = e.ctrlKey || e.metaKey;
   const t = e.target as HTMLElement | null;
@@ -74,6 +79,8 @@ export function menuChordId(e: KeyboardEvent): MenuChordId | null {
   if (k === 'g' && !e.shiftKey) return 'selection.go-to-line';
   if (k === 'h' && !e.shiftKey) return 'history.show';
   if (k === 'a' && !e.shiftKey && !inEditor) return 'selection.select-all';
+  if (k === 'f' && !e.shiftKey && !inEditor) return 'edit.find';
+  if (k === 'f' && e.shiftKey) return 'search.find-in-project';
   if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.altKey) {
     return e.key === 'ArrowRight' ? 'selection.expand' : 'selection.shrink';
   }

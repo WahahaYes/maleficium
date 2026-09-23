@@ -19,6 +19,8 @@ export type CommandId =
   | 'file.recent'
   | 'file.recent-clear'
   | 'edit.undo-delete'
+  | 'edit.find'
+  | 'search.find-in-project'
   | 'history.show'
   | 'edit.rename'
   | 'edit.delete'
@@ -104,6 +106,8 @@ export interface CommandActions {
   keepMine: () => void;
   clean: () => void;
   undoDelete: () => void;
+  findInFile: () => void;
+  findInProject: () => void;
   showHistory: () => void;
   showSettings: () => void;
   renameActive: () => void;
@@ -232,6 +236,20 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Undo Delete',
           enabled: ctx.canUndoDelete,
           run: a.undoDelete,
+        },
+        {
+          id: 'edit.find',
+          label: 'Find…',
+          accelerator: 'Ctrl+F',
+          enabled: ctx.editorReady,
+          run: a.findInFile,
+        },
+        {
+          id: 'search.find-in-project',
+          label: 'Find in Project…',
+          accelerator: 'Ctrl+Shift+F',
+          enabled: ctx.hasProject,
+          run: a.findInProject,
         },
         {
           id: 'history.show',
@@ -474,7 +492,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         {
           id: 'tools.forward-sync',
           label: 'Forward SyncTeX',
-          accelerator: 'Ctrl+Shift+F',
+          accelerator: 'Ctrl+Alt+J',
           enabled: ctx.pdfOpen && !ctx.compiling,
           run: a.forwardSync,
         },
