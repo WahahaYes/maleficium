@@ -124,6 +124,14 @@ pub fn engine_log(root_id: String, main_rel: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn output_stamp(
+    root_id: String,
+    main_rel: String,
+) -> Result<Option<core::OutputStamp>, String> {
+    core::output_stamp(&root_id, &main_rel)
+}
+
+#[tauri::command]
 pub fn outputs_fresh(root_id: String, main_rel: String) -> Result<bool, String> {
     core::outputs_fresh(&root_id, &main_rel)
 }

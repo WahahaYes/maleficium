@@ -473,6 +473,13 @@ pub enum AppEvent {
     PreviewUpdate { pdf_url: String },
     #[serde(rename = "preview.pdf-load")]
     PreviewPdfLoad { pages: u32, ms: u64 },
+    /// The pdf changed on disk without this app compiling it (an agent's
+    /// compile, say); the preview reloaded it.
+    #[serde(rename = "preview.external-update")]
+    PreviewExternalUpdate { pdf_url: String },
+    /// The pdf's stamp could not be read: outside rewrites go unnoticed.
+    #[serde(rename = "preview.stamp-failed")]
+    PreviewStampFailed { error: String },
     /// The preview zoom changed; `percent` is what a page now shows at.
     #[serde(rename = "preview.zoom")]
     PreviewZoom { mode: ZoomKind, percent: u32 },

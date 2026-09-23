@@ -47,6 +47,32 @@ pub fn log_tail(root_id: &str, main_rel: &str, max_lines: usize) -> Result<Strin
     Ok(lines[start..].join("\n"))
 }
 
+/// When and how large the main file's pdf last was written: whoever
+/// compiled it (this app, an agent over MCP) changes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputStamp {
+    pub mtime_ms: u64,
+    pub bytes: u64,
+}
+
+/// The pdf's stamp, or `None` when no compile has left one.
+pub fn output_stamp(root_id: &str, main_rel: &str) -> Result<Option<OutputStamp>, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    let Ok(meta) = std::fs::metadata(o.outdir.join(&o.pdf_name)) else {
+        return Ok(None);
+    };
+    let mtime_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as u64);
+    Ok(Some(OutputStamp {
+        mtime_ms,
+        bytes: meta.len(),
+    }))
+}
+
 /// Whether a previous compile left a pdf for this main file.
 pub fn outputs_fresh(root_id: &str, main_rel: &str) -> Result<bool, String> {
     let o = outputs_of(root_id, main_rel)?;
@@ -122,5 +148,21 @@ mod tests {
             assert!(engine_log(&id, bad).is_err(), "{}", bad);
         }
         assert!(clean_outputs("nope", "main.tex").is_err());
+    }
+
+    #[test]
+    fn output_stamp_tracks_the_pdf() {
+        let (id, _dir) = project("stamp");
+        assert_eq!(output_stamp(&id, "main.tex").unwrap(), None);
+        let o = outputs_of(&id, "main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(o.outdir.join(&o.pdf_name), "%PDF-1").unwrap();
+        let a = output_stamp(&id, "main.tex").unwrap().unwrap();
+        assert_eq!(a.bytes, 6);
+        std::fs::write(o.outdir.join(&o.pdf_name), "%PDF-1.7").unwrap();
+        let b = output_stamp(&id, "main.tex").unwrap().unwrap();
+        assert_ne!(a, b);
+        assert!(output_stamp(&id, "../escape.tex").is_err());
+        let _ = std::fs::remove_dir_all(&o.outdir);
     }
 }

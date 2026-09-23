@@ -42,6 +42,7 @@ import { clampPage } from '../lib/previewNav';
 import { usePdfDocument } from '../hooks/usePdfDocument';
 import type { DocLike, TextLayerCtor } from '../hooks/usePdfDocument';
 import { useBitmapWindow } from '../hooks/useBitmapWindow';
+import { useExternalRefresh } from '../hooks/useExternalRefresh';
 import { useSyncLock } from '../hooks/useSyncLock';
 
 export interface PreviewProps {
@@ -119,6 +120,7 @@ export default function Preview({
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
   const pageFilterCss = useTheme().preview.pageFilter;
+  useExternalRefresh();
 
   // Zoom: the mode is a device pref; the pane size drives the fit modes.
   const [zoom, setZoom] = useState<ZoomMode>(loadZoom);

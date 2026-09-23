@@ -7,6 +7,7 @@ import type {
   OfflineReadiness,
 } from './generated/events';
 import type { Finding, MissingDependency } from './generated/structure';
+import type { OutputStamp } from './externalRefresh';
 
 /**
  * Compile backend contract, addressed by session root and the main file's
@@ -96,6 +97,11 @@ export async function engineLog(rootId: string, mainRel: string): Promise<string
     // No log kept for this main file yet; callers fall back to the run's own output.
     return null;
   }
+}
+
+/** Stamp of the main file's pdf, or null before any compile. */
+export async function outputStamp(rootId: string, mainRel: string): Promise<OutputStamp | null> {
+  return await invoke<OutputStamp | null>('output_stamp', { rootId, mainRel });
 }
 
 /** Whether a previous compile left a pdf. Never throws. */

@@ -20,7 +20,8 @@ pub use fs::{
     session_root, trash_file, undo_trash,
 };
 pub use outputs::{
-    clean_outputs, engine_log, log_file, log_tail, outputs_fresh, outputs_of, write_engine_log,
+    clean_outputs, engine_log, log_file, log_tail, output_stamp, outputs_fresh, outputs_of,
+    write_engine_log, OutputStamp,
 };
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 

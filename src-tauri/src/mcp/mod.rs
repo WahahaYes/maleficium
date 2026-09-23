@@ -92,6 +92,11 @@ struct CompilePollOut {
     missing: Option<maleficium_structure::MissingDependency>,
 }
 
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct OutputStampOut {
+    stamp: Option<core::OutputStamp>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct CancelParams {
     job_id: String,
@@ -287,6 +292,18 @@ impl Maleficium {
         Parameters(p): Parameters<RootParams>,
     ) -> Result<Json<maleficium_events::OfflineReadiness>, String> {
         Ok(Json(core::compile::offline_readiness(&p.root_id)?))
+    }
+
+    #[tool(
+        description = "Stamp of main_rel's compiled pdf (mtimeMs, bytes), or null before any compile: it changes whenever anyone recompiles, so a viewer polls it to refresh"
+    )]
+    fn output_stamp(
+        &self,
+        Parameters(p): Parameters<MainParams>,
+    ) -> Result<Json<OutputStampOut>, String> {
+        Ok(Json(OutputStampOut {
+            stamp: core::output_stamp(&p.root_id, &p.main_rel)?,
+        }))
     }
 
     #[tool(description = "Cancel a running compile job")]

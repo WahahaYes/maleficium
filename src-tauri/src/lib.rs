@@ -19,6 +19,7 @@ pub fn run() {
             commands::compile::offline_readiness,
             commands::compile::precompile_checks,
             commands::compile::outputs_fresh,
+            commands::compile::output_stamp,
             commands::compile::clean_outputs,
             commands::synctex::forward_sync,
             commands::synctex::inverse_sync,
