@@ -2,7 +2,7 @@
 // highlighting and the result summary. Pure, so the wording is pinned
 // headlessly.
 
-import type { Hit, SearchResult } from './generated/index';
+import type { Hit, ReplaceHunk, ReplacePreview, SearchResult } from './generated/index';
 
 /** A preview line split around its match: before, match, after. */
 export function hitParts(hit: Hit): [string, string, string] {
@@ -23,4 +23,29 @@ export function searchSummary(r: SearchResult): string {
   if (r.unsearched > 0)
     parts.push(`${r.unsearched} file${r.unsearched === 1 ? '' : 's'} not searchable`);
   return parts.join(' · ');
+}
+
+/** One replacement shown in place: the text around it, what goes, what comes. */
+export function replaceParts(h: ReplaceHunk): {
+  pre: string;
+  old: string;
+  new: string;
+  post: string;
+} {
+  const pre = h.before.slice(0, h.col);
+  const post = h.before.slice(h.col + h.len);
+  return {
+    pre,
+    old: h.before.slice(h.col, h.col + h.len),
+    new: h.after.slice(pre.length, h.after.length - post.length),
+    post,
+  };
+}
+
+/** The line above the Replace All button. */
+export function replaceSummary(p: ReplacePreview): string {
+  if (p.replacements === 0) return 'Nothing to replace';
+  const files = p.files.length;
+  const head = `Replace ${p.replacements} match${p.replacements === 1 ? '' : 'es'} in ${files} file${files === 1 ? '' : 's'}`;
+  return p.hunksTruncated > 0 ? `${head} (${p.hunksTruncated} not previewed)` : head;
 }

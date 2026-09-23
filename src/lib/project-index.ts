@@ -4,9 +4,15 @@
 // The app builds it on open, reports watcher batches, and lays unsaved
 // buffers over it, so search and navigation read what the user sees.
 
-import type { FileMatch, Query, SearchResult } from './generated/index';
+import type {
+  FileMatch,
+  Query,
+  ReplaceApplied,
+  ReplacePreview,
+  SearchResult,
+} from './generated/index';
 
-export type { FileMatch, Query, SearchResult };
+export type { FileMatch, Query, ReplaceApplied, ReplacePreview, SearchResult };
 
 export interface ProjectIndexProvider {
   /** Build the index now (dropping overlays); resolves to the files listed. */
@@ -21,6 +27,18 @@ export interface ProjectIndexProvider {
   search(rootId: string, query: Query, mainRel: string | null): Promise<SearchResult>;
   /** Files matching a fuzzy name query, best first. */
   findFiles(rootId: string, query: string): Promise<FileMatch[]>;
+  /** Plan replacing every match; writes nothing. */
+  replacePreview(
+    rootId: string,
+    query: Query,
+    replacement: string,
+    mainRel: string | null,
+  ): Promise<ReplacePreview>;
+  /**
+   * Apply a plan by token. Files in `keepOpen` (open buffers) are not
+   * written; their new text comes back in `edits`.
+   */
+  replaceApply(rootId: string, token: string, keepOpen: string[]): Promise<ReplaceApplied>;
 }
 
 let impl: ProjectIndexProvider | null = null;

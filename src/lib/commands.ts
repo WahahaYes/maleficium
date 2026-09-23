@@ -21,6 +21,7 @@ export type CommandId =
   | 'edit.undo-delete'
   | 'edit.find'
   | 'search.find-in-project'
+  | 'search.undo-replace'
   | 'history.show'
   | 'edit.rename'
   | 'edit.delete'
@@ -87,6 +88,8 @@ export interface MenuContext {
   /** Currently multi-picked outline lines. */
   outlinePicks: number[];
   canUndoDelete: boolean;
+  /** The last project replace can still be undone. */
+  canUndoReplace: boolean;
   /** Revisions are listable for the active file (project file, store reachable). */
   historyAvailable: boolean;
   reloadPending: boolean;
@@ -108,6 +111,7 @@ export interface CommandActions {
   undoDelete: () => void;
   findInFile: () => void;
   findInProject: () => void;
+  undoReplace: () => void;
   showHistory: () => void;
   showSettings: () => void;
   renameActive: () => void;
@@ -250,6 +254,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           accelerator: 'Ctrl+Shift+F',
           enabled: ctx.hasProject,
           run: a.findInProject,
+        },
+        {
+          id: 'search.undo-replace',
+          label: 'Undo Replace',
+          enabled: ctx.canUndoReplace,
+          run: a.undoReplace,
         },
         {
           id: 'history.show',

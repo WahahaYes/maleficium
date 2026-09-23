@@ -523,6 +523,21 @@ pub enum AppEvent {
         rev: String,
         chars: u64,
     },
+    /// A replace across the project was applied: files it changed (written
+    /// or edited in open buffers), replacements, and the batch undo restores.
+    #[serde(rename = "replace.apply")]
+    ReplaceApply {
+        files: u32,
+        replacements: u32,
+        batch: String,
+    },
+    /// A replace was undone: the files put back.
+    #[serde(rename = "replace.undo")]
+    ReplaceUndo { batch: String, files: u32 },
+    /// A replace or its undo did not happen (a stale plan, an unreadable
+    /// revision).
+    #[serde(rename = "replace.failed")]
+    ReplaceFailed { error: String },
     #[serde(rename = "revision.restore-unavailable")]
     RevisionRestoreUnavailable { rel: String, rev: String },
 
