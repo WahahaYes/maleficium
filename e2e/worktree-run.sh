@@ -82,6 +82,11 @@ fi
 fi
 
 ln -s "$ROOT/node_modules" "$WT/node_modules"
+# Engine sidecars are fetched, never tracked: carry the main checkout's.
+mkdir -p "$WT/src-tauri/binaries"
+for b in "$ROOT"/src-tauri/binaries/*; do
+  [ -e "$b" ] && ln -s "$b" "$WT/src-tauri/binaries/"
+done
 export WORKTREE_ACTIVE=1
 export CARGO_TARGET_DIR="$ROOT/src-tauri/target"
 
