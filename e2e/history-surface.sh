@@ -94,9 +94,10 @@ cmp -s "$TARGET" "$ORIG" || fail "restore did not round-trip exact bytes"
 pass "restore round-trips exact bytes (CRLF, tab, UTF-8, trailing blank line)"
 
 # restore is undoable: the replaced state is itself a revision
-grep -q "Snapshot what is on disk first" "$APPSRC/lib/history.ts" ||
+STORE="$DEVROOT/src-tauri/src/core/history.rs"
+grep -q "snapshotting what is on disk first" "$STORE" ||
     fail "restore does not preserve the replaced state"
-grep -q "await this.recordRevision(projectId, relPath, current)" "$APPSRC/lib/history.ts" ||
+grep -q "store.record(rel, &current);" "$STORE" ||
     fail "restore does not record the replaced state as a revision"
 pass "restore keeps the replaced state as a revision (undoable from the same list)"
 
