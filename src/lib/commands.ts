@@ -23,6 +23,8 @@ export type CommandId =
   | 'search.find-in-project'
   | 'search.undo-replace'
   | 'history.show'
+  | 'file.quick-open'
+  | 'view.command-palette'
   | 'edit.rename'
   | 'edit.delete'
   | 'selection.select-all'
@@ -114,6 +116,8 @@ export interface CommandActions {
   undoDelete: () => void;
   findInFile: () => void;
   findInProject: () => void;
+  quickOpen: () => void;
+  commandPalette: () => void;
   undoReplace: () => void;
   showHistory: () => void;
   showSettings: () => void;
@@ -202,6 +206,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
                 ]
               : []),
           ],
+        },
+        {
+          id: 'file.quick-open',
+          label: 'Go to File…',
+          accelerator: 'Ctrl+P',
+          enabled: ctx.hasProject,
+          run: a.quickOpen,
         },
         { id: 'file.new-file', label: 'New File…', enabled: ctx.hasProject, run: a.newFile },
         {
@@ -349,6 +360,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
       id: 'view',
       title: 'View',
       commands: [
+        {
+          id: 'view.command-palette',
+          label: 'Command Palette…',
+          accelerator: 'Ctrl+Shift+P',
+          enabled: true,
+          run: a.commandPalette,
+        },
         {
           id: 'view.layout',
           label: `Layout: ${ctx.preset === 'both' ? 'Editor + Preview' : ctx.preset === 'editor' ? 'Editor Only' : ctx.preset === 'preview' ? 'Preview Only' : 'Custom'}`,

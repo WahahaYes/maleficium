@@ -355,6 +355,7 @@ pub fn typescript() -> String {
         search::FileHits::decl(&cfg),
         search::SearchResult::decl(&cfg),
         search::FileMatch::decl(&cfg),
+        search::Ranked::decl(&cfg),
         replace::ReplaceHunk::decl(&cfg),
         replace::ReplaceFile::decl(&cfg),
         replace::ReplacePreview::decl(&cfg),

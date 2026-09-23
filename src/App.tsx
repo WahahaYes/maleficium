@@ -22,6 +22,8 @@ import { joinPath } from './lib/paths';
 import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
+import PaletteDialog from './components/PaletteDialog';
+import { paletteCommands } from './lib/palette';
 import { projectIndex, type Query } from './lib/project-index';
 import { historyStore } from './lib/history';
 import type { Hit } from './lib/generated/index';
@@ -666,6 +668,23 @@ export default function App({
     },
     [projectId, mainFile, relInProject],
   );
+  // File finder / command palette: one dialog, `>` switches to commands.
+  const [paletteOpen, setPaletteOpen] = useState<string | null>(null);
+  const findFiles = useCallback(
+    (query: string) =>
+      projectId ? projectIndex().findFiles(projectId, query) : Promise.resolve([]),
+    [projectId],
+  );
+  const rankNames = useCallback(
+    (query: string, items: string[]) => projectIndex().rank(query, items),
+    [],
+  );
+  const openFileRel = useCallback(
+    (rel: string) => {
+      if (root) void handleSelectRef.current(joinPath(root, rel));
+    },
+    [root],
+  );
   // The last replace, undoable in one step while it stands.
   const [lastReplace, setLastReplace] = useState<{
     batch: string;
@@ -919,6 +938,8 @@ export default function App({
     undoReplace: () => {
       void undoReplace();
     },
+    quickOpen: () => setPaletteOpen(''),
+    commandPalette: () => setPaletteOpen('>'),
     findInProject: () => {
       setTreeVisible(true);
       setSearchOpen(true);
@@ -1477,6 +1498,15 @@ export default function App({
           </Button>
         </DialogActions>
       </Dialog>
+      <PaletteDialog
+        open={paletteOpen != null}
+        initial={paletteOpen ?? ''}
+        onClose={() => setPaletteOpen(null)}
+        findFiles={findFiles}
+        rank={rankNames}
+        commands={paletteCommands(menuSections, ['file.quick-open', 'view.command-palette'])}
+        onOpenFile={openFileRel}
+      />
       <HistoryDialog
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

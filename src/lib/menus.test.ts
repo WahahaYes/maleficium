@@ -37,6 +37,8 @@ const actions: CommandActions = {
   undoDelete: noop,
   findInFile: noop,
   findInProject: noop,
+  quickOpen: noop,
+  commandPalette: noop,
   undoReplace: noop,
   showHistory: noop,
   showSettings: noop,

@@ -3,7 +3,7 @@
 //! buffers over it.
 
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
-use maleficium_index::search::{FileMatch, Query, SearchResult};
+use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
 
 use crate::core::{index, replace, search};
 
@@ -77,4 +77,10 @@ pub fn index_replace_apply(
     keep_open: Vec<String>,
 ) -> Result<ReplaceApplied, String> {
     replace::apply(&root_id, &token, &keep_open)
+}
+
+/// Rank a caller's list of names by the finder's fuzzy score.
+#[tauri::command]
+pub fn fuzzy_rank(query: String, items: Vec<String>, max: Option<usize>) -> Vec<Ranked> {
+    maleficium_index::search::rank(&query, &items, max.unwrap_or(items.len()))
 }

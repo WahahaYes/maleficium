@@ -61,6 +61,10 @@ describe('keymap chords', () => {
     expect(menuChordId(keyEvent({ key: 'o', ctrlKey: true }))).toBe('file.open-project');
     expect(menuChordId(keyEvent({ key: 's', ctrlKey: true }))).toBe('file.save');
     expect(menuChordId(keyEvent({ key: 'g', ctrlKey: true }))).toBe('selection.go-to-line');
+    expect(menuChordId(keyEvent({ key: 'p', ctrlKey: true }))).toBe('file.quick-open');
+    expect(menuChordId(keyEvent({ key: 'P', ctrlKey: true, shiftKey: true }))).toBe(
+      'view.command-palette',
+    );
     expect(menuChordId(keyEvent({ key: 'F', ctrlKey: true, shiftKey: true }))).toBe(
       'search.find-in-project',
     );

@@ -7,12 +7,13 @@
 import type {
   FileMatch,
   Query,
+  Ranked,
   ReplaceApplied,
   ReplacePreview,
   SearchResult,
 } from './generated/index';
 
-export type { FileMatch, Query, ReplaceApplied, ReplacePreview, SearchResult };
+export type { FileMatch, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult };
 
 export interface ProjectIndexProvider {
   /** Build the index now (dropping overlays); resolves to the files listed. */
@@ -27,6 +28,8 @@ export interface ProjectIndexProvider {
   search(rootId: string, query: Query, mainRel: string | null): Promise<SearchResult>;
   /** Files matching a fuzzy name query, best first. */
   findFiles(rootId: string, query: string): Promise<FileMatch[]>;
+  /** Rank any list of names by the finder's fuzzy score, best first. */
+  rank(query: string, items: string[]): Promise<Ranked[]>;
   /** Plan replacing every match; writes nothing. */
   replacePreview(
     rootId: string,

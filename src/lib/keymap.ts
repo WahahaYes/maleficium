@@ -28,6 +28,8 @@ export const KEYMAP: KeyChord[] = [
   { id: 'shrink-selection', label: 'Shrink Selection', keys: 'Shift+Alt+Left' },
   { id: 'go-to-line', label: 'Go to Line…', keys: 'Ctrl+G' },
   { id: 'file-history', label: 'File History…', keys: 'Ctrl+H' },
+  { id: 'quick-open', label: 'Go to File…', keys: 'Ctrl+P' },
+  { id: 'command-palette', label: 'Command Palette…', keys: 'Ctrl+Shift+P' },
   { id: 'zoom-in', label: 'Zoom preview in', keys: 'Ctrl+=' },
   { id: 'zoom-out', label: 'Zoom preview out', keys: 'Ctrl+-' },
   { id: 'zoom-fit-width', label: 'Fit preview to width', keys: 'Ctrl+0' },
@@ -56,6 +58,8 @@ export type MenuChordId =
   | 'file.close-file'
   | 'file.save'
   | 'history.show'
+  | 'file.quick-open'
+  | 'view.command-palette'
   | 'selection.select-all'
   | 'selection.expand'
   | 'selection.shrink'
@@ -78,6 +82,7 @@ export function menuChordId(e: KeyboardEvent): MenuChordId | null {
   if (k === 's' && !e.shiftKey) return 'file.save';
   if (k === 'g' && !e.shiftKey) return 'selection.go-to-line';
   if (k === 'h' && !e.shiftKey) return 'history.show';
+  if (k === 'p') return e.shiftKey ? 'view.command-palette' : 'file.quick-open';
   if (k === 'a' && !e.shiftKey && !inEditor) return 'selection.select-all';
   if (k === 'f' && !e.shiftKey && !inEditor) return 'edit.find';
   if (k === 'f' && e.shiftKey) return 'search.find-in-project';

@@ -69,6 +69,16 @@ export type FileMatch = { rel: string, score: number,
  */
 positions: Array<number>, };
 
+export type Ranked = { 
+/**
+ * Position in the list the caller passed.
+ */
+index: number, score: number, 
+/**
+ * UTF-16 positions of the query's characters, for highlighting.
+ */
+positions: Array<number>, };
+
 export type ReplaceHunk = { line: number, 
 /**
  * UTF-16 column and length of the match on the line before.

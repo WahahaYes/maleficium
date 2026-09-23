@@ -306,6 +306,35 @@ pub fn fuzzy_score(query: &str, rel: &str) -> Option<(i32, Vec<u32>)> {
     Some((score * 16 - rel.len() as i32, positions))
 }
 
+/// One ranked item of a caller's list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema, TS)]
+pub struct Ranked {
+    /// Position in the list the caller passed.
+    pub index: u32,
+    pub score: i32,
+    /// UTF-16 positions of the query's characters, for highlighting.
+    pub positions: Vec<u32>,
+}
+
+/// Rank any list of names by the finder's fuzzy score, best first (ties
+/// keep list order); non-matches are dropped.
+pub fn rank(query: &str, items: &[String], max: usize) -> Vec<Ranked> {
+    let mut out: Vec<Ranked> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            fuzzy_score(query, s).map(|(score, positions)| Ranked {
+                index: i as u32,
+                score,
+                positions,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.index.cmp(&b.index)));
+    out.truncate(max);
+    out
+}
+
 /// The best `max` files for a finder query, best first (ties by path).
 pub fn find_files(index: &ProjectIndex, query: &str, max: usize) -> Vec<FileMatch> {
     let mut out: Vec<FileMatch> = index
@@ -505,5 +534,28 @@ mod tests {
         assert_eq!(fuzzy_score("MT", "main.tex").unwrap().1, [0, 5]);
         assert!(fuzzy_score("xyz", "main.tex").is_none());
         assert_eq!(find_files(&i, "", 2).len(), 2);
+    }
+
+    #[test]
+    fn rank_orders_any_list_and_keeps_list_order_on_ties() {
+        let items: Vec<String> = [
+            "Edit › Find…",
+            "Edit › Find in Project…",
+            "File › Save",
+            "View › Outline",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let r = rank("find proj", &items, 10);
+        assert_eq!(r[0].index, 1);
+        assert_eq!(
+            rank("", &items, 10)
+                .iter()
+                .map(|r| r.index)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert!(rank("zzz", &items, 10).is_empty());
     }
 }

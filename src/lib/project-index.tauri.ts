@@ -11,6 +11,7 @@ export const desktopProjectIndex: ProjectIndexProvider = {
   overlay: (rootId, rel, text) => invoke('index_overlay', { rootId, rel, text }),
   search: (rootId, query, mainRel) => invoke('index_search', { rootId, query, mainRel }),
   findFiles: (rootId, query) => invoke('index_find_files', { rootId, query }),
+  rank: (query, items) => invoke('fuzzy_rank', { query, items }),
   replacePreview: (rootId, query, replacement, mainRel) =>
     invoke('index_replace_preview', { rootId, query, replacement, mainRel }),
   replaceApply: (rootId, token, keepOpen) =>
