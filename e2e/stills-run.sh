@@ -246,7 +246,9 @@ set -- $(saved_external)
 [ "$2" -ge 1 ] || die "external edit after a save was swallowed ($1)"
 log "echo check: save silent, external edit reported ($2) for $1"
 stop_app
-check_log "log.open file.save revision.record fs.external compile.auto"
+# The compiled pdf must load in pdf.js and paint a page: a preview stuck on
+# 'loading...' (e.g. its worker never started) fails here, not in a still.
+check_log "log.open file.save revision.record fs.external compile.auto preview.pdf-load preview.page-render"
 
 fi
 
@@ -279,7 +281,7 @@ HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
 sleep 6
 shot 02-compiling-done
 stop_app
-check_log "log.open compile.finish offline.readiness preview.external-update"
+check_log "log.open compile.finish offline.readiness preview.external-update preview.pdf-load preview.page-render"
 # The warm run compiled from the cache alone: the badge must read Ready
 # offline (02-compiling-done shows it) and the bus must say so.
 python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "no ready-offline readiness after the cached-only recompile"
