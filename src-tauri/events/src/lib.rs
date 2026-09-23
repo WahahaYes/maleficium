@@ -413,6 +413,12 @@ pub enum AppEvent {
     /// The readiness record could not be read: the badge shows nothing.
     #[serde(rename = "offline.readiness-failed")]
     OfflineReadinessFailed { root: String, error: String },
+    /// The project index was built: files listed and the time it took.
+    #[serde(rename = "index.open")]
+    IndexOpen { files: u32, ms: u64 },
+    /// The project index could not be built or updated.
+    #[serde(rename = "index.failed")]
+    IndexFailed { root: String, error: String },
     #[serde(rename = "compile.engine-line")]
     CompileEngineLine { stream: CompileStream },
     #[serde(rename = "compile.progress")]

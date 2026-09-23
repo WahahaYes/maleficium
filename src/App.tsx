@@ -57,6 +57,7 @@ import { useCompileRunner } from './hooks/useCompileRunner';
 import { useProjectTree } from './hooks/useProjectTree';
 import { useFileOps } from './hooks/useFileOps';
 import { useRevisionHistory } from './hooks/useRevisionHistory';
+import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
@@ -153,6 +154,8 @@ export default function App({
     setLog,
     ownWrites,
   });
+
+  useIndexOverlays(projectId, buffers, relInProject);
 
   // The bus is recorded to an app-local JSONL file for the length of the run.
   useEffect(() => {
@@ -591,6 +594,7 @@ export default function App({
   });
   const { reloadTree, openRoot, open, recentProjects, setRecentProjects } = useProjectTree({
     root,
+    projectId,
     setRoot,
     setProjectId,
     setTree,

@@ -1858,6 +1858,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "maleficium-index"
+version = "0.1.0"
+dependencies = [
+ "maleficium-structure",
+ "regex",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "maleficium-structure"
 version = "0.1.0"
 dependencies = [
@@ -3365,6 +3377,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "maleficium-events",
+ "maleficium-index",
  "maleficium-structure",
  "rmcp",
  "schemars 1.2.2",

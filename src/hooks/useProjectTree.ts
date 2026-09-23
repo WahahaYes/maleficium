@@ -12,6 +12,7 @@ import { grantProjectAccess } from '../lib/projectAccess';
 import { getRecentProjects, pruneRecentProjects, touchRecentProject } from '../lib/recentProjects';
 import { coalesceEvents, debounce } from '../lib/watcher';
 import { watchBackend, type WatchChangeEvent } from '../lib/watch-backend';
+import { projectIndex } from '../lib/project-index';
 import type { OwnWrites } from '../lib/own-writes';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
@@ -19,6 +20,7 @@ import type { SessionRoot } from '../lib/preview-bus';
 
 export interface UseProjectTreeDeps {
   root: string | null;
+  projectId: string | null;
   setRoot: (v: string | null) => void;
   setProjectId: (v: string | null) => void;
   setTree: (v: TreeEntry[]) => void;
@@ -35,6 +37,7 @@ export interface UseProjectTreeDeps {
 export function useProjectTree(deps: UseProjectTreeDeps) {
   const {
     root,
+    projectId,
     setRoot,
     setProjectId,
     setTree,
@@ -81,14 +84,30 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
   // open-file edits offer reload; on-disk deletes mark the buffer.
   useEffect(() => {
-    if (!root) return;
+    if (!root || !projectId) return;
+    const rootId = projectId;
     let unwatch: (() => void) | null = null;
     let cancelled = false;
     const pending: WatchChangeEvent[] = [];
+    const indexFailed = (e: unknown) =>
+      emit({
+        scope: 'fs',
+        kind: 'warn',
+        actor: 'system',
+        message: 'project index not updated: ' + String(e).slice(0, 120),
+        event: { action: 'index.failed', root, error: String(e).slice(0, 200) },
+      });
     const flush = debounce(async () => {
       if (cancelled || pending.length === 0) return;
       const batch = coalesceEvents(pending.splice(0));
       void reloadTree(root);
+      // Every change, own writes included, is what the disk now holds.
+      projectIndex()
+        .touch(
+          rootId,
+          batch.map((ev) => ev.path),
+        )
+        .catch(indexFailed);
       for (const ev of batch) {
         // Echoes of our own writes: the disk still holds what we wrote.
         if (await ownWrites.isEcho(ev.path)) continue;
@@ -120,8 +139,10 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       })
       .then(
         (u) => {
-          if (!cancelled) unwatch = u;
-          else u();
+          if (!cancelled) {
+            unwatch = u;
+            projectIndex().watched(rootId, true).catch(indexFailed);
+          } else u();
         },
         (e: unknown) => {
           // The tree still refreshes on reload; say so rather than silently
@@ -139,10 +160,13 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       );
     return () => {
       cancelled = true;
-      if (unwatch) unwatch();
+      if (unwatch) {
+        unwatch();
+        projectIndex().watched(rootId, false).catch(indexFailed);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [root]);
+  }, [root, projectId]);
 
   // Recents for File > Open Recent as state. Restored entries re-validate
   // via stat.
@@ -170,6 +194,27 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     setRoot(canon);
     setProjectId(grant.rootId);
     setRecentProjects(touchRecentProject(canon));
+    const t0 = performance.now();
+    projectIndex()
+      .open(grant.rootId)
+      .then(
+        (files) =>
+          emit({
+            scope: 'fs',
+            kind: 'info',
+            actor: 'system',
+            message: `project index: ${files} files in ${Math.round(performance.now() - t0)}ms`,
+            event: { action: 'index.open', files, ms: Math.round(performance.now() - t0) },
+          }),
+        (e: unknown) =>
+          emit({
+            scope: 'fs',
+            kind: 'warn',
+            actor: 'system',
+            message: 'project index unavailable: ' + String(e).slice(0, 120),
+            event: { action: 'index.failed', root: canon, error: String(e).slice(0, 200) },
+          }),
+      );
     await reloadTree(canon, false);
     setLog('opened ' + canon);
     emit({

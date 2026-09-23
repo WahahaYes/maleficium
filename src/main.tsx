@@ -14,6 +14,8 @@ import { setStructure } from './lib/structure';
 import { desktopStructure } from './lib/structure.tauri';
 import { setHistoryStore } from './lib/history';
 import { desktopHistory } from './lib/history.tauri';
+import { setProjectIndex } from './lib/project-index';
+import { desktopProjectIndex } from './lib/project-index.tauri';
 import { setWatchBackend } from './lib/watch-backend';
 import { desktopWatch } from './lib/watch-backend.tauri';
 import './App.css';
@@ -23,6 +25,7 @@ setProviders({ fs: desktopFs, dialog: desktopDialog });
 setStructure(desktopStructure);
 setWatchBackend(desktopWatch);
 setHistoryStore(desktopHistory);
+setProjectIndex(desktopProjectIndex);
 
 export function Root() {
   const [prefs, setPrefs] = React.useState<AppearancePrefs>(loadAppearance);

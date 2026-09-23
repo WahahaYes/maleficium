@@ -1,22 +1,32 @@
-//! Document structure of a project on disk, addressed by session root and
-//! root-relative paths. Parsing is `maleficium_structure` (pure, shared with
-//! the desktop buffer path); this module owns the file graph: walking
-//! `\input`/`\include` from a main file inside the granted root.
+//! Document structure of a project, addressed by session root and
+//! root-relative paths, read from the project index (`core::index`): the
+//! file graph from a main file, labels and references, citations, and
+//! pre-compile checks across it.
 //!
-//! Every result is root-relative and carries `source` ("disk": saved files,
-//! never unsaved buffers) plus a `revision` over the bytes it read.
+//! Every result is root-relative and carries `source` ("disk" for saved
+//! files, "buffer" when an unsaved editor buffer was read) plus a `revision`
+//! over the text it read.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+pub use maleficium_index::graph::GraphEdge;
+use maleficium_index::graph::{join_rel, Document};
+use maleficium_index::ProjectIndex;
 use maleficium_structure as ms;
 use serde::Serialize;
 
-/// Files one graph walk will read.
-const MAX_FILES: usize = 500;
 /// Rows per list; the rest are counted in `truncated`.
 const MAX_ROWS: usize = 1000;
-const SOURCE: &str = "disk";
+
+fn source_of(doc: &Document, index: &ProjectIndex) -> String {
+    if doc.from_buffer(index) {
+        "buffer"
+    } else {
+        "disk"
+    }
+    .to_string()
+}
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -33,20 +43,6 @@ pub struct OutlineDoc {
 pub struct GraphFile {
     pub rel: String,
     pub exists: bool,
-}
-
-#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GraphEdge {
-    pub from: String,
-    pub line: u32,
-    pub command: String,
-    /// The argument as written.
-    pub target: String,
-    /// Root-relative file it resolves to; `None` when `external`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to: Option<String>,
-    pub external: bool,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -135,121 +131,27 @@ fn rel_of(root: &Path, abs: &Path) -> String {
         .join("/")
 }
 
-/// Lexically join `target` onto root-relative `dir`; `None` when it is
-/// absolute or climbs past the root.
-fn join_rel(dir: &str, target: &str) -> Option<String> {
-    if target.starts_with('/') || target.contains('\0') {
-        return None;
+/// The canonical root-relative path of an existing main file.
+fn main_of(root_id: &str, main_rel: &str) -> Result<String, String> {
+    let root = super::fs::session_root(root_id)?;
+    let abs = super::fs::resolve_in(root_id, main_rel)?;
+    if !abs.is_file() {
+        return Err(format!("not a file: {}", main_rel));
     }
-    let mut out: Vec<&str> = Vec::new();
-    for part in dir.split('/').chain(target.split('/')) {
-        match part {
-            "" | "." => {}
-            ".." => {
-                out.pop()?;
-            }
-            s => out.push(s),
-        }
-    }
-    if out.is_empty() {
-        None
-    } else {
-        Some(out.join("/"))
-    }
+    Ok(rel_of(&root, &abs))
 }
 
-/// TeX's name rule: `\include` always adds `.tex`; `\input`/`\subfile` add it
-/// when the name has no extension.
-fn with_tex(command: &str, target: &str) -> String {
-    let name = target.rsplit('/').next().unwrap_or(target);
-    if command == "include" || !name.contains('.') {
-        format!("{target}.tex")
-    } else {
-        target.to_string()
-    }
-}
-
-/// Text of a root-relative file; `None` when it cannot be read
-/// (missing, escaping via symlink, not UTF-8).
-fn read_rel(root_id: &str, rel: &str) -> Option<String> {
-    let abs = super::fs::resolve_in(root_id, rel).ok()?;
-    std::fs::read_to_string(abs).ok()
-}
-
-/// The document as the engine sees it from `main_rel`: every file reachable
-/// over input edges, resolved against the main file's directory (the
-/// directory the engine runs in).
-struct Document {
-    main: String,
-    main_dir: String,
-    /// Graph order; `None` text = unreadable.
-    files: Vec<(String, Option<String>)>,
-    edges: Vec<GraphEdge>,
-    truncated: usize,
-}
-
-impl Document {
-    fn load(root_id: &str, main_rel: &str) -> Result<Self, String> {
-        let root = super::fs::session_root(root_id)?;
-        let main_abs = super::fs::resolve_in(root_id, main_rel)?;
-        if !main_abs.is_file() {
-            return Err(format!("not a file: {}", main_rel));
-        }
-        let main = rel_of(&root, &main_abs);
-        let main_dir = main
-            .rsplit_once('/')
-            .map(|(d, _)| d.to_string())
-            .unwrap_or_default();
-        let mut doc = Document {
-            main: main.clone(),
-            main_dir,
-            files: Vec::new(),
-            edges: Vec::new(),
-            truncated: 0,
-        };
-        let mut seen: HashSet<String> = HashSet::from([main.clone()]);
-        let mut queue = VecDeque::from([main]);
-        while let Some(rel) = queue.pop_front() {
-            if doc.files.len() == MAX_FILES {
-                doc.truncated += 1;
-                continue;
-            }
-            let text = read_rel(root_id, &rel);
-            if let Some(t) = &text {
-                for input in ms::symbols(t).inputs {
-                    let to = join_rel(&doc.main_dir, &with_tex(&input.command, &input.target));
-                    if let Some(to) = &to {
-                        if seen.insert(to.clone()) {
-                            queue.push_back(to.clone());
-                        }
-                    }
-                    doc.edges.push(GraphEdge {
-                        from: rel.clone(),
-                        line: input.line,
-                        command: input.command,
-                        target: input.target,
-                        external: to.is_none(),
-                        to,
-                    });
-                }
-            }
-            doc.files.push((rel, text));
-        }
-        Ok(doc)
-    }
-
-    fn texts(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.files
-            .iter()
-            .filter_map(|(rel, t)| t.as_deref().map(|t| (rel.as_str(), t)))
-    }
-
-    fn revision<'a>(&'a self, extra: &'a [(String, String)]) -> String {
-        ms::revision(
-            self.texts()
-                .chain(extra.iter().map(|(r, t)| (r.as_str(), t.as_str()))),
-        )
-    }
+/// Symbols of every reachable TeX file, in graph order.
+fn doc_symbols<'a>(
+    doc: &'a Document,
+    index: &'a ProjectIndex,
+) -> impl Iterator<Item = (&'a str, &'a ms::Symbols)> {
+    doc.files.iter().filter_map(|rel| {
+        index
+            .get(rel)
+            .and_then(|f| f.symbols)
+            .map(|s| (rel.as_str(), s))
+    })
 }
 
 /// Keep the first `MAX_ROWS`; return how many were dropped.
@@ -259,146 +161,169 @@ fn cap<T>(v: &mut Vec<T>) -> usize {
     over
 }
 
-/// Outline of one saved file.
+/// Outline of one file.
 pub fn outline_of(root_id: &str, rel: &str) -> Result<OutlineDoc, String> {
     let root = super::fs::session_root(root_id)?;
     let abs = super::fs::resolve_in(root_id, rel)?;
-    let text = std::fs::read_to_string(&abs).map_err(|e| format!("read failed: {}", e))?;
     let rel = rel_of(&root, &abs);
-    let o = ms::outline(&text);
-    Ok(OutlineDoc {
-        source: SOURCE.into(),
-        revision: ms::revision([(rel.as_str(), text.as_str())]),
-        rel,
-        entries: o.entries,
-        truncated: o.truncated,
-    })
+    super::index::with(root_id, |l| {
+        let f = l
+            .index
+            .get(&rel)
+            .ok_or_else(|| format!("not a file: {}", rel))?;
+        let text = f.text.ok_or_else(|| format!("no text for {}", rel))?;
+        let o = ms::outline(text);
+        Ok(OutlineDoc {
+            source: if f.source == maleficium_index::Source::Buffer {
+                "buffer"
+            } else {
+                "disk"
+            }
+            .into(),
+            revision: f.revision.to_string(),
+            rel: rel.clone(),
+            entries: o.entries,
+            truncated: o.truncated,
+        })
+    })?
 }
 
 /// Files and input edges reachable from a main file.
 pub fn file_graph(root_id: &str, main_rel: &str) -> Result<FileGraph, String> {
-    let doc = Document::load(root_id, main_rel)?;
-    let mut edges = doc.edges.clone();
-    let mut files: Vec<GraphFile> = doc
-        .files
-        .iter()
-        .map(|(rel, t)| GraphFile {
-            rel: rel.clone(),
-            exists: t.is_some(),
-        })
-        .collect();
-    let truncated = doc.truncated + cap(&mut files) + cap(&mut edges);
-    Ok(FileGraph {
-        source: SOURCE.into(),
-        revision: doc.revision(&[]),
-        main: doc.main,
-        files,
-        edges,
-        truncated,
+    let main = main_of(root_id, main_rel)?;
+    super::index::with(root_id, |l| {
+        let ix = &l.index;
+        let doc = Document::walk(ix, &main);
+        let mut edges = doc.edges.clone();
+        let mut files: Vec<GraphFile> = doc
+            .files
+            .iter()
+            .map(|rel| GraphFile {
+                rel: rel.clone(),
+                exists: ix.get(rel).is_some(),
+            })
+            .collect();
+        let truncated = cap(&mut files) + cap(&mut edges);
+        FileGraph {
+            source: source_of(&doc, ix),
+            revision: doc.revision(ix, &[]),
+            main: doc.main.clone(),
+            files,
+            edges,
+            truncated,
+        }
     })
 }
 
 /// Label definitions and reference uses across the document.
 pub fn labels_refs(root_id: &str, main_rel: &str) -> Result<LabelsRefs, String> {
-    let doc = Document::load(root_id, main_rel)?;
-    let mut labels = Vec::new();
-    let mut refs = Vec::new();
-    for (rel, text) in doc.texts() {
-        let s = ms::symbols(text);
-        labels.extend(s.labels.into_iter().map(|k| LabelDef {
-            key: k.key,
-            rel: rel.to_string(),
-            line: k.line,
-            duplicate: false,
-        }));
-        refs.extend(s.refs.into_iter().map(|k| (k, rel.to_string())));
-    }
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    for l in &labels {
-        *counts.entry(l.key.as_str()).or_default() += 1;
-    }
-    let dup: HashSet<String> = counts
-        .into_iter()
-        .filter(|&(_, n)| n > 1)
-        .map(|(k, _)| k.to_string())
-        .collect();
-    let defined: HashSet<&str> = labels.iter().map(|l| l.key.as_str()).collect();
-    let mut refs: Vec<KeyUse> = refs
-        .into_iter()
-        .map(|(k, rel)| KeyUse {
-            resolved: defined.contains(k.key.as_str()),
-            key: k.key,
-            rel,
-            line: k.line,
-        })
-        .collect();
-    for l in &mut labels {
-        l.duplicate = dup.contains(&l.key);
-    }
-    let truncated = doc.truncated + cap(&mut labels) + cap(&mut refs);
-    Ok(LabelsRefs {
-        source: SOURCE.into(),
-        revision: doc.revision(&[]),
-        main: doc.main,
-        labels,
-        refs,
-        truncated,
+    let main = main_of(root_id, main_rel)?;
+    super::index::with(root_id, |l| {
+        let ix = &l.index;
+        let doc = Document::walk(ix, &main);
+        let mut labels = Vec::new();
+        let mut refs = Vec::new();
+        for (rel, s) in doc_symbols(&doc, ix) {
+            labels.extend(s.labels.iter().map(|k| LabelDef {
+                key: k.key.clone(),
+                rel: rel.to_string(),
+                line: k.line,
+                duplicate: false,
+            }));
+            refs.extend(s.refs.iter().map(|k| (k, rel)));
+        }
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for l in &labels {
+            *counts.entry(l.key.as_str()).or_default() += 1;
+        }
+        let dup: HashSet<String> = counts
+            .into_iter()
+            .filter(|&(_, n)| n > 1)
+            .map(|(k, _)| k.to_string())
+            .collect();
+        let defined: HashSet<&str> = labels.iter().map(|l| l.key.as_str()).collect();
+        let mut refs: Vec<KeyUse> = refs
+            .into_iter()
+            .map(|(k, rel)| KeyUse {
+                resolved: defined.contains(k.key.as_str()),
+                key: k.key.clone(),
+                rel: rel.to_string(),
+                line: k.line,
+            })
+            .collect();
+        for l in &mut labels {
+            l.duplicate = dup.contains(&l.key);
+        }
+        let truncated = cap(&mut labels) + cap(&mut refs);
+        LabelsRefs {
+            source: source_of(&doc, ix),
+            revision: doc.revision(ix, &[]),
+            main: doc.main.clone(),
+            labels,
+            refs,
+            truncated,
+        }
     })
 }
 
 /// Citation uses across the document, checked against its bibliographies.
 pub fn citations(root_id: &str, main_rel: &str) -> Result<Citations, String> {
-    let doc = Document::load(root_id, main_rel)?;
-    let mut cites = Vec::new();
-    let mut targets: Vec<String> = Vec::new();
-    for (rel, text) in doc.texts() {
-        let s = ms::symbols(text);
-        cites.extend(s.cites.into_iter().map(|k| (k, rel.to_string())));
-        for b in s.bibliographies {
-            if !targets.contains(&b.key) {
-                targets.push(b.key);
+    let main = main_of(root_id, main_rel)?;
+    super::index::with(root_id, |l| {
+        let ix = &l.index;
+        let doc = Document::walk(ix, &main);
+        let mut cites = Vec::new();
+        let mut targets: Vec<String> = Vec::new();
+        for (rel, s) in doc_symbols(&doc, ix) {
+            cites.extend(s.cites.iter().map(|k| (k, rel)));
+            for b in &s.bibliographies {
+                if !targets.contains(&b.key) {
+                    targets.push(b.key.clone());
+                }
             }
         }
-    }
-    let mut keys: HashSet<String> = HashSet::new();
-    let mut bib_texts: Vec<(String, String)> = Vec::new();
-    let bib_files: Vec<BibFile> = targets
-        .into_iter()
-        .map(|target| {
-            let rel = join_rel(&doc.main_dir, &target);
-            let text = rel.as_deref().and_then(|r| read_rel(root_id, r));
-            let entries = text.as_deref().map(ms::bib_keys).unwrap_or_default();
-            let n = entries.len();
-            keys.extend(entries.into_iter().map(|k| k.key));
-            if let (Some(r), Some(t)) = (&rel, text.clone()) {
-                bib_texts.push((r.clone(), t));
-            }
-            BibFile {
-                target,
-                external: rel.is_none(),
-                exists: text.is_some(),
-                rel,
-                entries: n,
-            }
-        })
-        .collect();
-    let mut cites: Vec<KeyUse> = cites
-        .into_iter()
-        .map(|(k, rel)| KeyUse {
-            resolved: keys.contains(&k.key),
-            key: k.key,
-            rel,
-            line: k.line,
-        })
-        .collect();
-    let truncated = doc.truncated + cap(&mut cites);
-    Ok(Citations {
-        source: SOURCE.into(),
-        revision: doc.revision(&bib_texts),
-        main: doc.main,
-        bib_files,
-        cites,
-        truncated,
+        let mut keys: HashSet<&str> = HashSet::new();
+        let mut bib_texts: Vec<(&str, &str)> = Vec::new();
+        let bib_files: Vec<BibFile> = targets
+            .into_iter()
+            .map(|target| {
+                let rel = join_rel(&doc.main_dir, &target);
+                let f = rel
+                    .as_deref()
+                    .and_then(|r| ix.get(r))
+                    .filter(|f| f.text.is_some());
+                let n = f.map(|f| f.bib.len()).unwrap_or(0);
+                if let Some(f) = f {
+                    keys.extend(f.bib.iter().map(|k| k.key.as_str()));
+                    bib_texts.push((f.rel, f.text.unwrap_or("")));
+                }
+                BibFile {
+                    target,
+                    external: rel.is_none(),
+                    exists: f.is_some(),
+                    rel,
+                    entries: n,
+                }
+            })
+            .collect();
+        let mut cites: Vec<KeyUse> = cites
+            .into_iter()
+            .map(|(k, rel)| KeyUse {
+                resolved: keys.contains(k.key.as_str()),
+                key: k.key.clone(),
+                rel: rel.to_string(),
+                line: k.line,
+            })
+            .collect();
+        let truncated = cap(&mut cites);
+        Citations {
+            source: source_of(&doc, ix),
+            revision: doc.revision(ix, &bib_texts),
+            main: doc.main.clone(),
+            bib_files,
+            cites,
+            truncated,
+        }
     })
 }
 
@@ -438,41 +363,43 @@ fn font_families() -> Option<HashSet<String>> {
 /// package or class neither the project nor the bundle provides, biblatex
 /// needing biber, shell escape, and fontspec fonts this machine lacks.
 pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, String> {
-    let root = super::fs::session_root(root_id)?;
-    let doc = Document::load(root_id, main_rel)?;
-    let symbols: Vec<(String, ms::Symbols)> = doc
-        .texts()
-        .map(|(rel, t)| (rel.to_string(), ms::symbols(t)))
-        .collect();
-    let files: Vec<(String, &ms::Symbols)> = symbols.iter().map(|(r, s)| (r.clone(), s)).collect();
+    let main = main_of(root_id, main_rel)?;
     let bundle = super::engine::bundle_files(&super::engine::cache_dir());
-    let in_bundle = |f: &str| bundle.as_ref().is_some_and(|b| b.contains(f));
-    let main_dir = root.join(&doc.main_dir);
-    let in_project = |f: &str| !f.contains('/') && main_dir.join(f).is_file();
-    let wants_fonts = symbols.iter().any(|(_, s)| !s.fonts.is_empty());
-    let families = if wants_fonts { font_families() } else { None };
-    let font_installed = |f: &str| {
-        families
-            .as_ref()
-            .is_some_and(|fs| fs.contains(&f.to_lowercase()))
-    };
-    let env = ms::CheckEnv {
-        in_bundle: bundle
-            .is_some()
-            .then_some(&in_bundle as &dyn Fn(&str) -> bool),
-        in_project: &in_project,
-        font_installed: families
-            .is_some()
-            .then_some(&font_installed as &dyn Fn(&str) -> bool),
-    };
-    let findings = ms::precompile_checks(&files, &env);
-    Ok(Precheck {
-        source: SOURCE.into(),
-        revision: doc.revision(&[]),
-        main: doc.main.clone(),
-        findings,
-        bundle_checked: bundle.is_some(),
-        fonts_checked: !wants_fonts || families.is_some(),
+    super::index::with(root_id, |l| {
+        let ix = &l.index;
+        let doc = Document::walk(ix, &main);
+        let files: Vec<(String, &ms::Symbols)> = doc_symbols(&doc, ix)
+            .map(|(r, s)| (r.to_string(), s))
+            .collect();
+        let in_bundle = |f: &str| bundle.as_ref().is_some_and(|b| b.contains(f));
+        let in_project = |f: &str| {
+            !f.contains('/') && join_rel(&doc.main_dir, f).is_some_and(|r| ix.get(&r).is_some())
+        };
+        let wants_fonts = files.iter().any(|(_, s)| !s.fonts.is_empty());
+        let families = if wants_fonts { font_families() } else { None };
+        let font_installed = |f: &str| {
+            families
+                .as_ref()
+                .is_some_and(|fs| fs.contains(&f.to_lowercase()))
+        };
+        let env = ms::CheckEnv {
+            in_bundle: bundle
+                .is_some()
+                .then_some(&in_bundle as &dyn Fn(&str) -> bool),
+            in_project: &in_project,
+            font_installed: families
+                .is_some()
+                .then_some(&font_installed as &dyn Fn(&str) -> bool),
+        };
+        let findings = ms::precompile_checks(&files, &env);
+        Precheck {
+            source: source_of(&doc, ix),
+            revision: doc.revision(ix, &[]),
+            main: doc.main.clone(),
+            findings,
+            bundle_checked: bundle.is_some(),
+            fonts_checked: !wants_fonts || families.is_some(),
+        }
     })
 }
 
@@ -486,7 +413,7 @@ pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnost
     let over = diagnostics.len().saturating_sub(max);
     diagnostics.truncate(max);
     Ok(Diagnostics {
-        source: SOURCE.into(),
+        source: "disk".into(),
         revision: ms::revision([("log", log.as_str())]),
         main,
         diagnostics,
@@ -548,20 +475,6 @@ mod tests {
                 ("paper/refs.bib", "@book{knuth,\n}\n@book{lamport,\n}\n"),
             ],
         )
-    }
-
-    #[test]
-    fn join_rel_stays_inside_the_root() {
-        assert_eq!(
-            join_rel("paper", "chapters/a.tex").as_deref(),
-            Some("paper/chapters/a.tex")
-        );
-        assert_eq!(join_rel("paper", "../x.tex").as_deref(), Some("x.tex"));
-        assert_eq!(join_rel("", "../x.tex"), None);
-        assert_eq!(join_rel("paper", "/etc/passwd"), None);
-        assert_eq!(with_tex("input", "a"), "a.tex");
-        assert_eq!(with_tex("input", "a.sty"), "a.sty");
-        assert_eq!(with_tex("include", "ch.1"), "ch.1.tex");
     }
 
     #[test]
@@ -650,6 +563,17 @@ mod tests {
         assert_eq!(a, labels_refs(&id, "paper/main.tex").unwrap().revision);
         std::fs::write(root.join("paper/chapters/b.tex"), "changed\n").unwrap();
         assert_ne!(a, labels_refs(&id, "paper/main.tex").unwrap().revision);
+    }
+
+    #[test]
+    fn buffers_laid_over_the_index_are_read_and_named() {
+        let (id, _) = sample("overlay");
+        assert_eq!(labels_refs(&id, "paper/main.tex").unwrap().source, "disk");
+        super::super::index::overlay(&id, "paper/chapters/b.tex", Some("\\label{fresh}".into()))
+            .unwrap();
+        let lr = labels_refs(&id, "paper/main.tex").unwrap();
+        assert_eq!(lr.source, "buffer");
+        assert!(lr.labels.iter().any(|l| l.key == "fresh"));
     }
 
     #[test]

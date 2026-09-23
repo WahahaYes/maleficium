@@ -29,7 +29,11 @@ pub fn run() {
             commands::history::history_get,
             commands::history::history_restore,
             commands::history::history_retention,
-            commands::history::history_batch_files
+            commands::history::history_batch_files,
+            commands::index::index_open,
+            commands::index::index_watched,
+            commands::index::index_touch,
+            commands::index::index_overlay
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

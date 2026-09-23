@@ -9,7 +9,7 @@ default-run = "tauri-app"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["structure", "events"]
+members = ["structure", "events", "index"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -34,6 +34,7 @@ anyhow = "1.0.104"
 sha2 = "0.10.9"
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
+maleficium-index = { path = "index" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
