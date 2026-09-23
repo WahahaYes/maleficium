@@ -15,7 +15,9 @@ impl Default for CompileState {
     }
 }
 
-#[tauri::command]
+/// Runs off the main thread: a compile can take minutes (a cold cache), and
+/// the window must keep painting its progress and accept Cancel meanwhile.
+#[tauri::command(async)]
 pub fn compile_tex(
     app: AppHandle,
     state: State<'_, CompileState>,
