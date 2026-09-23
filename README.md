@@ -15,6 +15,8 @@ Prerequisites: Node, Rust, and system webkit2gtk for Tauri. The engine sidecars 
 
 Both pick the first free port pair from 1420 (`scripts/dev.sh`), so parallel instances run side by side.
 
+Release builds (`.deb`, AppImage, on the host or in Docker): see [BUILDING.md](BUILDING.md).
+
 ## Verify (run in this dir before claiming behavior change)
 
 - `./node_modules/.bin/tsc --noEmit --skipLibCheck`
