@@ -250,7 +250,16 @@ done
 log "captured 02-compiling-{1..8}.png"
 shot 02-compiling-done
 stop_app
-check_log "log.open compile.finish"
+check_log "log.open compile.finish offline.readiness"
+# The warm run compiled from the cache alone: the badge must read Ready
+# offline (02-compiling-done shows it) and the bus must say so.
+python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "no ready-offline readiness after the cached-only recompile"
+import json, sys
+evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+states = [e.get("state") for e in evs if e.get("action") == "offline.readiness"]
+assert states and states[-1] == "ready", "offline.readiness states: %s" % states
+print("stills: offline readiness after the warm recompile: %s" % states[-1])
+EOF
 
 # State 3 — Failure: bad project, focus, Ctrl+R (bundles warm by now).
 start_app "$FIX/bad"; wait_window 300

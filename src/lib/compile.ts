@@ -1,6 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { CompileFailure, CompileLine, CompileReport } from './generated/events';
+import type {
+  CompileFailure,
+  CompileLine,
+  CompileReport,
+  OfflineReadiness,
+} from './generated/events';
 import type { MissingDependency } from './generated/structure';
 
 /**
@@ -26,9 +31,17 @@ export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => vo
   return listen<CompileLine>('compile-line', (e) => cb(e.payload));
 }
 
-export async function compileTex(rootId: string, mainRel: string): Promise<CompileResult> {
+/**
+ * `networked` fetches everything online first, then proves the document
+ * compiles from the cache alone (Make Available Offline).
+ */
+export async function compileTex(
+  rootId: string,
+  mainRel: string,
+  networked = false,
+): Promise<CompileResult> {
   try {
-    const r = await invoke<CompileReport>('compile_tex', { rootId, mainRel });
+    const r = await invoke<CompileReport>('compile_tex', { rootId, mainRel, networked });
     return {
       ok: r.pdfUrl != null,
       pdfUrl: r.pdfUrl,
@@ -104,5 +117,56 @@ export async function cleanOutputs(rootId: string, mainRel: string): Promise<Cle
     return { ok: true, removed, error: null };
   } catch (e) {
     return { ok: false, removed: 0, error: String(e) };
+  }
+}
+
+/** The project's offline readiness; rejects when the root is not granted. */
+export async function offlineReadiness(rootId: string): Promise<OfflineReadiness> {
+  return await invoke<OfflineReadiness>('offline_readiness', { rootId });
+}
+
+export type OfflineBadge = {
+  label: string;
+  title: string;
+  tone: 'success' | 'warning' | 'error' | 'neutral';
+};
+
+/** The status-bar badge for a readiness state. */
+export function offlineBadge(r: OfflineReadiness): OfflineBadge {
+  const needs = r.needs.join(', ');
+  const why = r.missing ? describeMissing(r.missing) : '';
+  switch (r.state) {
+    case 'ready':
+      return {
+        label: 'Ready offline',
+        title: 'The last compile used only cached TeX files: this project compiles without network',
+        tone: 'success',
+      };
+    case 'needs-network':
+      return {
+        label: `Needs network for: ${needs}`,
+        title: why || 'Tools → Make Available Offline fetches what this project needs',
+        tone: 'warning',
+      };
+    case 'needs-tool':
+      return {
+        label: `Needs ${needs}`,
+        title: why || `${needs} is not installed`,
+        tone: 'warning',
+      };
+    case 'needs-font':
+      return {
+        label: `Needs font: ${needs}`,
+        title: why || `${needs} is not installed`,
+        tone: 'warning',
+      };
+    case 'blocked':
+      return { label: `Can't compile: ${needs}`, title: why, tone: 'error' };
+    case 'unverified':
+      return {
+        label: needs ? `Offline unverified: ${needs}` : 'Offline unverified',
+        title: 'Compile, or use Tools → Make Available Offline, to check this project offline',
+        tone: 'neutral',
+      };
   }
 }

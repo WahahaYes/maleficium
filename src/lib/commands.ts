@@ -44,6 +44,7 @@ export type CommandId =
   | 'appearance.settings'
   | 'tools.compile'
   | 'tools.compile-file'
+  | 'tools.make-offline'
   | 'tools.cancel'
   | 'tools.forward-sync'
   | 'help.shortcuts'
@@ -121,6 +122,7 @@ export interface CommandActions {
   clearRecents: () => void;
   compile: () => void;
   compileFile: () => void;
+  makeOffline: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -423,6 +425,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Compile This File',
           enabled: !ctx.compiling && ctx.isProjectFile,
           run: a.compileFile,
+        },
+        {
+          id: 'tools.make-offline',
+          label: 'Make Available Offline',
+          enabled: !ctx.compiling && ctx.hasProject,
+          run: a.makeOffline,
         },
         {
           id: 'tools.cancel',

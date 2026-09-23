@@ -13,6 +13,9 @@ import {
   compileTex,
   describeMissing,
   engineLog,
+  offlineBadge,
+  offlineReadiness,
+  type OfflineBadge,
   onCompileLine,
   outputsFresh,
   type CompileResult,
@@ -73,6 +76,36 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const [compilePhase, setCompilePhase] = useState<CompilePhase>('idle');
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
+  const [offline, setOffline] = useState<OfflineBadge | null>(null);
+
+  /** Read the project's offline readiness onto the bus and the badge. */
+  const refreshReadiness = async (p: SessionRoot) => {
+    try {
+      const r = await offlineReadiness(p.rootId);
+      const badge = offlineBadge(r);
+      setOffline(badge);
+      emit({
+        scope: 'compile',
+        kind: r.state === 'ready' ? 'success' : 'info',
+        actor: 'system',
+        message: 'offline: ' + badge.label,
+        event: { action: 'offline.readiness', root: p.path, state: r.state, needs: r.needs },
+      });
+    } catch (e) {
+      setOffline(null);
+      emit({
+        scope: 'compile',
+        kind: 'warn',
+        actor: 'system',
+        message: 'offline readiness unavailable: ' + String(e).slice(0, 200),
+        event: { action: 'offline.readiness-failed', root: p.path, error: String(e).slice(0, 200) },
+      });
+    }
+  };
+  useEffect(() => {
+    if (root && projectId) void refreshReadiness({ rootId: projectId, path: root });
+    else setOffline(null);
+  }, [root, projectId]);
 
   useEffect(() => {
     const h = () => {
@@ -129,7 +162,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const phaseRef = useRef<CompilePhase>('idle');
   async function runCompile(
     target: string | null,
-    opts?: { skipPersist?: boolean; root?: SessionRoot },
+    opts?: { skipPersist?: boolean; root?: SessionRoot; networked?: boolean },
   ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
@@ -316,7 +349,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     // root fails here, never reaching the engine.
     const src = sourceFor(activeTarget, sessionRoots(opts?.root));
     const r: CompileResult = src
-      ? await compileTex(src.rootId, src.mainRel)
+      ? await compileTex(src.rootId, src.mainRel, opts?.networked === true)
       : {
           ok: false,
           pdfUrl: null,
@@ -421,7 +454,15 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       message: `main-thread max frame ${Math.round(maxGap)}ms during compile`,
       event: { action: 'compile.frame-probe', maxFrameMs: Math.round(maxGap) },
     });
+    if (src && src.rootId === (opts?.root?.rootId ?? projectId)) {
+      await refreshReadiness({ rootId: src.rootId, path: src.rootPath });
+    }
     return true;
+  }
+
+  /** One networked compile of the main file, proven offline right after. */
+  async function makeOffline() {
+    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null), { networked: true });
   }
 
   // Cache-warm on open: a background compile of a freshly opened project's
@@ -491,6 +532,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   return {
     compilePhase,
     compileTimer,
+    offline,
+    makeOffline,
     warmCompile,
     handleCompileFile,
   };

@@ -54,6 +54,7 @@ const actions: CommandActions = {
   clearRecents: noop,
   compile: noop,
   compileFile: noop,
+  makeOffline: noop,
   cancelCompile: noop,
   forwardSync: noop,
   showShortcuts: noop,

@@ -1,4 +1,5 @@
-// StatusBar.tsx — fixed 32px bottom bar (phase + timer + main + restorables).
+// StatusBar.tsx — fixed 32px bottom bar (phase + timer + offline badge + main
+// + restorables).
 //
 // Constant height; scalar props only (no payload). Compile state lives here.
 // The revision count is the entry point to the History surface.
@@ -7,6 +8,7 @@ import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
+import type { OfflineBadge } from '../lib/compile';
 
 export default function StatusBar({
   mainFile,
@@ -18,6 +20,7 @@ export default function StatusBar({
   phase,
   timer,
   message,
+  offline,
 }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
@@ -30,6 +33,8 @@ export default function StatusBar({
   phase: string;
   timer: number;
   message: string;
+  /** The project's offline readiness; absent outside a project. */
+  offline?: OfflineBadge | null;
 }) {
   const color =
     phase === 'success'
@@ -64,6 +69,34 @@ export default function StatusBar({
         {phase}
         {phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
+      {offline ? (
+        <Typography
+          variant="caption"
+          noWrap
+          title={offline.title}
+          data-testid="offline-badge"
+          sx={{
+            flexShrink: 0,
+            maxWidth: '30%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            px: 0.75,
+            border: 1,
+            borderRadius: 1,
+            borderColor: 'divider',
+            color:
+              offline.tone === 'success'
+                ? 'success.main'
+                : offline.tone === 'warning'
+                  ? 'warning.main'
+                  : offline.tone === 'error'
+                    ? 'error.main'
+                    : 'text.secondary',
+          }}
+        >
+          {offline.label}
+        </Typography>
+      ) : null}
       {mainFile ? (
         <Typography
           variant="caption"
