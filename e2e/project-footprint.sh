@@ -121,10 +121,10 @@ printf 'snapshot bytes' > "$HIST/blobs/ab/abcdef"
 if echo "$(porcelain)" | grep -q "maleficium-history"; then fail "history dir appeared in project"; fi
 pass "revision index + blobs land in app-data shard, porcelain clean"
 # history must derive its home from app-data, never from the project root
-HISTSRC="$APPSRC/lib/history.ts"
+HISTSRC="$DEVROOT/src-tauri/src/core/history.rs"
 [ -f "$HISTSRC" ] || fail "history store missing: $HISTSRC"
-grep -q "appHistoryDir" "$HISTSRC" || fail "history store does not use the app-local derivation"
-grep -q "appDataDir" "$HISTSRC" || fail "history store does not root itself in app-data"
+grep -q '"maleficium-history"' "$HISTSRC" || fail "history store does not use the app-local derivation"
+grep -q "data_base_dir()" "$HISTSRC" || fail "history store does not root itself in app-data"
 pass "history store derives its home from app-data only"
 
 # --- event log home ---------------------------------------------------------
