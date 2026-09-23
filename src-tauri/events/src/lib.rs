@@ -491,6 +491,22 @@ pub enum AppEvent {
     /// The pdf's stamp could not be read: outside rewrites go unnoticed.
     #[serde(rename = "preview.stamp-failed")]
     PreviewStampFailed { error: String },
+    /// A new project was made from a template.
+    #[serde(rename = "template.create")]
+    TemplateCreate { template: String, root: String },
+    #[serde(rename = "template.create-failed")]
+    TemplateCreateFailed { template: String, error: String },
+    /// A project or folder was saved as a user template.
+    #[serde(rename = "template.save")]
+    TemplateSave { id: String, name: String },
+    #[serde(rename = "template.save-failed")]
+    TemplateSaveFailed { name: String, error: String },
+    /// The template list could not be read, or some user templates could not.
+    #[serde(rename = "template.list-failed")]
+    TemplateListFailed { error: String },
+    /// The welcome project opened.
+    #[serde(rename = "template.welcome")]
+    TemplateWelcome { root: String },
     #[serde(rename = "export.done")]
     ExportDone {
         kind: ExportKind,

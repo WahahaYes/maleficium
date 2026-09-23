@@ -17,6 +17,9 @@ import type { OwnWrites } from '../lib/own-writes';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
+import { welcomeProject } from '../lib/templates';
+import { setMainFileFor } from '../lib/mainFile.store';
+import { hashRoot } from '../lib/paths';
 
 export interface UseProjectTreeDeps {
   root: string | null;
@@ -261,8 +264,37 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     }
   }
 
+  /** Open the welcome tour (written into app data the first time). */
+  async function openWelcome() {
+    try {
+      const c = await welcomeProject();
+      setMainFileFor(hashRoot(c.root), c.main);
+      emit({
+        scope: 'app',
+        kind: 'info',
+        actor: 'system',
+        message: 'welcome project: ' + c.root,
+        event: { action: 'template.welcome', root: c.root },
+      });
+      await openRoot(c.root, { warm: true });
+    } catch (e) {
+      emit({
+        scope: 'app',
+        kind: 'error',
+        actor: 'system',
+        message: 'welcome project unavailable: ' + String(e).slice(0, 200),
+        event: {
+          action: 'template.create-failed',
+          template: 'welcome',
+          error: String(e).slice(0, 200),
+        },
+      });
+    }
+  }
+
   // Restore-on-launch: the `?project=` preset wins, else the most recent
-  // project that still resolves, else the Hello sample (no project forced).
+  // project that still resolves; a first run (no recents at all) opens the
+  // welcome tour.
   // Runs once; only roots that all fail validation are pruned.
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -277,6 +309,10 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         /* non-browser — fall through to recents */
       }
       const recents = getRecentProjects();
+      if (recents.length === 0) {
+        await openWelcome();
+        return;
+      }
       const stale: string[] = [];
       for (const r of recents) {
         try {
@@ -299,5 +335,5 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { reloadTree, openRoot, open, recentProjects, setRecentProjects };
+  return { reloadTree, openRoot, open, openWelcome, recentProjects, setRecentProjects };
 }

@@ -61,6 +61,7 @@ import {
 } from './lib/keymap';
 import type { ZoomAction } from './lib/zoom';
 import { useExport } from './hooks/useExport';
+import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
@@ -617,21 +618,22 @@ export default function App({
     setLogCollapsed,
     compileRef,
   });
-  const { reloadTree, openRoot, open, recentProjects, setRecentProjects } = useProjectTree({
-    root,
-    projectId,
-    setRoot,
-    setProjectId,
-    setTree,
-    fileNameRef,
-    ownWrites,
-    setReloadPath,
-    setLog,
-    trash,
-    resolveMain,
-    handleSelect,
-    warmCompile,
-  });
+  const { reloadTree, openRoot, open, openWelcome, recentProjects, setRecentProjects } =
+    useProjectTree({
+      root,
+      projectId,
+      setRoot,
+      setProjectId,
+      setTree,
+      fileNameRef,
+      ownWrites,
+      setReloadPath,
+      setLog,
+      trash,
+      resolveMain,
+      handleSelect,
+      warmCompile,
+    });
   const { handleCreate, handleRename, handleReload, handleDelete, handleClean, handleUndo } =
     useFileOps({
       root,
@@ -960,6 +962,7 @@ export default function App({
     const base = t.slice(t.lastIndexOf('/') + 1) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
+  const [templateMode, setTemplateMode] = useState<TemplateDialogMode>(null);
   const exporter = useExport({
     pdf: previewDoc?.source ?? null,
     project: root && projectId ? { rootId: projectId, path: root } : null,
@@ -1125,6 +1128,10 @@ export default function App({
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
     exportZip: () => void exporter.exportZipAs(),
+    newFromTemplate: () => setTemplateMode('gallery'),
+    saveAsTemplate: () => setTemplateMode('save'),
+    importTemplate: () => setTemplateMode('import'),
+    showWelcome: () => void openWelcome(),
     cancelCompile: () => {
       void cancelCompile().catch((e) =>
         emit({
@@ -1585,6 +1592,13 @@ export default function App({
         notice={historyNotice}
         restoringRev={restoringRev}
         onRestore={(rev) => void restoreRevision(rev)}
+      />
+      <TemplateDialogs
+        mode={templateMode}
+        onClose={() => setTemplateMode(null)}
+        project={root && projectId ? { rootId: projectId, path: root } : null}
+        mainRel={mainFile ? relInProject(mainFile) : null}
+        openRoot={(r) => openRoot(r, { warm: true })}
       />
       <StatusBar
         mainFile={relOf(mainFile)}

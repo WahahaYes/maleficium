@@ -13,6 +13,9 @@ export type CommandId =
   | 'file.close-file'
   | 'file.save'
   | 'file.set-main'
+  | 'file.new-from-template'
+  | 'file.save-as-template'
+  | 'file.import-template'
   | 'file.export-pdf'
   | 'file.export-zip'
   | 'file.reload'
@@ -62,7 +65,8 @@ export type CommandId =
   | 'tools.cancel'
   | 'tools.forward-sync'
   | 'help.shortcuts'
-  | 'help.about';
+  | 'help.about'
+  | 'help.welcome';
 
 export type ViewPreset = 'both' | 'editor' | 'preview' | 'custom';
 export type ViewState = { tree: boolean; editor: boolean; preview: boolean };
@@ -150,6 +154,10 @@ export interface CommandActions {
   makeOffline: () => void;
   toggleAutoCompile: () => void;
   exportPdf: () => void;
+  newFromTemplate: () => void;
+  saveAsTemplate: () => void;
+  importTemplate: () => void;
+  showWelcome: () => void;
   exportZip: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
@@ -221,6 +229,24 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           run: a.quickOpen,
         },
         { id: 'file.new-file', label: 'New File…', enabled: ctx.hasProject, run: a.newFile },
+        {
+          id: 'file.new-from-template',
+          label: 'New Project from Template…',
+          enabled: true,
+          run: a.newFromTemplate,
+        },
+        {
+          id: 'file.save-as-template',
+          label: 'Save Project as Template…',
+          enabled: ctx.hasProject,
+          run: a.saveAsTemplate,
+        },
+        {
+          id: 'file.import-template',
+          label: 'Import Folder as Template…',
+          enabled: true,
+          run: a.importTemplate,
+        },
         {
           id: 'file.close-file',
           label: 'Close File',
@@ -568,6 +594,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           enabled: true,
           run: a.showShortcuts,
         },
+        { id: 'help.welcome', label: 'Welcome', enabled: true, run: a.showWelcome },
         { id: 'help.about', label: 'About Maleficium', enabled: true, run: a.showAbout },
       ],
     },
