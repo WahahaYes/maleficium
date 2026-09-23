@@ -585,6 +585,8 @@ export default function App({
     compileTimer,
     offline,
     progress,
+    autoCompile,
+    setAutoCompile,
     makeOffline,
     warmCompile,
     handleCompileFile,
@@ -884,6 +886,7 @@ export default function App({
     isProjectFile: isProjectFile(fileName),
     dirty: !!buffers.get(fileName)?.dirty,
     compiling: compilePhase === 'compiling',
+    autoCompile,
     pdfOpen: pdfUrl != null,
     editorReady: viewportRef.current != null && largeFile == null,
     view: { tree: treeVisible, editor: editorVisible, preview: previewOpen },
@@ -1033,6 +1036,7 @@ export default function App({
     makeOffline: () => {
       void makeOffline();
     },
+    toggleAutoCompile: () => setAutoCompile(!autoCompile),
     cancelCompile: () => {
       void cancelCompile().catch((e) =>
         emit({

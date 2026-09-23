@@ -24,6 +24,9 @@ import {
 } from '../lib/compile';
 import { emit } from '../lib/events';
 import { foldProgress, IDLE_PROGRESS, progressLabel } from '../lib/compileProgress';
+import { INITIAL_AUTO, parseAutoCompile, stepAuto, type AutoInput } from '../lib/autoCompile';
+import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
+import { transport } from '../lib/event-transport';
 import type { Actor } from '../lib/generated/events';
 import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
@@ -504,6 +507,67 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     return true;
   }
 
+  // Auto-compile on save: the scheduler folds saves and every run's start
+  // and finish off the bus; a timer wakes it when an armed run falls due.
+  const [autoCompile, setAutoCompileState] = useState(() => {
+    try {
+      return parseAutoCompile(store().get(DEVICE_PREF_KEYS.autoCompile));
+    } catch {
+      // No app store configured: the default (on).
+      return true;
+    }
+  });
+  const autoRef = useRef({ ...INITIAL_AUTO, enabled: autoCompile });
+  const autoFireRef = useRef<() => void>(() => {});
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedAuto = useRef((i: AutoInput) => {
+    const r = stepAuto(autoRef.current, i);
+    autoRef.current = r.state;
+    if (r.fire) autoFireRef.current();
+    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+    autoTimerRef.current = null;
+    const due = autoRef.current.dueAt;
+    if (due != null) {
+      autoTimerRef.current = setTimeout(
+        () => feedAuto.current({ kind: 'tick', at: Date.now() }),
+        Math.max(0, due - Date.now()),
+      );
+    }
+  });
+  autoFireRef.current = () => {
+    const target = mainFile ?? fileName;
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      actor: 'system',
+      message: 'auto-compile after save: ' + target,
+      event: { action: 'compile.auto', target },
+    });
+    void compile();
+  };
+  useEffect(
+    () =>
+      transport().subscribe((e) => {
+        const a = e.event.action;
+        if (a === 'file.save') feedAuto.current({ kind: 'save', at: Date.now() });
+        else if (a === 'compile.start') feedAuto.current({ kind: 'start' });
+        else if (a === 'compile.finish') feedAuto.current({ kind: 'finish', at: Date.now() });
+      }),
+    [],
+  );
+  useEffect(() => {
+    feedAuto.current({ kind: 'reset' });
+  }, [projectId]);
+  const setAutoCompile = (on: boolean) => {
+    setAutoCompileState(on);
+    feedAuto.current({ kind: 'enable', on });
+    try {
+      store().set(DEVICE_PREF_KEYS.autoCompile, String(on));
+    } catch {
+      // No app store configured: the toggle lasts for this session only.
+    }
+  };
+
   /** One networked compile of the main file, proven offline right after. */
   async function makeOffline() {
     await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null), { networked: true });
@@ -578,6 +642,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     compileTimer,
     offline,
     progress: progressLabel(progress),
+    autoCompile,
+    setAutoCompile,
     makeOffline,
     warmCompile,
     handleCompileFile,

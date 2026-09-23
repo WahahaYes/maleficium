@@ -359,6 +359,9 @@ pub enum AppEvent {
 
     #[serde(rename = "compile.start")]
     CompileStart { target: String },
+    /// A save started a compile (auto-compile on save).
+    #[serde(rename = "compile.auto")]
+    CompileAuto { target: String },
     #[serde(rename = "compile.one-off")]
     CompileOneOff { target: String },
     #[serde(rename = "compile.warm")]

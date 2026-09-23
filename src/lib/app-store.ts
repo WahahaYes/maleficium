@@ -21,6 +21,7 @@ export const DEVICE_PREF_KEYS = {
   appearance: 'maleficium.appearance.v1',
   layout: 'maleficium.layout',
   previewZoom: 'maleficium.previewZoom.v1',
+  autoCompile: 'maleficium.autoCompile.v1',
 } as const;
 
 /** Pointers into project state. Server-owned from birth. */

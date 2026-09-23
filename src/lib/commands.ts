@@ -53,6 +53,7 @@ export type CommandId =
   | 'tools.compile'
   | 'tools.compile-file'
   | 'tools.make-offline'
+  | 'tools.auto-compile'
   | 'tools.cancel'
   | 'tools.forward-sync'
   | 'help.shortcuts'
@@ -76,6 +77,8 @@ export interface MenuContext {
   isProjectFile: boolean;
   dirty: boolean;
   compiling: boolean;
+  /** Compile on save is on. */
+  autoCompile: boolean;
   pdfOpen: boolean;
   /** Live editor mounted (viewport bridge assigned) — Selection enabled. */
   editorReady: boolean;
@@ -137,6 +140,7 @@ export interface CommandActions {
   compile: () => void;
   compileFile: () => void;
   makeOffline: () => void;
+  toggleAutoCompile: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -486,6 +490,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Compile This File',
           enabled: !ctx.compiling && ctx.isProjectFile,
           run: a.compileFile,
+        },
+        {
+          id: 'tools.auto-compile',
+          label: 'Auto-Compile on Save',
+          checked: ctx.autoCompile,
+          enabled: true,
+          run: a.toggleAutoCompile,
         },
         {
           id: 'tools.make-offline',
