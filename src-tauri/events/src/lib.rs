@@ -6,7 +6,7 @@
 //! fs, no process, no Tauri.
 
 use maleficium_structure::{
-    Diagnostic, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+    CompilePhase, Diagnostic, FetchOutcome, LineSignal, MissingDependency, MissingReason,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::{Config, TS};
@@ -326,6 +326,14 @@ pub enum AppEvent {
         target: Option<String>,
         error: String,
     },
+    /// The engine entered a phase of the run.
+    #[serde(rename = "compile.phase")]
+    CompilePhase {
+        phase: CompilePhase,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        detail: Option<String>,
+    },
     /// The engine fetched a bundle file, or failed to.
     #[serde(rename = "compile.fetch")]
     CompileFetch { file: String, outcome: FetchOutcome },
@@ -508,7 +516,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/events (maleficium-events). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type {\n  FetchOutcome,\n  LineSignal,\n  MissingDependency,\n  MissingReason,\n  Severity,\n} from './structure';\n",
+         import type {\n  CompilePhase,\n  FetchOutcome,\n  LineSignal,\n  MissingDependency,\n  MissingReason,\n  Severity,\n} from './structure';\n",
     );
     for d in decls {
         out.push_str("\nexport ");

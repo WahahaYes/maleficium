@@ -7,7 +7,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use maleficium_events::{CompileLine, CompileStream};
-use maleficium_structure::{self as ms, MissingDependency, MissingReason};
+use maleficium_structure::{
+    self as ms, CompilePhase, LineSignal, MissingDependency, MissingReason,
+};
 
 use super::{JobOutcome, JobStatus, MainOutputs};
 
@@ -205,9 +207,13 @@ pub fn compile(
                 cached_only: true,
             });
         }
-        on_line(&status_line(String::from(
-            "first compile: downloading TeX support files",
-        )));
+        on_line(&CompileLine {
+            signal: Some(LineSignal::Phase {
+                phase: CompilePhase::FirstCompile,
+                detail: None,
+            }),
+            ..status_line(String::from("first compile: downloading TeX support files"))
+        });
         mode = CacheMode::Online;
     }
     loop {

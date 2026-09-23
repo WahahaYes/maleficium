@@ -54,11 +54,38 @@ pub struct MissingDependency {
     pub reason: MissingReason,
 }
 
+/// Where a running compile is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompilePhase {
+    /// Nothing is cached yet: this compile downloads the TeX support files.
+    FirstCompile,
+    /// Building the LaTeX format from the bundle.
+    Format,
+    /// A TeX pass; `detail` says why a rerun happened.
+    Tex,
+    /// BibTeX or an external bibliography tool (`detail` names it).
+    Bibliography,
+    /// Converting to PDF.
+    Xdvipdfmx,
+    /// Writing an output file (`detail` names it).
+    Writing,
+}
+
 /// What one console line says, when it says something typed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum LineSignal {
-    Fetch { file: String, outcome: FetchOutcome },
+    Fetch {
+        file: String,
+        outcome: FetchOutcome,
+    },
+    Phase {
+        phase: CompilePhase,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        detail: Option<String>,
+    },
 }
 
 static DOWNLOADING: LazyLock<Regex> =
@@ -82,6 +109,11 @@ static ABSOLUTE_PATH: LazyLock<Regex> =
 static EXTERNAL_TOOL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^note: Running external tool (\S+)").unwrap());
 
+static RERUN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^note: Rerunning TeX because (.+?)(?: \.\.\.)?$").unwrap());
+static WRITING: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^note: Writing `(?:[^`]*/)?([^`/]+)`").unwrap());
+
 const BUNDLE_UNREACHABLE: &str =
     "this bundle isn't cached, and we couldn't get it from the internet";
 const BUNDLE_INVALID: &str = "doesn't specify a valid bundle";
@@ -98,6 +130,33 @@ const SUPPORT_EXTS: &[&str] = &[
 ];
 
 pub fn line_signal(text: &str) -> Option<LineSignal> {
+    let phase = |phase, detail: Option<&str>| {
+        Some(LineSignal::Phase {
+            phase,
+            detail: detail.map(str::to_string),
+        })
+    };
+    if text.starts_with("note: generating format") {
+        return phase(CompilePhase::Format, None);
+    }
+    if text.starts_with("note: Running TeX") {
+        return phase(CompilePhase::Tex, None);
+    }
+    if let Some(m) = RERUN.captures(text) {
+        return phase(CompilePhase::Tex, Some(&m[1]));
+    }
+    if text.starts_with("note: Running BibTeX") {
+        return phase(CompilePhase::Bibliography, Some("bibtex"));
+    }
+    if let Some(m) = EXTERNAL_TOOL.captures(text) {
+        return phase(CompilePhase::Bibliography, Some(&m[1]));
+    }
+    if text.starts_with("note: Running xdvipdfmx") {
+        return phase(CompilePhase::Xdvipdfmx, None);
+    }
+    if let Some(m) = WRITING.captures(text) {
+        return phase(CompilePhase::Writing, Some(&m[1]));
+    }
     if let Some(m) = DOWNLOADING.captures(text) {
         return Some(LineSignal::Fetch {
             file: m[1].trim().to_string(),
@@ -472,6 +531,30 @@ note: Running xdvipdfmx ...";
             line_signal("warning: failure fetching \"booktabs.sty\" from network (1/3)"),
             None
         );
-        assert_eq!(line_signal("note: Running TeX ..."), None);
+    }
+
+    #[test]
+    fn line_signals_mark_every_phase_of_a_real_run() {
+        let phase = |p, d: Option<&str>| {
+            Some(LineSignal::Phase {
+                phase: p,
+                detail: d.map(str::to_string),
+            })
+        };
+        let run = [
+            ("note: generating format \"latex\"", phase(CompilePhase::Format, None)),
+            ("note: Running TeX ...", phase(CompilePhase::Tex, None)),
+            ("note: Running BibTeX on main.aux ...", phase(CompilePhase::Bibliography, Some("bibtex"))),
+            ("note: Rerunning TeX because bibtex was run ...", phase(CompilePhase::Tex, Some("bibtex was run"))),
+            ("note: Rerunning TeX because \"main.aux\" changed ...", phase(CompilePhase::Tex, Some("\"main.aux\" changed"))),
+            ("note: Running external tool biber ...", phase(CompilePhase::Bibliography, Some("biber"))),
+            ("note: Running xdvipdfmx ...", phase(CompilePhase::Xdvipdfmx, None)),
+            ("note: Writing `/tmp/x/out/main.pdf` (32.79 KiB)", phase(CompilePhase::Writing, Some("main.pdf"))),
+            ("note: Skipped writing 3 intermediate files (use --keep-intermediates to keep them)", None),
+            ("note: \"version 2\" Tectonic command-line interface activated", None),
+        ];
+        for (text, want) in run {
+            assert_eq!(line_signal(text), want, "{text}");
+        }
     }
 }

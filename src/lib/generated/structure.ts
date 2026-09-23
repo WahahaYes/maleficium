@@ -34,4 +34,6 @@ export type MissingReason = "not-cached" | "fetch-failed" | "not-in-bundle" | "b
 
 export type MissingDependency = { file?: string, reason: MissingReason, };
 
-export type LineSignal = { "kind": "fetch", file: string, outcome: FetchOutcome, };
+export type CompilePhase = "first-compile" | "format" | "tex" | "bibliography" | "xdvipdfmx" | "writing";
+
+export type LineSignal = { "kind": "fetch", file: string, outcome: FetchOutcome, } | { "kind": "phase", phase: CompilePhase, detail?: string, };
