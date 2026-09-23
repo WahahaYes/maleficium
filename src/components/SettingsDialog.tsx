@@ -159,6 +159,22 @@ export default function SettingsDialog({
             <ToggleButton value="compact">Compact</ToggleButton>
           </ToggleButtonGroup>
         </Box>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="caption">PDF pages in a dark theme</Typography>
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            size="small"
+            sx={{ '& .MuiToggleButton-root': { flex: 1 } }}
+            value={prefs.pageDim}
+            onChange={(_, v) => v && set({ pageDim: v })}
+            aria-label="PDF pages in a dark theme"
+          >
+            <ToggleButton value="off">As printed</ToggleButton>
+            <ToggleButton value="dim">Dimmed</ToggleButton>
+            <ToggleButton value="invert">Inverted</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
         <SizeRow
           label="Interface scale"
           value={prefs.uiScale}

@@ -3,7 +3,7 @@
 // Single object describing the look; the theme factory consumes it and the
 // settings dialog will edit it. Defaults reproduce the current visuals.
 
-import { typeScale, type Density, type ThemeMode } from './theme';
+import { typeScale, type Density, type PageDim, type ThemeMode } from './theme';
 import { DEVICE_PREF_KEYS, store } from './app-store';
 
 export type ContrastStep = 'standard' | 'high';
@@ -18,6 +18,8 @@ export interface AppearancePrefs {
   ligatures: boolean;
   accent: string;
   contrast: ContrastStep;
+  /** PDF pages in a dark theme. */
+  pageDim: PageDim;
 }
 
 export const DEFAULT_PREFS: AppearancePrefs = {
@@ -30,6 +32,7 @@ export const DEFAULT_PREFS: AppearancePrefs = {
   ligatures: false,
   accent: 'default',
   contrast: 'standard',
+  pageDim: 'dim',
 };
 
 /** Stored prefs merged over defaults; corrupt or missing storage wins nothing. */
@@ -57,6 +60,7 @@ export function loadAppearance(): AppearancePrefs {
     ligatures: parsed.ligatures === true,
     accent: typeof parsed.accent === 'string' && parsed.accent ? parsed.accent : 'default',
     contrast: parsed.contrast === 'high' ? 'high' : 'standard',
+    pageDim: parsed.pageDim === 'off' || parsed.pageDim === 'invert' ? parsed.pageDim : 'dim',
   };
 }
 

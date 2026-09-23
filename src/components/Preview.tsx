@@ -23,7 +23,7 @@
 // and useSyncLock (jumps). Anything touched by one concern alone lives in
 // that hook.
 
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, useTheme } from '@mui/material';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
@@ -118,6 +118,7 @@ export default function Preview({
   const textLayerRef = useRef<TextLayerCtor | null>(null);
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
+  const pageFilterCss = useTheme().preview.pageFilter;
 
   // Zoom: the mode is a device pref; the pane size drives the fit modes.
   const [zoom, setZoom] = useState<ZoomMode>(loadZoom);
@@ -345,7 +346,13 @@ export default function Preview({
               ref={setCanvasRef(n)}
               data-page={n}
               className="synctex-canvas"
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                filter: pageFilterCss,
+              }}
             />
             <div
               ref={setTextRef(n)}

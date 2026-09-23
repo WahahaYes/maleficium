@@ -11,6 +11,29 @@ import { parseVscodeTheme, resolveTier1 } from './vscodeTheme';
 
 export type Density = 'comfortable' | 'compact';
 export type ThemeMode = 'dark' | 'light';
+/** How PDF pages render in a dark theme: as printed, dimmed, or inverted. */
+export type PageDim = 'off' | 'dim' | 'invert';
+
+declare module '@mui/material/styles' {
+  interface Theme {
+    preview: { pageFilter: string };
+  }
+  interface ThemeOptions {
+    preview?: { pageFilter?: string };
+  }
+}
+
+/** CSS filters for PDF page canvases in a dark theme. */
+export const PAGE_FILTERS: Record<PageDim, string> = {
+  off: 'none',
+  dim: 'brightness(0.82) contrast(1.05)',
+  invert: 'invert(0.88) hue-rotate(180deg)',
+};
+
+/** The page filter for a theme: light themes always show pages as printed. */
+export function pageFilter(dark: boolean, dim: PageDim): string {
+  return dark ? PAGE_FILTERS[dim] : PAGE_FILTERS.off;
+}
 
 export const typeScale = {
   editorMono: 14,
@@ -50,6 +73,7 @@ export function createAppTheme(prefs: AppearancePrefs) {
     paper: t1 ? lighten(t1.background, dark ? 0.12 : 0.35) : dark ? '#24283b' : '#ffffff',
   };
   return createTheme({
+    preview: { pageFilter: pageFilter(dark, prefs.pageDim) },
     palette: {
       mode: dark ? 'dark' : 'light',
       primary: { main: t1?.blue ?? (dark ? '#7aa2f7' : '#34548a') },

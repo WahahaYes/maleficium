@@ -5,7 +5,7 @@ import { DEFAULT_PREFS, loadAppearance, saveAppearance } from './appearance';
 import type { AppearancePrefs } from './appearance';
 import { setAppStore } from './app-store';
 import { localAppStore } from './app-store.web';
-import { createAppTheme } from './theme';
+import { createAppTheme, PAGE_FILTERS, pageFilter } from './theme';
 
 setAppStore(localAppStore);
 
@@ -64,5 +64,23 @@ describe('appearance persistence', () => {
     const loaded = loadAppearance();
     expect(loaded.mode).toBe('dark');
     expect(loaded.uiScale).toBe(99);
+  });
+});
+
+describe('page dimming', () => {
+  it('dims pages by default in the dark theme and never in light', () => {
+    expect(DEFAULT_PREFS.pageDim).toBe('dim');
+    expect(createAppTheme(DEFAULT_PREFS).preview.pageFilter).toBe(PAGE_FILTERS.dim);
+    expect(createAppTheme({ ...DEFAULT_PREFS, mode: 'light' }).preview.pageFilter).toBe('none');
+    expect(pageFilter(false, 'invert')).toBe('none');
+    expect(pageFilter(true, 'invert')).toBe(PAGE_FILTERS.invert);
+    expect(pageFilter(true, 'off')).toBe('none');
+  });
+
+  it('round-trips the pref and rejects unknown values', () => {
+    saveAppearance({ ...DEFAULT_PREFS, pageDim: 'invert' });
+    expect(loadAppearance().pageDim).toBe('invert');
+    mem['maleficium.appearance.v1'] = JSON.stringify({ pageDim: 'sepia' });
+    expect(loadAppearance().pageDim).toBe('dim');
   });
 });
