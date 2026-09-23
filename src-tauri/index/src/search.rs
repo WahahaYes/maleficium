@@ -128,7 +128,14 @@ pub fn line_starts(text: &str) -> Vec<usize> {
         .collect()
 }
 
-fn hit_at(text: &str, starts: &[usize], (s, e): (usize, usize)) -> Hit {
+/// Where a match sits on its start line: 1-based line, UTF-16 column and
+/// length, the line (without newline or CR), and the match's byte range
+/// within that line (clipped at the line end).
+pub fn hit_parts<'a>(
+    text: &'a str,
+    starts: &[usize],
+    (s, e): (usize, usize),
+) -> (u32, u32, u32, &'a str, usize, usize) {
     let li = starts.partition_point(|&x| x <= s) - 1;
     let ls = starts[li];
     let le = text[ls..].find('\n').map(|n| ls + n).unwrap_or(text.len());
@@ -138,8 +145,20 @@ fn hit_at(text: &str, starts: &[usize], (s, e): (usize, usize)) -> Hit {
         le
     };
     let line = &text[ls..le_trim];
-    let ms = s - ls;
+    let ms = (s - ls).min(line.len());
     let me = (e.min(le_trim)).saturating_sub(ls).max(ms);
+    (
+        li as u32 + 1,
+        utf16_len(&line[..ms]),
+        utf16_len(&line[ms..me]),
+        line,
+        ms,
+        me,
+    )
+}
+
+fn hit_at(text: &str, starts: &[usize], m: (usize, usize)) -> Hit {
+    let (line_no, col, len, line, ms, _) = hit_parts(text, starts, m);
     // Clip long lines to a window around the match.
     let (from, to) = if line.len() <= PREVIEW_MAX {
         (0, line.len())
@@ -149,9 +168,9 @@ fn hit_at(text: &str, starts: &[usize], (s, e): (usize, usize)) -> Hit {
         (from, to.max(from))
     };
     Hit {
-        line: li as u32 + 1,
-        col: utf16_len(&line[..ms]),
-        len: utf16_len(&line[ms..me]),
+        line: line_no,
+        col,
+        len,
         preview: line[from..to].to_string(),
         preview_col: utf16_len(&line[..from]),
     }

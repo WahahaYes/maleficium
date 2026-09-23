@@ -79,6 +79,34 @@ check("file_graph reads the index", fg["ok"] and any(f["rel"] == "chapters/metho
 
 check("escape fails closed", not call("search", {"root_id": "nope", "pattern": "x"})["ok"])
 
+# Replace: preview writes nothing, apply by token, stale plans refused
+# whole, undo restores exact bytes.
+def snap():
+    out = {}
+    for d, _, fs in os.walk(ROOT):
+        for f in fs:
+            path = os.path.join(d, f)
+            out[os.path.relpath(path, ROOT)] = open(path, "rb").read()
+    return out
+orig = snap()
+pv = call("replace_preview", {"root_id": "s", "pattern": r"\\ref\{(sec:\w+)\}", "regex": True, "case_sensitive": True, "replacement": r"\cref{$1}"})
+check("replace_preview plans files and writes nothing", pv["ok"] and pv["replacements"] > 0 and snap() == orig, pv)
+ap = call("replace_apply", {"root_id": "s", "token": pv["token"]})
+check("replace_apply writes every planned file", ap["ok"] and sorted(ap["written"]) == sorted(f["rel"] for f in pv["files"]), ap)
+after = snap()
+changed = [k for k in orig if orig[k] != after[k]]
+check("only planned files changed, with groups expanded", sorted(changed) == sorted(ap["written"]) and b"\\cref{sec:" in after[changed[0]], changed)
+check("a plan applies once", not call("replace_apply", {"root_id": "s", "token": pv["token"]})["ok"])
+un = call("replace_undo", {"root_id": "s", "batch": ap["batch"]})
+check("replace_undo restores the exact bytes", un["ok"] and snap() == orig, un)
+
+pv = call("replace_preview", {"root_id": "s", "pattern": "Figure", "case_sensitive": True, "replacement": "Fig."})
+target = os.path.join(ROOT, pv["files"][-1]["rel"])
+open(target, "a").write("\n% edited after the preview\n")
+before_apply = snap()
+ap = call("replace_apply", {"root_id": "s", "token": pv["token"]})
+check("a stale plan is refused whole", not ap["ok"] and "changed since the preview" in ap["error"] and snap() == before_apply, ap)
+
 p.stdin.close(); p.wait(timeout=10)
 if fails:
     print(f"SEARCH DRIVER: {len(fails)} failed"); sys.exit(1)

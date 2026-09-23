@@ -68,3 +68,45 @@ export type FileMatch = { rel: string, score: number,
  * UTF-16 positions in `rel` of the query's characters, for highlighting.
  */
 positions: Array<number>, };
+
+export type ReplaceHunk = { line: number, 
+/**
+ * UTF-16 column and length of the match on the line before.
+ */
+col: number, len: number, before: string, after: string, };
+
+export type ReplaceFile = { rel: string, source: Source, 
+/**
+ * Revision of the text the plan was made from.
+ */
+revision: string, replacements: number, 
+/**
+ * The first hunks of this file (see `ReplacePreview.hunksTruncated`).
+ */
+hunks: Array<ReplaceHunk>, };
+
+export type ReplacePreview = { 
+/**
+ * Pass back to apply; refused once any listed file has changed.
+ */
+token: string, files: Array<ReplaceFile>, replacements: number, 
+/**
+ * Hunks not carried in `files` (the replacements still happen).
+ */
+hunksTruncated: number, };
+
+export type BufferEdit = { rel: string, text: string, };
+
+export type ReplaceApplied = { 
+/**
+ * History batch holding every file's prior content: undo restores it.
+ */
+batch: string, 
+/**
+ * Files written on disk.
+ */
+written: Array<string>, 
+/**
+ * New text for files the caller keeps open, not written here.
+ */
+edits: Array<BufferEdit>, replacements: number, };

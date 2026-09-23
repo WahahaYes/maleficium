@@ -9,6 +9,7 @@ pub mod history;
 pub mod index;
 pub mod outputs;
 pub mod readiness;
+pub mod replace;
 pub mod search;
 pub mod structure;
 pub mod synctex;

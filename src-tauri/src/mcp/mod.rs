@@ -172,6 +172,38 @@ struct SearchParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ReplacePreviewParams {
+    root_id: String,
+    /// Literal text, or a regular expression when `regex` is true.
+    pattern: String,
+    /// Inserted as written; with regex=true, `$1` / `${name}` expand groups.
+    replacement: String,
+    regex: Option<bool>,
+    case_sensitive: Option<bool>,
+    whole_word: Option<bool>,
+    main_rel: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ReplaceApplyParams {
+    root_id: String,
+    /// The token from replace_preview.
+    token: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ReplaceUndoParams {
+    root_id: String,
+    /// The batch from replace_apply.
+    batch: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct ReplaceUndoOut {
+    restored: Vec<maleficium_events::BatchFile>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct FindFilesParams {
     root_id: String,
     query: String,
@@ -390,6 +422,49 @@ impl Maleficium {
             p.main_rel.as_deref(),
             p.max.unwrap_or(core::search::MAX_HITS),
         )?))
+    }
+
+    #[tool(
+        description = "Preview replacing every match of a search (same pattern and flags as search; no cap) across the project's saved files. Writes nothing. Returns each file's revision, replacement count and before/after lines, plus a token for replace_apply. Regex replacements expand $1 / ${name}."
+    )]
+    fn replace_preview(
+        &self,
+        Parameters(p): Parameters<ReplacePreviewParams>,
+    ) -> Result<Json<maleficium_index::replace::ReplacePreview>, String> {
+        let q = maleficium_index::search::Query {
+            pattern: p.pattern,
+            regex: p.regex.unwrap_or(false),
+            case_sensitive: p.case_sensitive.unwrap_or(false),
+            whole_word: p.whole_word.unwrap_or(false),
+        };
+        Ok(Json(core::replace::preview(
+            &p.root_id,
+            &q,
+            &p.replacement,
+            p.main_rel.as_deref(),
+        )?))
+    }
+
+    #[tool(
+        description = "Apply a previewed replace by its token. Refused whole, with nothing written, if any file changed since the preview (preview again). Each file's prior content is kept as one history batch; returns the batch for replace_undo and the files written."
+    )]
+    fn replace_apply(
+        &self,
+        Parameters(p): Parameters<ReplaceApplyParams>,
+    ) -> Result<Json<maleficium_index::replace::ReplaceApplied>, String> {
+        Ok(Json(core::replace::apply(&p.root_id, &p.token, &[])?))
+    }
+
+    #[tool(
+        description = "Undo an applied replace: every file of the batch back as it was before (the replaced state is kept in history too). Returns the files restored."
+    )]
+    fn replace_undo(
+        &self,
+        Parameters(p): Parameters<ReplaceUndoParams>,
+    ) -> Result<Json<ReplaceUndoOut>, String> {
+        Ok(Json(ReplaceUndoOut {
+            restored: core::replace::undo(&p.root_id, &p.batch)?,
+        }))
     }
 
     #[tool(

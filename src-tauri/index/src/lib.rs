@@ -10,6 +10,7 @@
 //! documented in `notes/search-index/INDEX-SHAPE.md`.
 
 pub mod graph;
+pub mod replace;
 pub mod search;
 
 use std::collections::{BTreeMap, HashMap};
@@ -354,6 +355,11 @@ pub fn typescript() -> String {
         search::FileHits::decl(&cfg),
         search::SearchResult::decl(&cfg),
         search::FileMatch::decl(&cfg),
+        replace::ReplaceHunk::decl(&cfg),
+        replace::ReplaceFile::decl(&cfg),
+        replace::ReplacePreview::decl(&cfg),
+        replace::BufferEdit::decl(&cfg),
+        replace::ReplaceApplied::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from src-tauri/index (maleficium-index). Do not edit:\n\

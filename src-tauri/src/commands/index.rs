@@ -2,9 +2,10 @@
 //! builds the index on open, reports watcher batches, and lays its unsaved
 //! buffers over it.
 
+use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, SearchResult};
 
-use crate::core::{index, search};
+use crate::core::{index, replace, search};
 
 /// Build the index now; returns the files listed.
 #[tauri::command(async)]
@@ -54,4 +55,26 @@ pub fn index_find_files(
     max: Option<usize>,
 ) -> Result<Vec<FileMatch>, String> {
     search::find_files(&root_id, &query, max.unwrap_or(search::MAX_FILE_MATCHES))
+}
+
+/// Plan a replace across the project; writes nothing.
+#[tauri::command(async)]
+pub fn index_replace_preview(
+    root_id: String,
+    query: Query,
+    replacement: String,
+    main_rel: Option<String>,
+) -> Result<ReplacePreview, String> {
+    replace::preview(&root_id, &query, &replacement, main_rel.as_deref())
+}
+
+/// Apply a previewed replace. Files in `keep_open` (open editor buffers) are
+/// not written; their new text comes back for the editor.
+#[tauri::command(async)]
+pub fn index_replace_apply(
+    root_id: String,
+    token: String,
+    keep_open: Vec<String>,
+) -> Result<ReplaceApplied, String> {
+    replace::apply(&root_id, &token, &keep_open)
 }
