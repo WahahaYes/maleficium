@@ -94,6 +94,10 @@ export CARGO_TARGET_DIR="$ROOT/src-tauri/target"
 # Vite optimizes deps into the worktree's own cache: the shared
 # node_modules/.vite belongs to the main checkout's dev server.
 export VITE_CACHE_DIR="$WT/.vite-cache"
+# The symlinked node_modules resolves outside the worktree root: allow its
+# real path, or vite 403s the files it serves from there (pdf.js worker).
+VITE_FS_ALLOW=$(cd "$ROOT/node_modules" && pwd -P)
+export VITE_FS_ALLOW
 
 set +e
 (cd "$WT" && "$@")

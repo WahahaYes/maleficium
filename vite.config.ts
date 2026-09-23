@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 import react from '@vitejs/plugin-react';
 import process from 'node:process';
 const host = process.env.TAURI_DEV_HOST;
@@ -30,6 +30,14 @@ export default defineConfig(() => ({
           port: port + 1,
         }
       : undefined,
+    // A scratch worktree's symlinked node_modules resolves outside its root:
+    // VITE_FS_ALLOW names that real directory so vite serves it (pdf.js worker).
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        ...(process.env.VITE_FS_ALLOW ? [process.env.VITE_FS_ALLOW] : []),
+      ],
+    },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ['**/src-tauri/**'],
