@@ -37,3 +37,19 @@ export type MissingDependency = { file?: string, reason: MissingReason, };
 export type CompilePhase = "first-compile" | "format" | "tex" | "bibliography" | "xdvipdfmx" | "writing";
 
 export type LineSignal = { "kind": "fetch", file: string, outcome: FetchOutcome, } | { "kind": "phase", phase: CompilePhase, detail?: string, };
+
+export type CheckKind = "not-in-bundle" | "external-tool" | "shell-escape" | "system-font";
+
+export type Finding = { kind: CheckKind, 
+/**
+ * The package, class, tool or font the document asks for.
+ */
+name: string, 
+/**
+ * Root-relative file and 1-based line of the request.
+ */
+path: string, line: number, 
+/**
+ * A change that removes the need, when one exists.
+ */
+suggestion?: string, };

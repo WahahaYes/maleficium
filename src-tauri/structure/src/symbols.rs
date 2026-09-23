@@ -24,6 +24,16 @@ pub struct InputAt {
     pub line: u32,
 }
 
+/// A package (`\usepackage`, `\RequirePackage`) or class (`\documentclass`,
+/// `\LoadClass`) the text loads, with its options as written.
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+pub struct PackageAt {
+    pub name: String,
+    pub class: bool,
+    pub options: Option<String>,
+    pub line: u32,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Symbols {
     pub labels: Vec<KeyAt>,
@@ -32,6 +42,12 @@ pub struct Symbols {
     pub inputs: Vec<InputAt>,
     /// Bibliography resources as written (`\bibliography` entries get `.bib`).
     pub bibliographies: Vec<KeyAt>,
+    /// Packages and classes, one row per name.
+    pub packages: Vec<PackageAt>,
+    /// Font names given to fontspec (`\setmainfont`, `\newfontfamily`, …).
+    pub fonts: Vec<KeyAt>,
+    /// `\write18` shell escapes.
+    pub shell_escapes: Vec<KeyAt>,
 }
 
 static LABEL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\\label\{([^}]*)\}").unwrap());
@@ -52,6 +68,19 @@ static BIBLIOGRAPHY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\\bibliography\{([^}]*)\}").unwrap());
 static ADDBIB_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\\addbibresource(?:\[[^\]]*\])?\{([^}]*)\}").unwrap());
+static PACKAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\\(usepackage|RequirePackage|documentclass|LoadClass)\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}",
+    )
+    .unwrap()
+});
+static FONT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\\(?:setmainfont|setsansfont|setmonofont|setmathfont|fontspec|(?:newfontfamily|newfontface)\s*\\[A-Za-z@]+)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}",
+    )
+    .unwrap()
+});
+static WRITE18_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\\write18\b").unwrap());
 static BIB_ENTRY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@([a-zA-Z]+)\s*[{(]\s*([^,\s{}()]+)\s*,").unwrap());
 
@@ -121,6 +150,32 @@ pub fn symbols(text: &str) -> Symbols {
         }
     }
     s.bibliographies.sort_by_key(|b| b.line);
+    for m in PACKAGE_RE.captures_iter(&stripped) {
+        let line = at(&m);
+        let class = matches!(&m[1], "documentclass" | "LoadClass");
+        let options = m.get(2).map(|o| o.as_str().trim().to_string());
+        s.packages.extend(keys(&m[3]).map(|name| PackageAt {
+            name: name.into(),
+            class,
+            options: options.clone(),
+            line,
+        }));
+    }
+    for m in FONT_RE.captures_iter(&stripped) {
+        let key = m[1].trim();
+        if !key.is_empty() {
+            s.fonts.push(KeyAt {
+                key: key.into(),
+                line: at(&m),
+            });
+        }
+    }
+    for m in WRITE18_RE.find_iter(&stripped) {
+        s.shell_escapes.push(KeyAt {
+            key: String::from("\\write18"),
+            line: lines.line_of(m.start()),
+        });
+    }
     s
 }
 
@@ -195,6 +250,30 @@ mod tests {
             s.bibliographies,
             vec![k("extra.bib", 1), k("refs.bib", 2), k("more.bib", 2)]
         );
+    }
+
+    #[test]
+    fn packages_classes_fonts_and_shell_escapes() {
+        let s = symbols(
+            "\\documentclass[11pt]{article}\n\\usepackage[backend=biber, style=alpha]{biblatex}\n\\usepackage{amsmath,  amssymb}\n% \\usepackage{hidden}\n\\RequirePackage{xcolor}\n\\setmainfont{DejaVu Sans}\n\\newfontfamily\\mono[Scale=0.9]{Fira Mono}\n\\immediate\\write18{ls}\n",
+        );
+        let got: Vec<(&str, bool, Option<&str>, u32)> = s
+            .packages
+            .iter()
+            .map(|p| (p.name.as_str(), p.class, p.options.as_deref(), p.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("article", true, Some("11pt"), 1),
+                ("biblatex", false, Some("backend=biber, style=alpha"), 2),
+                ("amsmath", false, None, 3),
+                ("amssymb", false, None, 3),
+                ("xcolor", false, None, 5),
+            ]
+        );
+        assert_eq!(s.fonts, vec![k("DejaVu Sans", 6), k("Fira Mono", 7)]);
+        assert_eq!(s.shell_escapes, vec![k("\\write18", 8)]);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Document structure of LaTeX text: outline, symbols (labels, refs, cites,
-//! inputs, bibliographies), bib keys, engine-log diagnostics, and the engine
-//! console's fetch and missing-dependency signals.
+//! inputs, bibliographies, packages, fonts), bib keys, engine-log
+//! diagnostics, pre-compile dependency checks, and the engine console's
+//! fetch, phase and missing-dependency signals.
 //!
 //! The one implementation behind every surface: the desktop app calls it
 //! over a Tauri command, the MCP tools call it through `core::structure`,
@@ -8,19 +9,21 @@
 //! records out. No fs, no process, no Tauri: resolution against a project
 //! lives with the caller.
 
+mod checks;
 mod diagnostics;
 mod engine;
 mod outline;
 mod symbols;
 mod text;
 
+pub use checks::{precompile_checks, CheckEnv, CheckKind, Finding};
 pub use diagnostics::{diagnostics, Diagnostic, Severity};
 pub use engine::{
     external_needs, line_signal, missing_dependency, CompilePhase, ExternalNeeds, FetchOutcome,
     LineSignal, MissingDependency, MissingReason,
 };
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
-pub use symbols::{bib_keys, symbols, InputAt, KeyAt, Symbols};
+pub use symbols::{bib_keys, symbols, InputAt, KeyAt, PackageAt, Symbols};
 
 /// The generated TypeScript module for the types the frontend receives
 /// (`src/lib/generated/structure.ts`).
@@ -38,6 +41,8 @@ pub fn typescript() -> String {
         MissingDependency::decl(&cfg),
         CompilePhase::decl(&cfg),
         LineSignal::decl(&cfg),
+        CheckKind::decl(&cfg),
+        Finding::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from src-tauri/structure (maleficium-structure). Do not edit:\n\
