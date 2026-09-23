@@ -169,6 +169,15 @@ pub struct CompileReport {
     pub message: String,
 }
 
+/// How the preview sizes pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ZoomKind {
+    FitWidth,
+    FitPage,
+    Percent,
+}
+
 /// Whether a project compiles without network, as far as its last compiles
 /// and this machine show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -464,6 +473,9 @@ pub enum AppEvent {
     PreviewUpdate { pdf_url: String },
     #[serde(rename = "preview.pdf-load")]
     PreviewPdfLoad { pages: u32, ms: u64 },
+    /// The preview zoom changed; `percent` is what a page now shows at.
+    #[serde(rename = "preview.zoom")]
+    PreviewZoom { mode: ZoomKind, percent: u32 },
     #[serde(rename = "preview.page-render")]
     PreviewPageRender { page: u32, ms: u64 },
     #[serde(rename = "synctex.forward")]
@@ -572,6 +584,7 @@ pub fn typescript() -> String {
         CompileStream::decl(&cfg),
         CompileLine::decl(&cfg),
         CompileReport::decl(&cfg),
+        ZoomKind::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
         Revision::decl(&cfg),

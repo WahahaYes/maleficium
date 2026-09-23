@@ -44,7 +44,14 @@ import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
 import type { OutlineEntry } from './lib/generated/structure';
-import { matchesCompile, matchesForwardSync, matchesMenuChord, menuChordId } from './lib/keymap';
+import {
+  matchesCompile,
+  matchesForwardSync,
+  matchesMenuChord,
+  menuChordId,
+  zoomChord,
+} from './lib/keymap';
+import type { ZoomAction } from './lib/zoom';
 import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
@@ -360,6 +367,7 @@ export default function App({
   // duplicates. Double-click in the editor = forward SyncTeX from the
   // caret line (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
+  const zoomActionRef = useRef<((a: ZoomAction) => void) | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
@@ -369,6 +377,9 @@ export default function App({
       } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
         e.preventDefault();
         void forwardSyncRef.current();
+      } else if (zoomChord(e as unknown as KeyboardEvent)) {
+        e.preventDefault();
+        zoomActionRef.current?.(zoomChord(e as unknown as KeyboardEvent)!);
       } else if (matchesMenuChord(e as unknown as KeyboardEvent)) {
         const id = menuChordId(e as unknown as KeyboardEvent);
         if (id) {
@@ -872,6 +883,7 @@ export default function App({
     toggleOutline: () => setOutlineVisible((v) => !v),
     setTheme: (m) => onThemeMode(m),
     setDensity: (d) => onDensityMode(d),
+    zoomPreview: (a) => zoomActionRef.current?.(a),
     compile: () => {
       void compileRef.current();
     },
@@ -1052,6 +1064,16 @@ export default function App({
           void handleInverseSync(page, x, y);
         }}
         syncDisabled={compilePhase === 'compiling'}
+        zoomActionRef={zoomActionRef}
+        onZoom={(mode, percent) =>
+          emit({
+            scope: 'preview',
+            kind: 'info',
+            actor: 'user',
+            message: `preview zoom ${mode.kind === 'percent' ? '' : mode.kind + ' '}${Math.round(percent)}%`,
+            event: { action: 'preview.zoom', mode: mode.kind, percent: Math.round(percent) },
+          })
+        }
       />
     </Box>
   );

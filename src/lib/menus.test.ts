@@ -55,6 +55,7 @@ const actions: CommandActions = {
   compile: noop,
   compileFile: noop,
   makeOffline: noop,
+  zoomPreview: noop,
   cancelCompile: noop,
   forwardSync: noop,
   showShortcuts: noop,

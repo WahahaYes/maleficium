@@ -48,6 +48,8 @@ export type CompileLine = { stream: CompileStream, text: string, signal?: LineSi
 
 export type CompileReport = { pdfUrl: string | null, failure: CompileFailure | null, missing: MissingDependency | null, message: string, };
 
+export type ZoomKind = "fit-width" | "fit-page" | "percent";
+
 export type OfflineState = "ready" | "needs-network" | "needs-tool" | "needs-font" | "blocked" | "unverified";
 
 export type OfflineReadiness = { state: OfflineState, needs: Array<string>, missing: MissingDependency | null, };
@@ -96,7 +98,7 @@ path?: string, line: number, message: string, severity: Severity,
 /**
  * The source resolves outside the project root.
  */
-external: boolean, } | { "action": "compile.frame-probe", maxFrameMs: number, } | { "action": "compile.cancel-failed", error: string, } | { "action": "compile.clean", removed: number, target?: string, reason?: CleanSkippedReason, } | { "action": "compile.clean-failed", target: string, error: string, } | { "action": "preview.update", pdfUrl: string, } | { "action": "preview.pdf-load", pages: number, ms: number, } | { "action": "preview.page-render", page: number, ms: number, } | { "action": "synctex.forward", page: number, } | { "action": "synctex.inverse", path: string, line: number, } | { "action": "synctex.no-match", direction: SyncDirection, compiling: boolean, } | { "action": "synctex.outside", direction: SyncDirection, } | { "action": "synctex.failed", direction: SyncDirection, error: string, } | { "action": "revision.record", rel: string, revisions: number, stored: boolean, rev?: string, deduped?: boolean, reason?: RevisionSkipReason, } | { "action": "revision.restore", rel: string, rev: string, chars: number, } | { "action": "revision.restore-unavailable", rel: string, rev: string, } | { "action": "outline.parse", entries: number, ms: number, } | { "action": "editor.render", bytes: number, ms: number, } | { "action": "log.open", path: string, maxEvents: number, maxLineBytes: number, };
+external: boolean, } | { "action": "compile.frame-probe", maxFrameMs: number, } | { "action": "compile.cancel-failed", error: string, } | { "action": "compile.clean", removed: number, target?: string, reason?: CleanSkippedReason, } | { "action": "compile.clean-failed", target: string, error: string, } | { "action": "preview.update", pdfUrl: string, } | { "action": "preview.pdf-load", pages: number, ms: number, } | { "action": "preview.zoom", mode: ZoomKind, percent: number, } | { "action": "preview.page-render", page: number, ms: number, } | { "action": "synctex.forward", page: number, } | { "action": "synctex.inverse", path: string, line: number, } | { "action": "synctex.no-match", direction: SyncDirection, compiling: boolean, } | { "action": "synctex.outside", direction: SyncDirection, } | { "action": "synctex.failed", direction: SyncDirection, error: string, } | { "action": "revision.record", rel: string, revisions: number, stored: boolean, rev?: string, deduped?: boolean, reason?: RevisionSkipReason, } | { "action": "revision.restore", rel: string, rev: string, chars: number, } | { "action": "revision.restore-unavailable", rel: string, rev: string, } | { "action": "outline.parse", entries: number, ms: number, } | { "action": "editor.render", bytes: number, ms: number, } | { "action": "log.open", path: string, maxEvents: number, maxLineBytes: number, };
 
 export type BusEvent = { 
 /**

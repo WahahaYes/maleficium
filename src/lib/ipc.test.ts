@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { hashRoot } from './paths';
-import { matchesCompile, matchesForwardSync, menuChordId, KEYMAP } from './keymap';
+import { matchesCompile, matchesForwardSync, menuChordId, zoomChord, KEYMAP } from './keymap';
 
 import { setAppStore } from './app-store';
 import { localAppStore } from './app-store.web';
@@ -66,5 +66,16 @@ describe('keymap chords', () => {
     const ids = KEYMAP.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const k of KEYMAP) expect(k.keys.length).toBeGreaterThan(0);
+  });
+});
+
+describe('zoom chords', () => {
+  it('maps Ctrl+= / Ctrl++ / Ctrl+- / Ctrl+0 and ignores bare or Alt keys', () => {
+    expect(zoomChord(keyEvent({ key: '=', ctrlKey: true }))).toBe('in');
+    expect(zoomChord(keyEvent({ key: '+', ctrlKey: true, shiftKey: true }))).toBe('in');
+    expect(zoomChord(keyEvent({ key: '-', ctrlKey: true }))).toBe('out');
+    expect(zoomChord(keyEvent({ key: '0', ctrlKey: true }))).toBe('fit-width');
+    expect(zoomChord(keyEvent({ key: '=' }))).toBeNull();
+    expect(zoomChord(keyEvent({ key: '-', ctrlKey: true, altKey: true }))).toBeNull();
   });
 });

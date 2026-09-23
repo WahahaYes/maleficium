@@ -24,7 +24,19 @@
 // that hook.
 
 import { Box, Typography } from '@mui/material';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
+import {
+  applyZoom,
+  pageWidth,
+  parseZoom,
+  percentOf,
+  zoomLabel,
+  type Size,
+  type ZoomAction,
+  type ZoomMode,
+} from '../lib/zoom';
 import PreviewToolbar from './PreviewToolbar';
 import { clampPage } from '../lib/previewNav';
 import { usePdfDocument } from '../hooks/usePdfDocument';
@@ -41,6 +53,22 @@ export interface PreviewProps {
   /** Inverse SyncTeX: canvas click → editor line (disabled while compiling). */
   onInverse?: (page: number, x: number, y: number) => void;
   syncDisabled?: boolean;
+  /** Filled with the zoom dispatcher, for menu commands and chords. */
+  zoomActionRef?: RefObject<((a: ZoomAction) => void) | null>;
+  /** The zoom changed: the mode and the percent a page now shows at. */
+  onZoom?: (mode: ZoomMode, percent: number) => void;
+}
+
+/** Page size (PDF points) assumed before a page is probed: A4. */
+const UNPROBED: Size = { width: 595, height: 842 };
+
+function loadZoom(): ZoomMode {
+  try {
+    return parseZoom(store().get(DEVICE_PREF_KEYS.previewZoom));
+  } catch {
+    // No app store configured (tests, storage off): the default zoom.
+    return parseZoom(null);
+  }
 }
 
 export default function Preview({
@@ -51,6 +79,8 @@ export default function Preview({
   onSync,
   onInverse,
   syncDisabled,
+  zoomActionRef,
+  onZoom,
 }: PreviewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -88,6 +118,56 @@ export default function Preview({
   const textLayerRef = useRef<TextLayerCtor | null>(null);
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
+
+  // Zoom: the mode is a device pref; the pane size drives the fit modes.
+  const [zoom, setZoom] = useState<ZoomMode>(loadZoom);
+  const [pane, setPane] = useState<Size>({ width: 836, height: 600 });
+  const anchorRef = useRef<{ page: number; frac: number } | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setPane({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pdfUrl]);
+  const pageSize = (n: number): Size => {
+    const d = dimsRef.current.get(n);
+    return d ? { width: d.w, height: d.h } : UNPROBED;
+  };
+  const shownPercent = percentOf(pageWidth(zoom, pane, pageSize(visible)), pageSize(visible));
+  const setZoomMode = (next: ZoomMode) => {
+    // Keep the visible page, at the same fraction of its height, in place.
+    const scroll = scrollRef.current;
+    const shell = shellRefs.current.get(visibleRef.current);
+    if (scroll && shell) {
+      const top = shell.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+      anchorRef.current = {
+        page: visibleRef.current,
+        frac: -top / Math.max(1, shell.getBoundingClientRect().height),
+      };
+    }
+    setZoom(next);
+    try {
+      store().set(DEVICE_PREF_KEYS.previewZoom, JSON.stringify(next));
+    } catch {
+      // No app store configured: the zoom lasts for this session only.
+    }
+    const size = pageSize(visibleRef.current);
+    onZoom?.(next, percentOf(pageWidth(next, pane, size), size));
+  };
+  const zoomBy = (a: ZoomAction) => setZoomMode(applyZoom(a, shownPercent));
+  if (zoomActionRef) zoomActionRef.current = zoomBy;
+  useLayoutEffect(() => {
+    const a = anchorRef.current;
+    const scroll = scrollRef.current;
+    const shell = a ? shellRefs.current.get(a.page) : undefined;
+    anchorRef.current = null;
+    if (!a || !scroll || !shell) return;
+    const top = shell.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+    scroll.scrollTop += top + a.frac * shell.getBoundingClientRect().height;
+  }, [zoom]);
 
   const { scrollToShell, armJumpTimeout, handleScroll } = useSyncLock({
     page,
@@ -187,17 +267,17 @@ export default function Preview({
 
   // Every page owns a shell (stable scroll height from the probed aspect);
   // the canvas fills it, so unrendered pages read as placeholders, never void.
-  // Sized from the probed aspect where known: width-flexible (max 820) with
-  // height from aspect-ratio, so narrow-pane zoom is CSS-only and DPR changes
-  // are the sole re-render trigger.
+  // Its width is the zoom's; bitmaps re-render at the new layout width, so a
+  // zoom never stretches pixels. Auto margins center a narrow page and let a
+  // wide one scroll sideways instead of clipping.
   const shellStyle = (n: number): React.CSSProperties => {
-    const d = dimsRef.current.get(n);
+    const size = pageSize(n);
     return {
       position: 'relative',
-      width: '100%',
-      maxWidth: 820,
+      width: pageWidth(zoom, pane, size),
+      marginInline: 'auto',
       flexShrink: 0,
-      aspectRatio: d ? `${d.w} / ${d.h}` : '1 / 1.4143',
+      aspectRatio: `${size.width} / ${size.height}`,
       backgroundColor: 'rgba(128, 128, 128, 0.12)',
     };
   };
@@ -230,6 +310,9 @@ export default function Preview({
         onPage={(p) => onPage?.(p)}
         onSync={() => onSync?.()}
         syncDisabled={syncDisabled}
+        zoomLabel={zoomLabel(zoom, shownPercent)}
+        onZoom={zoomBy}
+        onZoomMode={setZoomMode}
       />
       {phase ? <Typography variant="caption">{phase}</Typography> : null}
       <Box
@@ -238,10 +321,11 @@ export default function Preview({
         sx={{
           flex: 1,
           overflowY: 'auto',
+          overflowX: 'auto',
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: 1,
           py: 1,
         }}

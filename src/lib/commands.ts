@@ -6,6 +6,7 @@
 // `accelerator` exists in the keymap; destructive commands confirm via
 // dialog; every visible row runs.
 
+import type { ZoomAction } from './zoom';
 export type CommandId =
   | 'file.open-project'
   | 'file.new-file'
@@ -41,6 +42,10 @@ export type CommandId =
   | 'view.density'
   | 'view.density-comfortable'
   | 'view.density-compact'
+  | 'view.zoom-in'
+  | 'view.zoom-out'
+  | 'view.zoom-fit-width'
+  | 'view.zoom-fit-page'
   | 'appearance.settings'
   | 'tools.compile'
   | 'tools.compile-file'
@@ -118,6 +123,7 @@ export interface CommandActions {
   toggleOutline: () => void;
   setTheme: (m: 'dark' | 'light') => void;
   setDensity: (d: Density) => void;
+  zoomPreview: (a: ZoomAction) => void;
   openRecent: (root: string) => void;
   clearRecents: () => void;
   compile: () => void;
@@ -400,6 +406,33 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
               run: () => a.setDensity('compact'),
             },
           ],
+        },
+        {
+          id: 'view.zoom-in',
+          label: 'Zoom In',
+          accelerator: 'Ctrl+=',
+          enabled: ctx.pdfOpen,
+          run: () => a.zoomPreview('in'),
+        },
+        {
+          id: 'view.zoom-out',
+          label: 'Zoom Out',
+          accelerator: 'Ctrl+-',
+          enabled: ctx.pdfOpen,
+          run: () => a.zoomPreview('out'),
+        },
+        {
+          id: 'view.zoom-fit-width',
+          label: 'Fit Width',
+          accelerator: 'Ctrl+0',
+          enabled: ctx.pdfOpen,
+          run: () => a.zoomPreview('fit-width'),
+        },
+        {
+          id: 'view.zoom-fit-page',
+          label: 'Fit Page',
+          enabled: ctx.pdfOpen,
+          run: () => a.zoomPreview('fit-page'),
         },
         {
           id: 'appearance.settings',

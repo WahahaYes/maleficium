@@ -26,6 +26,9 @@ export const KEYMAP: KeyChord[] = [
   { id: 'shrink-selection', label: 'Shrink Selection', keys: 'Shift+Alt+Left' },
   { id: 'go-to-line', label: 'Go to Line…', keys: 'Ctrl+G' },
   { id: 'file-history', label: 'File History…', keys: 'Ctrl+H' },
+  { id: 'zoom-in', label: 'Zoom preview in', keys: 'Ctrl+=' },
+  { id: 'zoom-out', label: 'Zoom preview out', keys: 'Ctrl+-' },
+  { id: 'zoom-fit-width', label: 'Fit preview to width', keys: 'Ctrl+0' },
   { id: 'shortcuts', label: 'This shortcuts list', keys: '?' },
 ];
 
@@ -35,6 +38,15 @@ export function matchesCompile(e: KeyboardEvent): boolean {
 
 export function matchesForwardSync(e: KeyboardEvent): boolean {
   return (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f';
+}
+
+/** Preview zoom chords: Ctrl+= (or Ctrl++) in, Ctrl+- out, Ctrl+0 fit width. */
+export function zoomChord(e: KeyboardEvent): 'in' | 'out' | 'fit-width' | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
+  if (e.key === '=' || e.key === '+') return 'in';
+  if (e.key === '-' || e.key === '_') return 'out';
+  if (e.key === '0' && !e.shiftKey) return 'fit-width';
+  return null;
 }
 
 export type MenuChordId =
