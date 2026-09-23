@@ -157,6 +157,32 @@ struct DiagnosticsParams {
     max: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SearchParams {
+    root_id: String,
+    /// Literal text, or a regular expression when `regex` is true.
+    pattern: String,
+    regex: Option<bool>,
+    case_sensitive: Option<bool>,
+    whole_word: Option<bool>,
+    /// Files reachable from this main file rank first.
+    main_rel: Option<String>,
+    /// Hits returned (default 1000).
+    max: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct FindFilesParams {
+    root_id: String,
+    query: String,
+    max: Option<usize>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct FindFilesOut {
+    files: Vec<maleficium_index::search::FileMatch>,
+}
+
 fn path_string(p: std::path::PathBuf) -> String {
     p.to_string_lossy().to_string()
 }
@@ -343,6 +369,43 @@ impl Maleficium {
             &p.root_id,
             &p.main_rel,
         )?))
+    }
+
+    #[tool(
+        description = "Search every text file of the project for literal text (default, case-insensitive) or a regex (regex=true; may span lines). Hits carry root-relative path, 1-based line, UTF-16 column and length, and the line as preview; each file carries its revision. Files reachable from main_rel rank first. Reads saved files. truncated counts hits past max (default 1000); unsearched counts files with no text (binary, over 2 MB, not UTF-8)."
+    )]
+    fn search(
+        &self,
+        Parameters(p): Parameters<SearchParams>,
+    ) -> Result<Json<maleficium_index::search::SearchResult>, String> {
+        let q = maleficium_index::search::Query {
+            pattern: p.pattern,
+            regex: p.regex.unwrap_or(false),
+            case_sensitive: p.case_sensitive.unwrap_or(false),
+            whole_word: p.whole_word.unwrap_or(false),
+        };
+        Ok(Json(core::search::search(
+            &p.root_id,
+            &q,
+            p.main_rel.as_deref(),
+            p.max.unwrap_or(core::search::MAX_HITS),
+        )?))
+    }
+
+    #[tool(
+        description = "Find project files by fuzzy name: every query character in order, case-insensitive; file-name and segment-start matches rank first. Returns root-relative paths, best first (default 50)."
+    )]
+    fn find_files(
+        &self,
+        Parameters(p): Parameters<FindFilesParams>,
+    ) -> Result<Json<FindFilesOut>, String> {
+        Ok(Json(FindFilesOut {
+            files: core::search::find_files(
+                &p.root_id,
+                &p.query,
+                p.max.unwrap_or(core::search::MAX_FILE_MATCHES),
+            )?,
+        }))
     }
 
     #[tool(

@@ -9,4 +9,6 @@ export const desktopProjectIndex: ProjectIndexProvider = {
   watched: (rootId, watched) => invoke('index_watched', { rootId, watched }),
   touch: (rootId, paths) => invoke('index_touch', { rootId, paths }),
   overlay: (rootId, rel, text) => invoke('index_overlay', { rootId, rel, text }),
+  search: (rootId, query, mainRel) => invoke('index_search', { rootId, query, mainRel }),
+  findFiles: (rootId, query) => invoke('index_find_files', { rootId, query }),
 };

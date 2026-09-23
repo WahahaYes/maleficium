@@ -9,3 +9,62 @@ export type Unindexed = "not-text" | "too-large" | "not-utf8" | "over-budget";
 export type Loc = { rel: string, line: number, };
 
 export type MacroDef = { rel: string, line: number, command: string, params: number | null, body: string, };
+
+export type Query = { pattern: string, 
+/**
+ * Treat `pattern` as a regular expression (else literal text).
+ */
+regex: boolean, caseSensitive: boolean, 
+/**
+ * Only matches with no word character on either side.
+ */
+wholeWord: boolean, };
+
+export type Hit = { 
+/**
+ * 1-based line the match starts on.
+ */
+line: number, 
+/**
+ * UTF-16 column of the match start within `preview`'s line.
+ */
+col: number, 
+/**
+ * UTF-16 length of the match on that line (clipped at the line end).
+ */
+len: number, 
+/**
+ * The line the match starts on, without its newline, capped at
+ * `PREVIEW_MAX` bytes around the match.
+ */
+preview: string, 
+/**
+ * UTF-16 offset of `preview` within its line (non-zero when clipped).
+ */
+previewCol: number, };
+
+export type FileHits = { rel: string, source: Source, revision: string, hits: Array<Hit>, };
+
+export type SearchResult = { files: Array<FileHits>, 
+/**
+ * Hits returned across `files`.
+ */
+hits: number, 
+/**
+ * Hits past the cap, not returned.
+ */
+truncated: number, 
+/**
+ * Files whose text was searched.
+ */
+searched: number, 
+/**
+ * Listed files with no text to search (binary, too large, …).
+ */
+unsearched: number, };
+
+export type FileMatch = { rel: string, score: number, 
+/**
+ * UTF-16 positions in `rel` of the query's characters, for highlighting.
+ */
+positions: Array<number>, };

@@ -4,6 +4,10 @@
 // The app builds it on open, reports watcher batches, and lays unsaved
 // buffers over it, so search and navigation read what the user sees.
 
+import type { FileMatch, Query, SearchResult } from './generated/index';
+
+export type { FileMatch, Query, SearchResult };
+
 export interface ProjectIndexProvider {
   /** Build the index now (dropping overlays); resolves to the files listed. */
   open(rootId: string): Promise<number>;
@@ -13,6 +17,10 @@ export interface ProjectIndexProvider {
   touch(rootId: string, paths: string[]): Promise<void>;
   /** Lay unsaved text over a root-relative file; null lifts it. */
   overlay(rootId: string, rel: string, text: string | null): Promise<void>;
+  /** Search every text file; files of `mainRel`'s document rank first. */
+  search(rootId: string, query: Query, mainRel: string | null): Promise<SearchResult>;
+  /** Files matching a fuzzy name query, best first. */
+  findFiles(rootId: string, query: string): Promise<FileMatch[]>;
 }
 
 let impl: ProjectIndexProvider | null = null;
