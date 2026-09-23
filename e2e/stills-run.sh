@@ -75,17 +75,30 @@ printf '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{documen
 sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 sweep_stale
 
+# STILLS_STATES picks states to run (default all: "1 2 3 4 5").
+want() {
+  case " ${STILLS_STATES:-1 2 3 4 5} " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
 encode() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
 start_app() {
-  # $1 = project dir. Serves a merged devUrl carrying the preset, then
-  # launches the app against it. Echoes nothing; sets APP_PID. A set
-  # APP_CACHE gives this launch its own app cache home (engine cache).
+  # $1 = project dir, or empty for a launch with no preset (restore or
+  # first run). Serves a merged devUrl carrying the preset, then launches
+  # the app against it. Echoes nothing; sets APP_PID. A set APP_CACHE /
+  # APP_DATA gives this launch its own app cache / data home.
   sweep_stale
-  DEVURL="http://localhost:1420/?project=$(encode "$1")"
-  log "launching (preset $(basename "$1"))"
+  if [ -n "$1" ]; then
+    DEVURL="http://localhost:1420/?project=$(encode "$1")"
+    log "launching (preset $(basename "$1"))"
+  else
+    DEVURL="http://localhost:1420/"
+    log "launching (no preset)"
+  fi
   set --
   if [ -n "${APP_CACHE:-}" ]; then set -- "XDG_CACHE_HOME=$APP_CACHE"; fi
+  if [ -n "${APP_DATA:-}" ]; then set -- "$@" "XDG_DATA_HOME=$APP_DATA"; fi
   # Toolchain homes stay real (rustup has no default under a fresh HOME);
   # everything the app writes stays contained via HOME. Compositing off:
   # no compositor runs under Xvfb and WebKit will not map otherwise.
@@ -214,6 +227,7 @@ print(p, sum(1 for a in acts if a.get("action") == "fs.external" and a.get("path
 EOF
 }
 
+if want 1; then
 # State 1 — Default: open, no compile. Idle shell + quiet preview.
 # Ctrl+S forces a save so the log carries file.save + revision.record live.
 start_app "$FIX/simple"; wait_window 300
@@ -232,8 +246,11 @@ set -- $(saved_external)
 [ "$2" -ge 1 ] || die "external edit after a save was swallowed ($1)"
 log "echo check: save silent, external edit reported ($2) for $1"
 stop_app
-check_log "log.open file.save revision.record fs.external"
+check_log "log.open file.save revision.record fs.external compile.auto"
 
+fi
+
+if want 2; then
 # State 2 — Compiling: pre-compile the fixture through the sidecar so
 # OPEN warms into a live compile by itself (no keystroke race). Rapid
 # stills through the warm run, then a settled done-still.
@@ -252,9 +269,17 @@ while [ "$i" -lt 8 ]; do
   sleep 5
 done
 log "captured 02-compiling-{1..8}.png"
+# An agent recompiles the open project over MCP: the preview must notice
+# the rewritten pdf and reload by itself.
+HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
+  DRIVER_CACHE="$FAKEHOME/.cache" \
+  MCP_ROOT_OVERRIDE="$FIX/simple" DRIVER_LOG="$OUT/driver-external.jsonl" \
+  WARM_ONLY=1 POLL_ROUNDS=60 \
+  bash "$ROOT/e2e/driver-run.sh" >>"$OUT/dev.log" 2>&1 || die "external compile driver failed"
+sleep 6
 shot 02-compiling-done
 stop_app
-check_log "log.open compile.finish offline.readiness"
+check_log "log.open compile.finish offline.readiness preview.external-update"
 # The warm run compiled from the cache alone: the badge must read Ready
 # offline (02-compiling-done shows it) and the bus must say so.
 python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "no ready-offline readiness after the cached-only recompile"
@@ -265,6 +290,9 @@ assert states and states[-1] == "ready", "offline.readiness states: %s" % states
 print("stills: offline readiness after the warm recompile: %s" % states[-1])
 EOF
 
+fi
+
+if want 3; then
 # State 3 — Failure: bad project, focus, Ctrl+R (bundles warm by now).
 start_app "$FIX/bad"; wait_window 300
 key ctrl+o; sleep 6
@@ -274,6 +302,9 @@ shot 03-failure
 stop_app
 check_log "log.open compile.finish"
 
+fi
+
+if want 4; then
 # State 4 — Cold compile: an empty engine cache of its own, Ctrl+R, stills
 # while the first compile downloads until the log says it finished. The
 # status bar must read the phase and a live download count.
@@ -306,6 +337,41 @@ assert fetched > 0, "no fetched files before compile.finish"
 assert evs[end].get("ok") is True, "cold compile failed: %s" % evs[end]
 print("stills: cold compile: %d fetches, phases %s" % (fetched, ",".join(dict.fromkeys(phases))))
 EOF
+
+fi
+
+if want 5; then
+# State 5 — First run: a data home with no recent projects and no preset
+# opens the welcome tour; the command palette then opens the template
+# gallery.
+FIRSTRUN="$FIX/first-run-data"
+mkdir -p "$FIRSTRUN"
+APP_CACHE="$FAKEHOME/.cache" APP_DATA="$FIRSTRUN" start_app ""; wait_window 300
+sleep 12
+shot 05-welcome
+key ctrl+shift+p; sleep 2
+# Synthetic keys sent to a window never reach the palette's input: click it
+# to focus it, then type to whatever has focus.
+# shellcheck disable=SC2086
+$XDO mousemove --window "$WIN" 400 91 click 1 >/dev/null 2>&1 || true
+sleep 1
+$XDO type --delay 40 "from template" >/dev/null 2>&1 || true
+sleep 1
+$XDO key Return >/dev/null 2>&1 || true
+sleep 3
+shot 05-gallery
+stop_app
+python3 - "$FIRSTRUN/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "first run did not open the welcome tour"
+import json, sys
+evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+acts = [e.get("action") for e in evs]
+assert "template.welcome" in acts, "no template.welcome in %s" % sorted(set(acts))
+roots = [e.get("root", "") for e in evs if e.get("action") == "project.open"]
+assert any(r.endswith("maleficium-welcome") for r in roots), "welcome project not opened: %s" % roots
+print("stills: first run opened the welcome tour: %s" % roots[-1])
+EOF
+
+fi
 
 log "stills in $OUT:"
 ls "$OUT"/*.png
