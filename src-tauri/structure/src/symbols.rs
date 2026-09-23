@@ -34,6 +34,22 @@ pub struct PackageAt {
     pub line: u32,
 }
 
+/// A macro definition (`\newcommand`, `\def`, `\DeclareMathOperator`,
+/// `\NewDocumentCommand`, …): name with its backslash, the defining command,
+/// the parameter count where the form states one, and the body as written
+/// (capped at `MACRO_BODY_MAX` bytes).
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+pub struct MacroAt {
+    pub name: String,
+    pub command: String,
+    pub params: Option<u8>,
+    pub body: String,
+    pub line: u32,
+}
+
+/// Longest macro body kept, in bytes.
+pub const MACRO_BODY_MAX: usize = 400;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Symbols {
     pub labels: Vec<KeyAt>,
@@ -48,6 +64,8 @@ pub struct Symbols {
     pub fonts: Vec<KeyAt>,
     /// `\write18` shell escapes.
     pub shell_escapes: Vec<KeyAt>,
+    /// Macro definitions.
+    pub macros: Vec<MacroAt>,
 }
 
 static LABEL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\\label\{([^}]*)\}").unwrap());
@@ -81,6 +99,14 @@ static FONT_RE: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 static WRITE18_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\\write18\b").unwrap());
+// The head of a macro definition: the defining command, then the name
+// braced or bare. The rest (parameters, body) is read by brace matching.
+static MACRO_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\\(newcommand|renewcommand|providecommand|DeclareRobustCommand|DeclareMathOperator|NewDocumentCommand|RenewDocumentCommand|ProvideDocumentCommand|DeclareDocumentCommand|def|gdef|edef|xdef)\b\*?\s*(?:\{\s*(\\[A-Za-z@]+|\\.)\s*\}|(\\[A-Za-z@]+|\\.))",
+    )
+    .unwrap()
+});
 static BIB_ENTRY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@([a-zA-Z]+)\s*[{(]\s*([^,\s{}()]+)\s*,").unwrap());
 
@@ -176,7 +202,106 @@ pub fn symbols(text: &str) -> Symbols {
             line: lines.line_of(m.start()),
         });
     }
+    for m in MACRO_RE.captures_iter(&stripped) {
+        let name = m.get(2).or(m.get(3)).unwrap().as_str();
+        let command = &m[1];
+        if let Some((params, body)) = macro_rest(&stripped, command, m.get(0).unwrap().end()) {
+            s.macros.push(MacroAt {
+                name: name.into(),
+                command: command.into(),
+                params,
+                body,
+                line: at(&m),
+            });
+        }
+    }
     s
+}
+
+/// Skip ASCII whitespace from byte `i`.
+fn skip_ws(b: &[u8], mut i: usize) -> usize {
+    while i < b.len() && b[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// A balanced `{…}` group starting at byte `i` (after whitespace): its inner
+/// text and the byte after the closing brace.
+fn brace_group(text: &str, i: usize) -> Option<(&str, usize)> {
+    let b = text.as_bytes();
+    let start = skip_ws(b, i);
+    if b.get(start) != Some(&b'{') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut j = start;
+    while j < b.len() {
+        match b[j] {
+            b'\\' => j += 1,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&text[start + 1..j], j + 1));
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    None
+}
+
+/// A `[…]` group at byte `i` (after whitespace), unnested.
+fn bracket_group(text: &str, i: usize) -> Option<(&str, usize)> {
+    let b = text.as_bytes();
+    let start = skip_ws(b, i);
+    if b.get(start) != Some(&b'[') {
+        return None;
+    }
+    let end = start + text[start..].find(']')?;
+    Some((&text[start + 1..end], end + 1))
+}
+
+fn capped(body: &str) -> String {
+    let body = body.trim();
+    if body.len() <= MACRO_BODY_MAX {
+        return body.to_string();
+    }
+    let mut end = MACRO_BODY_MAX;
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &body[..end])
+}
+
+/// The parameters and body after a macro head ending at byte `i`.
+fn macro_rest(text: &str, command: &str, i: usize) -> Option<(Option<u8>, String)> {
+    match command {
+        "def" | "gdef" | "edef" | "xdef" => {
+            let open = i + text[i..].find('{')?;
+            let params = text[i..open].matches('#').count() as u8;
+            let (body, _) = brace_group(text, open)?;
+            Some((Some(params), capped(body)))
+        }
+        "DeclareMathOperator" => brace_group(text, i).map(|(b, _)| (Some(0), capped(b))),
+        "NewDocumentCommand"
+        | "RenewDocumentCommand"
+        | "ProvideDocumentCommand"
+        | "DeclareDocumentCommand" => {
+            let (_, after_spec) = brace_group(text, i)?;
+            brace_group(text, after_spec).map(|(b, _)| (None, capped(b)))
+        }
+        _ => {
+            let (params, i) = match bracket_group(text, i) {
+                Some((n, j)) => (n.trim().parse::<u8>().ok(), j),
+                None => (Some(0), i),
+            };
+            let i = bracket_group(text, i).map(|(_, j)| j).unwrap_or(i);
+            brace_group(text, i).map(|(b, _)| (params, capped(b)))
+        }
+    }
 }
 
 /// Entry keys of a `.bib` text (`@comment`, `@string`, `@preamble` skipped).
@@ -274,6 +399,52 @@ mod tests {
         );
         assert_eq!(s.fonts, vec![k("DejaVu Sans", 6), k("Fira Mono", 7)]);
         assert_eq!(s.shell_escapes, vec![k("\\write18", 8)]);
+    }
+
+    #[test]
+    fn macro_definitions_in_every_form() {
+        let s = symbols(concat!(
+            "\\newcommand{\\R}{\\mathbb{R}}\n",
+            "\\renewcommand*\\vec[1]{\\mathbf{#1}}\n",
+            "\\newcommand{\\opt}[2][x]{#1+#2}\n",
+            "\\DeclareMathOperator*{\\argmax}{arg\\,max}\n",
+            "\\def\\pair#1#2{(#1, #2)}\n",
+            "\\NewDocumentCommand{\\note}{m o}{\\textbf{#1}}\n",
+            "% \\newcommand{\\hidden}{x}\n",
+            "\\newcommand{\\nested}{a{b}c}\n",
+        ));
+        let got: Vec<(&str, &str, Option<u8>, &str, u32)> = s
+            .macros
+            .iter()
+            .map(|m| {
+                (
+                    m.name.as_str(),
+                    m.command.as_str(),
+                    m.params,
+                    m.body.as_str(),
+                    m.line,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("\\R", "newcommand", Some(0), "\\mathbb{R}", 1),
+                ("\\vec", "renewcommand", Some(1), "\\mathbf{#1}", 2),
+                ("\\opt", "newcommand", Some(2), "#1+#2", 3),
+                ("\\argmax", "DeclareMathOperator", Some(0), "arg\\,max", 4),
+                ("\\pair", "def", Some(2), "(#1, #2)", 5),
+                ("\\note", "NewDocumentCommand", None, "\\textbf{#1}", 6),
+                ("\\nested", "newcommand", Some(0), "a{b}c", 8),
+            ]
+        );
+    }
+
+    #[test]
+    fn long_macro_bodies_are_capped() {
+        let body = "x".repeat(MACRO_BODY_MAX + 10);
+        let s = symbols(&format!("\\newcommand{{\\big}}{{{body}}}"));
+        assert!(s.macros[0].body.ends_with('…'));
     }
 
     #[test]

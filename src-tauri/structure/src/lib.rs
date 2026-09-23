@@ -25,7 +25,7 @@ pub use engine::{
 };
 pub use files::{ext_of, is_text_path, TEXT_EXTENSIONS};
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
-pub use symbols::{bib_keys, symbols, InputAt, KeyAt, PackageAt, Symbols};
+pub use symbols::{bib_keys, symbols, InputAt, KeyAt, MacroAt, PackageAt, Symbols, MACRO_BODY_MAX};
 
 /// The generated TypeScript module for the types the frontend receives
 /// (`src/lib/generated/structure.ts`).
