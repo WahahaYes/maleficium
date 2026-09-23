@@ -33,6 +33,7 @@ export type CommandId =
   | 'selection.expand'
   | 'selection.shrink'
   | 'selection.go-to-line'
+  | 'selection.go-to-definition'
   | 'selection.pick-one'
   | 'selection.pick-many'
   | 'view.layout'
@@ -129,6 +130,7 @@ export interface CommandActions {
   expandSelection: () => void;
   shrinkSelection: () => void;
   goToLine: () => void;
+  goToDefinition: () => void;
   /** Choose-1-from-N: jump to one outline section. */
   pickOutlineSection: (line: number) => void;
   /** Choose-N: toggle outline entries as a multi-pick set. */
@@ -329,6 +331,13 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           accelerator: 'Ctrl+G',
           enabled: ctx.editorReady,
           run: a.goToLine,
+        },
+        {
+          id: 'selection.go-to-definition',
+          label: 'Go to Definition',
+          accelerator: 'F12',
+          enabled: ctx.editorReady && ctx.hasProject,
+          run: a.goToDefinition,
         },
         {
           id: 'selection.pick-one',

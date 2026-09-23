@@ -2,6 +2,7 @@
 //! builds the index on open, reports watcher batches, and lays its unsaved
 //! buffers over it.
 
+use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
 
@@ -83,4 +84,16 @@ pub fn index_replace_apply(
 #[tauri::command]
 pub fn fuzzy_rank(query: String, items: Vec<String>, max: Option<usize>) -> Vec<Ranked> {
     maleficium_index::search::rank(&query, &items, max.unwrap_or(items.len()))
+}
+
+/// What a column of a line the editor holds refers to, and where it is
+/// defined; `null` when nothing sits there.
+#[tauri::command(async)]
+pub fn index_definition_at(
+    root_id: String,
+    line: String,
+    col: u32,
+    main_rel: Option<String>,
+) -> Result<Option<Lookup>, String> {
+    search::definition_at(&root_id, &line, col, main_rel.as_deref())
 }

@@ -6,6 +6,7 @@
 
 import type {
   FileMatch,
+  Lookup,
   Query,
   Ranked,
   ReplaceApplied,
@@ -13,7 +14,7 @@ import type {
   SearchResult,
 } from './generated/index';
 
-export type { FileMatch, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult };
+export type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult };
 
 export interface ProjectIndexProvider {
   /** Build the index now (dropping overlays); resolves to the files listed. */
@@ -28,6 +29,16 @@ export interface ProjectIndexProvider {
   search(rootId: string, query: Query, mainRel: string | null): Promise<SearchResult>;
   /** Files matching a fuzzy name query, best first. */
   findFiles(rootId: string, query: string): Promise<FileMatch[]>;
+  /**
+   * What UTF-16 column `col` of `line` (text the editor holds) refers to and
+   * where it is defined; null when nothing sits there.
+   */
+  definitionAt(
+    rootId: string,
+    line: string,
+    col: number,
+    mainRel: string | null,
+  ): Promise<Lookup | null>;
   /** Rank any list of names by the finder's fuzzy score, best first. */
   rank(query: string, items: string[]): Promise<Ranked[]>;
   /** Plan replacing every match; writes nothing. */

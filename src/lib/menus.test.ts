@@ -48,6 +48,7 @@ const actions: CommandActions = {
   expandSelection: noop,
   shrinkSelection: noop,
   goToLine: noop,
+  goToDefinition: noop,
   pickOutlineSection: noop,
   toggleOutlinePick: noop,
   setPreset: noop,

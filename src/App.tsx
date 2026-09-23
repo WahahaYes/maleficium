@@ -24,6 +24,7 @@ import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
+import { hoverText } from './lib/definition.view';
 import { projectIndex, type Query } from './lib/project-index';
 import { historyStore } from './lib/history';
 import type { Hit } from './lib/generated/index';
@@ -53,6 +54,7 @@ import type { OutlineEntry } from './lib/generated/structure';
 import {
   matchesCompile,
   matchesForwardSync,
+  matchesGoToDefinition,
   matchesMenuChord,
   menuChordId,
   zoomChord,
@@ -381,6 +383,9 @@ export default function App({
       if (matchesCompile(e as unknown as KeyboardEvent)) {
         e.preventDefault();
         void compileRef.current();
+      } else if (matchesGoToDefinition(e as unknown as KeyboardEvent)) {
+        e.preventDefault();
+        goToDefinitionRef.current();
       } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
         e.preventDefault();
         void forwardSyncRef.current();
@@ -669,6 +674,60 @@ export default function App({
     },
     [projectId, mainFile, relInProject],
   );
+  // Go to definition (F12 / Ctrl+click) and its hover, over the project index.
+  const lookupAt = useCallback(
+    (line: string, col: number) => {
+      if (!projectId) return Promise.resolve(null);
+      const main = mainFile ? relInProject(mainFile) : null;
+      return projectIndex().definitionAt(projectId, line, col, main);
+    },
+    [projectId, mainFile, relInProject],
+  );
+  const goToDefinitionAt = useCallback(
+    async (line: string, col: number) => {
+      if (!root) return;
+      const l = await lookupAt(line, col).catch(() => null);
+      if (!l) {
+        setLog('nothing to go to here');
+        return;
+      }
+      const found = l.definitions.length;
+      emit({
+        scope: 'app',
+        kind: found > 0 ? 'info' : 'warn',
+        actor: 'user',
+        message: found > 0 ? `definition of ${l.ref.key}` : `no definition for ${l.ref.key}`,
+        event: { action: 'nav.definition', kind: l.ref.kind, key: l.ref.key, found },
+      });
+      const d = l.definitions[0];
+      if (!d) {
+        setLog(hoverText(l));
+        return;
+      }
+      const abs = joinPath(root, d.rel);
+      if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
+      setHitSelect({ path: abs, line: d.line, col: 0, len: 0, key: Date.now() });
+      if (found > 1) setLog(`${l.ref.key}: ${found} definitions (duplicate) — showing the first`);
+    },
+    [root, lookupAt],
+  );
+  const definitionRef = useRef<{
+    hover: (line: string, col: number) => Promise<string | null>;
+    go: (line: string, col: number) => void;
+  } | null>(null);
+  definitionRef.current = {
+    hover: (line, col) =>
+      lookupAt(line, col).then(
+        (l) => (l ? hoverText(l) : null),
+        () => null,
+      ),
+    go: (line, col) => void goToDefinitionAt(line, col),
+  };
+  const goToDefinitionRef = useRef<() => void>(() => {});
+  goToDefinitionRef.current = () => {
+    const at = viewportRef.current?.caretAt();
+    if (at) void goToDefinitionAt(at.text, at.col);
+  };
   // File finder / command palette: one dialog, `>` switches to commands.
   const [paletteOpen, setPaletteOpen] = useState<string | null>(null);
   const findFiles = useCallback(
@@ -1017,6 +1076,7 @@ export default function App({
     selectAll: () => viewportRef.current?.selectAll(),
     expandSelection: () => viewportRef.current?.expandSelection(),
     shrinkSelection: () => viewportRef.current?.shrinkSelection(),
+    goToDefinition: () => goToDefinitionRef.current(),
     goToLine: () => {
       setGoToDraft(String(currentLine));
       setGoToOpen(true);
@@ -1208,6 +1268,7 @@ export default function App({
             onDoubleClickRef={forwardSyncLineRef}
             filePath={fileName}
             prefs={prefs}
+            definitionRef={definitionRef}
           />
         </Box>
       )}

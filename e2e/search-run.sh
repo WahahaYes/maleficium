@@ -100,6 +100,17 @@ check("a plan applies once", not call("replace_apply", {"root_id": "s", "token":
 un = call("replace_undo", {"root_id": "s", "batch": ap["batch"]})
 check("replace_undo restores the exact bytes", un["ok"] and snap() == orig, un)
 
+d = call("definition", {"root_id": "s", "kind": "label", "key": "sec:intro"})
+check("definition finds a label", d["ok"] and d["lookup"]["definitions"][0]["rel"] == "main.tex", d)
+d = call("definition", {"root_id": "s", "kind": "citation", "key": "knuth1984texbook"})
+check("definition summarizes a bib entry", d["ok"] and d["lookup"]["definitions"][0]["rel"] == "refs.bib" and "—" in d["lookup"]["definitions"][0]["summary"], d)
+main_lines = open(os.path.join(ROOT, "main.tex"), encoding="utf-8").read().split("\n")
+ln = next(i for i, l in enumerate(main_lines) if "\\input{chapters/method}" in l)
+d = call("definition", {"root_id": "s", "rel": "main.tex", "line": ln + 1, "col": main_lines[ln].index("chapters"), "main_rel": "main.tex"})
+check("definition at a position resolves an input", d["ok"] and d["lookup"]["definitions"][0]["rel"] == "chapters/method.tex", d)
+d = call("definition", {"root_id": "s", "kind": "label", "key": "no:such"})
+check("an undefined key has no definitions", d["ok"] and d["lookup"]["definitions"] == [], d)
+
 pv = call("replace_preview", {"root_id": "s", "pattern": "Figure", "case_sensitive": True, "replacement": "Fig."})
 target = os.path.join(ROOT, pv["files"][-1]["rel"])
 open(target, "a").write("\n% edited after the preview\n")

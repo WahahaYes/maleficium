@@ -27,6 +27,7 @@ export const KEYMAP: KeyChord[] = [
   { id: 'expand-selection', label: 'Expand Selection', keys: 'Shift+Alt+Right' },
   { id: 'shrink-selection', label: 'Shrink Selection', keys: 'Shift+Alt+Left' },
   { id: 'go-to-line', label: 'Go to Line…', keys: 'Ctrl+G' },
+  { id: 'go-to-definition', label: 'Go to Definition (or Ctrl+click)', keys: 'F12' },
   { id: 'file-history', label: 'File History…', keys: 'Ctrl+H' },
   { id: 'quick-open', label: 'Go to File…', keys: 'Ctrl+P' },
   { id: 'command-palette', label: 'Command Palette…', keys: 'Ctrl+Shift+P' },
@@ -38,6 +39,10 @@ export const KEYMAP: KeyChord[] = [
 
 export function matchesCompile(e: KeyboardEvent): boolean {
   return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r';
+}
+
+export function matchesGoToDefinition(e: KeyboardEvent): boolean {
+  return e.key === 'F12' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
 }
 
 export function matchesForwardSync(e: KeyboardEvent): boolean {

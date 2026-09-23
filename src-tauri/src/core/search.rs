@@ -2,6 +2,7 @@
 //! addressed by session root. Every result is root-relative and names the
 //! source and revision of each file it read.
 
+use maleficium_index::definition::{self, Lookup, RefAt};
 use maleficium_index::search::{self, FileMatch, Query, SearchResult};
 
 /// Hits one search returns by default.
@@ -22,6 +23,55 @@ pub fn search(
 /// The best files for a finder query.
 pub fn find_files(root_id: &str, query: &str, max: usize) -> Result<Vec<FileMatch>, String> {
     super::index::with(root_id, |l| search::find_files(&l.index, query, max))
+}
+
+/// What UTF-16 column `col` of `line` (text the caller holds) refers to,
+/// and where it is defined; `None` when nothing sits there.
+pub fn definition_at(
+    root_id: &str,
+    line: &str,
+    col: u32,
+    main_rel: Option<&str>,
+) -> Result<Option<Lookup>, String> {
+    let Some(r) = definition::ref_at(line, col) else {
+        return Ok(None);
+    };
+    super::index::with(root_id, |l| {
+        Some(definition::lookup(&l.index, &r, main_rel))
+    })
+}
+
+/// Where a reference is defined: a known ref, or the one at a 1-based line
+/// and UTF-16 column of an indexed file.
+pub fn definition(
+    root_id: &str,
+    target: DefinitionTarget,
+    main_rel: Option<&str>,
+) -> Result<Option<Lookup>, String> {
+    super::index::with(root_id, |l| {
+        let r = match target {
+            DefinitionTarget::Ref(r) => Some(r),
+            DefinitionTarget::At { rel, line, col } => {
+                let f = l
+                    .index
+                    .get(&rel)
+                    .ok_or_else(|| format!("not an indexed file: {}", rel))?;
+                let text = f.text.ok_or_else(|| format!("no text for {}", rel))?;
+                let line_text = text
+                    .lines()
+                    .nth(line.saturating_sub(1) as usize)
+                    .unwrap_or("");
+                definition::ref_at(line_text, col)
+            }
+        };
+        Ok(r.map(|r| definition::lookup(&l.index, &r, main_rel)))
+    })?
+}
+
+/// What `definition` looks up.
+pub enum DefinitionTarget {
+    Ref(RefAt),
+    At { rel: String, line: u32, col: u32 },
 }
 
 #[cfg(test)]
@@ -47,6 +97,26 @@ mod tests {
         assert_eq!(files, ["main.tex", "ch/a.tex"]);
         assert_eq!(find_files("search-t", "cha", 5).unwrap()[0].rel, "ch/a.tex");
         assert!(search("nope", &q, None, 10).is_err());
+        let d = definition_at("search-t", "see \\input{ch/a}", 8, Some("main.tex"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(d.definitions[0].rel, "ch/a.tex");
+        assert!(definition_at("search-t", "plain words", 3, None)
+            .unwrap()
+            .is_none());
+        let at = DefinitionTarget::At {
+            rel: "main.tex".into(),
+            line: 1,
+            col: 3,
+        };
+        assert_eq!(
+            definition("search-t", at, Some("main.tex"))
+                .unwrap()
+                .unwrap()
+                .definitions[0]
+                .rel,
+            "ch/a.tex"
+        );
     }
 
     /// Budget pin: a regex search over a synthetic 3000-file project.

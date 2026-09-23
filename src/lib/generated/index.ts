@@ -120,3 +120,20 @@ written: Array<string>,
  * New text for files the caller keeps open, not written here.
  */
 edits: Array<BufferEdit>, replacements: number, };
+
+export type RefKind = "label" | "citation" | "macro" | "input";
+
+export type RefAt = { kind: RefKind, key: string, 
+/**
+ * `input`, `include` or `subfile` for an input target.
+ */
+command?: string, };
+
+export type Definition = { rel: string, line: number, 
+/**
+ * For hover: the defining line, a bib entry summary, the macro
+ * definition, or the input file's first line.
+ */
+summary: string, };
+
+export type Lookup = { ref: RefAt, definitions: Array<Definition>, };

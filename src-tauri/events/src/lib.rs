@@ -544,6 +544,14 @@ pub enum AppEvent {
     },
     /// A replace across the project was applied: files it changed (written
     /// or edited in open buffers), replacements, and the batch undo restores.
+    /// Go to definition ran: what was looked up and how many definitions
+    /// it has (0: undefined; 2+: a duplicate).
+    #[serde(rename = "nav.definition")]
+    NavDefinition {
+        kind: String,
+        key: String,
+        found: u32,
+    },
     #[serde(rename = "replace.apply")]
     ReplaceApply {
         files: u32,

@@ -224,6 +224,27 @@ struct ReplaceUndoOut {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct DefinitionParams {
+    root_id: String,
+    /// Look up a known reference: label, citation, macro (with its
+    /// backslash) or input.
+    kind: Option<maleficium_index::definition::RefKind>,
+    key: Option<String>,
+    /// Or look up whatever sits at a 1-based line and UTF-16 column of a file.
+    rel: Option<String>,
+    line: Option<u32>,
+    col: Option<u32>,
+    /// Inputs resolve from this main file's directory (default: the root).
+    main_rel: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct DefinitionOut {
+    /// `None` when nothing referable sits at the position.
+    lookup: Option<maleficium_index::definition::Lookup>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct FindFilesParams {
     root_id: String,
     query: String,
@@ -520,6 +541,28 @@ impl Maleficium {
     ) -> Result<Json<ReplaceUndoOut>, String> {
         Ok(Json(ReplaceUndoOut {
             restored: core::replace::undo(&p.root_id, &p.batch)?,
+        }))
+    }
+
+    #[tool(
+        description = "Where a label, citation key, macro or input is defined, across the project's saved files: pass kind + key, or rel + line + col to look up what sits there. Returns every definition (a duplicate label lists each) with root-relative path, line, and a one-line summary (the defining line, a bib entry's author, title and year, the macro definition, or the input's first line)."
+    )]
+    fn definition(
+        &self,
+        Parameters(p): Parameters<DefinitionParams>,
+    ) -> Result<Json<DefinitionOut>, String> {
+        use core::search::DefinitionTarget;
+        let target = match (p.kind, p.key, p.rel, p.line, p.col) {
+            (Some(kind), Some(key), _, _, _) => {
+                let command = (kind == maleficium_index::definition::RefKind::Input)
+                    .then(|| "input".to_string());
+                DefinitionTarget::Ref(maleficium_index::definition::RefAt { kind, key, command })
+            }
+            (_, _, Some(rel), Some(line), Some(col)) => DefinitionTarget::At { rel, line, col },
+            _ => return Err("pass kind and key, or rel, line and col".to_string()),
+        };
+        Ok(Json(DefinitionOut {
+            lookup: core::search::definition(&p.root_id, target, p.main_rel.as_deref())?,
         }))
     }
 

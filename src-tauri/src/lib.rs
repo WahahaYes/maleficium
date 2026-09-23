@@ -41,7 +41,8 @@ pub fn run() {
             commands::index::index_find_files,
             commands::index::index_replace_preview,
             commands::index::index_replace_apply,
-            commands::index::fuzzy_rank
+            commands::index::fuzzy_rank,
+            commands::index::index_definition_at
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -9,6 +9,7 @@
 //! touches the fs. Paths are root-relative with `/` separators. The shape is
 //! documented in `notes/search-index/INDEX-SHAPE.md`.
 
+pub mod definition;
 pub mod graph;
 pub mod replace;
 pub mod search;
@@ -361,6 +362,10 @@ pub fn typescript() -> String {
         replace::ReplacePreview::decl(&cfg),
         replace::BufferEdit::decl(&cfg),
         replace::ReplaceApplied::decl(&cfg),
+        definition::RefKind::decl(&cfg),
+        definition::RefAt::decl(&cfg),
+        definition::Definition::decl(&cfg),
+        definition::Lookup::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from src-tauri/index (maleficium-index). Do not edit:\n\

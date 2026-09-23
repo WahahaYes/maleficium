@@ -7,6 +7,7 @@ import { memo, useEffect, useRef } from 'react';
 import Paper from '@mui/material/Paper';
 import { useTheme } from '@mui/material/styles';
 import { EditorView, basicSetup } from 'codemirror';
+import { hoverTooltip } from '@codemirror/view';
 import { Compartment, EditorState, EditorSelection } from '@codemirror/state';
 import { openSearchPanel } from '@codemirror/search';
 import { texMode } from '../lib/texMode';
@@ -33,6 +34,8 @@ export interface EditorViewportHandle {
   goToLine: (line: number) => void;
   /** Open the in-file find panel. */
   openFind: () => void;
+  /** The caret's line text and UTF-16 column in it. */
+  caretAt: () => { text: string; col: number } | null;
   /** Current caret line (1-based) — drives double-click forward SyncTeX. */
   caretLine: () => number;
 }
@@ -48,6 +51,7 @@ function EditorViewport({
   onDoubleClickRef,
   filePath,
   prefs,
+  definitionRef,
 }: EditorViewportProps & {
   /** Drives select-all/expand/shrink/goto on the live view. */
   viewportRef?: React.MutableRefObject<EditorViewportHandle | null>;
@@ -57,6 +61,11 @@ function EditorViewport({
   filePath?: string;
   /** Live appearance prefs driving editor font and size. */
   prefs?: AppearancePrefs;
+  /** Definitions: hover text for a line + column, and Ctrl+click to go there. */
+  definitionRef?: React.MutableRefObject<{
+    hover: (line: string, col: number) => Promise<string | null>;
+    go: (line: string, col: number) => void;
+  } | null>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -85,6 +94,27 @@ function EditorViewport({
         texMode,
         // Wrap long lines instead of horizontal scroll.
         EditorView.lineWrapping,
+        // Hover a reference, macro or input: where it is defined.
+        hoverTooltip(async (view, pos) => {
+          const hover = definitionRef?.current?.hover;
+          if (!hover) return null;
+          const line = view.state.doc.lineAt(pos);
+          const text = await hover(line.text, pos - line.from);
+          if (!text) return null;
+          return {
+            pos,
+            above: true,
+            create: () => {
+              const dom = document.createElement('div');
+              dom.className = 'cm-definition-hover';
+              dom.style.whiteSpace = 'pre-wrap';
+              dom.style.maxWidth = '60ch';
+              dom.style.padding = '2px 6px';
+              dom.textContent = text;
+              return { dom };
+            },
+          };
+        }),
         themeCompartment.of(editorTheme(prefsRef.current, muiTheme)),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
@@ -104,6 +134,16 @@ function EditorViewport({
           // Double-click = forward SyncTeX from the caret line; single click
           // stays caret-only. The file is captured at click time (state may
           // lag the visible buffer after a fast file switch + double-click).
+          // Ctrl+click = go to definition of what was clicked.
+          mousedown: (e, view) => {
+            if (!(e.ctrlKey || e.metaKey) || !definitionRef?.current) return false;
+            const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+            if (pos == null) return false;
+            const line = view.state.doc.lineAt(pos);
+            e.preventDefault();
+            definitionRef.current.go(line.text, pos - line.from);
+            return true;
+          },
           dblclick: (_e, view) => {
             try {
               const head = view.state.selection.main.head;
@@ -251,6 +291,13 @@ function EditorViewport({
         } catch {
           /* out of range — ignore */
         }
+      },
+      caretAt: () => {
+        const view = viewRef.current;
+        if (!view) return null;
+        const head = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(head);
+        return { text: line.text, col: head - line.from };
       },
       openFind: () => {
         const view = viewRef.current;
