@@ -1323,7 +1323,7 @@ export default function App({
         phase={compilePhase}
         timer={compileTimer}
         message={compilePhase === 'compiling' ? (progress ?? log) : log}
-        offline={offline}
+        offline={compilePhase === 'compiling' ? null : offline}
       />
     </Box>
   );

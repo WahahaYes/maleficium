@@ -13,9 +13,7 @@ describe('compile progress', () => {
       { action: 'compile.phase', phase: 'format' },
       { action: 'compile.fetch', file: 'latex.ltx', outcome: 'fetched' },
     ]);
-    expect(progressLabel(p)).toBe(
-      'first compile downloads TeX support files · building the LaTeX format · downloaded 2 files (latex.ltx)',
-    );
+    expect(progressLabel(p)).toBe('first compile · format · 2 downloaded (latex.ltx)');
   });
 
   it('counts TeX passes with their rerun reasons', () => {

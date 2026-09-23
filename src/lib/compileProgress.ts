@@ -50,29 +50,30 @@ function phaseText(p: CompileProgress): string | null {
     case 'first-compile':
       return null;
     case 'format':
-      return 'building the LaTeX format';
+      return 'format';
     case 'tex':
       return `TeX pass ${p.pass}` + (p.detail ? ` (${p.detail})` : '');
     case 'bibliography':
-      return `bibliography (${p.detail ?? 'bibtex'})`;
+      return p.detail ?? 'bibtex';
     case 'xdvipdfmx':
-      return 'converting to PDF';
+      return 'PDF';
     case 'writing':
       return `writing ${p.detail ?? 'output'}`;
   }
 }
 
-/** One status-bar line for a running compile, or null before any signal. */
+/**
+ * One short status-bar line for a running compile, most telling first (it
+ * truncates from the end), or null before any signal. The log carries the
+ * full first-compile sentence.
+ */
 export function progressLabel(p: CompileProgress): string | null {
   const parts: string[] = [];
-  if (p.firstCompile) parts.push('first compile downloads TeX support files');
+  if (p.firstCompile) parts.push('first compile');
   const phase = phaseText(p);
   if (phase) parts.push(phase);
   if (p.downloads > 0) {
-    parts.push(
-      `downloaded ${p.downloads} file${p.downloads === 1 ? '' : 's'}` +
-        (p.current ? ` (${p.current})` : ''),
-    );
+    parts.push(`${p.downloads} downloaded` + (p.current ? ` (${p.current})` : ''));
   }
   return parts.length ? parts.join(' · ') : null;
 }
