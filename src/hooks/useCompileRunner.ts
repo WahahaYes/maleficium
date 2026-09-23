@@ -21,6 +21,7 @@ import {
   type CompileResult,
 } from '../lib/compile';
 import { emit } from '../lib/events';
+import { foldProgress, IDLE_PROGRESS, progressLabel } from '../lib/compileProgress';
 import type { Actor } from '../lib/generated/events';
 import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
@@ -77,6 +78,12 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
   const [offline, setOffline] = useState<OfflineBadge | null>(null);
+  const [progress, setProgress] = useState(IDLE_PROGRESS);
+  /** Emit a compile event that also moves the live progress line. */
+  const emitProgress = (e: Parameters<typeof emit>[0]) => {
+    emit(e);
+    setProgress((p) => foldProgress(p, e.event));
+  };
 
   /** Read the project's offline readiness onto the bus and the badge. */
   const refreshReadiness = async (p: SessionRoot) => {
@@ -187,7 +194,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       setLog('compile blocked: open a .tex file first');
       return false;
     }
-    emit({
+    emitProgress({
       scope: 'compile',
       kind: 'progress',
       actor,
@@ -208,12 +215,20 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     try {
       unlisten = await onCompileLine((line) => {
         const sig = line.signal;
-        if (sig?.kind === 'fetch') {
+        if (sig?.kind === 'phase') {
+          emitProgress({
+            scope: 'compile',
+            kind: 'progress',
+            actor,
+            message: line.text.slice(0, 300),
+            event: { action: 'compile.phase', phase: sig.phase, detail: sig.detail },
+          });
+        } else if (sig?.kind === 'fetch') {
           if (sig.outcome === 'failed') {
             if (failedFetches.has(sig.file)) return;
             failedFetches.add(sig.file);
           }
-          emit({
+          emitProgress({
             scope: 'compile',
             kind: sig.outcome === 'failed' ? 'warn' : 'info',
             actor,
@@ -533,6 +548,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     compilePhase,
     compileTimer,
     offline,
+    progress: progressLabel(progress),
     makeOffline,
     warmCompile,
     handleCompileFile,

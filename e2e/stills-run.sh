@@ -8,7 +8,8 @@
 # assertions); the one exception is the app event log, asserted after
 # every state because no other harness launches the real app (the
 # driver only drives the headless sidecar, which never starts the
-# frontend log). 3000pp is deferred (no cheap path: needs a generated
+# frontend log). State 4 compiles cold against an empty engine cache.
+# 3000pp is deferred (no cheap path: needs a generated
 # 3000-page build; see SCOPE).
 set -eu
 unset CDPATH
@@ -78,17 +79,20 @@ encode() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.arg
 
 start_app() {
   # $1 = project dir. Serves a merged devUrl carrying the preset, then
-  # launches the app against it. Echoes nothing; sets APP_PID.
+  # launches the app against it. Echoes nothing; sets APP_PID. A set
+  # APP_CACHE gives this launch its own app cache home (engine cache).
   sweep_stale
   DEVURL="http://localhost:1420/?project=$(encode "$1")"
   log "launching (preset $(basename "$1"))"
+  set --
+  if [ -n "${APP_CACHE:-}" ]; then set -- "XDG_CACHE_HOME=$APP_CACHE"; fi
   # Toolchain homes stay real (rustup has no default under a fresh HOME);
   # everything the app writes stays contained via HOME. Compositing off:
   # no compositor runs under Xvfb and WebKit will not map otherwise.
   # shellcheck disable=SC2086
   HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
     DISPLAY="$DISP" GDK_BACKEND=x11 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
-    setsid "$ROOT/node_modules/.bin/tauri" dev \
+    env "$@" setsid "$ROOT/node_modules/.bin/tauri" dev \
     --config "{\"build\": {\"devUrl\": \"$DEVURL\"}}" \
     >>"$OUT/dev.log" 2>&1 &
   APP_PID=$!
@@ -269,6 +273,39 @@ key ctrl+r; sleep 20
 shot 03-failure
 stop_app
 check_log "log.open compile.finish"
+
+# State 4 — Cold compile: an empty engine cache of its own, Ctrl+R, stills
+# while the first compile downloads until the log says it finished. The
+# status bar must read the phase and a live download count.
+APP_CACHE="$FIX/cold-cache" start_app "$FIX/simple"; wait_window 300
+key ctrl+o; sleep 6
+click_editor
+key ctrl+r
+APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+i=0
+while [ "$i" -lt 60 ]; do
+  i=$((i + 1))
+  sleep 8
+  timeout 60 import -display "$DISP" -window "$WIN" "$OUT/04-cold-$i.png" 2>/dev/null || true
+  grep -q '"action":"compile.finish"' "$APPLOG" 2>/dev/null && break
+done
+log "captured 04-cold-{1..$i}.png"
+shot 04-cold-done
+stop_app
+check_log "log.open compile.phase compile.fetch compile.finish"
+python3 - "$APPLOG" <<'EOF' || die "cold compile did not report its phases and downloads"
+import json, sys
+evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+acts = [e.get("action") for e in evs]
+end = acts.index("compile.finish")
+phases = [e.get("phase") for e in evs[:end] if e.get("action") == "compile.phase"]
+fetched = sum(1 for e in evs[:end] if e.get("action") == "compile.fetch" and e.get("outcome") == "fetched")
+assert phases[:1] == ["first-compile"], "phases: %s" % phases[:5]
+assert "tex" in phases and "xdvipdfmx" in phases, "phases: %s" % phases
+assert fetched > 0, "no fetched files before compile.finish"
+assert evs[end].get("ok") is True, "cold compile failed: %s" % evs[end]
+print("stills: cold compile: %d fetches, phases %s" % (fetched, ",".join(dict.fromkeys(phases))))
+EOF
 
 log "stills in $OUT:"
 ls "$OUT"/*.png

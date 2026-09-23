@@ -567,26 +567,33 @@ export default function App({
     store().set(DEVICE_PREF_KEYS.layout, JSON.stringify(layout));
   }, [layout]);
   const [logCollapsed, setLogCollapsed] = useState(false);
-  const { compilePhase, compileTimer, offline, makeOffline, warmCompile, handleCompileFile } =
-    useCompileRunner({
-      tex,
-      fileName,
-      mainFile,
-      setMainFileState,
-      mainDir,
-      workdirHint,
-      root,
-      projectId,
-      scratch,
-      buffers,
-      setBuffers,
-      largeFile,
-      previewFile,
-      ownWrites,
-      setLog,
-      setLogCollapsed,
-      compileRef,
-    });
+  const {
+    compilePhase,
+    compileTimer,
+    offline,
+    progress,
+    makeOffline,
+    warmCompile,
+    handleCompileFile,
+  } = useCompileRunner({
+    tex,
+    fileName,
+    mainFile,
+    setMainFileState,
+    mainDir,
+    workdirHint,
+    root,
+    projectId,
+    scratch,
+    buffers,
+    setBuffers,
+    largeFile,
+    previewFile,
+    ownWrites,
+    setLog,
+    setLogCollapsed,
+    compileRef,
+  });
   const { reloadTree, openRoot, open, recentProjects, setRecentProjects } = useProjectTree({
     root,
     setRoot,
@@ -1315,7 +1322,7 @@ export default function App({
         onOpenHistory={() => void openHistory()}
         phase={compilePhase}
         timer={compileTimer}
-        message={log}
+        message={compilePhase === 'compiling' ? (progress ?? log) : log}
         offline={offline}
       />
     </Box>
