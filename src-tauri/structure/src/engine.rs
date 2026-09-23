@@ -68,6 +68,8 @@ static FETCH_FAILED: LazyLock<Regex> = LazyLock::new(|| {
 });
 static FILE_NOT_FOUND: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"LaTeX Error: File `([^']+)' not found").unwrap());
+static INPUT_UNOPENED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^error: failed to open input file "([^"]+)""#).unwrap());
 static FONT_MISSING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^error: .*Package fontspec Error: The font "([^"]+)" cannot be found"#).unwrap()
 });
@@ -180,7 +182,9 @@ pub fn missing_dependency<S: AsRef<str>>(
         }
     }
     let failed_fetch = first(&lines, &FETCH_FAILED);
-    if let Some(file) = first(&lines, &FILE_NOT_FOUND) {
+    // TeX's own miss, or the engine's miss of a file it reads directly (a
+    // format input, when the cache was left partly fetched).
+    if let Some(file) = first(&lines, &FILE_NOT_FOUND).or_else(|| first(&lines, &INPUT_UNOPENED)) {
         return if in_bundle(&file) {
             if has(CACHED_ONLY) {
                 found(Some(file), MissingReason::NotCached)
@@ -317,6 +321,23 @@ called `Result::unwrap()` on an `Err` value: this bundle isn't cached, and we co
 note: generating format \"latex\"
 error: failed to open input file \"tectonic-format-latex.tex\"";
         assert_eq!(verdict(c, false), Some((None, MissingReason::CacheEmpty)));
+    }
+
+    #[test]
+    fn a_partly_fetched_cache_is_not_cached() {
+        let c = "note: \"version 2\" Tectonic command-line interface activated
+note: using only cached resource files
+note: generating format \"latex\"
+error: failed to open input file \"hyph-el-monoton.tex\"";
+        let lines: Vec<&str> = c.lines().collect();
+        let in_index = |f: &str| f == "hyph-el-monoton.tex";
+        assert_eq!(
+            missing_dependency(&lines, false, &in_index),
+            Some(MissingDependency {
+                file: Some("hyph-el-monoton.tex".into()),
+                reason: MissingReason::NotCached
+            })
+        );
     }
 
     #[test]
