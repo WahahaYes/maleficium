@@ -198,12 +198,17 @@ export function usePdfDocument({
         if (cancelled) return;
         await yieldUi();
         if (cancelled) return;
+        // Page 1's aspect is known before the shells mount, so the first
+        // layout (and every fit) already has the document's real proportions.
+        const v1 = (await pdf.getPage(1)).getViewport({ scale: 1 });
+        if (cancelled) return;
         // Fresh identity per revision: bitmaps, ratios, and aspects restart.
         renderedRef.current.clear();
         renderedKeys.current.clear();
         inFlightRef.current.clear();
         ratiosRef.current.clear();
-        dimsRef.current = new Map();
+        const base = { w: v1.width, h: v1.height };
+        dimsRef.current = new Map(Array.from({ length: pdf.numPages }, (_, i) => [i + 1, base]));
         bumpDims();
         const target = clampPage(pageRef.current, pdf.numPages);
         visibleRef.current = target;

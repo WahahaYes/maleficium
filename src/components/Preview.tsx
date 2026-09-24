@@ -24,7 +24,7 @@
 // that hook.
 
 import { Box, Typography, useTheme } from '@mui/material';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
 import {
@@ -126,7 +126,8 @@ export default function Preview({
   const [zoom, setZoom] = useState<ZoomMode>(loadZoom);
   const [pane, setPane] = useState<Size>({ width: 836, height: 600 });
   const anchorRef = useRef<{ page: number; frac: number } | null>(null);
-  useEffect(() => {
+  // Measured before paint, so the first layout already uses the real pane.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const measure = () => setPane({ width: el.clientWidth, height: el.clientHeight });
