@@ -18,3 +18,13 @@ This product bundles third-party VSCode color themes under src/assets/themes/
 - Winter is Coming dark blue and light, Copyright (c) 2015-2017 JohnPapa.net, LLC
 - GitHub dark default and light default, Copyright (c) 2020 Primer
 - Catppuccin Mocha and Latte, Copyright (c) 2021 Catppuccin
+
+This product bundles engine sidecars packed by scripts/fetch-sidecars.sh
+into the installable next to the app binary:
+
+- Tectonic 0.17.0 (official release assets, redistributed unmodified),
+  MIT-licensed.
+- SyncTeX command-line tool, self-built from jlaurens/synctex at pinned
+  commit 04cf8e3e8665ff203248d7af78ee1129afbc1b64, under its permissive
+  MIT-style license (Copyright Jerome Laurens 2008-2024, plus a
+  non-advertising clause).
