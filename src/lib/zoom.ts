@@ -43,6 +43,14 @@ export function backingWidth(cssWidth: number, dpr: number): number {
   return Math.max(1, Math.round(Math.max(1, cssWidth) * d));
 }
 
+/** A painted page: its shell's CSS width and its canvas width in device px. */
+export type PaintedPage = { page: number; cssWidth: number; backing: number };
+
+/** Pages whose canvas no longer matches their shell at this DPR; others keep their pixels. */
+export function stalePages(painted: PaintedPage[], dpr: number): number[] {
+  return painted.filter((p) => backingWidth(p.cssWidth, dpr) !== p.backing).map((p) => p.page);
+}
+
 export type RenderGeometry = { scale: number; width: number; height: number };
 
 /**

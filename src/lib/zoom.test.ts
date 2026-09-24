@@ -8,6 +8,7 @@ import {
   parseZoom,
   percentOf,
   renderGeometry,
+  stalePages,
   ZOOM_GUTTER,
   ZOOM_MAX,
   ZOOM_MIN,
@@ -118,5 +119,26 @@ describe('renderGeometry', () => {
     expect(backingWidth(0, 1)).toBe(1);
     const g = renderGeometry(300.4, { width: 0, height: 0 }, 1);
     expect(g).toEqual({ scale: 300, width: 300, height: 300 });
+  });
+});
+
+describe('stalePages', () => {
+  const painted = (css: number, dpr: number) =>
+    [1, 2, 3].map((page) => ({ page, cssWidth: css, backing: backingWidth(css, dpr) }));
+
+  it('keeps every bitmap when nothing resized (scrolling, a held fit)', () => {
+    expect(stalePages(painted(517, 1), 1)).toEqual([]);
+    expect(stalePages(painted(401.03, 1.25), 1.25)).toEqual([]);
+    // Sub-pixel layout jitter that rounds to the same backing is not a change.
+    expect(stalePages([{ page: 1, cssWidth: 517.3, backing: 517 }], 1)).toEqual([]);
+  });
+
+  it('marks only the pages whose width changed', () => {
+    const mixed = [...painted(517, 1).slice(0, 2), { page: 3, cssWidth: 600, backing: 517 }];
+    expect(stalePages(mixed, 1)).toEqual([3]);
+  });
+
+  it('marks every page when the DPR changes', () => {
+    expect(stalePages(painted(517, 1), 2)).toEqual([1, 2, 3]);
   });
 });

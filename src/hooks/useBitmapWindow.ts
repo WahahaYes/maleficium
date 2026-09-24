@@ -21,7 +21,7 @@ import {
   pickVisible,
   windowFor,
 } from '../lib/previewNav';
-import { backingWidth, renderGeometry } from '../lib/zoom';
+import { backingWidth, renderGeometry, stalePages, type PaintedPage } from '../lib/zoom';
 import type { DocLike, TextLayerCtor } from './usePdfDocument';
 
 /** Idle wait: the current page renders immediately, neighbors yield first. */
@@ -423,17 +423,20 @@ export function useBitmapWindow({
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        const dpr = window.devicePixelRatio;
-        let stale = false;
-        for (const [n, key] of renderedKeys.current) {
+        const painted: PaintedPage[] = [];
+        for (const [n] of renderedKeys.current) {
           const shell = shellRefs.current.get(n);
           const canvas = canvasRefs.current.get(n);
           if (!shell || !canvas) continue;
-          if (backingWidth(shell.getBoundingClientRect().width, dpr) === canvas.width) continue;
-          renderedRef.current.delete(key);
-          stale = true;
+          painted.push({
+            page: n,
+            cssWidth: shell.getBoundingClientRect().width,
+            backing: canvas.width,
+          });
         }
-        if (stale) setRenderEpoch((e) => e + 1);
+        const stale = stalePages(painted, window.devicePixelRatio);
+        for (const n of stale) renderedRef.current.delete(renderedKeys.current.get(n) ?? '');
+        if (stale.length > 0) setRenderEpoch((e) => e + 1);
       }, 100);
     };
     recheckRef.current = recheck;
