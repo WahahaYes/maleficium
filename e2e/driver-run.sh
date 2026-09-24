@@ -322,6 +322,8 @@ for tid in tids + ["welcome"]:
 check("every bundled template and the welcome tour compiles to a pdf", not bad, "; ".join(bad))
 again = call("new_from_template", {"template": "article", "parent_dir": tp, "name": "article"})
 check("a template never writes into a folder that is in use", not again["ok"] and "not empty" in again.get("error", ""), str(again))
+rel = call("new_from_template", {"template": "beamer", "parent_dir": "talks", "name": "beamer"})
+check("a relative parent folder is refused and nothing lands in the working directory", not rel["ok"] and "absolute" in rel.get("error", "") and not os.path.exists(os.path.join(os.getcwd(), "talks")) and not os.path.exists(os.path.join(os.getcwd(), "beamer")), str(rel))
 
 # ---- pre-compile checks: every missing dependency at once ----
 with open(ROOT + "/three.tex", "w") as f:

@@ -202,6 +202,9 @@ fn instantiate_in(
     let parent = parent
         .canonicalize()
         .map_err(|e| format!("parent folder unreachable: {e}"))?;
+    if !parent.is_dir() {
+        return Err(format!("parent is not a folder: {}", parent.display()));
+    }
     let (info, files) = load(base, template)?;
     let dest = parent.join(name);
     write_into(&dest, &files)?;
@@ -340,7 +343,20 @@ mod tests {
                 "{bad:?}"
             );
         }
-        assert!(instantiate("article", "relative", "p").is_err());
+        let cwd = std::env::current_dir().unwrap();
+        for rel in ["relative", "", ".", "..", "~/talks", "./x"] {
+            let err = instantiate("beamer", rel, "stray-beamer").unwrap_err();
+            assert!(
+                err.contains("absolute") || err.contains("unreachable"),
+                "{rel:?}: {err}"
+            );
+        }
+        assert!(!cwd.join("stray-beamer").exists());
+        std::fs::write(parent.join("file"), "x").unwrap();
+        let not_dir = parent.join("file").to_string_lossy().to_string();
+        assert!(instantiate("article", &not_dir, "p")
+            .unwrap_err()
+            .contains("not a folder"));
         assert!(instantiate("no-such", &parent.to_string_lossy(), "p").is_err());
         assert!(instantiate("../etc", &parent.to_string_lossy(), "p").is_err());
     }
