@@ -317,58 +317,78 @@ export default function Preview({
         onZoom={zoomBy}
         onZoomMode={setZoomMode}
       />
-      {phase ? <Typography variant="caption">{phase}</Typography> : null}
-      <Box
-        ref={scrollRef}
-        onScroll={handleScroll}
-        sx={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'auto',
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 1,
-          py: 1,
-        }}
-      >
-        {allPages.map((n) => (
-          <div
-            key={`${docKey}#${n}`}
-            ref={setShellRef(n)}
-            data-page={n}
-            style={shellStyle(n)}
-            onClick={handleShellClick(n)}
-            title={
-              syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'
-            }
+      {/* The phase line floats over the pages: it never changes the pane size. */}
+      <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+        {phase ? (
+          <Typography
+            variant="caption"
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 16,
+              zIndex: 1,
+              px: 0.75,
+              borderRadius: 1,
+              pointerEvents: 'none',
+              bgcolor: 'background.paper',
+              opacity: 0.85,
+            }}
           >
-            <canvas
-              ref={setCanvasRef(n)}
-              data-page={n}
-              className="synctex-canvas"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                filter: pageFilterCss,
-              }}
-            />
+            {phase}
+          </Typography>
+        ) : null}
+        <Box
+          ref={scrollRef}
+          onScroll={handleScroll}
+          sx={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'auto',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 1,
+            py: 1,
+          }}
+        >
+          {allPages.map((n) => (
             <div
-              ref={setTextRef(n)}
-              className="textLayer"
+              key={`${docKey}#${n}`}
+              ref={setShellRef(n)}
               data-page={n}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                overflow: 'hidden',
-                pointerEvents: 'none',
-              }}
-            />
-          </div>
-        ))}
+              style={shellStyle(n)}
+              onClick={handleShellClick(n)}
+              title={
+                syncDisabled ? 'SyncTeX unavailable while compiling' : 'Click for inverse SyncTeX'
+              }
+            >
+              <canvas
+                ref={setCanvasRef(n)}
+                data-page={n}
+                className="synctex-canvas"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  filter: pageFilterCss,
+                }}
+              />
+              <div
+                ref={setTextRef(n)}
+                className="textLayer"
+                data-page={n}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  overflow: 'hidden',
+                  pointerEvents: 'none',
+                }}
+              />
+            </div>
+          ))}
+        </Box>
       </Box>
     </Box>
   );
