@@ -78,9 +78,9 @@ printf '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{documen
 sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 sweep_stale
 
-# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6").
+# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7").
 want() {
-  case " ${STILLS_STATES:-1 2 3 4 5 6} " in *" $1 "*) return 0 ;; esac
+  case " ${STILLS_STATES:-1 2 3 4 5 6 7} " in *" $1 "*) return 0 ;; esac
   return 1
 }
 
@@ -513,6 +513,125 @@ for at, p, until in settled:
 print("stills: every settled zoom re-rendered page 1: %s" % ",".join("%s%%" % p for _, p, _ in settled))
 EOF
 
+fi
+
+if want 7; then
+# State 7 — Render churn, counted in the app log. A portrait paper: fit page
+# renders each page once and then holds still, one zoom step renders each
+# page once, and scrolling at a fixed zoom renders nothing. A landscape
+# beamer deck: its first open renders page 1 once, at the page's own aspect.
+APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+MARKS="$OUT/07-marks"
+: >"$MARKS"
+mark() { python3 -c 'import sys, time; print(sys.argv[1], int(time.time() * 1000))' "$1" >>"$MARKS"; }
+palette() {
+  key ctrl+shift+p; sleep 2
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
+  sleep 1
+  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
+  sleep 1
+  $XDO key Return >/dev/null 2>&1 || true
+}
+wheel() {
+  # $1 = button (4 up, 5 down), $2 = notches, over the preview pane.
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 1330 400 >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  $XDO click --repeat "$2" --delay 150 "$1" >/dev/null 2>&1 || true
+}
+open_compiled() {
+  # $1 = project dir: open it at fit width, save to compile, wait for paint.
+  start_app "$1"; wait_window 300
+  # shellcheck disable=SC2086
+  $XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
+  sleep 2
+  key ctrl+o; sleep 6
+  click_editor
+  key ctrl+0
+  mark "$2-open"
+  key ctrl+s
+  end=$(( $(date +%s) + 600 ))
+  until grep -q '"preview.page-render"' "$APPLOG" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$end" ] || die "the preview never painted a page ($1)"
+    sleep 2
+  done
+  sleep 5
+}
+open_compiled "$FIX/simple" portrait
+mark portrait-fitpage
+palette "fit page"
+sleep 4
+mark portrait-hold
+sleep 6
+mark portrait-step
+click_editor
+key ctrl+equal
+sleep 4
+mark portrait-scroll
+wheel 5 15; wheel 4 15
+sleep 3
+mark portrait-done
+shot 07-portrait
+stop_app
+cp "$APPLOG" "$OUT/07-portrait.jsonl"
+mkdir -p "$FIX/beamer"
+cp "$ROOT/src-tauri/templates/beamer/main.tex" "$FIX/beamer/main.tex"
+open_compiled "$FIX/beamer" beamer
+shot 07-beamer-open
+mark beamer-scroll
+wheel 5 30
+sleep 3
+mark beamer-done
+stop_app
+cp "$APPLOG" "$OUT/07-beamer.jsonl"
+python3 - "$OUT" <<'EOF' || die "preview render counts are off (table above)"
+import json, sys
+out = sys.argv[1]
+marks = dict((k, int(v)) for k, v in (l.split() for l in open(out + "/07-marks")))
+def renders(log, a, b):
+    evs = [json.loads(l) for l in open(out + "/" + log) if l.strip()]
+    return [(e.get("event") or {}) for e in evs
+            if (e.get("event") or {}).get("action") == "preview.page-render" and marks[a] <= e["at"] < marks[b]]
+def pages(rs):
+    c = {}
+    for r in rs:
+        c[r["page"]] = c.get(r["page"], 0) + 1
+    return c
+rows = [
+    ("portrait fit page", pages(renders("07-portrait.jsonl", "portrait-fitpage", "portrait-hold"))),
+    ("portrait fit page held 6s", pages(renders("07-portrait.jsonl", "portrait-hold", "portrait-step"))),
+    ("portrait zoom step", pages(renders("07-portrait.jsonl", "portrait-step", "portrait-scroll"))),
+    ("portrait scroll", pages(renders("07-portrait.jsonl", "portrait-scroll", "portrait-done"))),
+    ("beamer first open", pages(renders("07-beamer.jsonl", "beamer-open", "beamer-scroll"))),
+    ("beamer scroll", pages(renders("07-beamer.jsonl", "beamer-scroll", "beamer-done"))),
+]
+for name, c in rows:
+    print("stills: renders per page, %-26s %s" % (name + ":", dict(sorted(c.items())) or "none"))
+r = dict(rows)
+bad = []
+if r["portrait fit page"].get(1) != 1 or max(r["portrait fit page"].values(), default=0) > 1:
+    bad.append("fit page must render each page once")
+if r["portrait fit page held 6s"]:
+    bad.append("fit page held still must render nothing")
+if r["portrait zoom step"].get(1) != 1 or max(r["portrait zoom step"].values(), default=0) > 1:
+    bad.append("a zoom step must render each page once")
+if r["portrait scroll"]:
+    bad.append("scrolling at a fixed zoom must render nothing already painted")
+if r["beamer first open"].get(1) != 1:
+    bad.append("the beamer deck must open with one page-1 render")
+if max(r["beamer scroll"].values(), default=0) > 1:
+    bad.append("scrolling the deck must render no page twice")
+first = renders("07-beamer.jsonl", "beamer-open", "beamer-scroll")
+p1 = [x for x in first if x.get("page") == 1]
+if p1 and "width" in p1[0]:
+    aspect = p1[0]["width"] / p1[0]["height"]
+    print("stills: beamer page 1 backing %dx%d (aspect %.3f)" % (p1[0]["width"], p1[0]["height"], aspect))
+    if not 1.30 < aspect < 1.37:
+        bad.append("beamer page 1 must render at its 4:3 aspect")
+assert not bad, "; ".join(bad)
+print("stills: render counts ok")
+EOF
 fi
 
 log "stills in $OUT:"
