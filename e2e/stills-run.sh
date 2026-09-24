@@ -78,9 +78,9 @@ printf '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{documen
 sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 sweep_stale
 
-# STILLS_STATES picks states to run (default all: "1 2 3 4 5").
+# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6").
 want() {
-  case " ${STILLS_STATES:-1 2 3 4 5} " in *" $1 "*) return 0 ;; esac
+  case " ${STILLS_STATES:-1 2 3 4 5 6} " in *" $1 "*) return 0 ;; esac
   return 1
 }
 
@@ -429,6 +429,88 @@ assert mains == [want + "/main.tex"], "main for the new project: %s" % mains
 assert len(fin) >= 2 and fin[1].get("ok") is True and fin[1].get("target") == want + "/main.tex", "template build: %s" % fin[1:2]
 assert os.path.isfile(want + "/main.tex")
 print("stills: Help > Welcome built the tour; %s opened with main.tex and built" % want)
+EOF
+
+fi
+
+if want 6; then
+# State 6 — Zoom: step the preview to 50%, 150% and 300% with the zoom
+# chords and capture each. Every settled zoom must be followed by a fresh
+# render of the visible page (a stretched stale bitmap fails here).
+APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+last_zoom() {
+  python3 - "$APPLOG" <<'EOF'
+import json, sys
+evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+z = [e["percent"] for e in evs if e.get("action") == "preview.zoom"]
+print(z[-1] if z else -1)
+EOF
+}
+zoom_to() {
+  # $1 = target percent. One chord per step, bounded; the log says where it is.
+  n=0
+  while [ "$n" -lt 45 ]; do
+    n=$((n + 1))
+    cur=$(last_zoom)
+    [ "$cur" = "$1" ] && break
+    if [ "$cur" -lt "$1" ]; then k=ctrl+equal; else k=ctrl+minus; fi
+    # shellcheck disable=SC2086
+    $XDO key --window "$WIN" "$k" >/dev/null 2>&1 || true
+    sleep 0.5
+  done
+  [ "$(last_zoom)" = "$1" ] || die "zoom did not reach $1% (at $(last_zoom)%)"
+  sleep 4
+}
+scroll_preview() {
+  # $1/$2 = wheel notches down/right over the preview, onto body text.
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 320 400 >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  $XDO click --repeat "$1" --delay 80 5 >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  $XDO click --repeat "$2" --delay 80 7 >/dev/null 2>&1 || true
+  sleep 2
+}
+start_app "$FIX/simple"; wait_window 300
+# A wide preview: full-size window, Preview Only layout (through the palette).
+# shellcheck disable=SC2086
+$XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
+sleep 2
+key ctrl+o; sleep 6
+click_editor
+key ctrl+s
+end=$(( $(date +%s) + 180 ))
+until grep -q '"preview.page-render"' "$APPLOG" 2>/dev/null; do
+  [ "$(date +%s)" -lt "$end" ] || die "the preview never painted a page"
+  sleep 2
+done
+key ctrl+shift+p; sleep 2
+# shellcheck disable=SC2086
+$XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
+sleep 1
+$XDO type --delay 40 "preview only" >/dev/null 2>&1 || true
+sleep 1
+$XDO key Return >/dev/null 2>&1 || true
+sleep 3
+zoom_to 50; shot 06-zoom-50
+zoom_to 150; scroll_preview 4 4; shot 06-zoom-150
+zoom_to 300; scroll_preview 10 10; shot 06-zoom-300
+key ctrl+0; sleep 3
+stop_app
+check_log "log.open preview.zoom preview.page-render"
+python3 - "$APPLOG" <<'EOF' || die "a settled zoom left the visible page unrendered"
+import json, sys
+evs = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+evs = [(e["at"], e.get("event") or {}) for e in evs]
+zooms = [(at, e["percent"]) for at, e in evs if e.get("action") == "preview.zoom"]
+settled = [(at, p, (zooms[i + 1][0] if i + 1 < len(zooms) else float("inf")))
+           for i, (at, p) in enumerate(zooms)
+           if i + 1 == len(zooms) or zooms[i + 1][0] - at >= 2000]
+assert settled, "no settled zoom in the log"
+for at, p, until in settled:
+    pages = [e["page"] for t, e in evs if e.get("action") == "preview.page-render" and at < t < until]
+    assert 1 in pages, "zoom to %s%% at %s: no page 1 render before the next zoom (renders %s)" % (p, at, pages)
+print("stills: every settled zoom re-rendered page 1: %s" % ",".join("%s%%" % p for _, p, _ in settled))
 EOF
 
 fi
