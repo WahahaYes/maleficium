@@ -47,7 +47,7 @@ fn query_for(root_id: &str, main_rel: &str) -> Result<Query, String> {
 }
 
 fn run_sidecar(dir: &Path, args: &[String]) -> Result<String, String> {
-    let bin = super::sidecar_path_for("synctex")?;
+    let bin = super::sidecar_path_for("maleficium-synctex")?;
     let output = std::process::Command::new(&bin)
         .current_dir(dir)
         .args(args)

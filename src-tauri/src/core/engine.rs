@@ -126,7 +126,7 @@ pub enum CacheMode {
 
 /// The engine's command line for one main file.
 fn command(out: &MainOutputs, cache: &Path, mode: CacheMode) -> Result<Command, String> {
-    let mut cmd = Command::new(super::sidecar_path_for("tectonic")?);
+    let mut cmd = Command::new(super::sidecar_path_for("maleficium-tectonic")?);
     cmd.args(["-X", "compile", &out.main_file, "--outdir"])
         .arg(&out.outdir)
         .args(["--synctex", "-b", BUNDLE_URL]);

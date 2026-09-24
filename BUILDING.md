@@ -50,5 +50,4 @@ If the AppImage step fails with a FUSE error, run the build with `APPIMAGE_EXTRA
 
 ## Known issues (v0.1 pre-release)
 
-- The `.deb` installs the engines as `/usr/bin/tectonic` and `/usr/bin/synctex`, which conflicts with TeX Live's `texlive-binaries` package. Use the AppImage on systems with TeX Live installed.
 - The `.deb` does not yet declare `libgraphite2-3`, which the bundled Tectonic needs; install it yourself if it is missing.

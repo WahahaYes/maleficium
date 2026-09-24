@@ -46,7 +46,7 @@ echo "$TECTONIC_PINS" | while read -r triple pin; do
         *windows*) exe=".exe"; archive="tectonic-$TECTONIC_VERSION-$triple.zip" ;;
         *) exe=""; archive="tectonic-$TECTONIC_VERSION-$triple.tar.gz" ;;
     esac
-    dest="$BIN/tectonic-$triple$exe"
+    dest="$BIN/maleficium-tectonic-$triple$exe"
     if [ -f "$dest" ] && [ "$(sha "$dest")" = "$pin" ]; then
         say "tectonic $triple present"
         continue
@@ -64,7 +64,7 @@ echo "$TECTONIC_PINS" | while read -r triple pin; do
     say "tectonic $triple: verified"
 done
 
-dest="$BIN/synctex-$SYNCTEX_TRIPLE"
+dest="$BIN/maleficium-synctex-$SYNCTEX_TRIPLE"
 if [ -f "$dest" ] && [ "$(sha "$dest")" = "$SYNCTEX_SHA" ]; then
     say "synctex $SYNCTEX_TRIPLE present"
     exit 0
@@ -79,7 +79,7 @@ git -C "$src" checkout -q FETCH_HEAD
     synctex_main.c synctex_parser.c synctex_parser_utils.c -lz -lm) || die "synctex build failed (static zlib installed?)"
 
 # Smoke: compile a two-page document with the host Tectonic, then query both ways.
-host_tectonic="$BIN/tectonic-$SYNCTEX_TRIPLE"
+host_tectonic="$BIN/maleficium-tectonic-$SYNCTEX_TRIPLE"
 [ -x "$host_tectonic" ] || die "smoke test needs $host_tectonic"
 doc="$WORK/smoke"
 mkdir -p "$doc"
