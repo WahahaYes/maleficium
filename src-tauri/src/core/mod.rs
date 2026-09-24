@@ -78,7 +78,7 @@ pub fn out_dir_for(base: &Path, root: &str) -> PathBuf {
     base.join("maleficium-out").join(hash_root(root))
 }
 
-const APP_ID: &str = "com.ethan.tauri-app";
+const APP_ID: &str = "io.github.wahahayes.maleficium";
 
 /// `$<xdg_var>/<app id>`, else `$HOME/<home_rel>/<app id>`, else the OS tmp
 /// tree when neither resolves.
@@ -254,12 +254,12 @@ mod tests {
     #[test]
     fn out_base_dir_resolves_app_cache() {
         let base = out_base_dir();
-        assert!(base.ends_with("com.ethan.tauri-app"));
+        assert!(base.ends_with("io.github.wahahayes.maleficium"));
     }
 
     #[test]
     fn untitled_scratch_is_an_app_data_session_root() {
-        assert!(untitled_dir().ends_with("com.ethan.tauri-app/maleficium-untitled"));
+        assert!(untitled_dir().ends_with("io.github.wahahayes.maleficium/maleficium-untitled"));
         let (canon, id) = grant_untitled().unwrap();
         assert!(canon.is_dir());
         assert_eq!(session_root(&id).unwrap(), canon);

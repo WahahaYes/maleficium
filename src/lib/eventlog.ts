@@ -11,7 +11,7 @@
 // rather than surfaced.
 //
 // Read the current run hands-free (Linux app-data home):
-//   L=~/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl
+//   L=~/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl
 //   cat "$L"                                   # the whole run
 //   grep '"action":"compile.finish"' "$L"      # one fact
 //   tail -f "$L"                               # live
