@@ -5,6 +5,7 @@
 // caller's open path with its main file associated.
 
 import { useEffect, useState } from 'react';
+import { homeDir } from '@tauri-apps/api/path';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -17,7 +18,7 @@ import Typography from '@mui/material/Typography';
 import { emit } from '../lib/events';
 import { dialog } from '../lib/fs-provider';
 import { setMainFileFor } from '../lib/mainFile.store';
-import { hashRoot } from '../lib/paths';
+import { hashRoot, joinPath } from '../lib/paths';
 import type { SessionRoot } from '../lib/preview-bus';
 import {
   groupTemplates,
@@ -50,6 +51,7 @@ export default function TemplateDialogs({
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [picked, setPicked] = useState<TemplateInfo | null>(null);
   const [folder, setFolder] = useState('');
+  const [location, setLocation] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [main, setMain] = useState('main.tex');
@@ -62,6 +64,10 @@ export default function TemplateDialogs({
     if (mode === 'gallery') {
       setPicked(null);
       setFolder('');
+      homeDir().then(
+        (h) => setLocation((l) => l || h),
+        () => undefined,
+      );
       listTemplates().then(
         (l) => {
           setTemplates(l.templates);
@@ -90,13 +96,19 @@ export default function TemplateDialogs({
     }
   }, [mode, mainRel]);
 
+  async function browse() {
+    const dir = await dialog().openDirectory({
+      title: 'Create the project in…',
+      defaultPath: location || undefined,
+    });
+    if (dir) setLocation(dir);
+  }
+
   async function create() {
-    if (!picked) return;
-    const parent = await dialog().openDirectory({ title: 'Create the project in…' });
-    if (!parent) return;
+    if (!picked || !location) return;
     setBusy(true);
     try {
-      const c = await instantiateTemplate(picked.id, parent, folder.trim() || picked.id);
+      const c = await instantiateTemplate(picked.id, location, folder.trim() || picked.id);
       setMainFileFor(hashRoot(c.root), c.main);
       emit({
         scope: 'app',
@@ -213,18 +225,38 @@ export default function TemplateDialogs({
             </Box>
           ))}
         </DialogContent>
-        <DialogActions sx={{ gap: 1 }}>
+        <DialogActions sx={{ gap: 1, flexWrap: 'wrap' }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-destination
+            sx={{ flexBasis: '100%' }}
+          >
+            {picked && location ? 'Creates ' + joinPath(location, folder.trim() || picked.id) : ' '}
+          </Typography>
+          <TextField
+            size="small"
+            label="Location"
+            value={location}
+            slotProps={{ input: { readOnly: true } }}
+            sx={{ flex: '1 1 260px' }}
+          />
+          <Button onClick={() => void browse()}>Browse…</Button>
           <TextField
             size="small"
             label="Folder name"
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             disabled={!picked}
-            sx={{ mr: 'auto', minWidth: 240 }}
+            sx={{ flex: '1 1 160px' }}
           />
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="contained" disabled={!picked || busy} onClick={() => void create()}>
-            Choose Location and Create…
+          <Button
+            variant="contained"
+            disabled={!picked || !location || busy}
+            onClick={() => void create()}
+          >
+            Create
           </Button>
         </DialogActions>
       </Dialog>
