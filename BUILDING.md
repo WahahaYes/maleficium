@@ -47,7 +47,3 @@ Artifacts land in:
 - `src-tauri/target/release/bundle/appimage/*.AppImage`
 
 If the AppImage step fails with a FUSE error, run the build with `APPIMAGE_EXTRACT_AND_RUN=1` set.
-
-## Known issues (v0.1 pre-release)
-
-- The `.deb` does not yet declare `libgraphite2-3`, which the bundled Tectonic needs; install it yourself if it is missing.
