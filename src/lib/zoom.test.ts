@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyZoom,
+  backingWidth,
   DEFAULT_ZOOM,
+  MAX_RENDER_DPR,
   pageWidth,
   parseZoom,
   percentOf,
+  renderGeometry,
   ZOOM_GUTTER,
   ZOOM_MAX,
   ZOOM_MIN,
@@ -72,5 +75,48 @@ describe('zoom pref', () => {
   it('labels fit modes with the percent shown', () => {
     expect(zoomLabel({ kind: 'fit-width' }, 123.4)).toBe('Fit width (123%)');
     expect(zoomLabel({ kind: 'percent', percent: 90 }, 90)).toBe('90%');
+  });
+});
+
+describe('renderGeometry', () => {
+  const percents: number[] = [];
+  for (let p = ZOOM_MIN; p <= ZOOM_MAX; p += 5) percents.push(p);
+
+  it('backs every zoom level 1:1 with whole device pixels, filled edge to edge', () => {
+    for (const dpr of [1, 1.25, 1.5, 2]) {
+      for (const p of percents) {
+        const css = pageWidth({ kind: 'percent', percent: p }, PANE, A4);
+        const g = renderGeometry(css, A4, dpr);
+        expect(g.width, `${p}% @${dpr}`).toBe(Math.round(css * dpr));
+        expect(Number.isInteger(g.height)).toBe(true);
+        // The pdf.js viewport spans exactly the backing store: no resampled edge.
+        expect(g.scale * A4.width).toBeCloseTo(g.width, 9);
+        expect(Math.abs(g.scale * A4.height - g.height)).toBeLessThanOrEqual(0.5);
+        // Backing px per displayed CSS px is the DPR on both axes.
+        expect(Math.abs(g.width / css - dpr)).toBeLessThan(0.5 / css + 1e-9);
+        // Height is within the two roundings (width, then height) of exact.
+        const exactHeight = css * dpr * (A4.height / A4.width);
+        expect(Math.abs(g.height - exactHeight)).toBeLessThanOrEqual(
+          0.5 * (A4.height / A4.width) + 0.5 + 1e-9,
+        );
+      }
+    }
+  });
+
+  it('gives every zoom step a new backing width, so each step re-renders', () => {
+    for (let i = 1; i < percents.length; i++) {
+      const a = pageWidth({ kind: 'percent', percent: percents[i - 1] }, PANE, A4);
+      const b = pageWidth({ kind: 'percent', percent: percents[i] }, PANE, A4);
+      expect(backingWidth(b, 1)).not.toBe(backingWidth(a, 1));
+    }
+  });
+
+  it('caps the DPR and tolerates degenerate input', () => {
+    expect(backingWidth(500, 3)).toBe(500 * MAX_RENDER_DPR);
+    expect(backingWidth(500, 0)).toBe(500);
+    expect(backingWidth(500, Number.NaN)).toBe(500);
+    expect(backingWidth(0, 1)).toBe(1);
+    const g = renderGeometry(300.4, { width: 0, height: 0 }, 1);
+    expect(g).toEqual({ scale: 300, width: 300, height: 300 });
   });
 });

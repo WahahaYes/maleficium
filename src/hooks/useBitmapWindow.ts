@@ -21,6 +21,7 @@ import {
   pickVisible,
   windowFor,
 } from '../lib/previewNav';
+import { backingWidth, renderGeometry } from '../lib/zoom';
 import type { DocLike, TextLayerCtor } from './usePdfDocument';
 
 /** Idle wait: the current page renders immediately, neighbors yield first. */
@@ -84,7 +85,7 @@ export function useBitmapWindow({
   const textRefs = useRef(new Map<number, HTMLDivElement>());
   const viewportRefs = useRef(new Map<number, PdfViewport>());
   const pickRafRef = useRef<number | null>(null);
-  const dprRef = useRef(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
+  const recheckRef = useRef<(() => void) | null>(null);
   // Phase is a count of outstanding window renders, not a boolean: two
   // overlapping passes must not let the loser clear the winner's
   // `rendering...` line while pixels are in flight.
@@ -107,7 +108,7 @@ export function useBitmapWindow({
   // started.
   //
   // Vector, not raster: the canvas carries the exact vector rasterization
-  // (1 backing px per CSS px — no upscale blur), and the selectable text
+  // (one backing px per device px — no upscale blur), and the selectable text
   // comes from a pdf.js TextLayer (real DOM spans over the canvas). The
   // canvas is paint; the text div is the document: zooming re-renders the
   // vector at the new scale (never stretches pixels), and copy/paste +
@@ -127,19 +128,20 @@ export function useBitmapWindow({
       if (renderedRef.current.has(key)) return null;
       const pg = await pdf.getPage(target);
       if (!alive()) return null;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const shell = shellRefs.current.get(target);
-      const cssWidth = shell ? Math.max(1, shell.clientWidth) : 820;
-      // Scale = CSS px per PDF point AT the shell's laid-out width: the canvas
-      // backing matches displayed size 1:1 (DPR-folded), so no upscale blur and
-      // no wasted pixels. Text layer shares the SAME viewport object, so spans
-      // land exactly on glyphs (one viewport, two consumers — never two scales).
+      const cssWidth = shell ? shell.getBoundingClientRect().width : 820;
+      // The backing matches the shell's laid-out width in device pixels and the
+      // viewport fills it exactly; the text layer shares the same viewport.
       const probe = pg.getViewport({ scale: 1 });
-      const scale = (cssWidth / Math.max(1, probe.width)) * dpr;
-      const viewport = pg.getViewport({ scale });
+      const geo = renderGeometry(
+        cssWidth,
+        { width: probe.width, height: probe.height },
+        window.devicePixelRatio,
+      );
+      const viewport = pg.getViewport({ scale: geo.scale });
       const off = document.createElement('canvas');
-      off.height = Math.floor(viewport.height);
-      off.width = Math.floor(viewport.width);
+      off.width = geo.width;
+      off.height = geo.height;
       const ctx = off.getContext('2d');
       if (!ctx) throw new Error('2d context unavailable');
       const t1 = Date.now();
@@ -200,8 +202,15 @@ export function useBitmapWindow({
       }
       renderedRef.current.add(key);
       renderedKeys.current.set(target, key);
+      // Rendered for a width the shell has since left: render again.
+      const shell = shellRefs.current.get(target);
+      if (
+        shell &&
+        backingWidth(shell.getBoundingClientRect().width, window.devicePixelRatio) !== off.width
+      )
+        recheckRef.current?.();
     },
-    [canvasRefs, renderedKeys, renderedRef, textLayerRef],
+    [canvasRefs, renderedKeys, renderedRef, shellRefs, textLayerRef],
   );
 
   // rAF-throttled visible pick: largest observer ratio wins; a jump in flight
@@ -397,39 +406,44 @@ export function useBitmapWindow({
     };
   }, [docKey, numPages, schedulePick, ratiosRef, scrollRef, shellRefs]);
 
-  // Re-render vector pages when the LAYOUT scale changes (shell width via
-  // pane resize, or DPR across monitors): zoom re-renders the vector at the
-  // new scale, never stretches pixels. Observed via ResizeObserver on the
-  // scroll container (fires on pane drags AND window zooms) + DPR polling
-  // folded into the same epoch. Plain scroll never re-renders.
+  // Re-render when a page's backing no longer matches its shell: a zoom or
+  // pane resize changed the shell width, or the DPR changed. Stale pages leave
+  // the rendered set (the window pass re-renders them, eviction still frees
+  // them); plain scroll never re-renders.
   useEffect(() => {
-    const box = scrollRef.current;
-    if (!box) return;
+    if (!docKey) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let lastWidth = box.clientWidth;
-    const kick = () => {
+    const recheck = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        const dpr = window.devicePixelRatio || 1;
-        const w = box.clientWidth;
-        if (dpr !== dprRef.current || Math.abs(w - lastWidth) > 1) {
-          dprRef.current = dpr;
-          lastWidth = w;
-          renderedRef.current.clear();
-          renderedKeys.current.clear();
-          setRenderEpoch((e) => e + 1);
+        timer = null;
+        const dpr = window.devicePixelRatio;
+        let stale = false;
+        for (const [n, key] of renderedKeys.current) {
+          const shell = shellRefs.current.get(n);
+          const canvas = canvasRefs.current.get(n);
+          if (!shell || !canvas) continue;
+          if (backingWidth(shell.getBoundingClientRect().width, dpr) === canvas.width) continue;
+          renderedRef.current.delete(key);
+          stale = true;
         }
-      }, 300);
+        if (stale) setRenderEpoch((e) => e + 1);
+      }, 100);
     };
-    const ro = new ResizeObserver(kick);
-    ro.observe(box);
-    window.addEventListener('resize', kick);
+    recheckRef.current = recheck;
+    const ro = new ResizeObserver(recheck);
+    const raf = requestAnimationFrame(() => {
+      for (const [, el] of shellRefs.current) ro.observe(el);
+    });
+    window.addEventListener('resize', recheck);
     return () => {
+      cancelAnimationFrame(raf);
       ro.disconnect();
-      window.removeEventListener('resize', kick);
+      window.removeEventListener('resize', recheck);
       if (timer) clearTimeout(timer);
+      if (recheckRef.current === recheck) recheckRef.current = null;
     };
-  }, [renderedKeys, renderedRef, scrollRef]);
+  }, [docKey, numPages, canvasRefs, renderedKeys, renderedRef, shellRefs]);
 
   const setShellRef = useCallback(
     (n: number) => (el: HTMLDivElement | null) => {

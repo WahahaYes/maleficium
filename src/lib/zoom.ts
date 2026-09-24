@@ -34,6 +34,27 @@ export function pageWidth(mode: ZoomMode, pane: Size, page: Size): number {
   }
 }
 
+/** Device pixels per CSS px a page canvas is backed at, at most. */
+export const MAX_RENDER_DPR = 2;
+
+/** Whole backing pixels across a page shown `cssWidth` CSS px wide. */
+export function backingWidth(cssWidth: number, dpr: number): number {
+  const d = Number.isFinite(dpr) && dpr > 0 ? Math.min(MAX_RENDER_DPR, dpr) : 1;
+  return Math.max(1, Math.round(Math.max(1, cssWidth) * d));
+}
+
+export type RenderGeometry = { scale: number; width: number; height: number };
+
+/**
+ * Canvas backing size for a page shown `cssWidth` CSS px wide, and the pdf.js
+ * scale (backing px per PDF point) that fills it edge to edge.
+ */
+export function renderGeometry(cssWidth: number, page: Size, dpr: number): RenderGeometry {
+  const width = backingWidth(cssWidth, dpr);
+  const scale = width / Math.max(1, page.width);
+  return { scale, width, height: Math.max(1, Math.round(Math.max(1, page.height) * scale)) };
+}
+
 /** The percent a page shown `width` CSS px wide is at. */
 export function percentOf(width: number, page: Size): number {
   return (width / (Math.max(1, page.width) * PX_PER_PT)) * 100;
