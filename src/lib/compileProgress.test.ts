@@ -42,4 +42,20 @@ describe('compile progress', () => {
     ]);
     expect(q).toEqual(IDLE_PROGRESS);
   });
+
+  it('shows the online attempt while the engine is tried', () => {
+    const p = fold([
+      { action: 'compile.start', target: 'main.tex' },
+      { action: 'compile.phase', phase: 'connect' },
+    ]);
+    expect(progressLabel(p)).toBe('connecting');
+  });
+
+  it('replaces the attempt with the run’s own phases', () => {
+    const p = fold([
+      { action: 'compile.phase', phase: 'connect' },
+      { action: 'compile.phase', phase: 'tex' },
+    ]);
+    expect(progressLabel(p)).toBe('TeX pass 1');
+  });
 });

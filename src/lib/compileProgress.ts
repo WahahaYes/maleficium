@@ -49,6 +49,8 @@ function phaseText(p: CompileProgress): string | null {
     case null:
     case 'first-compile':
       return null;
+    case 'connect':
+      return 'connecting';
     case 'format':
       return 'format';
     case 'tex':
