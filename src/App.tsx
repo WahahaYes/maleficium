@@ -182,6 +182,14 @@ export default function App({
 
   useEffect(() => onPdf(setPreviewDoc), []);
 
+  const resolveMain = useCallback(async (r: string, opened: string | null) => {
+    const res = await resolveMainFileTauri(r, opened);
+    setMainFileState(res.mainFile);
+    setMainSource(res.source);
+    setMainCandidates(res.candidates);
+    return res.mainFile;
+  }, []);
+
   const handleSelect = useCallback(
     async (path: string) => {
       // Persist current buffer before switching (dirty survives switch via map).
@@ -305,16 +313,8 @@ export default function App({
         });
       }
     },
-    [buffers, setBuffers, fileName, root, ownWrites, recordRevision],
+    [buffers, setBuffers, fileName, root, ownWrites, recordRevision, resolveMain],
   );
-
-  const resolveMain = useCallback(async (r: string, opened: string | null) => {
-    const res = await resolveMainFileTauri(r, opened);
-    setMainFileState(res.mainFile);
-    setMainSource(res.source);
-    setMainCandidates(res.candidates);
-    return res.mainFile;
-  }, []);
 
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
   // for main-file scan + watcher baseline, never on the open path.
