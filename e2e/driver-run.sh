@@ -48,7 +48,7 @@ export XDG_DATA_HOME="$SCRATCH/data"
 ENGINE_RS="$DEVROOT/src-tauri/src/core/engine.rs"
 BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' "$ENGINE_RS")"
 [ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
-export ENGINE_CACHE="$XDG_CACHE_HOME/com.ethan.tauri-app/maleficium-tectonic/$BUNDLE_DIGEST"
+export ENGINE_CACHE="$XDG_CACHE_HOME/io.github.wahahayes.maleficium/maleficium-tectonic/$BUNDLE_DIGEST"
 export BUNDLE_DIGEST
 # A cold cache means the first compile downloads the bundle's support files
 # (minutes, not seconds): give that compile a longer poll budget.
@@ -392,7 +392,7 @@ if not has_netns:
 else:
     import shutil
     xc = os.path.join(scratch, "xc")
-    ec = os.path.join(xc, "com.ethan.tauri-app", "maleficium-tectonic", os.environ["BUNDLE_DIGEST"])
+    ec = os.path.join(xc, "io.github.wahahayes.maleficium", "maleficium-tectonic", os.environ["BUNDLE_DIGEST"])
     shutil.copytree(os.environ["ENGINE_CACHE"], ec, symlinks=True)
     index = set(l.split(" ", 1)[0] for l in open(os.path.join(ec, "bundles", "data", os.environ["BUNDLE_DIGEST"] + ".index")))
     cached = set(os.listdir(os.path.join(ec, "bundles", "data", os.environ["BUNDLE_DIGEST"])))

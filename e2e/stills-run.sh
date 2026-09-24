@@ -19,7 +19,7 @@ mkdir -p "$OUT"
 : > "$OUT/dev.log"
 REALHOME="$HOME"
 # Fixable for log inspection: STILLS_HOME=/tmp/x ./e2e/stills-run.sh, then read
-# $STILLS_HOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl.
+# $STILLS_HOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl.
 FAKEHOME=${STILLS_HOME:-$(mktemp -d /tmp/maleficium-stills-home-XXXXXX)}
 DISP=${STILLS_DISPLAY:-:99}
 # STILLS_PORT moves the harness vite off 1420 while a dev app holds it.
@@ -46,7 +46,7 @@ trap cleanup EXIT INT TERM
 sweep_stale() {
   # Orphans from hard-killed runs: same binary name as a human's
   # dev:desktop, so match DISPLAY=:99 in their environ, nothing else.
-  for p in $(pgrep -x tauri-app 2>/dev/null); do
+  for p in $(pgrep -x maleficium 2>/dev/null); do
     if tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qx 'DISPLAY=:99'; then
       log "sweeping stale harness app $p"
       kill -KILL "$p" 2>/dev/null || true
@@ -187,7 +187,7 @@ check_log() {
   # $1 = space-separated event.action names this run's log must hold.
   # The app truncates the log at launch, so exactly one log.open proves
   # the file is this run's and nothing else's.
-  APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+  APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
   [ -f "$APPLOG" ] || die "no app event log at $APPLOG"
   # shellcheck disable=SC2086
   REQ="$1" python3 - "$APPLOG" <<'EOF' || die "app event log check failed (see above)"
@@ -219,7 +219,7 @@ saved_external() {
   # the log holds for it. Own-write suppression is content-matched, so the
   # save alone must leave that count at 0; an edit behind the app's back
   # must raise it.
-  python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF'
+  python3 - "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" <<'EOF'
 import json, sys
 evs = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
 acts = [e.get("event") or {} for e in evs]
@@ -287,7 +287,7 @@ stop_app
 check_log "log.open compile.finish offline.readiness preview.external-update preview.pdf-load preview.page-render"
 # The warm run compiled from the cache alone: the badge must read Ready
 # offline (02-compiling-done shows it) and the bus must say so.
-python3 - "$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "no ready-offline readiness after the cached-only recompile"
+python3 - "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" <<'EOF' || die "no ready-offline readiness after the cached-only recompile"
 import json, sys
 evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
 states = [e.get("state") for e in evs if e.get("action") == "offline.readiness"]
@@ -317,7 +317,7 @@ APP_CACHE="$FIX/cold-cache" start_app "$FIX/simple"; wait_window 300
 key ctrl+o; sleep 6
 click_editor
 key ctrl+r
-APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 i=0
 while [ "$i" -lt 60 ]; do
   i=$((i + 1))
@@ -351,7 +351,7 @@ if want 5; then
 # it, and a template double-clicked in the gallery lands in the home
 # folder, opens with its main file, and builds.
 FIRSTRUN="$FIX/first-run-data"
-FIRSTLOG="$FIRSTRUN/com.ethan.tauri-app/maleficium-log/events.jsonl"
+FIRSTLOG="$FIRSTRUN/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 mkdir -p "$FIRSTRUN"
 rm -rf "$FAKEHOME/article"
 palette() {
@@ -402,7 +402,7 @@ finishes 2 300
 sleep 3
 shot 05-created
 stop_app
-python3 - "$FIRSTRUN/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "first run did not open the welcome tour"
+python3 - "$FIRSTRUN/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" <<'EOF' || die "first run did not open the welcome tour"
 import json, sys
 evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
 acts = [e.get("action") for e in evs]
@@ -437,7 +437,7 @@ if want 6; then
 # State 6 — Zoom: step the preview to 50%, 150% and 300% with the zoom
 # chords and capture each. Every settled zoom must be followed by a fresh
 # render of the visible page (a stretched stale bitmap fails here).
-APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 last_zoom() {
   python3 - "$APPLOG" <<'EOF'
 import json, sys
@@ -520,7 +520,7 @@ if want 7; then
 # renders each page once and then holds still, one zoom step renders each
 # page once, and scrolling at a fixed zoom renders nothing. A landscape
 # beamer deck: its first open renders page 1 once, at the page's own aspect.
-APPLOG="$FAKEHOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl"
+APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 MARKS="$OUT/07-marks"
 : >"$MARKS"
 mark() { python3 -c 'import sys, time; print(sys.argv[1], int(time.time() * 1000))' "$1" >>"$MARKS"; }

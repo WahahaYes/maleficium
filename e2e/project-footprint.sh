@@ -16,7 +16,7 @@
 # (.maleficium-trash/, .maleficium.json, in-project out/).
 #
 # The app's own event log is app-local too. Read the current run with:
-#   L="${XDG_DATA_HOME:-$HOME/.local/share}/com.ethan.tauri-app/maleficium-log/events.jsonl"
+#   L="${XDG_DATA_HOME:-$HOME/.local/share}/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 #   cat "$L"                                # every event of this run, one JSON object per line
 #   grep '"action":"compile.finish"' "$L"   # one fact, matched on the payload not the prose
 
@@ -91,7 +91,7 @@ fi
 pass "no .maleficium.json write-site in src; none in project (association is localStorage-only)"
 
 # --- compile out/ ---
-CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/com.ethan.tauri-app"
+CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/io.github.wahahayes.maleficium"
 OUT="$CACHEDIR/maleficium-out/$HASH"
 [[ "$OUT" == "$ROOT"* ]] && fail "out dir inside project: $OUT"
 pass "compile out dir outside project: $OUT"
@@ -203,5 +203,5 @@ echo "  hash:   $HASH"
 echo "  trash:  $TRASH"
 echo "  hist:   $HIST"
 echo "  out:    $OUT"
-echo "  log:    $LOGFILE  (live: \${XDG_DATA_HOME:-\$HOME/.local/share}/com.ethan.tauri-app/maleficium-log/events.jsonl)"
+echo "  log:    $LOGFILE  (live: \${XDG_DATA_HOME:-\$HOME/.local/share}/io.github.wahahayes.maleficium/maleficium-log/events.jsonl)"
 echo "  Live driver-driven run: e2e/driver-run.sh."

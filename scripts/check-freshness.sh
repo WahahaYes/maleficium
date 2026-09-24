@@ -8,7 +8,7 @@
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
-BIN="$ROOT/src-tauri/target/debug/tauri-app"
+BIN="$ROOT/src-tauri/target/debug/maleficium"
 ALL=0
 if [ "${1:-}" = "--all" ]; then ALL=1; fi
 
