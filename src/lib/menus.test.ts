@@ -107,6 +107,31 @@ describe('command registry', () => {
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
   });
+  it('zoom and fit are one View submenu with their chords', () => {
+    const calls: string[] = [];
+    const view = buildMenus(baseCtx, { ...actions, zoomPreview: (z) => calls.push(z) }).find(
+      (s) => s.id === 'view',
+    )!;
+    const zoom = view.commands.find((c) => c.id === 'view.zoom')!;
+    expect(zoom.label).toBe('Zoom');
+    expect(zoom.children?.map((k) => [k.id, k.label, k.accelerator])).toEqual([
+      ['view.zoom-in', 'Zoom In', 'Ctrl+='],
+      ['view.zoom-out', 'Zoom Out', 'Ctrl+-'],
+      ['view.zoom-fit-width', 'Fit Width', 'Ctrl+0'],
+      ['view.zoom-fit-page', 'Fit Page', undefined],
+    ]);
+    for (const k of zoom.children ?? []) void k.run?.();
+    expect(calls).toEqual(['in', 'out', 'fit-width', 'fit-page']);
+    // No zoom row is left loose at the top of View.
+    expect(view.commands.filter((c) => c.id.startsWith('view.zoom')).map((c) => c.id)).toEqual([
+      'view.zoom',
+    ]);
+    const closed = buildMenus({ ...baseCtx, pdfOpen: false }, actions)
+      .find((s) => s.id === 'view')!
+      .commands.find((c) => c.id === 'view.zoom')!;
+    expect(closed.enabled).toBe(false);
+    expect(closed.children?.every((k) => !k.enabled)).toBe(true);
+  });
   it('no dead placeholder rows survive (every visible row is real)', () => {
     // Context-gated rows (Cancel while idle, Reload with nothing pending,
     // Open Recent with no recents) are honest state, not placeholders: they
@@ -216,7 +241,7 @@ describe('command registry', () => {
     // no menu chord missing from the dialog, no dialog row missing a meaning).
     const keys = new Set(KEYMAP.map((k) => k.keys));
     for (const s of buildMenus(baseCtx, actions)) {
-      for (const c of s.commands) {
+      for (const c of s.commands.flatMap((c) => [c, ...(c.children ?? [])])) {
         if (c.accelerator) expect(keys.has(c.accelerator), c.id).toBe(true);
       }
     }

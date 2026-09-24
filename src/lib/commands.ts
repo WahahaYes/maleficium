@@ -53,6 +53,7 @@ export type CommandId =
   | 'view.density'
   | 'view.density-comfortable'
   | 'view.density-compact'
+  | 'view.zoom'
   | 'view.zoom-in'
   | 'view.zoom-out'
   | 'view.zoom-fit-width'
@@ -504,31 +505,38 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           ],
         },
         {
-          id: 'view.zoom-in',
-          label: 'Zoom In',
-          accelerator: 'Ctrl+=',
+          id: 'view.zoom',
+          label: 'Zoom',
           enabled: ctx.pdfOpen,
-          run: () => a.zoomPreview('in'),
-        },
-        {
-          id: 'view.zoom-out',
-          label: 'Zoom Out',
-          accelerator: 'Ctrl+-',
-          enabled: ctx.pdfOpen,
-          run: () => a.zoomPreview('out'),
-        },
-        {
-          id: 'view.zoom-fit-width',
-          label: 'Fit Width',
-          accelerator: 'Ctrl+0',
-          enabled: ctx.pdfOpen,
-          run: () => a.zoomPreview('fit-width'),
-        },
-        {
-          id: 'view.zoom-fit-page',
-          label: 'Fit Page',
-          enabled: ctx.pdfOpen,
-          run: () => a.zoomPreview('fit-page'),
+          children: [
+            {
+              id: 'view.zoom-in',
+              label: 'Zoom In',
+              accelerator: 'Ctrl+=',
+              enabled: ctx.pdfOpen,
+              run: () => a.zoomPreview('in'),
+            },
+            {
+              id: 'view.zoom-out',
+              label: 'Zoom Out',
+              accelerator: 'Ctrl+-',
+              enabled: ctx.pdfOpen,
+              run: () => a.zoomPreview('out'),
+            },
+            {
+              id: 'view.zoom-fit-width',
+              label: 'Fit Width',
+              accelerator: 'Ctrl+0',
+              enabled: ctx.pdfOpen,
+              run: () => a.zoomPreview('fit-width'),
+            },
+            {
+              id: 'view.zoom-fit-page',
+              label: 'Fit Page',
+              enabled: ctx.pdfOpen,
+              run: () => a.zoomPreview('fit-page'),
+            },
+          ],
         },
         {
           id: 'appearance.settings',
