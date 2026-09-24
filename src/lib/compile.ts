@@ -4,6 +4,7 @@ import type {
   CompileFailure,
   CompileLine,
   CompileReport,
+  EventKind,
   OfflineReadiness,
 } from './generated/events';
 import type { Finding, MissingDependency } from './generated/structure';
@@ -73,7 +74,7 @@ export function describeMissing(m: MissingDependency): string {
     case 'cache-empty':
       return 'the first compile needs network: no TeX support files are cached yet';
     case 'bundle-changed':
-      return 'the pinned TeX bundle changed upstream: offline readiness is no longer trusted';
+      return 'the TeX bundle changed upstream: this PDF may not match your sources — compile online, then make available offline again';
     case 'system-font':
       return `font "${f}" is not installed on this machine`;
     case 'external-tool':
@@ -83,6 +84,41 @@ export function describeMissing(m: MissingDependency): string {
     case 'shell-escape-required':
       return `${f} needs shell escape, which compiles never enable`;
   }
+}
+
+/** The needs marker the badge shows when the bundle digest drifted. */
+const BUNDLE_CHANGED_NEEDS = 'TeX bundle changed';
+
+/** Whether a readiness record shows a bundle digest drift. */
+export function bundleDrifted(r: OfflineReadiness): boolean {
+  return r.missing?.reason === 'bundle-changed' || r.needs.includes(BUNDLE_CHANGED_NEEDS);
+}
+
+/** The log line for a compile's missing dependency, or null when it lacked none. */
+export function missingLine(
+  m: MissingDependency | null,
+  ok: boolean,
+): { kind: EventKind; message: string } | null {
+  if (m === null) return null;
+  return {
+    kind: m.reason === 'bundle-changed' || !ok ? 'error' : 'warn',
+    message: describeMissing(m),
+  };
+}
+
+/** The log line for a readiness refresh, reusing the badge label. */
+export function readinessLine(r: OfflineReadiness): { kind: EventKind; message: string } {
+  const badge = offlineBadge(r);
+  return {
+    kind: r.state === 'ready' ? 'success' : bundleDrifted(r) ? 'error' : 'info',
+    message: 'offline: ' + badge.label,
+  };
+}
+
+/** The compile panel text: a drift warning leads the pdf it still produced. */
+export function compileLogText(r: CompileResult): string {
+  if (r.missing) return `${describeMissing(r.missing)}\n${r.ok ? (r.pdfUrl ?? '') : r.log}`;
+  return r.ok ? (r.pdfUrl ?? '') : r.log;
 }
 
 export async function cancelCompile(): Promise<string> {
@@ -182,6 +218,13 @@ export function offlineBadge(r: OfflineReadiness): OfflineBadge {
     case 'blocked':
       return { label: `Can't compile: ${needs}`, title: why, tone: 'error' };
     case 'unverified':
+      if (bundleDrifted(r)) {
+        return {
+          label: 'TeX bundle changed: PDF may not match sources',
+          title: why || 'The TeX bundle changed upstream: this PDF may not match your sources',
+          tone: 'error',
+        };
+      }
       return {
         label: needs ? `Offline unverified: ${needs}` : 'Offline unverified',
         title: 'Compile, or use Tools → Make Available Offline, to check this project offline',

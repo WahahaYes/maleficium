@@ -10,13 +10,15 @@ import type { RefObject } from 'react';
 import { markSaved, type BufferState } from '../lib/buffers';
 import {
   cancelCompile,
+  compileLogText,
   compileTex,
   describeFinding,
-  describeMissing,
   engineLog,
+  missingLine,
   precompileChecks,
   offlineBadge,
   offlineReadiness,
+  readinessLine,
   type OfflineBadge,
   onCompileLine,
   outputsFresh,
@@ -96,11 +98,12 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       const r = await offlineReadiness(p.rootId);
       const badge = offlineBadge(r);
       setOffline(badge);
+      const line = readinessLine(r);
       emit({
         scope: 'compile',
-        kind: r.state === 'ready' ? 'success' : 'info',
+        kind: line.kind,
         actor: 'system',
-        message: 'offline: ' + badge.label,
+        message: line.message,
         event: { action: 'offline.readiness', root: p.path, state: r.state, needs: r.needs },
       });
     } catch (e) {
@@ -404,14 +407,15 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           failure: 'engine-error',
           missing: null,
         };
-    setLog(r.ok ? (r.pdfUrl ?? '') : r.log);
+    setLog(compileLogText(r));
     if (r.missing) {
       const m = r.missing;
+      const line = missingLine(m, r.ok)!;
       emit({
         scope: 'compile',
-        kind: r.ok ? 'warn' : 'error',
+        kind: line.kind,
         actor,
-        message: describeMissing(m),
+        message: line.message,
         event: {
           action: 'compile.missing',
           target: activeTarget,
@@ -419,7 +423,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           reason: m.reason,
         },
       });
-      if (!r.ok) setLog(describeMissing(m) + '\n' + r.log);
     }
     const readEngineLog = () => (src ? engineLog(src.rootId, src.mainRel) : Promise.resolve(null));
     if (r.ok && r.pdfUrl) {
