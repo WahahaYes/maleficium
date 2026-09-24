@@ -155,7 +155,13 @@ export function useBitmapWindow({
         kind: 'progress',
         actor: 'system',
         message: `page ${target} rendered in ${ms}ms`,
-        event: { action: 'preview.page-render', page: target, ms },
+        event: {
+          action: 'preview.page-render',
+          page: target,
+          ms,
+          width: geo.width,
+          height: geo.height,
+        },
       });
       return { canvas: off, textContent, viewport };
     },

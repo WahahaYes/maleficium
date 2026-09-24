@@ -518,8 +518,14 @@ pub enum AppEvent {
     /// The preview zoom changed; `percent` is what a page now shows at.
     #[serde(rename = "preview.zoom")]
     PreviewZoom { mode: ZoomKind, percent: u32 },
+    /// A page bitmap was drawn; `width` x `height` is its canvas in device px.
     #[serde(rename = "preview.page-render")]
-    PreviewPageRender { page: u32, ms: u64 },
+    PreviewPageRender {
+        page: u32,
+        ms: u64,
+        width: u32,
+        height: u32,
+    },
     #[serde(rename = "synctex.forward")]
     SynctexForward { page: u32 },
     #[serde(rename = "synctex.inverse")]
