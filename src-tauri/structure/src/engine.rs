@@ -58,6 +58,8 @@ pub struct MissingDependency {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompilePhase {
+    /// Trying the network for files the cache lacks.
+    Connect,
     /// Nothing is cached yet: this compile downloads the TeX support files.
     FirstCompile,
     /// Building the LaTeX format from the bundle.
@@ -289,6 +291,24 @@ pub fn missing_dependency<S: AsRef<str>>(
         file: Some(f),
         reason: MissingReason::FetchFailed,
     })
+}
+
+/// The offline reading of a failed online attempt: a bundle the engine
+/// could not reach means nothing was cached; a file it could not fetch
+/// means that file is not cached. Anything else passes through unchanged.
+pub fn offline_reading(missing: MissingDependency) -> MissingDependency {
+    let file = missing.file.clone();
+    match missing.reason {
+        MissingReason::BundleUnreachable => MissingDependency {
+            file: None,
+            reason: MissingReason::CacheEmpty,
+        },
+        MissingReason::FetchFailed => MissingDependency {
+            file,
+            reason: MissingReason::NotCached,
+        },
+        _ => missing,
+    }
 }
 
 #[cfg(test)]
@@ -530,6 +550,41 @@ note: Running xdvipdfmx ...";
         assert_eq!(
             line_signal("warning: failure fetching \"booktabs.sty\" from network (1/3)"),
             None
+        );
+    }
+
+    #[test]
+    fn a_failed_online_attempt_reads_as_offline() {
+        let failed = |file: Option<&str>, reason| MissingDependency {
+            file: file.map(str::to_string),
+            reason,
+        };
+        assert_eq!(
+            offline_reading(failed(None, MissingReason::BundleUnreachable)),
+            failed(None, MissingReason::CacheEmpty)
+        );
+        assert_eq!(
+            offline_reading(failed(Some("booktabs.sty"), MissingReason::FetchFailed)),
+            failed(Some("booktabs.sty"), MissingReason::NotCached)
+        );
+        assert_eq!(
+            offline_reading(failed(Some("nope.sty"), MissingReason::NotInBundle)),
+            failed(Some("nope.sty"), MissingReason::NotInBundle)
+        );
+    }
+
+    #[test]
+    fn route_without_transit_is_a_fetch_failure() {
+        let c = "note: Running TeX ...
+warning: failure fetching \"booktabs.sty\" from network (1/3)
+caused by: error sending request for url (https://data1b.fullyjustified.net/tlextras-2022.0r0.tar)
+caused by: dns error: failed to lookup address information
+warning: failure fetching \"booktabs.sty\" from network (2/3)
+caused by: failed to download \"booktabs.sty\"; please check your network connection.
+error: main.tex:3: ! LaTeX Error: File `booktabs.sty' not found.";
+        assert_eq!(
+            verdict(c, false),
+            file("booktabs.sty", MissingReason::FetchFailed)
         );
     }
 

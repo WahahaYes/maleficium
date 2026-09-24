@@ -49,7 +49,6 @@ pub fn compile_tex(
         &out,
         &state.0,
         COMPILE_TIMEOUT_SECS,
-        engine::online(),
         networked.unwrap_or(false),
         &mut on_line,
     ) {

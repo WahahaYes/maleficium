@@ -20,8 +20,8 @@ mod text;
 pub use checks::{precompile_checks, CheckEnv, CheckKind, Finding};
 pub use diagnostics::{diagnostics, Diagnostic, Severity};
 pub use engine::{
-    external_needs, line_signal, missing_dependency, CompilePhase, ExternalNeeds, FetchOutcome,
-    LineSignal, MissingDependency, MissingReason,
+    external_needs, line_signal, missing_dependency, offline_reading, CompilePhase, ExternalNeeds,
+    FetchOutcome, LineSignal, MissingDependency, MissingReason,
 };
 pub use files::{ext_of, is_text_path, TEXT_EXTENSIONS};
 pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};

@@ -155,14 +155,7 @@ pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Resu
                 job.lines.push(l.text.clone());
             }
         };
-        let record = match engine::compile(
-            &out,
-            &child,
-            timeout_secs,
-            engine::online(),
-            networked,
-            &mut on_line,
-        ) {
+        let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
             Err(e) => JobRecord {
                 status: JobStatus::Failed,
                 pdf_url: None,

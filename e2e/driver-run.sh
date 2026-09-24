@@ -451,7 +451,8 @@ else:
     empty = os.path.join(scratch, "xc-empty")
     q, tool, compile_doc, granted = session(dict(os.environ, XDG_CACHE_HOME=empty), offline=True)
     r = compile_doc("main.tex")
-    check("offline with nothing cached is cache-empty without spawning", r.get("status") == "failed" and r.get("missing") == {"reason": "cache-empty"} and not any(l.startswith("note:") for l in (r.get("lines") or [])), str(r)[:300])
+    lines = r.get("lines") or []
+    check("offline with nothing cached tries online, then reads cache-empty", r.get("status") == "failed" and r.get("missing") == {"reason": "cache-empty"} and "first compile: downloading TeX support files" in lines and "offline: the online attempt failed" in lines, str(r)[:300])
     q.kill()
     for f in ("pkg.tex", "nib.tex"):
         _os.remove(ROOT + "/" + f)

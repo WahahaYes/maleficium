@@ -437,6 +437,7 @@ fn missing_of(log: &str) -> Option<ms::MissingDependency> {
         _ => None,
     };
     ms::missing_dependency(&lines, !failed, &in_bundle)
+        .map(ms::offline_reading)
         .or(reason.map(|reason| ms::MissingDependency { file: None, reason }))
 }
 
