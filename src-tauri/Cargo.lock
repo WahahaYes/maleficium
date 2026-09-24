@@ -1847,6 +1847,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "maleficium"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "maleficium-events",
+ "maleficium-index",
+ "maleficium-structure",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tokio",
+]
+
+[[package]]
 name = "maleficium-events"
 version = "0.1.0"
 dependencies = [
@@ -3369,26 +3389,6 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows",
-]
-
-[[package]]
-name = "tauri-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "maleficium-events",
- "maleficium-index",
- "maleficium-structure",
- "rmcp",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tokio",
 ]
 
 [[package]]
