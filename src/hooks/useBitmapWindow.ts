@@ -21,7 +21,7 @@ import {
   pickVisible,
   windowFor,
 } from '../lib/previewNav';
-import { backingWidth, renderGeometry, stalePages, type PaintedPage } from '../lib/zoom';
+import { backingWidth, cssScaleFor, renderGeometry, stalePages, type PaintedPage } from '../lib/zoom';
 import type { DocLike, TextLayerCtor } from './usePdfDocument';
 
 /** Idle wait: the current page renders immediately, neighbors yield first. */
@@ -61,6 +61,25 @@ export interface BitmapWindow {
   setTextRef: (n: number) => (el: HTMLDivElement | null) => void;
 }
 
+// Selectable-text overlay for one committed page. Span fonts size from
+// --total-scale-factor, so pin it to the CSS-px viewport scale first.
+export function commitTextLayer(
+  layer: HTMLElement,
+  ctor: TextLayerCtor,
+  textContent: PdfTextContent,
+  textViewport: PdfViewport,
+): void {
+  layer.replaceChildren();
+  layer.style.setProperty('--total-scale-factor', String(textViewport.scale));
+  layer.style.setProperty('--scale-round-x', '1px');
+  layer.style.setProperty('--scale-round-y', '1px');
+  try {
+    void new ctor({ textContentSource: textContent, container: layer, viewport: textViewport }).render();
+  } catch {
+    /* text layer never blocks paint — canvas already committed */
+  }
+}
+
 export function useBitmapWindow({
   docKey,
   numPages,
@@ -83,7 +102,6 @@ export function useBitmapWindow({
   scrollToShell,
 }: BitmapWindowParams): BitmapWindow {
   const textRefs = useRef(new Map<number, HTMLDivElement>());
-  const viewportRefs = useRef(new Map<number, PdfViewport>());
   const pickRafRef = useRef<number | null>(null);
   const recheckRef = useRef<(() => void) | null>(null);
   // Phase is a count of outstanding window renders, not a boolean: two
@@ -123,22 +141,20 @@ export function useBitmapWindow({
     ): Promise<{
       canvas: HTMLCanvasElement;
       textContent: PdfTextContent;
-      viewport: PdfViewport;
+      textViewport: PdfViewport;
     } | null> => {
       if (renderedRef.current.has(key)) return null;
       const pg = await pdf.getPage(target);
       if (!alive()) return null;
       const shell = shellRefs.current.get(target);
       const cssWidth = shell ? shell.getBoundingClientRect().width : 820;
-      // The backing matches the shell's laid-out width in device pixels and the
-      // viewport fills it exactly; the text layer shares the same viewport.
+      // The backing matches the shell's laid-out width in device pixels; the
+      // text layer gets its own CSS-px viewport (no DPR fold).
       const probe = pg.getViewport({ scale: 1 });
-      const geo = renderGeometry(
-        cssWidth,
-        { width: probe.width, height: probe.height },
-        window.devicePixelRatio,
-      );
+      const page = { width: probe.width, height: probe.height };
+      const geo = renderGeometry(cssWidth, page, window.devicePixelRatio);
       const viewport = pg.getViewport({ scale: geo.scale });
+      const textViewport = pg.getViewport({ scale: cssScaleFor(cssWidth, page) });
       const off = document.createElement('canvas');
       off.width = geo.width;
       off.height = geo.height;
@@ -163,14 +179,14 @@ export function useBitmapWindow({
           height: geo.height,
         },
       });
-      return { canvas: off, textContent, viewport };
+      return { canvas: off, textContent, textViewport };
     },
     [renderedRef, shellRefs],
   );
 
   // Commit a rendered page into its shell: canvas paint + text layer.
   // drawImage commits pixels with no re-layout and no blank flash; the text
-  // div is rebuilt by pdf.js (spans positioned from the SAME viewport, so
+  // div is rebuilt by pdf.js (spans positioned from the CSS-px viewport, so
   // selection lands on glyphs). Records identity AFTER pixels land, so a
   // commit can never mark a page rendered that isn't. A null bitmap (already
   // rendered, or lost its liveness race) commits nothing.
@@ -181,15 +197,14 @@ export function useBitmapWindow({
       done: {
         canvas: HTMLCanvasElement;
         textContent: PdfTextContent;
-        viewport: PdfViewport;
+        textViewport: PdfViewport;
       } | null,
     ) => {
       if (!done) return;
       const canvas = canvasRefs.current.get(target);
       const layer = textRefs.current.get(target);
       if (!canvas) return;
-      const { canvas: off, textContent, viewport } = done;
-      viewportRefs.current.set(target, viewport);
+      const { canvas: off, textContent, textViewport } = done;
       if (canvas.width !== off.width || canvas.height !== off.height) {
         canvas.width = off.width;
         canvas.height = off.height;
@@ -198,14 +213,7 @@ export function useBitmapWindow({
       if (!ctx) return;
       ctx.drawImage(off, 0, 0);
       const ctor = textLayerRef.current;
-      if (layer && ctor) {
-        layer.replaceChildren();
-        try {
-          void new ctor({ textContentSource: textContent, container: layer, viewport }).render();
-        } catch {
-          /* text layer never blocks paint — canvas already committed */
-        }
-      }
+      if (layer && ctor) commitTextLayer(layer, ctor, textContent, textViewport);
       renderedRef.current.add(key);
       renderedKeys.current.set(target, key);
       // Rendered for a width the shell has since left: render again.

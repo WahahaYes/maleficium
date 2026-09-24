@@ -63,6 +63,14 @@ export function renderGeometry(cssWidth: number, page: Size, dpr: number): Rende
   return { scale, width, height: Math.max(1, Math.round(Math.max(1, page.height) * scale)) };
 }
 
+/**
+ * CSS px per PDF point for a page shown `cssWidth` wide: the text-layer
+ * viewport scale (the canvas backing folds DPR on top of this).
+ */
+export function cssScaleFor(cssWidth: number, page: Size): number {
+  return Math.max(1, cssWidth) / Math.max(1, page.width);
+}
+
 /** The percent a page shown `width` CSS px wide is at. */
 export function percentOf(width: number, page: Size): number {
   return (width / (Math.max(1, page.width) * PX_PER_PT)) * 100;
