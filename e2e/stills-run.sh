@@ -347,10 +347,33 @@ fi
 
 if want 5; then
 # State 5 — First run: a data home with no recent projects and no preset
-# opens the welcome tour; the command palette then opens the template
-# gallery.
+# opens the welcome tour without building it; Help > Welcome then builds
+# it, and a template double-clicked in the gallery lands in the home
+# folder, opens with its main file, and builds.
 FIRSTRUN="$FIX/first-run-data"
+FIRSTLOG="$FIRSTRUN/com.ethan.tauri-app/maleficium-log/events.jsonl"
 mkdir -p "$FIRSTRUN"
+rm -rf "$FAKEHOME/article"
+palette() {
+  # $1 = text typed into the command palette, then Return.
+  key ctrl+shift+p; sleep 2
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 400 91 click 1 >/dev/null 2>&1 || true
+  sleep 1
+  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
+  sleep 1
+  $XDO key Return >/dev/null 2>&1 || true
+}
+finishes() {
+  # $1 = compile.finish count to wait for, $2 = timeout seconds.
+  end=$(( $(date +%s) + $2 ))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    n=$(grep -c '"action":"compile.finish"' "$FIRSTLOG" 2>/dev/null || true)
+    [ "${n:-0}" -ge "$1" ] && return 0
+    sleep 3
+  done
+  log "only ${n:-0} compile.finish events after $2s"
+}
 APP_CACHE="$FAKEHOME/.cache" APP_DATA="$FIRSTRUN" start_app ""; wait_window 300
 sleep 12
 shot 05-welcome
@@ -365,6 +388,19 @@ sleep 1
 $XDO key Return >/dev/null 2>&1 || true
 sleep 3
 shot 05-gallery
+key Escape; sleep 2
+palette "welcome"
+finishes 1 240
+sleep 3
+shot 05-welcome-built
+palette "from template"
+sleep 3
+# A double-click on a card creates it at the shown location (home).
+# shellcheck disable=SC2086
+$XDO mousemove --window "$WIN" 167 200 click --repeat 2 --delay 200 1 >/dev/null 2>&1 || true
+finishes 2 300
+sleep 3
+shot 05-created
 stop_app
 python3 - "$FIRSTRUN/com.ethan.tauri-app/maleficium-log/events.jsonl" <<'EOF' || die "first run did not open the welcome tour"
 import json, sys
@@ -374,6 +410,25 @@ assert "template.welcome" in acts, "no template.welcome in %s" % sorted(set(acts
 roots = [e.get("root", "") for e in evs if e.get("action") == "project.open"]
 assert any(r.endswith("maleficium-welcome") for r in roots), "welcome project not opened: %s" % roots
 print("stills: first run opened the welcome tour: %s" % roots[-1])
+EOF
+FAKEHOME="$FAKEHOME" python3 - "$FIRSTLOG" <<'EOF' || die "welcome or template project did not open with a main file and build"
+import json, os, sys
+evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+acts = [e.get("action") for e in evs]
+w = [i for i, a in enumerate(acts) if a == "template.welcome"]
+assert len(w) >= 2, "Help > Welcome did not reopen the tour: %s" % sorted(set(acts))
+first = acts[w[0]:w[1]]
+assert "compile.warm-skipped" in first and "compile.finish" not in first, "first run built the tour: %s" % first
+fin = [e for e in evs if e.get("action") == "compile.finish"]
+assert fin and fin[0].get("ok") is True and fin[0].get("target", "").endswith("maleficium-welcome/welcome.tex"), "welcome build: %s" % fin[:1]
+want = os.path.join(os.path.realpath(os.environ["FAKEHOME"]), "article")
+made = [e for e in evs if e.get("action") == "template.create"]
+assert made and made[-1].get("root") == want, "template root %s, want %s" % (made[-1:], want)
+mains = [e.get("mainFile") for e in evs if e.get("action") == "main.resolved" and e.get("root") == want]
+assert mains == [want + "/main.tex"], "main for the new project: %s" % mains
+assert len(fin) >= 2 and fin[1].get("ok") is True and fin[1].get("target") == want + "/main.tex", "template build: %s" % fin[1:2]
+assert os.path.isfile(want + "/main.tex")
+print("stills: Help > Welcome built the tour; %s opened with main.tex and built" % want)
 EOF
 
 fi
