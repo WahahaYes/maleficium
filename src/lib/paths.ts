@@ -24,6 +24,15 @@ export function joinPath(...parts: string[]): string {
 }
 
 /**
+ * A native dialog's starting path, anchored at `home` unless already absolute:
+ * the pickers never start in the process working directory.
+ */
+export function dialogStart(path: string | undefined, home: string): string {
+  if (path && path.startsWith('/')) return path;
+  return path ? joinPath(home, path) : home;
+}
+
+/**
  * App-local trash home for one project root. Per-delete subdirs are created
  * as needed. Nothing is ever written to or read from the project dir.
  */

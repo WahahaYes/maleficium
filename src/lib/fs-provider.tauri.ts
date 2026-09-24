@@ -3,6 +3,7 @@
 // The only module that imports plugin-fs and plugin-dialog for general file
 // work. Calls pass through unchanged; `stat` maps a missing path to null.
 
+import { homeDir } from '@tauri-apps/api/path';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import {
   mkdir,
@@ -16,6 +17,7 @@ import {
   writeTextFile,
 } from '@tauri-apps/plugin-fs';
 import type { DialogProvider, DirEntry, FileStat, FsProvider } from './fs-provider';
+import { dialogStart } from './paths';
 
 export const desktopFs: FsProvider = {
   readText: (path) => readTextFile(path),
@@ -47,11 +49,13 @@ export const desktopFs: FsProvider = {
 
 export const desktopDialog: DialogProvider = {
   openDirectory: async (opts) => {
-    const picked = await openDialog({ directory: true, multiple: false, ...opts });
+    const defaultPath = dialogStart(opts?.defaultPath, await homeDir());
+    const picked = await openDialog({ directory: true, multiple: false, ...opts, defaultPath });
     return typeof picked === 'string' ? picked : null;
   },
   saveFile: async (opts) => {
-    const picked = await saveDialog({ ...opts });
+    const defaultPath = dialogStart(opts?.defaultPath, await homeDir());
+    const picked = await saveDialog({ ...opts, defaultPath });
     return typeof picked === 'string' ? picked : null;
   },
 };

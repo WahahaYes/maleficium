@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashRoot, joinPath, appTrashDir } from './paths';
+import { hashRoot, joinPath, appTrashDir, dialogStart } from './paths';
 import { previewKindFor, isPreviewable } from './files';
 
 describe('app-local paths', () => {
@@ -15,6 +15,12 @@ describe('app-local paths', () => {
     expect(appTrashDir('/app/data', '/home/u/other')).not.toBe(t);
     // Never inside the project dir.
     expect(t.startsWith('/home/u/paper')).toBe(false);
+  });
+  it('dialogs start at home unless given an absolute path', () => {
+    expect(dialogStart(undefined, '/home/u')).toBe('/home/u');
+    expect(dialogStart('', '/home/u')).toBe('/home/u');
+    expect(dialogStart('main.pdf', '/home/u')).toBe('/home/u/main.pdf');
+    expect(dialogStart('/work/talks', '/home/u')).toBe('/work/talks');
   });
   it('joinPath collapses duplicate slashes', () => {
     expect(joinPath('/a/', '/b', 'c')).toBe('/a/b/c');
