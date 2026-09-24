@@ -22,6 +22,9 @@ REALHOME="$HOME"
 # $STILLS_HOME/.local/share/com.ethan.tauri-app/maleficium-log/events.jsonl.
 FAKEHOME=${STILLS_HOME:-$(mktemp -d /tmp/maleficium-stills-home-XXXXXX)}
 DISP=${STILLS_DISPLAY:-:99}
+# STILLS_PORT moves the harness vite off 1420 while a dev app holds it.
+PORT=${STILLS_PORT:-1420}
+export DEV_PORT="$PORT"
 XVFB_PID=""
 # Pin every X tool at the harness display via the environment (xdotool
 # has no --display flag; it reads DISPLAY). Never touch the session.
@@ -90,10 +93,10 @@ start_app() {
   # APP_DATA gives this launch its own app cache / data home.
   sweep_stale
   if [ -n "$1" ]; then
-    DEVURL="http://localhost:1420/?project=$(encode "$1")"
+    DEVURL="http://localhost:$PORT/?project=$(encode "$1")"
     log "launching (preset $(basename "$1"))"
   else
-    DEVURL="http://localhost:1420/"
+    DEVURL="http://localhost:$PORT/"
     log "launching (no preset)"
   fi
   set --
