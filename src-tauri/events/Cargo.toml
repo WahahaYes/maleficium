@@ -1,6 +1,7 @@
 [package]
 name = "maleficium-events"
 version = "0.1.0"
+license = "Apache-2.0"
 edition = "2021"
 description = "App event catalog: the one definition of every bus payload (pure, wasm32-ready); TypeScript is generated from it"
 
