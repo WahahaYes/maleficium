@@ -491,6 +491,9 @@ pub enum AppEvent {
     /// The pdf's stamp could not be read: outside rewrites go unnoticed.
     #[serde(rename = "preview.stamp-failed")]
     PreviewStampFailed { error: String },
+    /// The pdf could not be opened in the preview: its worker failed to load.
+    #[serde(rename = "preview.load-failed")]
+    PreviewLoadFailed { error: String },
     /// A new project was made from a template.
     #[serde(rename = "template.create")]
     TemplateCreate { template: String, root: String },
