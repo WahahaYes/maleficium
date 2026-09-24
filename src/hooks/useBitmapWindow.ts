@@ -21,7 +21,13 @@ import {
   pickVisible,
   windowFor,
 } from '../lib/previewNav';
-import { backingWidth, cssScaleFor, renderGeometry, stalePages, type PaintedPage } from '../lib/zoom';
+import {
+  backingWidth,
+  cssScaleFor,
+  renderGeometry,
+  stalePages,
+  type PaintedPage,
+} from '../lib/zoom';
 import type { DocLike, TextLayerCtor } from './usePdfDocument';
 
 /** Idle wait: the current page renders immediately, neighbors yield first. */
@@ -74,7 +80,11 @@ export function commitTextLayer(
   layer.style.setProperty('--scale-round-x', '1px');
   layer.style.setProperty('--scale-round-y', '1px');
   try {
-    void new ctor({ textContentSource: textContent, container: layer, viewport: textViewport }).render();
+    void new ctor({
+      textContentSource: textContent,
+      container: layer,
+      viewport: textViewport,
+    }).render();
   } catch {
     /* text layer never blocks paint — canvas already committed */
   }

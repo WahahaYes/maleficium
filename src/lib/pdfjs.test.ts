@@ -26,7 +26,10 @@ class FakeWorker {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), cb]);
   }
   removeEventListener(type: string, cb: ErrorListener): void {
-    this.listeners.set(type, (this.listeners.get(type) ?? []).filter((c) => c !== cb));
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) ?? []).filter((c) => c !== cb),
+    );
   }
   terminate(): void {
     this.terminated = true;

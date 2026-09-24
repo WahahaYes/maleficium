@@ -46,8 +46,7 @@ async function loadPdfJs(): Promise<PdfJsHandle> {
       // A failed module load fires a bare Event; a runtime error
       // carries a message. Read the property, never the global.
       const message = (e as ErrorEvent).message;
-      const detail =
-        typeof message === 'string' && message ? message : 'pdf worker failed to load';
+      const detail = typeof message === 'string' && message ? message : 'pdf worker failed to load';
       if (cached?.workerFailed === workerFailed) cached = null;
       worker.terminate();
       emit({
