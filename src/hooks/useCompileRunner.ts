@@ -582,10 +582,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   // broken because a background guess failed; the user's explicit Ctrl+R
   // reports loudly through the normal path.
   // `project` is passed explicitly: warm runs right after an open, before
-  // this closure has seen the new root.
-  async function warmCompile(mainAbsPath: string, project: SessionRoot) {
+  // this closure has seen the new root. `cold` builds even without cached
+  // output: a project the user just created or asked to open by name.
+  async function warmCompile(mainAbsPath: string, project: SessionRoot, cold = false) {
     const src = sourceFor(mainAbsPath, [project]);
-    const usable = src != null && (await outputsFresh(src.rootId, src.mainRel));
+    const usable = src != null && (cold || (await outputsFresh(src.rootId, src.mainRel)));
     if (!usable) {
       emit({
         scope: 'compile',

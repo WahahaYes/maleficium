@@ -34,7 +34,7 @@ export interface UseProjectTreeDeps {
   trash: FileHistory;
   resolveMain: (r: string, opened: string | null) => Promise<string | null>;
   handleSelect: (path: string) => Promise<void>;
-  warmCompile: (mainAbsPath: string, project: SessionRoot) => Promise<void>;
+  warmCompile: (mainAbsPath: string, project: SessionRoot, cold?: boolean) => Promise<void>;
 }
 
 export function useProjectTree(deps: UseProjectTreeDeps) {
@@ -174,7 +174,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // Recents for File > Open Recent as state. Restored entries re-validate
   // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
-  async function openRoot(r: string, opts?: { warm?: boolean }) {
+  async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean }) {
     // The runtime scope grant comes first: every fs call below resolves
     // through it. The backend fails closed on invalid roots
     // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
@@ -244,8 +244,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // Cache-warm on open: a background compile starts after the editor is
     // populated — but only when the engine cache is usable (previous output
     // present). No cache → no surprise build; the preview waits for the
-    // user's explicit Ctrl+R. Open never fails because warm failed.
-    if (opts?.warm && m) void warmCompile(m, { rootId: grant.rootId, path: canon });
+    // user's explicit Ctrl+R; `cold` builds anyway. Open never fails because warm failed.
+    if (opts?.warm && m)
+      void warmCompile(m, { rootId: grant.rootId, path: canon }, opts.cold === true);
   }
 
   async function open() {
@@ -264,8 +265,8 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     }
   }
 
-  /** Open the welcome tour (written into app data the first time). */
-  async function openWelcome() {
+  /** Open the welcome tour (written into app data the first time); `cold` builds it. */
+  async function openWelcome(cold = true) {
     try {
       const c = await welcomeProject();
       setMainFileFor(hashRoot(c.root), c.main);
@@ -276,7 +277,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         message: 'welcome project: ' + c.root,
         event: { action: 'template.welcome', root: c.root },
       });
-      await openRoot(c.root, { warm: true });
+      await openRoot(c.root, { warm: true, cold });
     } catch (e) {
       emit({
         scope: 'app',
@@ -310,7 +311,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       }
       const recents = getRecentProjects();
       if (recents.length === 0) {
-        await openWelcome();
+        await openWelcome(false);
         return;
       }
       const stale: string[] = [];

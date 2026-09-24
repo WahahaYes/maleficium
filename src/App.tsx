@@ -1598,7 +1598,7 @@ export default function App({
         onClose={() => setTemplateMode(null)}
         project={root && projectId ? { rootId: projectId, path: root } : null}
         mainRel={mainFile ? relInProject(mainFile) : null}
-        openRoot={(r) => openRoot(r, { warm: true })}
+        openRoot={(r) => openRoot(r, { warm: true, cold: true })}
       />
       <StatusBar
         mainFile={relOf(mainFile)}
