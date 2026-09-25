@@ -45,9 +45,10 @@ trap cleanup EXIT INT TERM
 
 sweep_stale() {
   # Orphans from hard-killed runs: same binary name as a human's
-  # dev:desktop, so match DISPLAY=:99 in their environ, nothing else.
+  # dev:desktop, so match this run's DISPLAY in their environ, nothing else
+  # (never a literal :99: a parallel run on another STILLS_DISPLAY lives there).
   for p in $(pgrep -x maleficium 2>/dev/null); do
-    if tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qx 'DISPLAY=:99'; then
+    if tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qx "DISPLAY=$DISP"; then
       log "sweeping stale harness app $p"
       kill -KILL "$p" 2>/dev/null || true
     fi
@@ -179,7 +180,7 @@ shot() {
 
 stop_app() {
   # Belt and suspenders: group-kill our tree, then sweep anything on
-  # :99 (a human dev:desktop never lives there, so this is precise).
+  # $DISP (a human dev:desktop never lives there, so this is precise).
   if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM -- "-$APP_PID" 2>/dev/null || true
     sleep 3
