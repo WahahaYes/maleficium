@@ -41,7 +41,10 @@ if [ "${1:-}" != "--" ] && [ $# -gt 0 ]; then REF="$1"; shift; fi
 shift
 [ $# -gt 0 ] || { echo "worktree-run: no command given" >&2; exit 1; }
 
-SHORT=$(git -C "$ROOT" rev-parse --short "$REF") || exit 1
+# Resolved here, in the caller's checkout: inside the worktree, HEAD would
+# name the worktree's own last commit.
+SHA=$(git -C "$ROOT" rev-parse --verify "$REF^{commit}") || exit 1
+SHORT=$(git -C "$ROOT" rev-parse --short "$SHA")
 # Throwaway worktrees kept by failed runs pile up in OS tmp; a day on, no
 # run is still using one.
 find /tmp -maxdepth 1 -type d -name 'maleficium-worktree-*' -mtime +0 2>/dev/null |
@@ -57,14 +60,14 @@ THROWAWAY=""
 exec 9>"$WT.lock"
 if flock -n 9; then
   if git -C "$ROOT" worktree list --porcelain | grep -qx "worktree $WT"; then
-    git -C "$WT" checkout -q --detach --force "$REF" >&2 || exit 1
+    git -C "$WT" checkout -q --detach --force "$SHA" >&2 || exit 1
     # Everything untracked goes (last run's carrier, fixtures, outputs) but
     # vite's dep cache, which is the point of keeping the worktree.
     git -C "$WT" clean -q -fdx -e .vite-cache >&2 || exit 1
   else
     rm -rf "$WT"
     git -C "$ROOT" worktree prune
-    git -C "$ROOT" worktree add --detach "$WT" "$REF" >&2 || exit 1
+    git -C "$ROOT" worktree add --detach "$WT" "$SHA" >&2 || exit 1
   fi
 else
   echo "worktree-run: $WT is held by another run — using a throwaway worktree (full rebuild)" >&2
@@ -73,7 +76,7 @@ else
   rmdir "$WT_BASE"
   WT="$WT_BASE-$SHORT"
   THROWAWAY=1
-  git -C "$ROOT" worktree add --detach "$WT" "$REF" >&2 || exit 1
+  git -C "$ROOT" worktree add --detach "$WT" "$SHA" >&2 || exit 1
 fi
 echo "worktree-run: $REF ($SHORT) at $WT"
 
