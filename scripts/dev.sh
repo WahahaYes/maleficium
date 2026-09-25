@@ -42,7 +42,20 @@ echo "dev: port $DEV_PORT"
 
 case "$MODE" in
     web) exec vite "$@" ;;
-    desktop) exec tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$DEV_PORT\"}}" "$@" ;;
+    desktop)
+        # Tauri shells out to cargo; a shell without it dies inside the
+        # CLI with an inscrutable metadata error. Recover from the stock
+        # rustup env when present, else fail with a pointer.
+        if ! command -v cargo >/dev/null 2>&1; then
+            for env in "${HOME:-/nonexistent}/.cargo/env" /usr/local/cargo/env; do
+                if [ -f "$env" ]; then . "$env"; break; fi
+            done
+        fi
+        command -v cargo >/dev/null 2>&1 || {
+            echo "dev: cargo not found; install Rust 1.98.1+ or add cargo to PATH (see BUILDING.md)" >&2
+            exit 1
+        }
+        exec tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$DEV_PORT\"}}" "$@" ;;
     *)
         echo "dev: usage: dev.sh web|desktop [args...]" >&2
         exit 1
