@@ -151,6 +151,7 @@ start_app() {
   # APP_DATA gives this launch its own app cache / data home.
   sweep_stale
   printf '%s' "$1" >"$PRESET"
+  LAUNCH_MS=$(now_ms)
   if [ -n "$1" ]; then
     log "launching (preset $(basename "$1"))"
   else
@@ -310,10 +311,22 @@ EOF
 }
 open_project() {
   # Ctrl+O opens the preset project; returns once its main file is loaded.
+  # The frontend's log.open says it is up; a first launch on a cold display
+  # can still drop the chord, so it is pressed again (re-opening the preset
+  # is harmless).
+  wait_event log.open "$LAUNCH_MS" 60
   _m=$(now_ms)
-  key ctrl+o
-  wait_event file.open "$_m" 60
-  sleep 1
+  _t=0
+  while [ "$_t" -lt 3 ]; do
+    _t=$((_t + 1))
+    key ctrl+o
+    if (wait_event file.open "$_m" 10) 2>/dev/null; then
+      sleep 1
+      return 0
+    fi
+    log "no file.open after Ctrl+O (try $_t)"
+  done
+  die "Ctrl+O never opened the preset project"
 }
 
 saved_external() {
