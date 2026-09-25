@@ -103,7 +103,8 @@ export default function PaletteDialog({
             ranked.map((r) => {
               const c = commands[r.index];
               return {
-                key: `${c.id}:${c.label}`,
+                // Labels repeat (two recents named `paper`); the index never does.
+                key: `${c.id}:${r.index}`,
                 label: c.label,
                 positions: r.positions,
                 detail: c.accelerator,

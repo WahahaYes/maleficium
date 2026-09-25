@@ -86,6 +86,8 @@ export default function Pane({
   return (
     <Box
       sx={{
+        // flex-grow below 1 on a lone item fills only that fraction of the
+        // row, so a pane shown by itself must be given ratio 1 by its parent.
         flex: ratio,
         minWidth: 120,
         overflow: 'auto',

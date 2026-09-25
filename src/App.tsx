@@ -1405,7 +1405,7 @@ export default function App({
         {editorVisible ? (
           <Pane
             label="editor"
-            ratio={layout.editorRatio}
+            ratio={previewVisible ? layout.editorRatio : 1}
             onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}
           >
             {editorPane}
@@ -1454,7 +1454,7 @@ export default function App({
         ) : (
           <Pane
             label="preview"
-            ratio={layout.previewRatio}
+            ratio={editorVisible ? layout.previewRatio : 1}
             onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}
           >
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
