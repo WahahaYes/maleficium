@@ -2,35 +2,59 @@
 
 Desktop-native LaTeX editor. TypeScript + React + MUI frontend, Tauri 2 + Rust backend. Linux-first, fully offline via a bundled Tectonic engine.
 
-Pre-release: no shipped version, no user-data compatibility between builds.
+## Screenshots
 
-## Develop
+![Edit, compile, and preview side by side](docs/screenshots/compile-preview.png)
+![New project from a template](docs/screenshots/template-gallery.png)
+![First-run welcome tour](docs/screenshots/welcome-tour.png)
 
-Prerequisites: Node, Rust, and system webkit2gtk for Tauri. The engine sidecars are not in git: fetching them needs network, curl, python3, and (for SyncTeX) git, gcc and static zlib.
+## Features
 
-- `npm install`
-- `sh scripts/fetch-sidecars.sh` — once: Tectonic release binaries (sha256-checked) and SyncTeX built from pinned source into `src-tauri/binaries/`
-- `npm run dev:desktop` — desktop app
-- `npm run dev` — web-only Vite frontend
+- Editor with LaTeX-aware search, replace preview, and undo-safe apply.
+- One-key compile with live progress and a pre-compile problem check.
+- Side-by-side PDF preview with SyncTeX forward and inverse search.
+- Project file tree, quick file finder, and command palette.
+- Ten starter templates (article, report, book, beamer, letter, CV, resume, journal, assignment, welcome).
+- Curated color themes with a searchable picker.
+- Revision history stored in Rust, shared by the app and its automation API.
 
-Both pick the first free port pair from 1420 (`scripts/dev.sh`), so parallel instances run side by side.
+## Install (Linux x86_64)
 
-Release builds (`.deb`, AppImage, on the host or in Docker): see [BUILDING.md](BUILDING.md).
+From the [releases page](https://github.com/wahahayes/maleficium/releases):
 
-## Verify (run in this dir before claiming behavior change)
+```sh
+sudo apt install ./Maleficium_0.1.0_amd64.deb
+```
 
-- `./node_modules/.bin/tsc --noEmit --skipLibCheck`
-- `npm test -- --run` and `cargo test --manifest-path src-tauri/Cargo.toml --lib`
-- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml`
-- `./e2e/project-footprint.sh`
+or run the AppImage:
 
-GUI-only claims stay unconfirmed without a human click-through.
+```sh
+chmod +x Maleficium_0.1.0_amd64.AppImage
+./Maleficium_0.1.0_amd64.AppImage
+```
 
-## Layout
+If the AppImage fails with a FUSE error, prefix the run with
+`APPIMAGE_EXTRACT_AND_RUN=1`.
 
-- `src/` — frontend; `src-tauri/` — Rust backend.
-- `e2e/` — committed proof harnesses and driver configs (product test code). Generated output lives only in OS tmp, never committed.
+## Build from source
+
+See [BUILDING.md](BUILDING.md) for the Docker and host routes.
+
+## Offline and privacy
+
+The first compile downloads the Tectonic engine bundle (about 300
+files) and needs network access. After that the app works fully
+offline. That bundle fetch is the only network call the app makes:
+no telemetry, no auto-updater, nothing else leaves the machine.
+
+## Status and known limits
+
+0.1.0 ships Linux x86_64 only (`.deb` and AppImage); macOS and
+Windows builds wait for a later release. There is no update
+mechanism yet — watch the releases page. 0.1.x makes no user-data
+compatibility promises between builds.
 
 ## License
 
 Apache 2.0 — see `LICENSE`, including the accreditation notice.
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
