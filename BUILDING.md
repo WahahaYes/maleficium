@@ -47,3 +47,23 @@ Artifacts land in:
 - `src-tauri/target/release/bundle/appimage/*.AppImage`
 
 If the AppImage step fails with a FUSE error, run the build with `APPIMAGE_EXTRACT_AND_RUN=1` set.
+
+## Release cadence
+
+Releases are cut manually with `scripts/release.sh`; there is no CI and no
+bot. One command from a clean `main` bumps the version in `package.json`
+(+ lockfile), `src-tauri/Cargo.toml` (+ lockfile) and
+`src-tauri/tauri.conf.json` together, prepends the `CHANGELOG.md` entry,
+commits, tags, and builds:
+
+```sh
+sh scripts/release.sh 0.2.0 --notes-file /tmp/notes.md
+```
+
+Release commits use the message `release X.Y.Z`. Notes default to the
+commit subjects since the previous tag when no file is given. The Docker
+build is the default; `--host` builds on the machine instead, `--out`
+redirects the artifacts, and `--skip-build` stops after the tag (a test
+aid). Nothing is pushed or published unless `--publish` is passed, which
+pushes `main` + the tag and opens the GitHub release with the `.deb` and
+`.AppImage` attached. Pushing and publishing stay an explicit human go.
