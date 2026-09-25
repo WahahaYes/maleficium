@@ -25,3 +25,4 @@ dist-ssr
 
 # Engine sidecars: fetched/built by scripts/fetch-sidecars.sh, never tracked
 src-tauri/binaries/
+__pycache__/

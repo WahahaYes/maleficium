@@ -17,6 +17,22 @@ use super::{JobOutcome, JobStatus, MainOutputs};
 /// the relay redirect, so an upstream rotation cannot move it.
 pub const BUNDLE_URL: &str = "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar";
 
+/// The bundle URL compiles use: `BUNDLE_URL`, except that a debug build
+/// honours `MALEFICIUM_DEV_BUNDLE_URL`, a local mirror of the same bytes (the
+/// stills harness's cold compile, e2e/bundle-mirror.py). The digest pin still
+/// holds: a mirror serving anything else reads as a changed bundle. Release
+/// builds never read the variable.
+pub fn bundle_url() -> String {
+    #[cfg(debug_assertions)]
+    if let Some(url) = std::env::var("MALEFICIUM_DEV_BUNDLE_URL")
+        .ok()
+        .filter(|u| !u.is_empty())
+    {
+        return url;
+    }
+    BUNDLE_URL.to_string()
+}
+
 /// SHA-256 digest `BUNDLE_URL` must resolve to.
 pub const BUNDLE_DIGEST: &str = "6ffe055852f8faf66c0acbe1a7fb27f87b869a90bad1204f3bf4d9683f597c7c";
 
@@ -62,7 +78,7 @@ pub enum DigestCheck {
 }
 
 pub fn check_digest(cache: &Path) -> DigestCheck {
-    match resolved_digest(cache, BUNDLE_URL) {
+    match resolved_digest(cache, &bundle_url()) {
         None => DigestCheck::Unresolved,
         Some(d) if d == BUNDLE_DIGEST => DigestCheck::Pinned,
         Some(d) => DigestCheck::Changed(d),
@@ -121,7 +137,7 @@ fn command(out: &MainOutputs, cache: &Path, mode: CacheMode) -> Result<Command, 
     let mut cmd = Command::new(super::sidecar_path_for("maleficium-tectonic")?);
     cmd.args(["-X", "compile", &out.main_file, "--outdir"])
         .arg(&out.outdir)
-        .args(["--synctex", "-b", BUNDLE_URL]);
+        .args(["--synctex", "-b", &bundle_url()]);
     if mode == CacheMode::CachedOnly {
         cmd.arg("-C");
     }
@@ -274,7 +290,8 @@ fn compile_with(
         if missing.is_none() {
             if let DigestCheck::Changed(d) = check_digest(cache) {
                 on_line(&status_line(format!(
-                    "TeX bundle changed: {BUNDLE_URL} now resolves to {d}"
+                    "TeX bundle changed: {} now resolves to {d}",
+                    bundle_url()
                 )));
                 missing = Some(MissingDependency {
                     file: None,
