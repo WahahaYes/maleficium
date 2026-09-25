@@ -47,7 +47,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "appimage"],
+    "publisher": "Ethan Wilson",
+    "homepage": "https://github.com/wahahayes/maleficium",
+    "category": "Productivity",
+    "shortDescription": "Desktop-native LaTeX editor",
+    "longDescription": "Maleficium is a desktop-native LaTeX editor for Linux.\nIt bundles the Tectonic engine for fully offline compiles after the first bundle download.",
+    "copyright": "Copyright 2026 Ethan Wilson",
+    "license": "Apache-2.0",
     "externalBin": ["binaries/maleficium-tectonic", "binaries/maleficium-synctex"],
     "icon": [
       "icons/32x32.png",
@@ -58,7 +65,8 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libgraphite2-3"]
+        "depends": ["libgraphite2-3"],
+        "section": "editors"
       }
     }
   }
