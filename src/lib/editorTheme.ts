@@ -55,19 +55,27 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
     '.cm-panel.cm-search': {
       backgroundColor: s.background,
       color: s.foreground,
-      fontFamily: theme.typography.fontFamily ?? 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontFamily: s.fontFamily,
+      fontSize: s.fontSize,
     },
     '.cm-panel.cm-search .cm-textfield': {
       backgroundColor: theme.palette.background.default,
       color: s.foreground,
       borderColor: theme.palette.divider,
+      fontFamily: s.fontFamily,
+      fontSize: s.fontSize,
     },
     '.cm-panel.cm-search .cm-button': {
-      backgroundColor: 'transparent',
+      backgroundColor: theme.palette.action.selected,
       color: s.foreground,
       borderColor: theme.palette.divider,
+      fontFamily: s.fontFamily,
+      fontSize: s.fontSize,
     },
+    // The find bar opens in the top panel slot; show it below the content
+    // instead so editor scrolling never hides it.
+    '.cm-panels-top': { order: 3 },
+    '.cm-panels-top .cm-panel.cm-search': { position: 'sticky', top: 'auto', bottom: 0 },
     '.cm-tooltip': {
       backgroundColor: s.background,
       color: s.foreground,
