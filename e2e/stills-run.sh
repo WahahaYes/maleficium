@@ -120,8 +120,17 @@ wait_window() {
   # force-size, then proceed. Activation is skipped (no WM to honor it).
   end=$(( $(date +%s) + $1 ))
   while [ "$(date +%s)" -lt "$end" ]; do
+    # The app owns a 10x10 helper window in the same class: take the
+    # largest match, never the first.
+    best=0; WIN=""
     # shellcheck disable=SC2086
-    WIN=$($XDO search --name "^Maleficium$" 2>/dev/null | head -n 1 || true)
+    for cand in $($XDO search --name "^Maleficium$" 2>/dev/null || true); do
+      # shellcheck disable=SC2086
+      set -- $($XDO getwindowgeometry "$cand" 2>/dev/null | sed -n 's/^ *Geometry: \([0-9]*\)x\([0-9]*\)/\1 \2/p')
+      if [ "$((${1:-0} * ${2:-0}))" -gt "$best" ]; then
+        best=$((${1:-0} * ${2:-0})); WIN=$cand
+      fi
+    done
     if [ -n "${WIN:-}" ]; then
       # shellcheck disable=SC2086
       $XDO windowmap "$WIN" >/dev/null 2>&1 || true
