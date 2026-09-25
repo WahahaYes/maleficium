@@ -66,5 +66,10 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
       color: s.foreground,
       borderColor: theme.palette.divider,
     },
+    '.cm-tooltip': {
+      backgroundColor: s.background,
+      color: s.foreground,
+      borderColor: theme.palette.divider,
+    },
   });
 }
