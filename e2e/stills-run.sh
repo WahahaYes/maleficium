@@ -38,9 +38,9 @@ cleanup() {
   # pkill by name: the human's own dev:desktop shares the binary name.
   for g in "${APP_PID:-}" "$VITE_PID"; do
     if [ -n "$g" ] && kill -0 "$g" 2>/dev/null; then
-      kill -TERM -- "-$g" 2>/dev/null || true
+      kill -s TERM -- "-$g" 2>/dev/null || true
       sleep 2
-      kill -KILL -- "-$g" 2>/dev/null || true
+      kill -s KILL -- "-$g" 2>/dev/null || true
     fi
   done
   if [ -n "$MIRROR_PID" ] && kill -0 "$MIRROR_PID" 2>/dev/null; then kill "$MIRROR_PID" 2>/dev/null || true; fi
@@ -237,11 +237,11 @@ stop_app() {
   # Belt and suspenders: group-kill our tree, then sweep anything on
   # $DISP (a human dev:desktop never lives there, so this is precise).
   if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill -TERM -- "-$APP_PID" 2>/dev/null || true
+    kill -s TERM -- "-$APP_PID" 2>/dev/null || true
     # Up to 3 s to exit on TERM, then KILL; no fixed wait on a quick exit.
     n=0
     while [ "$n" -lt 30 ] && kill -0 "$APP_PID" 2>/dev/null; do n=$((n + 1)); sleep 0.1; done
-    kill -KILL -- "-$APP_PID" 2>/dev/null || true
+    kill -s KILL -- "-$APP_PID" 2>/dev/null || true
   fi
   APP_PID=""
   sweep_stale
