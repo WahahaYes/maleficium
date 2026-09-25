@@ -55,6 +55,8 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
     '.cm-panel.cm-search': {
       backgroundColor: s.background,
       color: s.foreground,
+      fontFamily: theme.typography.fontFamily ?? 'system-ui, sans-serif',
+      fontSize: '14px',
     },
     '.cm-panel.cm-search .cm-textfield': {
       backgroundColor: theme.palette.background.default,
