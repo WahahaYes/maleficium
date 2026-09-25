@@ -31,15 +31,21 @@ XVFB_PID=""
 export DISPLAY="$DISP"
 XDO="xdotool"
 
+VITE_PID=""
+MIRROR_PID=""
 cleanup() {
-  # Group-kill our own tree (tauri CLI + vite + app + webkit). Never
+  # Group-kill our own trees (app + webkit; the run's one vite). Never
   # pkill by name: the human's own dev:desktop shares the binary name.
-  if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill -TERM -- "-$APP_PID" 2>/dev/null || true
-    sleep 2
-    kill -KILL -- "-$APP_PID" 2>/dev/null || true
-  fi
+  for g in "${APP_PID:-}" "$VITE_PID"; do
+    if [ -n "$g" ] && kill -0 "$g" 2>/dev/null; then
+      kill -TERM -- "-$g" 2>/dev/null || true
+      sleep 2
+      kill -KILL -- "-$g" 2>/dev/null || true
+    fi
+  done
+  if [ -n "$MIRROR_PID" ] && kill -0 "$MIRROR_PID" 2>/dev/null; then kill "$MIRROR_PID" 2>/dev/null || true; fi
   if [ -n "$XVFB_PID" ] && kill -0 "$XVFB_PID" 2>/dev/null; then kill "$XVFB_PID" 2>/dev/null || true; fi
+  for l in ${LOCKS:-}; do rm -rf "$l"; done
 }
 trap cleanup EXIT INT TERM
 
@@ -59,8 +65,32 @@ log() { printf 'stills: %s\n' "$*"; }
 die() { printf 'stills: FATAL %s\n' "$*" >&2; exit 1; }
 log "contained home $FAKEHOME"
 
+# One run per display and per home: two runs on one display would share
+# its Xvfb, sweep each other's apps and write one event log. mkdir is the
+# atomic step; the pid inside lets a lock whose run is gone be taken over.
+# Not flock: every child (Xvfb, vite, the app) would inherit the
+# descriptor and an orphan would hold the lock.
+LOCKS=""
+take_lock() {
+  # $1 = lock dir, $2 = what it guards (for the message).
+  if ! mkdir "$1" 2>/dev/null; then
+    holder=$(cat "$1/pid" 2>/dev/null || true)
+    if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+      die "$2 is in use by stills run pid $holder (pick another STILLS_DISPLAY / STILLS_HOME)"
+    fi
+    log "taking over stale lock $1 (pid ${holder:-none} is gone)"
+    rm -rf "$1"
+    mkdir "$1" 2>/dev/null || die "lost the race for $1"
+  fi
+  echo $$ >"$1/pid"
+  LOCKS="$LOCKS $1"
+}
+mkdir -p "$FAKEHOME"
+take_lock "/tmp/maleficium-stills-display-${DISP#:}.lock" "display $DISP"
+take_lock "$FAKEHOME/.stills-lock" "home $FAKEHOME"
+
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
-need Xvfb; need xdotool; need import; need python3
+need Xvfb; need xdotool; need import; need python3; need curl
 
 if ! xdotool search --onlyvisible --name ".*" >/dev/null 2>&1; then
   log "starting Xvfb on $DISP"
@@ -79,38 +109,64 @@ printf '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{documen
 sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 sweep_stale
 
+# Build once, serve once: every state launches the same binary against the
+# same vite. Tauri bakes its config into the binary, so devUrl stays fixed
+# per port (an unchanged TAURI_CONFIG makes the build a no-op) and the
+# preset goes through STILLS_PRESET_FILE instead, which vite turns into a
+# `/?project=` redirect (vite.config.ts). Plain `cargo build` is the same
+# dev build `tauri dev` runs (no custom-protocol) and builds maleficium-mcp
+# too (State 2's driver runs it).
+PRESET="$OUT/.preset"
+: > "$PRESET"
+BIN_DIR="${CARGO_TARGET_DIR:-$ROOT/src-tauri/target}/debug"
+APPBIN="$BIN_DIR/maleficium"
+t0=$(date +%s)
+# Exported: State 2's driver builds maleficium-mcp under the same config,
+# so its build is a no-op instead of a recompile.
+export TAURI_CONFIG="{\"build\":{\"devUrl\":\"http://localhost:$PORT/\"}}"
+(cd "$ROOT/src-tauri" && cargo build --bins) >>"$OUT/dev.log" 2>&1 || die "app build failed (see $OUT/dev.log)"
+log "app built in $(( $(date +%s) - t0 ))s ($APPBIN)"
+(cd "$ROOT" && STILLS_PRESET_FILE="$PRESET" exec setsid "$ROOT/node_modules/.bin/vite") \
+  >>"$OUT/dev.log" 2>&1 &
+VITE_PID=$!
+end=$(( $(date +%s) + 60 ))
+until curl -s -o /dev/null "http://localhost:$PORT/"; do
+  kill -0 "$VITE_PID" 2>/dev/null || die "vite exited (port $PORT held? see $OUT/dev.log)"
+  [ "$(date +%s)" -lt "$end" ] || die "vite never answered on :$PORT"
+  sleep 0.5
+done
+log "vite serving on :$PORT"
+
 # STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7").
 want() {
   case " ${STILLS_STATES:-1 2 3 4 5 6 7} " in *" $1 "*) return 0 ;; esac
   return 1
 }
 
-encode() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
 start_app() {
   # $1 = project dir, or empty for a launch with no preset (restore or
-  # first run). Serves a merged devUrl carrying the preset, then launches
-  # the app against it. Echoes nothing; sets APP_PID. A set APP_CACHE /
+  # first run). Points the run's vite at the preset, then launches the
+  # built app against it. Echoes nothing; sets APP_PID. A set APP_CACHE /
   # APP_DATA gives this launch its own app cache / data home.
   sweep_stale
+  printf '%s' "$1" >"$PRESET"
   if [ -n "$1" ]; then
-    DEVURL="http://localhost:$PORT/?project=$(encode "$1")"
     log "launching (preset $(basename "$1"))"
   else
-    DEVURL="http://localhost:$PORT/"
     log "launching (no preset)"
   fi
   set --
   if [ -n "${APP_CACHE:-}" ]; then set -- "XDG_CACHE_HOME=$APP_CACHE"; fi
   if [ -n "${APP_DATA:-}" ]; then set -- "$@" "XDG_DATA_HOME=$APP_DATA"; fi
+  if [ -n "${APP_BUNDLE_URL:-}" ]; then set -- "$@" "MALEFICIUM_DEV_BUNDLE_URL=$APP_BUNDLE_URL"; fi
   # Toolchain homes stay real (rustup has no default under a fresh HOME);
   # everything the app writes stays contained via HOME. Compositing off:
   # no compositor runs under Xvfb and WebKit will not map otherwise.
   # shellcheck disable=SC2086
   HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
     DISPLAY="$DISP" GDK_BACKEND=x11 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
-    env "$@" setsid "$ROOT/node_modules/.bin/tauri" dev \
-    --config "{\"build\": {\"devUrl\": \"$DEVURL\"}}" \
+    env -C "$ROOT/src-tauri" "$@" setsid "$APPBIN" \
     >>"$OUT/dev.log" 2>&1 &
   APP_PID=$!
 }
@@ -135,13 +191,12 @@ wait_window() {
     if [ -n "${WIN:-}" ]; then
       # shellcheck disable=SC2086
       $XDO windowmap "$WIN" >/dev/null 2>&1 || true
-      sleep 2
       # Refuse a black still: the map must actually take effect.
       vend=$(( $(date +%s) + 30 ))
       while [ "$(date +%s)" -lt "$vend" ]; do
         # shellcheck disable=SC2086
         if $XDO search --onlyvisible --name "^Maleficium$" 2>/dev/null | grep -qx "$WIN"; then break; fi
-        sleep 2
+        sleep 0.3
       done
       log "window $WIN"
       return 0
@@ -183,13 +238,13 @@ stop_app() {
   # $DISP (a human dev:desktop never lives there, so this is precise).
   if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM -- "-$APP_PID" 2>/dev/null || true
-    sleep 3
+    # Up to 3 s to exit on TERM, then KILL; no fixed wait on a quick exit.
+    n=0
+    while [ "$n" -lt 30 ] && kill -0 "$APP_PID" 2>/dev/null; do n=$((n + 1)); sleep 0.1; done
     kill -KILL -- "-$APP_PID" 2>/dev/null || true
-    sleep 2
   fi
   APP_PID=""
   sweep_stale
-  sleep 2
   sh "$ROOT/scripts/reclaim.sh" >/dev/null 2>&1 || true
 }
 
@@ -224,6 +279,43 @@ EOF
   log "checked $APPLOG ($1 present)"
 }
 
+now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
+wait_event() {
+  # $1 = event.action, $2 = epoch ms it must come after, $3 = timeout s,
+  # $4 = log (default: the contained home's). Waits on what the app says
+  # happened instead of a fixed sleep; a timeout fails loudly by name.
+  # Timestamps, not line counts: the app truncates its log at each launch.
+  _log=${4:-$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl}
+  _end=$(( $(date +%s) + $3 ))
+  until python3 - "$_log" "$1" "$2" <<'EOF'
+import json, sys
+try:
+    lines = open(sys.argv[1]).read().splitlines()
+except OSError:
+    sys.exit(1)
+since = int(sys.argv[3])
+for l in lines:
+    try:
+        e = json.loads(l)
+    except ValueError:
+        continue
+    if e.get("at", 0) > since and (e.get("event") or {}).get("action") == sys.argv[2]:
+        sys.exit(0)
+sys.exit(1)
+EOF
+  do
+    [ "$(date +%s)" -lt "$_end" ] || die "no $1 event within $3s"
+    sleep 0.3
+  done
+}
+open_project() {
+  # Ctrl+O opens the preset project; returns once its main file is loaded.
+  _m=$(now_ms)
+  key ctrl+o
+  wait_event file.open "$_m" 60
+  sleep 1
+}
+
 saved_external() {
   # Echo: the file the last Ctrl+S saved, and how many fs.external events
   # the log holds for it. Own-write suppression is content-matched, so the
@@ -244,20 +336,30 @@ if want 1; then
 # State 1 — Default: open, no compile. Idle shell + quiet preview.
 # Ctrl+S forces a save so the log carries file.save + revision.record live.
 start_app "$FIX/simple"; wait_window 300
-key ctrl+o; sleep 6
+open_project
 click_editor
-key ctrl+s; sleep 3
+msave=$(now_ms)
+key ctrl+s
+wait_event file.save "$msave" 15
+sleep 1
 shot 01-default
 # Revision-echo: the save must not read as an external change; a real
 # external edit right after it must.
 # shellcheck disable=SC2046
 set -- $(saved_external)
 [ "$2" = 0 ] || die "own save reported as external ($2 fs.external for $1)"
-printf '%% external edit\n' >>"$1"; sleep 4
-# shellcheck disable=SC2046
-set -- $(saved_external)
-[ "$2" -ge 1 ] || die "external edit after a save was swallowed ($1)"
+printf '%% external edit\n' >>"$1"
+end=$(( $(date +%s) + 15 ))
+while :; do
+  # shellcheck disable=SC2046
+  set -- $(saved_external)
+  [ "$2" -ge 1 ] && break
+  [ "$(date +%s)" -lt "$end" ] || die "external edit after a save was swallowed ($1)"
+  sleep 0.3
+done
 log "echo check: save silent, external edit reported ($2) for $1"
+# The save auto-compiles: hold the app until the preview has painted it.
+wait_event preview.page-render "$msave" 120
 stop_app
 # The compiled pdf must load in pdf.js and paint a page: a preview stuck on
 # 'loading...' (e.g. its worker never started) fails here, not in a still.
@@ -275,23 +377,33 @@ HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
   MCP_ROOT_OVERRIDE="$FIX/simple" DRIVER_LOG="$OUT/driver-warm.jsonl" \
   WARM_ONLY=1 POLL_ROUNDS=150 \
   bash "$ROOT/e2e/driver-run.sh" >>"$OUT/dev.log" 2>&1 || die "warm driver failed"
+mopen=$(now_ms)
 start_app "$FIX/simple"; wait_window 300
-key ctrl+o; sleep 6
+open_project
+# Stills through the warm compile, every 5 s, up to 8; one more after the
+# compile finishes and the rest would be the same picture.
 i=0
+done_seen=""
 while [ "$i" -lt 8 ]; do
   i=$((i + 1))
   timeout 60 import -display "$DISP" -window "$WIN" "$OUT/02-compiling-$i.png" 2>/dev/null || true
+  [ -n "$done_seen" ] && break
+  (wait_event compile.finish "$mopen" 0 >/dev/null 2>&1) && done_seen=1
   sleep 5
 done
-log "captured 02-compiling-{1..8}.png"
+log "captured 02-compiling-{1..$i}.png"
 # An agent recompiles the open project over MCP: the preview must notice
 # the rewritten pdf and reload by itself.
+mopen=$(now_ms)
 HOME="$FAKEHOME" RUSTUP_HOME="$REALHOME/.rustup" CARGO_HOME="$REALHOME/.cargo" \
   DRIVER_CACHE="$FAKEHOME/.cache" \
   MCP_ROOT_OVERRIDE="$FIX/simple" DRIVER_LOG="$OUT/driver-external.jsonl" \
   WARM_ONLY=1 POLL_ROUNDS=60 \
   bash "$ROOT/e2e/driver-run.sh" >>"$OUT/dev.log" 2>&1 || die "external compile driver failed"
-sleep 6
+# Both after the driver started: the reload renders again on its own.
+wait_event preview.external-update "$mopen" 30
+wait_event preview.page-render "$mopen" 30
+sleep 1
 shot 02-compiling-done
 stop_app
 check_log "log.open compile.finish offline.readiness preview.external-update preview.pdf-load preview.page-render"
@@ -310,9 +422,12 @@ fi
 if want 3; then
 # State 3 — Failure: bad project, focus, Ctrl+R (bundles warm by now).
 start_app "$FIX/bad"; wait_window 300
-key ctrl+o; sleep 6
+open_project
 click_editor
-key ctrl+r; sleep 20
+mrun=$(now_ms)
+key ctrl+r
+wait_event compile.finish "$mrun" 120
+sleep 2
 shot 03-failure
 stop_app
 check_log "log.open compile.finish"
@@ -323,8 +438,27 @@ if want 4; then
 # State 4 — Cold compile: an empty engine cache of its own, Ctrl+R, stills
 # while the first compile downloads until the log says it finished. The
 # status bar must read the phase and a live download count.
-APP_CACHE="$FIX/cold-cache" start_app "$FIX/simple"; wait_window 300
-key ctrl+o; sleep 6
+# The downloads come from e2e/bundle-mirror.py, a read-through cache of the
+# bundle host kept across runs (STILLS_MIRROR_CACHE): the app's cache is
+# empty, the network is not needed after the mirror's first fill.
+# STILLS_COLD_ONLINE=1 skips the mirror and downloads for real.
+COLD_URL=""
+if [ -z "${STILLS_COLD_ONLINE:-}" ]; then
+  MPORT=${STILLS_MIRROR_PORT:-$((PORT + 100))}
+  MCACHE=${STILLS_MIRROR_CACHE:-/var/tmp/maleficium-bundle-mirror}
+  python3 "$ROOT/e2e/bundle-mirror.py" "$MPORT" "$MCACHE" >"$OUT/mirror.out" 2>"$OUT/mirror.log" &
+  MIRROR_PID=$!
+  end=$(( $(date +%s) + 20 ))
+  until grep -q "listening" "$OUT/mirror.out" 2>/dev/null; do
+    kill -0 "$MIRROR_PID" 2>/dev/null || die "bundle mirror exited (port $MPORT held? see $OUT/mirror.log)"
+    [ "$(date +%s)" -lt "$end" ] || die "bundle mirror never listened on :$MPORT"
+    sleep 0.5
+  done
+  COLD_URL="http://127.0.0.1:$MPORT/tlextras-2022.0r0.tar"
+  log "bundle mirror on :$MPORT ($MCACHE)"
+fi
+APP_BUNDLE_URL="$COLD_URL" APP_CACHE="$FIX/cold-cache" start_app "$FIX/simple"; wait_window 300
+open_project
 click_editor
 key ctrl+r
 APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
@@ -352,6 +486,14 @@ assert fetched > 0, "no fetched files before compile.finish"
 assert evs[end].get("ok") is True, "cold compile failed: %s" % evs[end]
 print("stills: cold compile: %d fetches, phases %s" % (fetched, ",".join(dict.fromkeys(phases))))
 EOF
+if [ -n "$MIRROR_PID" ]; then
+  kill "$MIRROR_PID" 2>/dev/null || true
+  MIRROR_PID=""
+  hits=$(grep -c '^mirror: hit ' "$OUT/mirror.log" || true)
+  fetched=$(grep -c '^mirror: fetched ' "$OUT/mirror.log" || true)
+  [ "$((hits + fetched))" -gt 0 ] || die "the cold compile never went through the bundle mirror"
+  log "bundle mirror: $hits hits, $fetched fetched upstream"
+fi
 
 fi
 
@@ -384,8 +526,10 @@ finishes() {
   done
   log "only ${n:-0} compile.finish events after $2s"
 }
+mlaunch=$(now_ms)
 APP_CACHE="$FAKEHOME/.cache" APP_DATA="$FIRSTRUN" start_app ""; wait_window 300
-sleep 12
+wait_event project.open "$mlaunch" 60 "$FIRSTLOG"
+sleep 2
 shot 05-welcome
 key ctrl+shift+p; sleep 2
 # Synthetic keys sent to a window never reach the palette's input: click it
@@ -456,20 +600,66 @@ z = [e["percent"] for e in evs if e.get("action") == "preview.zoom"]
 print(z[-1] if z else -1)
 EOF
 }
+page1_rendered_since() {
+  # $1 = epoch ms. True once the log holds a page-1 render after it.
+  python3 - "$APPLOG" "$1" <<'EOF'
+import json, sys
+evs = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+since = int(sys.argv[2])
+ok = any(e["at"] > since and (e.get("event") or {}).get("action") == "preview.page-render"
+         and (e.get("event") or {}).get("page") == 1 for e in evs)
+sys.exit(0 if ok else 1)
+EOF
+}
+zoom_settled() {
+  # The app works through queued chords slower than xdotool sends them:
+  # read the zoom only once two looks 0.5 s apart agree (bounded).
+  _prev=$(last_zoom)
+  _n=0
+  while [ "$_n" -lt 40 ]; do
+    _n=$((_n + 1))
+    sleep 0.5
+    _cur=$(last_zoom)
+    [ "$_cur" = "$_prev" ] && break
+    _prev=$_cur
+  done
+  echo "$_prev"
+}
 zoom_to() {
-  # $1 = target percent. One chord per step, bounded; the log says where it is.
+  # $1 = target percent. The whole distance in one burst of chords (each is
+  # one 10% step), then single steps to correct any rounding, bounded; the
+  # log says where it is. Settles on the page-1 re-render, not a fixed wait.
+  t0=$(( $(date +%s%N) / 1000000 ))
+  cur=$(last_zoom)
+  if [ "$cur" = -1 ]; then
+    # A fit mode logs no percent yet: one step toward the target to read one.
+    # shellcheck disable=SC2086
+    $XDO key --window "$WIN" ctrl+minus >/dev/null 2>&1 || true
+    cur=$(zoom_settled)
+  fi
+  if [ "$cur" != -1 ] && [ "$cur" != "$1" ]; then
+    if [ "$cur" -lt "$1" ]; then k=ctrl+equal; d=$(($1 - cur)); else k=ctrl+minus; d=$((cur - $1)); fi
+    # shellcheck disable=SC2086
+    $XDO key --window "$WIN" --repeat $(((d + 9) / 10)) --delay 60 "$k" >/dev/null 2>&1 || true
+  fi
   n=0
-  while [ "$n" -lt 45 ]; do
+  while [ "$n" -lt 20 ]; do
     n=$((n + 1))
-    cur=$(last_zoom)
+    cur=$(zoom_settled)
     [ "$cur" = "$1" ] && break
     if [ "$cur" -lt "$1" ]; then k=ctrl+equal; else k=ctrl+minus; fi
     # shellcheck disable=SC2086
     $XDO key --window "$WIN" "$k" >/dev/null 2>&1 || true
-    sleep 0.5
   done
   [ "$(last_zoom)" = "$1" ] || die "zoom did not reach $1% (at $(last_zoom)%)"
-  sleep 4
+  end=$(( $(date +%s) + 15 ))
+  until page1_rendered_since "$t0"; do
+    [ "$(date +%s)" -lt "$end" ] || die "zoom to $1%: page 1 never re-rendered"
+    sleep 0.3
+  done
+  # The log check below counts a zoom as settled only if the next one
+  # comes 2 s later; hold that gap so each captured zoom is proven.
+  sleep 2
 }
 scroll_preview() {
   # $1/$2 = wheel notches down/right over the preview, onto body text.
@@ -486,7 +676,7 @@ start_app "$FIX/simple"; wait_window 300
 # shellcheck disable=SC2086
 $XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
 sleep 2
-key ctrl+o; sleep 6
+open_project
 click_editor
 key ctrl+s
 end=$(( $(date +%s) + 180 ))
@@ -556,7 +746,7 @@ open_compiled() {
   # shellcheck disable=SC2086
   $XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
   sleep 2
-  key ctrl+o; sleep 6
+  open_project
   click_editor
   key ctrl+0
   mark "$2-open"
