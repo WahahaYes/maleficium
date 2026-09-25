@@ -16,7 +16,12 @@ trap 'rm -rf "$SCRATCH"' EXIT
 fail() { echo "FAIL: $1"; exit 1; }
 pass() { echo "ok: $1"; }
 
-[ -x "$BIN" ] || fail "sidecar missing: build with cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp"
+# Build what this checkout says, never trust a leftover binary: a pinned
+# worktree run otherwise drives whatever mcp the target dir last held.
+# A no-op when fresh.
+cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-mcp \
+  || fail "cannot build maleficium-mcp"
+[ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
 if [ -n "${MCP_ROOT_OVERRIDE:-}" ]; then
   # Drive a caller-owned tree in place (e.g. pre-warming the engine

@@ -6,12 +6,14 @@
 # underfoot. The worktree holds a frozen commit plus only the carrier patch
 # (default: uncommitted e2e/ edits under test); untracked files stay behind
 # by design. Heavy state is reused, never rebuilt: node_modules is symlinked
-# in, Rust shares the main checkout's target dir via CARGO_TARGET_DIR (cargo
-# serializes concurrent builds on its own lock), vite's dep cache lives in the
-# worktree (VITE_CACHE_DIR) so the shared node_modules/.vite a live dev server
-# serves is never rewritten, and app/runtime caches stay
-# the caller's job (e.g. stills reuses one STILLS_HOME so Tectonic bundles
-# download once).
+# in; the worktree itself is one persistent checkout, moved to each ref with
+# `checkout --force`, so unchanged files keep their mtimes and cargo sees
+# nothing to rebuild; Rust builds into the harness's own target dir
+# (HARNESS_TARGET_DIR), never the main checkout's, so a harness run never
+# invalidates a live dev build and vice versa; vite's dep cache lives in the
+# worktree (VITE_CACHE_DIR) and survives between runs; app/runtime caches
+# stay the caller's job (e.g. stills reuses one STILLS_HOME so Tectonic
+# bundles download once).
 #
 # GUI harnesses still serialize on :1420: stills pins its devUrl there and
 # vite binds it with strictPort. Dev loops (scripts/dev.sh) pick a free
@@ -21,10 +23,14 @@
 # TERM another checkout's (or a live) dev server.
 #
 # Usage: ./e2e/worktree-run.sh [<ref>] -- <command...>
-#   ref defaults to HEAD. The worktree lives in OS tmp; it is removed on
-#   success and kept (path printed) on failure.
+#   ref defaults to HEAD. The worktree is HARNESS_WORKTREE (default
+#   /var/tmp/maleficium-harness-wt), held under a lock for the run and left
+#   in place afterwards (inspect it after a failure; the next run resets it).
+#   If another run holds it, this run falls back to a throwaway worktree in
+#   OS tmp (a full rebuild; removed on success, kept on failure).
 # Env: WORKTREE_CARRY (default "e2e") — tracked paths whose uncommitted diff
-#   is applied on top; WORKTREE_KEEP=1 — keep the worktree even on success.
+#   is applied on top; WORKTREE_KEEP=1 — keep a throwaway worktree even on
+#   success; HARNESS_TARGET_DIR (default /var/tmp/maleficium-harness-target).
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -36,15 +42,46 @@ shift
 [ $# -gt 0 ] || { echo "worktree-run: no command given" >&2; exit 1; }
 
 SHORT=$(git -C "$ROOT" rev-parse --short "$REF") || exit 1
-WT_BASE=$(mktemp -d /tmp/maleficium-worktree-XXXXXX)
-rmdir "$WT_BASE"
-WT="$WT_BASE-$SHORT"
-git -C "$ROOT" worktree add --detach "$WT" "$REF" >&2 || exit 1
+# Throwaway worktrees kept by failed runs pile up in OS tmp; a day on, no
+# run is still using one.
+find /tmp -maxdepth 1 -type d -name 'maleficium-worktree-*' -mtime +0 2>/dev/null |
+  while IFS= read -r old; do
+    git -C "$ROOT" worktree remove --force "$old" 2>/dev/null || rm -rf "$old"
+    echo "worktree-run: pruned stale $old" >&2
+  done
+git -C "$ROOT" worktree prune
+
+WT=${HARNESS_WORKTREE:-/var/tmp/maleficium-harness-wt}
+THROWAWAY=""
+# The lock lives for this shell (fd 9) and dies with it, crash included.
+exec 9>"$WT.lock"
+if flock -n 9; then
+  if git -C "$ROOT" worktree list --porcelain | grep -qx "worktree $WT"; then
+    git -C "$WT" checkout -q --detach --force "$REF" >&2 || exit 1
+    # Everything untracked goes (last run's carrier, fixtures, outputs) but
+    # vite's dep cache, which is the point of keeping the worktree.
+    git -C "$WT" clean -q -fdx -e .vite-cache >&2 || exit 1
+  else
+    rm -rf "$WT"
+    git -C "$ROOT" worktree prune
+    git -C "$ROOT" worktree add --detach "$WT" "$REF" >&2 || exit 1
+  fi
+else
+  echo "worktree-run: $WT is held by another run — using a throwaway worktree (full rebuild)" >&2
+  exec 9>&-
+  WT_BASE=$(mktemp -d /tmp/maleficium-worktree-XXXXXX)
+  rmdir "$WT_BASE"
+  WT="$WT_BASE-$SHORT"
+  THROWAWAY=1
+  git -C "$ROOT" worktree add --detach "$WT" "$REF" >&2 || exit 1
+fi
 echo "worktree-run: $REF ($SHORT) at $WT"
 
 ST=0
 finish() {
-  if [ "$ST" -eq 0 ] && [ -z "${WORKTREE_KEEP:-}" ]; then
+  if [ -z "$THROWAWAY" ]; then
+    [ "$ST" -eq 0 ] || echo "worktree-run: $WT left at the failing state (exit $ST)" >&2
+  elif [ "$ST" -eq 0 ] && [ -z "${WORKTREE_KEEP:-}" ]; then
     git -C "$ROOT" worktree remove --force "$WT" >&2 || true
   else
     echo "worktree-run: keeping $WT (exit $ST)" >&2
@@ -83,14 +120,14 @@ else
 fi
 fi
 
-ln -s "$ROOT/node_modules" "$WT/node_modules"
+ln -sfn "$ROOT/node_modules" "$WT/node_modules"
 # Engine sidecars are fetched, never tracked: carry the main checkout's.
 mkdir -p "$WT/src-tauri/binaries"
 for b in "$ROOT"/src-tauri/binaries/*; do
-  [ -e "$b" ] && ln -s "$b" "$WT/src-tauri/binaries/"
+  [ -e "$b" ] && ln -sf "$b" "$WT/src-tauri/binaries/"
 done
 export WORKTREE_ACTIVE=1
-export CARGO_TARGET_DIR="$ROOT/src-tauri/target"
+export CARGO_TARGET_DIR="${HARNESS_TARGET_DIR:-/var/tmp/maleficium-harness-target}"
 # Vite optimizes deps into the worktree's own cache: the shared
 # node_modules/.vite belongs to the main checkout's dev server.
 export VITE_CACHE_DIR="$WT/.vite-cache"
@@ -100,7 +137,8 @@ VITE_FS_ALLOW=$(cd "$ROOT/node_modules" && pwd -P)
 export VITE_FS_ALLOW
 
 set +e
-(cd "$WT" && "$@")
+# 9>&-: the command's own children (vite, the app) never inherit the lock.
+(cd "$WT" && "$@") 9>&-
 ST=$?
 set -e
 [ "$ST" -eq 0 ] || echo "worktree-run: command failed with $ST" >&2
