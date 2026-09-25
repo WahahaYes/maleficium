@@ -33,6 +33,7 @@ export interface UseProjectTreeDeps {
   setLog: (v: string) => void;
   trash: FileHistory;
   resolveMain: (r: string, opened: string | null) => Promise<string | null>;
+  clearMainFile: () => void;
   handleSelect: (path: string) => Promise<void>;
   warmCompile: (mainAbsPath: string, project: SessionRoot, cold?: boolean) => Promise<void>;
 }
@@ -50,6 +51,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     setLog,
     trash,
     resolveMain,
+    clearMainFile,
     handleSelect,
     warmCompile,
   } = deps;
@@ -196,6 +198,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     const canon = grant.path;
     setRoot(canon);
     setProjectId(grant.rootId);
+    // Drop the previous root's main file now: resolveMain below is async,
+    // and a compile fired mid-switch must never see the old root's target.
+    clearMainFile();
     setRecentProjects(touchRecentProject(canon));
     const t0 = performance.now();
     projectIndex()

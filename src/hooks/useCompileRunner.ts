@@ -538,6 +538,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     }
   });
   autoFireRef.current = () => {
+    // A main file from before a root switch must never auto-fire: the
+    // backend would refuse it as outside the project.
+    if (mainFile && mainFile.includes('/') && root && !mainFile.startsWith(root + '/')) return;
     const target = mainFile ?? fileName;
     emit({
       scope: 'compile',

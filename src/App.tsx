@@ -631,6 +631,11 @@ export default function App({
       setLog,
       trash,
       resolveMain,
+      clearMainFile: () => {
+        setMainFileState(null);
+        setMainSource('');
+        setMainCandidates([]);
+      },
       handleSelect,
       warmCompile,
     });
