@@ -65,17 +65,22 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
       fontFamily: s.fontFamily,
       fontSize: s.fontSize,
     },
-    '.cm-panel.cm-search .cm-button': {
+    '.cm-editor .cm-panel.cm-search .cm-button': {
+      appearance: 'none',
       backgroundColor: theme.palette.action.selected,
       color: s.foreground,
+      borderStyle: 'solid',
+      borderWidth: '1px',
       borderColor: theme.palette.divider,
+      borderRadius: '4px',
+      padding: '2px 8px',
       fontFamily: s.fontFamily,
       fontSize: s.fontSize,
     },
     // The find bar opens in the top panel slot; show it below the content
-    // instead so editor scrolling never hides it.
-    '.cm-panels-top': { order: 3 },
-    '.cm-panels-top .cm-panel.cm-search': { position: 'sticky', top: 'auto', bottom: 0 },
+    // instead so editor scrolling never hides it. The sticky container
+    // keeps it pinned while the view scrolls.
+    '.cm-panels-top': { order: 3, top: 'auto', bottom: 0 },
     '.cm-tooltip': {
       backgroundColor: s.background,
       color: s.foreground,
