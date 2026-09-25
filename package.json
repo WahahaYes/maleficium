@@ -17,7 +17,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "clean": "sh scripts/clean.sh"
   },
   "dependencies": {
     "@codemirror/search": "^6.7.2",

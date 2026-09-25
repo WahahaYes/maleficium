@@ -54,3 +54,11 @@ vendored palettes live under `src/assets/themes/`.
 Tests (`*.test.ts`, `src/test/`, `e2e/`) are product code. `e2e/` holds
 the proof harnesses and driver configs; generated output lives only in
 OS tmp, never committed. No demo or tooling-only code in the tree.
+
+Harness runs go through `e2e/worktree-run.sh`: one reused worktree and
+its own cargo target under `/var/tmp`, so a run never rebuilds your dev
+checkout. Stills build the app once per run, and the cold-compile state
+reads the TeX bundle through `e2e/bundle-mirror.py` (network only on its
+first fill). Cargo never prunes its caches: `npm run clean` drops the
+incremental ones, `-- --all` removes the target dirs, `-- --dry-run`
+shows sizes first; it refuses while a build or harness is running.
