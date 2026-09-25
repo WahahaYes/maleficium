@@ -52,5 +52,19 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
     },
     '.cm-cursor': { borderLeftColor: s.cursor },
     '.cm-selectionBackground': { backgroundColor: s.selection },
+    '.cm-panel.cm-search': {
+      backgroundColor: s.background,
+      color: s.foreground,
+    },
+    '.cm-panel.cm-search .cm-textfield': {
+      backgroundColor: theme.palette.background.default,
+      color: s.foreground,
+      borderColor: theme.palette.divider,
+    },
+    '.cm-panel.cm-search .cm-button': {
+      backgroundColor: 'transparent',
+      color: s.foreground,
+      borderColor: theme.palette.divider,
+    },
   });
 }
