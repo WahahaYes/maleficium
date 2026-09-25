@@ -65,8 +65,9 @@ export function editorTheme(prefs: AppearancePrefs, theme: Theme) {
       fontFamily: s.fontFamily,
       fontSize: s.fontSize,
     },
-    '.cm-editor .cm-panel.cm-search .cm-button': {
+    '.cm-panel.cm-search .cm-button': {
       appearance: 'none',
+      backgroundImage: 'none',
       backgroundColor: theme.palette.action.selected,
       color: s.foreground,
       borderStyle: 'solid',
