@@ -1,3 +1,4 @@
+default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [pre-commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -56,3 +57,11 @@ repos:
         entry: ./node_modules/.bin/prettier --check .
         language: system
         pass_filenames: false
+  - repo: local
+    hooks:
+      - id: no-ai-attribution
+        name: no co-author or ai attribution in commit messages
+        entry: '(co-authored-by:|noreply@anthropic\.com|generated with .*claude|claude code)'
+        language: pygrep
+        args: [-i]
+        stages: [commit-msg]
