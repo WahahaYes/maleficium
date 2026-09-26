@@ -157,6 +157,12 @@ export default function App({
     rootRef.current = v;
     setRoot(v);
   }, []);
+  const projectIdRef = useRef<string | null>(projectId);
+  projectIdRef.current = projectId;
+  const setProjectIdNow = useCallback((v: string | null) => {
+    projectIdRef.current = v;
+    setProjectId(v);
+  }, []);
 
   /** Project-relative path for a file inside the open project, else null. */
   const relInProject = useCallback((abs: string): string | null => {
@@ -196,8 +202,8 @@ export default function App({
 
   useEffect(() => onPdf(setPreviewDoc), []);
 
-  const resolveMain = useCallback(async (r: string, opened: string | null) => {
-    const res = await resolveMainFileTauri(r, opened);
+  const resolveMain = useCallback(async (r: string, rootId: string, opened: string | null) => {
+    const res = await resolveMainFileTauri(r, rootId, opened);
     // A resolve for a root that is no longer open never touches the open
     // project's main file.
     if (r !== rootRef.current) return null;
@@ -268,7 +274,8 @@ export default function App({
           message: 'switched ' + path,
           event: { action: 'file.switch', path, dirty: kept.dirty },
         });
-        if (rootRef.current && path.endsWith('.tex')) void resolveMain(rootRef.current, path);
+        if (rootRef.current && projectIdRef.current && path.endsWith('.tex'))
+          void resolveMain(rootRef.current, projectIdRef.current, path);
         return;
       }
       emit({
@@ -315,7 +322,8 @@ export default function App({
           message: 'loaded ' + path,
           event: { action: 'file.open', path, chars: content.length },
         });
-        if (rootRef.current && path.endsWith('.tex')) void resolveMain(rootRef.current, path);
+        if (rootRef.current && projectIdRef.current && path.endsWith('.tex'))
+          void resolveMain(rootRef.current, projectIdRef.current, path);
       } catch (e) {
         setLog('load failed: ' + String(e).slice(0, 120));
         emit({
@@ -335,9 +343,9 @@ export default function App({
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
 
   async function handleSetMain() {
-    if (!root || !fileName.includes('/')) return;
-    await setMainFile(root, fileName);
-    const m = await resolveMain(root, fileName);
+    if (!root || !projectId || !fileName.includes('/')) return;
+    await setMainFile(projectId, root, fileName);
+    const m = await resolveMain(root, projectId, fileName);
     setLog('main file: ' + (m ?? '(none)'));
     emit({
       scope: 'fs',
@@ -352,9 +360,9 @@ export default function App({
   // first. Choosing here writes the explicit association, so the tie never
   // reappears for this project.
   async function handlePickMain(path: string) {
-    if (!root) return;
-    await setMainFile(root, path);
-    await resolveMain(root, path);
+    if (!root || !projectId) return;
+    await setMainFile(projectId, root, path);
+    await resolveMain(root, projectId, path);
     setMainAnchor(null);
     emit({
       scope: 'fs',
@@ -367,10 +375,10 @@ export default function App({
 
   // Tree-driven main association (double-click / context menu on a .tex row).
   async function handleSetMainPath(path: string) {
-    if (!root) return;
+    if (!root || !projectId) return;
     await handleSelect(path);
-    await setMainFile(root, path);
-    const m = await resolveMain(root, path);
+    await setMainFile(projectId, root, path);
+    const m = await resolveMain(root, projectId, path);
     setLog('main file: ' + (m ?? '(none)'));
     emit({
       scope: 'fs',
@@ -643,7 +651,7 @@ export default function App({
       root,
       projectId,
       setRoot: setRootNow,
-      setProjectId,
+      setProjectId: setProjectIdNow,
       setTree,
       fileNameRef,
       ownWrites,
@@ -1618,7 +1626,7 @@ export default function App({
         onClose={() => setTemplateMode(null)}
         project={root && projectId ? { rootId: projectId, path: root } : null}
         mainRel={mainFile ? relInProject(mainFile) : null}
-        openRoot={(r) => openRoot(r, { warm: true, cold: true })}
+        openRoot={(r, main) => openRoot(r, { warm: true, cold: true, main })}
       />
       <StatusBar
         mainFile={relOf(mainFile)}

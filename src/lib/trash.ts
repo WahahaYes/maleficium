@@ -7,14 +7,21 @@ import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
 import { appTrashDir } from './paths';
 
+/**
+ * `rootId` is the project's grant id (`ProjectGrant.rootId`); `root` is the
+ * granted project path, used to name the entry by its project-relative path.
+ */
 export async function moveToTrash(
   history: FileHistory,
+  rootId: string,
   root: string,
   absPath: string,
 ): Promise<{ ok: boolean; error?: string }> {
   let dir: string;
+  let name: string;
   try {
-    dir = appTrashDir(await appDataDir(), root);
+    dir = appTrashDir(await appDataDir(), rootId);
+    name = trashName(root, absPath);
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -23,7 +30,7 @@ export async function moveToTrash(
   } catch (e) {
     return { ok: false, error: String(e) };
   }
-  const dest = dir + '/' + trashName(absPath);
+  const dest = dir + '/' + name;
   try {
     await fs().rename(absPath, dest);
   } catch {

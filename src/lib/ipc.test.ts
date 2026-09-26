@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
-import { hashRoot } from './paths';
+import { resolveMainFileTauri, setMainFile } from './mainFile.tauri';
 import { matchesCompile, matchesForwardSync, menuChordId, zoomChord, KEYMAP } from './keymap';
 
 import { setAppStore } from './app-store';
@@ -36,7 +36,7 @@ function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent
 
 describe('main-file store round-trip', () => {
   it('persists the explicit association per project root', () => {
-    const id = hashRoot('/r');
+    const id = '1a2b3c4d';
     expect(getMainFileFor(id)).toBeNull();
     setMainFileFor(id, 'main.tex');
     expect(getMainFileFor(id)).toBe('main.tex');
@@ -45,7 +45,19 @@ describe('main-file store round-trip', () => {
   });
   it('survives corrupt storage', () => {
     store['maleficium.mainFile.v1'] = '{nope';
-    expect(getMainFileFor(hashRoot('/r'))).toBeNull();
+    expect(getMainFileFor('1a2b3c4d')).toBeNull();
+  });
+  it('keys the association by the grant root id, even for non-ASCII roots', async () => {
+    // hash_root('/home/josé/thèse') in the backend (UTF-8 bytes). A UTF-16
+    // frontend hash gave 6ea6b60c, so the frontend never hashes: it passes
+    // the id the grant returned.
+    const root = '/home/josé/thèse';
+    const rootId = '53bf67b2';
+    await setMainFile(rootId, root, root + '/chapitres/thèse.tex');
+    expect(getMainFileFor(rootId)).toBe('chapitres/thèse.tex');
+    expect(getMainFileFor('6ea6b60c')).toBeNull();
+    const res = await resolveMainFileTauri(root, rootId, null);
+    expect(res).toMatchObject({ mainFile: root + '/chapitres/thèse.tex', source: 'config' });
   });
 });
 
