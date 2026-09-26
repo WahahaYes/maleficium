@@ -15,6 +15,21 @@ describe('trashName', () => {
     expect(name.slice('a.tex__sub__a.tex__'.length)).toMatch(/^\d+$/);
   });
 
+  it('escapes _ and % so __ is only a separator', () => {
+    expect(trashName('/p', '/p/my__notes.tex', 1)).toBe('my%5F%5Fnotes.tex__my%5F%5Fnotes.tex__1');
+    expect(trashName('/p', '/p/a__b/x.tex', 1)).toBe('x.tex__a%5F%5Fb__x.tex__1');
+    expect(trashName('/p', '/p/_lead/trail_.tex', 1)).toBe(
+      'trail%5F.tex__%5Flead__trail%5F.tex__1',
+    );
+    expect(trashName('/p', '/p/100%.tex', 1)).toBe('100%25.tex__100%25.tex__1');
+    expect(trashName('/p', '/p/%5F.tex', 1)).toBe('%255F.tex__%255F.tex__1');
+    // Same literal as src-tauri/src/core/fs.rs
+    // `trash_name_round_trips_underscores_and_percent`, which decodes it.
+    expect(trashName('/p', '/p/a__b/my__notes.tex', 1234)).toBe(
+      'my%5F%5Fnotes.tex__a%5F%5Fb__my%5F%5Fnotes.tex__1234',
+    );
+  });
+
   it('rejects a path outside the project root', () => {
     expect(() => trashName('/p', '/q/a.tex', 1)).toThrow(/not in project/);
     expect(() => trashName('/p', '/px/a.tex', 1)).toThrow(/not in project/);

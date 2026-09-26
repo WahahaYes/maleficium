@@ -117,6 +117,32 @@ fn trash_home(root: &Path) -> PathBuf {
         .join(hash_root(&root.to_string_lossy()))
 }
 
+/// Escape one path component so `__` in the entry name is only ever a
+/// separator: `%` -> `%25`, then `_` -> `%5F`. Mirrored by `escapeComponent`
+/// in `src/lib/file-history.ts`.
+fn escape_component(s: &str) -> String {
+    s.replace('%', "%25").replace('_', "%5F")
+}
+
+fn unescape_component(s: &str) -> Option<String> {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find(['%', '_']) {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let (ch, t) = if let Some(t) = tail.strip_prefix("%5F") {
+            ('_', t)
+        } else {
+            ('%', tail.strip_prefix("%25")?)
+        };
+        out.push(ch);
+        rest = t;
+    }
+    out.push_str(rest);
+    Some(out)
+}
+
+/// `<base>__<c1>__<c2>...__<ms>`, every component escaped.
 fn trash_name(original: &Path, rel: &str) -> String {
     let base = original
         .file_name()
@@ -126,21 +152,40 @@ fn trash_name(original: &Path, rel: &str) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let flat_rel = rel.replace('/', "__");
-    format!("{}__{}__{}", base, flat_rel, stamp)
+    let flat_rel: Vec<String> = rel.split('/').map(escape_component).collect();
+    format!(
+        "{}__{}__{}",
+        escape_component(&base),
+        flat_rel.join("__"),
+        stamp
+    )
 }
 
 fn split_trash_name(name: &str) -> Option<(String, String)> {
-    let (base, rest) = name.split_once("__")?;
-    let (flat_rel, _stamp) = rest.rsplit_once("__")?;
-    let rel = flat_rel.replace("__", "/");
-    if !crate::commands::guard::is_bare_filename(base) || rel.is_empty() || rel.contains('\0') {
+    let parts: Vec<&str> = name.split("__").collect();
+    if parts.len() < 3 {
         return None;
     }
-    if rel.contains("__") {
+    let stamp = parts[parts.len() - 1];
+    if stamp.is_empty() || !stamp.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    Some((base.to_string(), rel))
+    let base = unescape_component(parts[0])?;
+    let comps = parts[1..parts.len() - 1]
+        .iter()
+        .map(|c| unescape_component(c))
+        .collect::<Option<Vec<String>>>()?;
+    if comps.last() != Some(&base) {
+        return None;
+    }
+    let rel = comps.join("/");
+    if !crate::commands::guard::is_bare_filename(&base)
+        || comps.iter().any(|c| c.is_empty())
+        || rel.contains('\0')
+    {
+        return None;
+    }
+    Some((base, rel))
 }
 
 /// Move a project file to the app-local trash home. Returns the trash path.
@@ -332,6 +377,62 @@ mod tests {
         assert!(!stamp.is_empty() && stamp.bytes().all(|b| b.is_ascii_digit()));
         undo_trash(&id, &trashed.to_string_lossy()).unwrap();
         assert!(dir.join("sub/a.tex").exists());
+    }
+
+    #[test]
+    fn trash_name_round_trips_underscores_and_percent() {
+        for rel in [
+            "my__notes.tex",
+            "a__b/x.tex",
+            "_lead/trail_.tex",
+            "100%.tex",
+            "%5F.tex",
+            "sub/a.tex",
+        ] {
+            let base = rel.rsplit('/').next().unwrap();
+            let name = trash_name(Path::new(base), rel);
+            let (b, r) = split_trash_name(&name).unwrap();
+            assert_eq!((b.as_str(), r.as_str()), (base, rel), "{}", name);
+        }
+        // Plain names keep the pre-escaping format, so old entries still decode.
+        let plain = trash_name(Path::new("a.tex"), "sub/a.tex");
+        assert!(plain.starts_with("a.tex__sub__a.tex__"));
+        // Same literal as `trashName` in src/lib/file-history.test.ts.
+        assert_eq!(
+            split_trash_name("my%5F%5Fnotes.tex__a%5F%5Fb__my%5F%5Fnotes.tex__1234"),
+            Some((
+                "my__notes.tex".to_string(),
+                "a__b/my__notes.tex".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn split_trash_name_rejects_malformed() {
+        assert!(split_trash_name("a.tex__a.tex__12x").is_none());
+        assert!(split_trash_name("a.tex__a.tex__").is_none());
+        assert!(split_trash_name("a%41.tex__a%41.tex__1").is_none());
+        assert!(split_trash_name("a%.tex__a%.tex__1").is_none());
+        assert!(split_trash_name("a___b.tex__a___b.tex__1").is_none());
+        assert!(split_trash_name("a.tex__b.tex__1").is_none());
+        assert!(split_trash_name("a.tex__1").is_none());
+        assert!(split_trash_name("b.tex__a____b.tex__1").is_none());
+    }
+
+    #[test]
+    fn mcp_undo_restores_underscored_path() {
+        let (id, dir) = grant_tmp("underscore");
+        std::fs::create_dir_all(dir.join("a__b")).unwrap();
+        std::fs::write(dir.join("a__b/my__notes.tex"), "u").unwrap();
+        let abs = dir.join("a__b/my__notes.tex").to_string_lossy().to_string();
+        let trashed = trash_file(&id, "a__b/my__notes.tex", &abs).unwrap();
+        assert!(!dir.join("a__b/my__notes.tex").exists());
+        let back = undo_trash(&id, &trashed).unwrap();
+        assert_eq!(back, abs);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a__b/my__notes.tex")).unwrap(),
+            "u"
+        );
     }
 
     #[test]
