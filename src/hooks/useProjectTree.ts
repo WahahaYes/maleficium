@@ -19,7 +19,6 @@ import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
 import { welcomeProject } from '../lib/templates';
 import { setMainFileFor } from '../lib/mainFile.store';
-import { hashRoot } from '../lib/paths';
 
 export interface UseProjectTreeDeps {
   root: string | null;
@@ -33,7 +32,7 @@ export interface UseProjectTreeDeps {
   checkExternal: (paths: readonly string[]) => Promise<void>;
   setLog: (v: string) => void;
   trash: FileHistory;
-  resolveMain: (r: string, opened: string | null) => Promise<string | null>;
+  resolveMain: (r: string, rootId: string, opened: string | null) => Promise<string | null>;
   clearMainFile: () => void;
   handleSelect: (path: string) => Promise<void>;
   warmCompile: (mainAbsPath: string, project: SessionRoot, cold?: boolean) => Promise<void>;
@@ -177,7 +176,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // Recents for File > Open Recent as state. Restored entries re-validate
   // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
-  async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean }) {
+  async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean; main?: string }) {
     // The runtime scope grant comes first: every fs call below resolves
     // through it. The backend fails closed on invalid roots
     // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
@@ -202,6 +201,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // Drop the previous root's main file now: resolveMain below is async,
     // and a compile fired mid-switch must never see the old root's target.
     clearMainFile();
+    // A freshly created project names its main file; record it under the
+    // backend's root id before resolving.
+    if (opts?.main) setMainFileFor(grant.rootId, opts.main);
     setRecentProjects(touchRecentProject(canon));
     const t0 = performance.now();
     projectIndex()
@@ -234,7 +236,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       event: { action: 'project.open', root: canon },
     });
     trash.clear();
-    const m = await resolveMain(canon, null);
+    const m = await resolveMain(canon, grant.rootId, null);
     setLog(m ? `opened ${canon} (main: ${m})` : `opened ${canon} (no main file found)`);
     emit({
       scope: 'fs',
@@ -275,7 +277,6 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   async function openWelcome(cold = true) {
     try {
       const c = await welcomeProject();
-      setMainFileFor(hashRoot(c.root), c.main);
       emit({
         scope: 'app',
         kind: 'info',
@@ -283,7 +284,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         message: 'welcome project: ' + c.root,
         event: { action: 'template.welcome', root: c.root },
       });
-      await openRoot(c.root, { warm: true, cold });
+      await openRoot(c.root, { warm: true, cold, main: c.main });
     } catch (e) {
       emit({
         scope: 'app',

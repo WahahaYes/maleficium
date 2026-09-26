@@ -115,10 +115,22 @@ export function readinessLine(r: OfflineReadiness): { kind: EventKind; message: 
   };
 }
 
-/** The compile panel text: a drift warning leads the pdf it still produced. */
-export function compileLogText(r: CompileResult): string {
-  if (r.missing) return `${describeMissing(r.missing)}\n${r.ok ? (r.pdfUrl ?? '') : r.log}`;
-  return r.ok ? (r.pdfUrl ?? '') : r.log;
+/**
+ * The compile status line: the main file a run compiled, or its failure. A
+ * drift warning leads the line. The pdf path is app-internal, so it stays out
+ * of the line (see `compileLogTitle`); the event log still records it.
+ */
+export function compileLogText(r: CompileResult, mainRel?: string | null): string {
+  const body = r.ok ? (mainRel ? 'compiled ' + mainRel : 'compiled') : r.log;
+  return r.missing ? `${describeMissing(r.missing)}\n${body}` : body;
+}
+
+/** The latest successful run: its status line and the pdf it wrote. */
+export type CompiledOutput = { text: string; pdfUrl: string };
+
+/** The tooltip for a status line: the pdf path while it shows that run's line. */
+export function compileLogTitle(log: string, out: CompiledOutput | null): string | undefined {
+  return out && log === out.text ? out.pdfUrl : undefined;
 }
 
 export async function cancelCompile(): Promise<string> {

@@ -4,15 +4,6 @@
 // user's folder, with no in-project fallback; compile outputs are the
 // backend's. Path strings only: no file contents.
 
-/** djb2 hex (8 chars) for per-project dir sharding. */
-export function hashRoot(root: string): string {
-  let h = 5381;
-  for (let i = 0; i < root.length; i++) {
-    h = ((h << 5) + h + root.charCodeAt(i)) | 0;
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
 /** Join segments with `/`. */
 export function joinPath(...parts: string[]): string {
   return parts
@@ -31,11 +22,12 @@ export function dialogStart(path: string | undefined, home: string): string {
 }
 
 /**
- * App-local trash home for one project root. Per-delete subdirs are created
- * as needed. Nothing is ever written to or read from the project dir.
+ * App-local trash home for one project, sharded by the backend's root id
+ * (`ProjectGrant.rootId`; the frontend never hashes paths itself). Nothing
+ * is ever written to or read from the project dir.
  */
-export function appTrashDir(appDataDir: string, root: string): string {
-  return joinPath(appDataDir, 'maleficium-trash', hashRoot(root));
+export function appTrashDir(appDataDir: string, rootId: string): string {
+  return joinPath(appDataDir, 'maleficium-trash', rootId);
 }
 
 /**

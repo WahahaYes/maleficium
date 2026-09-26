@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bundleDrifted,
   compileLogText,
+  compileLogTitle,
   missingLine,
   offlineBadge,
   readinessLine,
@@ -75,10 +76,37 @@ describe('bundle drift is loud', () => {
   });
 
   it('leads the drifted run log with the mismatch warning', () => {
-    const text = compileLogText(DRIFTED_RUN);
+    const text = compileLogText(DRIFTED_RUN, 'main.tex');
     expect(text).toMatch(/may not match/i);
-    expect(text).toContain('/paper/out.pdf');
-    expect(compileLogText(CLEAN_RUN)).toBe('/paper/out.pdf');
+    expect(text).toContain('compiled main.tex');
+    expect(text).not.toContain('/paper/out.pdf');
+  });
+
+  it('names the compiled main file, never the internal pdf path', () => {
+    expect(compileLogText(CLEAN_RUN, 'main.tex')).toBe('compiled main.tex');
+    expect(compileLogText(CLEAN_RUN, 'chapters/thesis.tex')).toBe('compiled chapters/thesis.tex');
+    expect(compileLogText(CLEAN_RUN)).toBe('compiled');
+  });
+
+  it('keeps the failure message as the line', () => {
+    const failed: CompileResult = {
+      ok: false,
+      pdfUrl: null,
+      log: 'bundled tectonic failed: boom',
+      failure: 'engine-error',
+      missing: null,
+    };
+    expect(compileLogText(failed, 'main.tex')).toBe('bundled tectonic failed: boom');
+    const text = compileLogText({ ...failed, missing: { reason: 'bundle-changed' } }, 'main.tex');
+    expect(text).toMatch(/may not match/i);
+    expect(text).toContain('bundled tectonic failed: boom');
+  });
+
+  it('puts the pdf path in the tooltip only while its line shows', () => {
+    const out = { text: 'compiled main.tex', pdfUrl: '/paper/out.pdf' };
+    expect(compileLogTitle('compiled main.tex', out)).toBe('/paper/out.pdf');
+    expect(compileLogTitle('saved main.tex', out)).toBeUndefined();
+    expect(compileLogTitle('compiled main.tex', null)).toBeUndefined();
   });
 
   it('leaves a drifted run loud and a clean run untraced in the event log', () => {

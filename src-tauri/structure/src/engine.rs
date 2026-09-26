@@ -99,6 +99,16 @@ static FILE_NOT_FOUND: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"LaTeX Error: File `([^']+)' not found").unwrap());
 static INPUT_UNOPENED: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^error: failed to open input file "([^"]+)""#).unwrap());
+/// TeX's miss of a font's metrics: `Font \x=cmr17 not loadable: Metric
+/// (TFM) file not found`, or XeTeX's `... file or installed font not found`,
+/// with an optional `at 17.28pt`/`scaled 1200`. The name is a bare TFM name;
+/// a quoted XeTeX font name (`"Foo Sans"`, `"[foo.otf]"`) does not match.
+static TFM_MISSING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"Font \S+?=([^\s"\[\]=]+)(?: at [0-9.]+pt| scaled -?[0-9]+)? not loadable: Metric \(TFM\) file (?:or installed font )?not found"#,
+    )
+    .unwrap()
+});
 static FONT_MISSING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^error: .*Package fontspec Error: The font "([^"]+)" cannot be found"#).unwrap()
 });
@@ -224,6 +234,24 @@ fn first(lines: &[&str], re: &Regex) -> Option<String> {
         .find_map(|l| re.captures(l).map(|m| m[1].to_string()))
 }
 
+/// The TFM file a font miss names. TeX wraps its lines at 79 columns, so a
+/// line is also read joined to the next.
+fn missing_tfm(lines: &[&str]) -> Option<String> {
+    let joined = lines.windows(2).map(|w| format!("{}{}", w[0], w[1]));
+    lines
+        .iter()
+        .map(|l| l.to_string())
+        .chain(joined)
+        .find_map(|l| TFM_MISSING.captures(&l).map(|m| m[1].to_string()))
+        .map(|name| {
+            if name.ends_with(".tfm") {
+                name
+            } else {
+                format!("{name}.tfm")
+            }
+        })
+}
+
 fn support_file(name: &str) -> bool {
     !name.contains('/')
         && name
@@ -270,9 +298,13 @@ pub fn missing_dependency<S: AsRef<str>>(
         }
     }
     let failed_fetch = first(&lines, &FETCH_FAILED);
-    // TeX's own miss, or the engine's miss of a file it reads directly (a
-    // format input, when the cache was left partly fetched).
-    if let Some(file) = first(&lines, &FILE_NOT_FOUND).or_else(|| first(&lines, &INPUT_UNOPENED)) {
+    // TeX's own miss (a file or a font's metrics), or the engine's miss of a
+    // file it reads directly (a format input, when the cache was left partly
+    // fetched).
+    if let Some(file) = first(&lines, &FILE_NOT_FOUND)
+        .or_else(|| missing_tfm(&lines))
+        .or_else(|| first(&lines, &INPUT_UNOPENED))
+    {
         return if in_bundle(&file) {
             if has(CACHED_ONLY) {
                 found(Some(file), MissingReason::NotCached)
@@ -315,7 +347,13 @@ pub fn offline_reading(missing: MissingDependency) -> MissingDependency {
 mod tests {
     use super::*;
 
-    const BUNDLE: &[&str] = &["amsmath.sty", "booktabs.sty", "minted.sty", "fontspec.sty"];
+    const BUNDLE: &[&str] = &[
+        "amsmath.sty",
+        "booktabs.sty",
+        "minted.sty",
+        "fontspec.sty",
+        "cmr17.tfm",
+    ];
 
     fn in_bundle(f: &str) -> bool {
         BUNDLE.contains(&f)
@@ -372,6 +410,97 @@ error: main.tex:3: ! LaTeX Error: File `booktabs.sty' not found.
             verdict(&c, false),
             file("booktabs.sty", MissingReason::FetchFailed)
         );
+    }
+
+    const FONT_TRANSCRIPT: &str = "error: something bad happened inside XeTeX; its output follows:
+
+===============================================================================
+(main.tex (article.cls (size11.clo))
+! Font OT1/cmr/m/n/17.28=cmr17 at 17.28pt not loadable: Metric (TFM) file or ins
+talled font not found.
+No pages of output.
+===============================================================================
+error: the XeTeX engine had an unrecoverable error
+caused by: halted on potentially-recoverable error as specified";
+
+    #[test]
+    fn cached_only_miss_of_a_bundled_tfm_is_not_cached() {
+        for miss in [
+            "Font OT1/cmr/m/n/17.28=cmr17 at 17.28pt not loadable: Metric (TFM) file or installed font not found.",
+            "! Font \\x=cmr17 scaled 1200 not loadable: Metric (TFM) file not found.",
+            "! Font \\x=cmr17.tfm not loadable: Metric (TFM) file not found.",
+        ] {
+            let c = format!(
+                "note: using only cached resource files
+note: Running TeX ...
+error: main.tex:5: {miss}
+{FONT_TRANSCRIPT}"
+            );
+            assert_eq!(
+                verdict(&c, false),
+                file("cmr17.tfm", MissingReason::NotCached),
+                "{miss}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tfm_miss_wrapped_at_79_columns_is_read_whole() {
+        let whole = "error: main.tex:5: Font OT1/cmr/m/n/17.28=cmr17 at 17.28pt not loadable: Metric (TFM) file or installed font not found.";
+        for at in [40, 79] {
+            let (a, b) = whole.split_at(at);
+            let c = format!("note: using only cached resource files\n{a}\n{b}\n{FONT_TRANSCRIPT}");
+            assert_eq!(
+                verdict(&c, false),
+                file("cmr17.tfm", MissingReason::NotCached),
+                "split at {at}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_online_tfm_miss_that_could_not_fetch_is_fetch_failed() {
+        let c = format!(
+            "note: Running TeX ...
+warning: failure fetching \"cmr17.tfm\" from network (1/3)
+caused by: failed to download \"cmr17.tfm\"; please check your network connection.
+error: main.tex:5: Font OT1/cmr/m/n/17.28=cmr17 at 17.28pt not loadable: Metric (TFM) file or installed font not found.
+{FONT_TRANSCRIPT}"
+        );
+        assert_eq!(
+            verdict(&c, false),
+            file("cmr17.tfm", MissingReason::FetchFailed)
+        );
+    }
+
+    #[test]
+    fn a_font_the_bundle_lacks_is_not_fetchable() {
+        let c = format!(
+            "note: using only cached resource files
+error: main.tex:2: ! Font \\x=nofontxyz not loadable: Metric (TFM) file or installed font not found.
+{FONT_TRANSCRIPT}"
+        );
+        assert_eq!(
+            verdict(&c, false),
+            file("nofontxyz.tfm", MissingReason::NotInBundle)
+        );
+    }
+
+    #[test]
+    fn other_font_failures_are_document_errors() {
+        for miss in [
+            "! Font \\x=\"No Such Font\" not loadable: Metric (TFM) file or installed font not found.",
+            "! Font \\x=\"[nosuch.otf]\" not loadable: Metric (TFM) file or installed font not found.",
+            "! Font \\x=cmr17 not loadable: Bad metric (TFM) file.",
+            "! Font \\x=cmr17 not loaded: Not enough room left.",
+        ] {
+            let c = format!(
+                "note: using only cached resource files\nerror: main.tex:2: {miss}\n{TRANSCRIPT}"
+            );
+            assert_eq!(verdict(&c, false), None, "{miss}");
+        }
+        let transcript_only = format!("note: using only cached resource files\n{FONT_TRANSCRIPT}");
+        assert_eq!(verdict(&transcript_only, false), None);
     }
 
     #[test]
