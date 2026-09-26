@@ -282,39 +282,13 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       requestAnimationFrame(tickProbe);
     };
     requestAnimationFrame(tickProbe);
-    // Anti-clobber check: the persist step writes editor content to `target`.
-    // Two invariants make that safe: (1) the visible editor must actually
-    // own `target` (buffered, or the untitled flow); (2) `target` must be a
-    // contained project file or an explicit one-off .tex — never a bare
-    // untitled name resolved against a project dir. Violations abort before
-    // any write. Warm skips both check and persist (disk is fresh, warm
-    // never writes).
+    // Persist before compile: every dirty buffer goes to its own file, so
+    // \input parts compile from disk. A target with no buffer compiles
+    // from disk as-is — the visible editor may show a different file
+    // whose bytes must never land here. Only a relative visible file
+    // (untitled flow) is written to the target; it lives nowhere else.
+    // Warm skips persist entirely (disk is fresh, warm never writes).
     const skipPersist = opts?.skipPersist === true;
-    const ownsTarget =
-      target == null ||
-      buffers.has(target) ||
-      target === fileName ||
-      (!target.includes('/') && !fileName.includes('/'));
-    if (!skipPersist && target != null && target.includes('/') && !ownsTarget) {
-      finish('failure');
-      setCompileStart(null);
-      probing = false;
-      emit({
-        scope: 'compile',
-        kind: 'error',
-        actor,
-        message: `compile refused: editor does not own ${target} (open it first)`,
-        event: { action: 'compile.refused', reason: 'editor-does-not-own-target', target },
-      });
-      setLog(`compile refused: editor does not own ${target}`);
-      clearInterval(hb);
-      try {
-        unlisten();
-      } catch {
-        /* already detached */
-      }
-      return false;
-    }
     try {
       if (target && target.includes('/')) {
         if (!skipPersist) {
@@ -334,8 +308,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p);
             return n;
           });
-          // Also persist the visible editor if it was never buffered (untitled flow).
-          if (!buffers.has(target)) {
+          // A visible file with no buffer is the untitled flow: its text
+          // lives nowhere else, so it goes to the target. Any other
+          // visible file was persisted above to its own path.
+          if (!buffers.has(target) && !fileName.includes('/')) {
             await saveTex(target, tex);
             ownWrites.wrote(target, tex);
           }
