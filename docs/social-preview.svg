@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1280" height="640" viewBox="0 0 1280 640">
+  <!-- GitHub social preview. Render: inkscape docs/social-preview.svg -o docs/social-preview.png -->
+  <defs>
+    <radialGradient id="glow" cx="0.22" cy="0.3" r="0.7">
+      <stop offset="0" stop-color="#2a2340"/>
+      <stop offset="1" stop-color="#16161f"/>
+    </radialGradient>
+    <clipPath id="shot"><rect x="560" y="92" width="860" height="484" rx="14"/></clipPath>
+  </defs>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <image x="64" y="84" width="112" height="112" xlink:href="../src-tauri/icons/Square310x310Logo.png"/>
+  <text x="64" y="282" font-family="Latin Modern Roman" font-size="76" fill="#f1eefa">Maleficium</text>
+  <text x="66" y="330" font-family="Latin Modern Roman" font-style="italic" font-size="25" fill="#b7a6e6">an act of evil sorcery.</text>
+  <text x="66" y="362" font-family="Latin Modern Roman" font-style="italic" font-size="25" fill="#b7a6e6">Also known as debugging LaTeX.</text>
+  <g font-family="Noto Sans" font-size="23" fill="#d6d3e0">
+    <text x="66" y="440">A local, open-source LaTeX editor</text>
+    <text x="66" y="476">Bundled engine, nothing else to install</text>
+    <text x="66" y="512">No account, no telemetry</text>
+    <text x="66" y="548">Built to work alongside AI agents</text>
+  </g>
+  <rect x="556" y="88" width="868" height="492" rx="17" fill="#9b7fe0" opacity="0.35"/>
+  <image x="560" y="92" width="860" height="484" clip-path="url(#shot)" preserveAspectRatio="xMinYMin slice" xlink:href="screenshots/editor.png"/>
+</svg>
