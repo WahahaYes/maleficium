@@ -1,0 +1,23 @@
+\section{Curses and counter-charms}
+\label{sec:curses}
+
+Table~\ref{tab:curses} lists the curses most often reported by
+apprentices~\cite{lamport}, with the counter-charm that lifts each one.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    Curse & Symptom & Counter-charm \\
+    \midrule
+    Undefined control sequence & A typo in a command & Check the spelling \\
+    Missing \verb|$| inserted & Math outside math mode & Wrap it in \verb|$...$| \\
+    Runaway argument & A brace left open & Count your braces \\
+    Overfull \verb|\hbox| & A line that will not break & Rephrase, or \verb|\sloppy| \\
+    \bottomrule
+  \end{tabular}
+  \caption{Common curses, as seen in Section~\ref{sec:incantations}.}
+  \label{tab:curses}
+\end{table}
+
+Figure~\ref{fig:circle} remains the safest way to call the engine.

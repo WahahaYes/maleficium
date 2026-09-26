@@ -59,6 +59,10 @@ Other projects may inform a design, but never copy their code or license text. O
 
 Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs the CC0 header and a row in the table in [src-tauri/templates/README.md](../src-tauri/templates/README.md), which records where each template came from.
 
+## README screenshots
+
+The images in `docs/screenshots/` are generated, not hand-taken. After a visible UI change, run `sh scripts/generate-readme-screenshots.sh`: it builds HEAD in the harness worktree, opens `docs/screenshots/demo-project/` in the app under Xvfb, and rewrites the PNGs. Needs Xvfb, xdotool, and ImageMagick.
+
 ## Styling
 
 Style only through theme tokens: palette keys, spacing multipliers, and the shape scale. No hardcoded colors, hand-written shadows, or custom CSS (the one exception is the SyncTeX highlight in `src/App.css`). Depth comes from divider borders and the flat shadow scale, not elevation.

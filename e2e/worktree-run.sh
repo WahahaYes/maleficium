@@ -101,7 +101,7 @@ if [ -n "${WORKTREE_PATCH_FILE:-}" ]; then
   echo "worktree-run: applied snapshot carrier $WORKTREE_PATCH_FILE"
 else
 # shellcheck disable=SC2086
-UNTRACKED=$(git -C "$ROOT" status --porcelain -- $CARRY | grep '^??' | cut -c4- || true)
+UNTRACKED=$(git -C "$ROOT" status --porcelain --untracked-files=all -- $CARRY | grep '^??' | cut -c4- || true)
 if [ -n "$UNTRACKED" ]; then
   # New harness files under test ride along by copy (the worktree is
   # scratch); tracked modifications ride as a patch below.
