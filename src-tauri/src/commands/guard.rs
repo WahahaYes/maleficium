@@ -113,8 +113,7 @@ mod tests {
 
     /// Fresh canonical scratch dir per test (pid + name; cleaned first).
     fn scratch(name: &str) -> PathBuf {
-        let base =
-            std::env::temp_dir().join(format!("maleficium-guard-{}-{}", std::process::id(), name));
+        let base = crate::test_scratch::dir(&format!("guard-{}", name));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base.canonicalize().unwrap()
@@ -137,8 +136,7 @@ mod tests {
 
     #[test]
     fn fails_closed_on_missing_path() {
-        let missing =
-            std::env::temp_dir().join(format!("maleficium-guard-missing-{}", std::process::id()));
+        let missing = crate::test_scratch::dir(&format!("guard-missing"));
         let _ = fs::remove_dir_all(&missing);
         assert!(canonical_root(&missing.to_string_lossy()).is_err());
     }

@@ -263,8 +263,7 @@ mod tests {
     use super::*;
 
     fn grant_tmp(name: &str) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-fs-{}-{}", std::process::id(), name));
+        let dir = crate::test_scratch::dir(&format!("fs-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dir.canonicalize().unwrap();
@@ -275,7 +274,7 @@ mod tests {
 
     #[test]
     fn grant_project_mints_byte_hash_id() {
-        let dir = std::env::temp_dir().join(format!("maleficium-fs-{}-proj-ü", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("fs-proj-ü"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (canon, id) = grant_project(&dir.to_string_lossy()).unwrap();

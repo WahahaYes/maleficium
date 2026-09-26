@@ -209,8 +209,7 @@ mod tests {
     }
 
     fn project(name: &str) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-export-{}-{name}", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("export-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::create_dir_all(dir.join(".git")).unwrap();
@@ -227,8 +226,7 @@ mod tests {
     #[test]
     fn zip_packs_sources_only_and_refuses_a_destination_inside() {
         let (id, root) = project("zip");
-        let out =
-            std::env::temp_dir().join(format!("maleficium-export-{}.zip", std::process::id()));
+        let out = crate::test_scratch::dir(&format!("export.zip"));
         let e = export_zip(&id, &out.to_string_lossy()).unwrap();
         assert_eq!(
             e.files,
@@ -246,8 +244,7 @@ mod tests {
     #[test]
     fn pdf_export_needs_a_compile_and_copies_bytes() {
         let (id, _root) = project("pdf");
-        let out =
-            std::env::temp_dir().join(format!("maleficium-export-{}.pdf", std::process::id()));
+        let out = crate::test_scratch::dir(&format!("export.pdf"));
         assert!(export_pdf(&id, "main.tex", &out.to_string_lossy())
             .unwrap_err()
             .contains("compile first"));

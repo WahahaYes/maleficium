@@ -103,11 +103,7 @@ mod tests {
     use super::*;
 
     fn project(name: &str) -> (String, PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "maleficium-outputs-{}-{}",
-            std::process::id(),
-            name
-        ));
+        let dir = crate::test_scratch::dir(&format!("outputs-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();

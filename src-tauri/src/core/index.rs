@@ -290,8 +290,7 @@ mod tests {
     use std::time::Instant;
 
     fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-ix-{}-{}", std::process::id(), name));
+        let dir = crate::test_scratch::dir(&format!("ix-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for (rel, text) in files {
@@ -401,7 +400,7 @@ mod tests {
     /// present, a large real-world paper. Prints ms; loose caps.
     #[test]
     fn budget_cold_build() {
-        let dir = std::env::temp_dir().join(format!("maleficium-ix-{}-budget", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("ix-budget"));
         let _ = std::fs::remove_dir_all(&dir);
         for c in 0..30 {
             let ch = dir.join(format!("chapters/c{c:02}"));

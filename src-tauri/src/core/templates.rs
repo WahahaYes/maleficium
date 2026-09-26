@@ -283,7 +283,7 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("maleficium-tpl-{}-{name}", std::process::id()));
+        let d = crate::test_scratch::dir(&format!("tpl-{name}"));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d.canonicalize().unwrap()

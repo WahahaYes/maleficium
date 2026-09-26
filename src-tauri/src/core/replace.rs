@@ -151,8 +151,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-rp-{}-{}", std::process::id(), name));
+        let dir = crate::test_scratch::dir(&format!("rp-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for (rel, text) in files {

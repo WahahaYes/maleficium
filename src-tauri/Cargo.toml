@@ -37,6 +37,9 @@ maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 maleficium-index = { path = "index" }
 
+[dev-dependencies]
+libc = "0.2.189"
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

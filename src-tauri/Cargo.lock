@@ -1851,6 +1851,7 @@ name = "maleficium"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "maleficium-events",
  "maleficium-index",
  "maleficium-structure",

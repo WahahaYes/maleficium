@@ -150,8 +150,7 @@ mod tests {
     use super::*;
 
     fn grant_tmp(name: &str) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-sync-{}-{}", std::process::id(), name));
+        let dir = crate::test_scratch::dir(&format!("sync-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dir.canonicalize().unwrap();

@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn run_rejects_outside_root() {
         clear_jobs();
-        let dir = std::env::temp_dir().join(format!("maleficium-job-{}", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("job"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dir.canonicalize().unwrap();

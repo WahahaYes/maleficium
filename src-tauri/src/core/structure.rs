@@ -447,8 +447,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-st-{}-{}", std::process::id(), name));
+        let dir = crate::test_scratch::dir(&format!("st-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         for (rel, text) in files {
             let p = dir.join(rel);

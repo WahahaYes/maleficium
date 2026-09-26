@@ -643,7 +643,7 @@ mod tests {
     /// command refuses, the MCP tool refuses with the same error.
     #[test]
     fn synctex_adapters_reject_identically() {
-        let dir = std::env::temp_dir().join(format!("maleficium-sym-{}", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("sym"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();

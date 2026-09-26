@@ -398,9 +398,8 @@ mod tests {
     }
 
     fn cache_with(digest: Option<&str>) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "maleficium-engine-{}-{}",
-            std::process::id(),
+        let dir = crate::test_scratch::dir(&format!(
+            "engine-{}",
             digest.unwrap_or("none").get(..8).unwrap_or("none")
         ));
         let _ = std::fs::remove_dir_all(&dir);
@@ -529,8 +528,7 @@ mod tests {
     }
 
     fn scratch_cache(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("maleficium-attempt-{}-{name}", std::process::id()));
+        let dir = crate::test_scratch::dir(&format!("attempt-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

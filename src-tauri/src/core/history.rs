@@ -471,11 +471,7 @@ mod tests {
     use super::*;
 
     fn tmp_store(name: &str) -> (Store, PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "maleficium-history-{}-{}",
-            std::process::id(),
-            name
-        ));
+        let dir = crate::test_scratch::dir(&format!("history-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         (Store::at(dir.join("history")), dir)
     }
