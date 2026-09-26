@@ -648,7 +648,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
         std::os::unix::fs::symlink("/etc/hostname", dir.join("link.tex")).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         core::grant_root("sym", &canon.to_string_lossy()).unwrap();
         // A compiled output, so tex_rel validation is reached.
         let out = core::main_outputs(&canon.join("main.tex")).unwrap();
