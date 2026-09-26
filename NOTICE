@@ -28,3 +28,7 @@ into the installable next to the app binary:
   commit 04cf8e3e8665ff203248d7af78ee1129afbc1b64, under its permissive
   MIT-style license (Copyright Jerome Laurens 2008-2024, plus a
   non-advertising clause).
+
+The built-in project templates under src-tauri/templates/ are original to
+Maleficium and dedicated to the public domain under CC0 1.0
+(src-tauri/templates/LICENSE); see src-tauri/templates/README.md.
