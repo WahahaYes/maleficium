@@ -86,8 +86,11 @@ if [ -f "$dest" ] && [ "$(sha "$dest")" = "$SYNCTEX_SHA" ]; then
     say "synctex $SYNCTEX_TRIPLE present"
     exit 0
 fi
+# SHIM: extra headers MinGW lacks (scripts/synctex-shim/win).
+SHIM="-I$ROOT/scripts/synctex-shim"
 case "$SYNCTEX_TRIPLE" in
     (*apple-darwin) CC=cc; LINK="" ;;
+    (*windows*) CC=gcc; LINK="-static"; SHIM="$SHIM -I$ROOT/scripts/synctex-shim/win" ;;
     (*) CC=gcc; LINK="-static" ;;
 esac
 need git; need "$CC"
@@ -96,9 +99,10 @@ src="$WORK/synctex-src"
 git init -q "$src"
 git -C "$src" fetch -q --depth 1 "$SYNCTEX_REPO" "$SYNCTEX_REV" || die "synctex source fetch failed"
 git -C "$src" checkout -q FETCH_HEAD
-# $LINK is unquoted on purpose: empty on macOS, where -static is unsupported.
+# $LINK and $SHIM are unquoted on purpose: $LINK is empty on macOS, where
+# -static is unsupported, and $SHIM holds one or two -I flags.
 # shellcheck disable=SC2086
-(cd "$src" && "$CC" -O2 $LINK -s -I. -I"$ROOT/scripts/synctex-shim" -o "$WORK/synctex$EXE" \
+(cd "$src" && "$CC" -O2 $LINK -s -I. $SHIM -o "$WORK/synctex$EXE" \
     synctex_main.c synctex_parser.c synctex_parser_utils.c -lz -lm) || die "synctex build failed (zlib installed?)"
 
 # Smoke: compile a two-page document with the host Tectonic, then query both ways.
@@ -111,7 +115,9 @@ printf '\\documentclass{article}\n\\begin{document}\nfirst page\n\\newpage\nseco
 # Queried as the app does (core/synctex.rs): from inside the output dir,
 # absolute tex path, relative pdf. pwd -W gives MSYS2 the native C:/ form,
 # which a native Windows binary needs. tr: Windows output ends in CRLF.
-native_doc=$(cd "$doc" && { pwd -W 2>/dev/null || pwd; })
+# -P: macOS's temp dir sits behind the /var -> /private/var symlink, and the
+# engine records the resolved path.
+native_doc=$(cd "$doc" && { pwd -W 2>/dev/null || pwd -P; })
 view=$(cd "$doc" && "$WORK/synctex$EXE" view -i "5:1:$native_doc/smoke.tex" -o "smoke.pdf" | tr -d '\r')
 echo "$view" | grep -q '^Page:2$' || die "synctex view smoke failed: $view"
 edit=$(cd "$doc" && "$WORK/synctex$EXE" edit -o "1:100:100:smoke.pdf" | tr -d '\r')
