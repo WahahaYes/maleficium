@@ -4,10 +4,9 @@
 //! (label, bib entry and macro definitions).
 //!
 //! The one index every project feature reads: search, replace, the file
-//! finder, go-to-definition, the structure tools, completion and
-//! diagnostics. Pure by contract: callers feed it paths and text, it never
-//! touches the fs. Paths are root-relative with `/` separators. The shape is
-//! documented in `notes/search-index/INDEX-SHAPE.md`.
+//! finder, go-to-definition, and the structure tools. Pure by contract:
+//! callers feed it paths and text, it never touches the fs. Paths are
+//! root-relative with `/` separators.
 
 pub mod definition;
 pub mod graph;

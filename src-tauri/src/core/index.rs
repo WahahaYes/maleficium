@@ -397,8 +397,8 @@ mod tests {
         .unwrap();
     }
 
-    /// Budget pin: cold build of a synthetic 3000-file project and of the
-    /// TVCG reference paper when present. Prints ms; loose caps.
+    /// Budget pin: cold build of a synthetic 3000-file project and, when
+    /// present, a large real-world paper. Prints ms; loose caps.
     #[test]
     fn budget_cold_build() {
         let dir = std::env::temp_dir().join(format!("maleficium-ix-{}-budget", std::process::id()));

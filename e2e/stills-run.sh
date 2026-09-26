@@ -9,8 +9,8 @@
 # every state because no other harness launches the real app (the
 # driver only drives the headless sidecar, which never starts the
 # frontend log). State 4 compiles cold against an empty engine cache.
-# 3000pp is deferred (no cheap path: needs a generated
-# 3000-page build; see SCOPE).
+# A 3000-page capture is not covered here; the driver's heavy-document
+# probes measure that case.
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)

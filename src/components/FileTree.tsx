@@ -1,8 +1,8 @@
 // FileTree.tsx — project tree: 1-level root, expand-on-demand, search, CRUD.
 //
-// Root renders 1 level only; dirs expand on demand; visible-rows paging
-// ("show more", 200/page); hidden filter excludes .git/out/aux/log.
-// Search filters loaded rows (substring).
+// Folders load on expand; long listings page in 200 rows at a time ("show
+// more"). Build artifacts, .git and the trash are hidden. Search filters the
+// loaded rows by substring.
 
 import { useMemo, useState } from 'react';
 import {

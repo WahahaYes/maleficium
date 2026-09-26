@@ -19,7 +19,7 @@ export type PreviewKind = 'text' | 'image' | 'video' | 'pdf' | 'binary';
 /** Extensions that open as editable text (everything else previews). */
 const TEXT_EXT = new Set(TEXT_EXTENSIONS);
 
-/** Classify a path for the editor-vs-preview decision (extension only, cheap). */
+/** Lowercased extension including the dot, or '' when there is none. */
 export function extOf(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');

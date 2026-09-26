@@ -1,8 +1,8 @@
 // StatusBar.tsx — fixed 32px bottom bar (phase + timer + pre-compile warnings
 // + offline badge + main + restorables).
 //
-// Constant height; scalar props only (no payload). Compile state lives here.
-// The revision count is the entry point to the History surface.
+// Constant height; scalar props only. The revision count opens the History
+// dialog.
 
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';

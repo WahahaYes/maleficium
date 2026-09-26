@@ -18,8 +18,8 @@ use super::{JobOutcome, JobStatus, MainOutputs};
 pub const BUNDLE_URL: &str = "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar";
 
 /// The bundle URL compiles use: `BUNDLE_URL`, except that a debug build
-/// honours `MALEFICIUM_DEV_BUNDLE_URL`, a local mirror of the same bytes (the
-/// stills harness's cold compile, e2e/bundle-mirror.py). The digest pin still
+/// honours `MALEFICIUM_DEV_BUNDLE_URL`, a local mirror of the same bytes for
+/// offline test runs. The digest pin still
 /// holds: a mirror serving anything else reads as a changed bundle. Release
 /// builds never read the variable.
 pub fn bundle_url() -> String {

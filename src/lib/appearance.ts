@@ -1,7 +1,7 @@
 // appearance.ts — appearance prefs shape and defaults.
 //
-// Single object describing the look; the theme factory consumes it and the
-// settings dialog will edit it. Defaults reproduce the current visuals.
+// One object describes the look: the settings dialog edits it and the theme
+// factory consumes it.
 
 import { typeScale, type Density, type PageDim, type ThemeMode } from './theme';
 import { DEVICE_PREF_KEYS, store } from './app-store';

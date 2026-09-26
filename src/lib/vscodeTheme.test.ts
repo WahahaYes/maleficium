@@ -1,4 +1,4 @@
-// vscodeTheme.test.ts — tier-1 resolution over an inline fixture.
+// vscodeTheme.test.ts — palette resolution over an inline fixture.
 
 import { describe, expect, it } from 'vitest';
 import { parseVscodeTheme, resolveTier1 } from './vscodeTheme';

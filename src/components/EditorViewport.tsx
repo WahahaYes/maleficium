@@ -1,7 +1,7 @@
 // EditorViewport.tsx — CodeMirror 6 viewport editor.
 //
-// Viewport-render O(visible) only — never measures full content. Stable
-// prop identity via memo + useCallback at call site.
+// Renders only the visible lines, so cost does not grow with document
+// length. Memoized: callers pass stable props (useCallback).
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';

@@ -1,8 +1,8 @@
 // LogStream.tsx — the single unified log event stream.
 //
 // Every surface emits here; `compile.problem` entries inside a session root
-// render as click-to-jump rows. Bus cap 500 + 4Hz flush + render
-// slice 100.
+// render as click-to-jump rows. The bus keeps the newest 500 events; the
+// view refreshes four times a second and renders the newest 100.
 
 import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';

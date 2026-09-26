@@ -4,12 +4,12 @@
 // only for a small window around the visible page. These helpers own the
 // window shape, the visible-page pick, and scroll compensation. All pure.
 
-/** Shells rendered above the anchor (neighbors kept as bitmaps). */
-// Idle prefetch ring (render-idle, outside the window + eviction set).
+/** Pages rendered at idle beyond each window edge, exempt from eviction. */
 export const PREFETCH_AHEAD = 1;
 export const PREFETCH_BEHIND = 1;
+/** Pages above the visible one that keep bitmaps. */
 export const WINDOW_ABOVE = 1;
-/** Shells rendered below the anchor (neighbors kept as bitmaps). */
+/** Pages below the visible one that keep bitmaps. */
 export const WINDOW_BELOW = 2;
 
 /** Clamp a page number into [1, numPages] (non-finite → 1). */

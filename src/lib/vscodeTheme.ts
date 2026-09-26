@@ -1,4 +1,4 @@
-// vscodeTheme.ts — tier-1 palette resolution from VSCode theme sources.
+// vscodeTheme.ts — app palette hues read from VSCode theme sources.
 //
 // Accepts the JSONC dialects shipped upstream (comments, trailing
 // commas). Missing hues fall back to built-ins; a missing type field

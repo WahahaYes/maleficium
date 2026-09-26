@@ -1,7 +1,7 @@
 // editorTheme.ts — CodeMirror styling synced to prefs + MUI tokens.
 //
-// Font, size, spacing, and flash colors follow the app theme. Syntax
-// token colors stay default until the tier-1 reader lands.
+// Font, size, spacing, and flash colors follow the app theme; syntax token
+// colors are CodeMirror's defaults.
 
 import { EditorView } from '@codemirror/view';
 import { alpha, type Theme } from '@mui/material/styles';

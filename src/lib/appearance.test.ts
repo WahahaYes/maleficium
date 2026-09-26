@@ -1,4 +1,4 @@
-// appearance.test.ts — prefs defaults reproduce current tokens.
+// appearance.test.ts — default prefs produce the default theme tokens.
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DEFAULT_PREFS, loadAppearance, saveAppearance } from './appearance';

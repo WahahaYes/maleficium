@@ -1,21 +1,10 @@
 // Preview continuous-scroll body — all shells mounted, windowed bitmaps.
 //
-// Scroll contract: every document page owns a lightweight shell div whose
-// height is reserved from probed aspect ratios, but only a small bitmap
-// WINDOW around the visible page holds pdf.js pixels (bounded memory —
-// shells that leave the window have their canvas backing cleared). The
-// visible page is picked by IntersectionObserver (largest ratio inside the
-// viewport middle band), free in BOTH directions, so page 1 stays reachable
-// by scroll AND by pager. The pager only drives jumps: a prop change that
-// differs from the visible page scrolls AFTER the target bitmap lands;
-// neighbors then render idle. Programmatic scrolls carry a flag so a user
-// grab mid-jump cancels it. devicePixelRatio capped at 2.
-// Shell count never scales with the document (buffers + observers do): one
-// shell div per page is O(pages) DOM by design, and O(visible) work per
-// event holds because the observer callback only records ratios while the
-// rAF-throttled pick + idle-scheduled neighbors defer the rest.
-// At very large page counts the DOM itself is the cost (not the bitmaps —
-// those stay O(window)).
+// Every page owns a lightweight shell div sized from its probed aspect, so
+// the scroll height is right from the start; only a small window of pages
+// around the visible one holds pdf.js pixels. Pager and SyncTeX jumps scroll
+// once the target page has rendered. Per-event work stays O(visible); at very
+// large page counts the one-div-per-page DOM is the remaining cost.
 //
 // This body owns the state the three concerns share — document identity,
 // the bitmap identity maps, the visible page, the jump lock — and threads it

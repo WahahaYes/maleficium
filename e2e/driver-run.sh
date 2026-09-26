@@ -77,7 +77,7 @@ if [ ! -f "$PAGES_ROOT/doc.tex" ] || [ ! -f "$TREE_ROOT/main.tex" ]; then
   node "$GEN/make-fixture.js" flat 1000 "$TREE_ROOT" >/dev/null
 fi
 
-# D.5 budget probe: replicates Preview.tsx's load + render timings headlessly
+# Render budget probe: replicates the preview's load + render timings headlessly
 # (same pdf.js build, same viewport formula) and reports one JSON line.
 PDF_PROBE="$SCRATCH/pdf-probe.mjs"
 export PDF_PROBE
@@ -97,7 +97,7 @@ try {
   process.stdout.write(
     JSON.stringify({
       skipped:
-        'D.5 render budgets need pdfjs-dist with its @napi-rs/canvas optional dependency (' +
+        'Render budgets need pdfjs-dist with its @napi-rs/canvas optional dependency (' +
         String((e && e.message) || e).slice(0, 160) +
         ')',
     }) + '\n',
@@ -462,7 +462,7 @@ else:
     for f in ("pkg.tex", "nib.tex"):
         _os.remove(ROOT + "/" + f)
 
-# ---- heavy-document probes: 1000-file open, cancel mid-compile, D.5 budgets ----
+# ---- heavy-document probes: 1000-file open, cancel mid-compile, render budgets ----
 stream = []
 def record(line):
     stream.append(line)
@@ -547,10 +547,10 @@ if probe.returncode == 0 and probe.stdout.strip():
     else:
         d5 = out
 if d5_skipped:
-    print("skip: D.5 probe (" + d5_skipped + ")")
-    record("D.5 probe SKIPPED: " + d5_skipped)
+    print("skip: render budget probe (" + d5_skipped + ")")
+    record("render budget probe SKIPPED: " + d5_skipped)
 else:
-    check("D.5 probe runs", bool(d5), (probe.stderr or "no output")[-300:])
+    check("render budget probe runs", bool(d5), (probe.stderr or "no output")[-300:])
 if d5:
     pages = d5["pages"]
     check("3000pp fixture really is 3000 pages", pages >= 3000, str(pages))
@@ -565,7 +565,7 @@ if d5:
     record(f"peak rss {d5['rss_mb']}MB over load + render (baseline 294MB)")
 
 print("")
-print("D.5 BUDGETS + PROBES (observed vs recorded baseline):")
+print("RENDER BUDGETS + PROBES (observed vs recorded baseline):")
 for line in stream:
     print("  stream: " + line)
 

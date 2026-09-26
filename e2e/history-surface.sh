@@ -10,8 +10,7 @@
 # without a webview.
 #
 # What it does not cover (needs the live app): that clicking the counter and
-# the menu row actually reach these paths — see the human checklist in
-# notes/narrow_poc/10-history/STATUS.md.
+# the menu row actually reach these paths.
 
 set -euo pipefail
 
@@ -58,7 +57,7 @@ grep -q "History unavailable" "$VIEW" || fail "no quiet degrade string"
 if grep -qiE "throw |console\.error" "$DIALOG"; then fail "surface raises errors instead of degrading"; fi
 pass "surface carries user words only and degrades quietly"
 
-# --- F-16: the git plumbing is gone, not parked ------------------------------
+# --- no git integration remains ----------------------------------------------
 [ -e "$APPSRC/lib/git.ts" ] && fail "src/lib/git.ts survived the cut"
 [ -e "$DEVROOT/src-tauri/src/commands/git.rs" ] && fail "commands/git.rs survived the cut"
 grep -q "pub mod git" "$DEVROOT/src-tauri/src/commands/mod.rs" && fail "git module still declared"
@@ -66,7 +65,7 @@ grep -q "commands::git" "$DEVROOT/src-tauri/src/lib.rs" && fail "git commands st
 HITS="$(grep -rn "git_status\|git_show_head\|parseGitPorcelain\|emptyGitState\|GitBadge\|GitState" \
     "$APPSRC" "$DEVROOT/src-tauri/src" 2>/dev/null || true)"
 [[ -z "$HITS" ]] || fail "git plumbing still referenced: $HITS"
-pass "F-16 cut complete: no git module, registration, or reference remains"
+pass "no git module, registration, or reference remains"
 
 # --- restore round-trips exact bytes ------------------------------------------
 # Replicate the store layout: blobs/<first two hex>/<sha256>, restore over the
@@ -111,4 +110,3 @@ echo "HISTORY SURFACE PROOFS COMPLETE: static audit green."
 echo "  surface: $DIALOG"
 echo "  view:    $VIEW"
 echo "  blob:    ${SHA:0:12}…"
-echo "  Eyes checklist: notes/narrow_poc/10-history/STATUS.md."

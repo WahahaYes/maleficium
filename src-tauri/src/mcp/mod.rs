@@ -67,7 +67,7 @@ struct CompileRunParams {
     root_id: String,
     rel: String,
     /// Fetch everything online first, then prove it compiles from the cache
-    /// alone (Make available offline).
+    /// alone (the app's Make Available Offline).
     networked: Option<bool>,
 }
 

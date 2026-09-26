@@ -1,8 +1,8 @@
 //! The app event catalog: the one definition of every bus payload.
 //!
 //! The frontend's TypeScript types are generated from these (see
-//! `typescript()`), so the desktop bus, the JSONL event log, MCP tools and
-//! any future bridge or MCP App View read one schema. Pure by contract: no
+//! `typescript()`), so the desktop bus, the JSONL event log and the MCP
+//! tools read one schema. Pure by contract: no
 //! fs, no process, no Tauri.
 
 use maleficium_structure::{

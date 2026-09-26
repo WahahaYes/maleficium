@@ -1,10 +1,8 @@
 // paths.ts — app-local homes for state that must never litter the project dir.
 //
-// Trash, the event log, and the main-file association cache root live outside the
-// user's folder; compile outputs are the backend's. App-local paths are the only paths: no in-project
-// fallbacks.
-//
-// Path strings + one djb2 hex only; no file contents, no payload.
+// Trash, the event log, and the main-file association live outside the
+// user's folder, with no in-project fallback; compile outputs are the
+// backend's. Path strings only: no file contents.
 
 /** djb2 hex (8 chars) for per-project dir sharding. */
 export function hashRoot(root: string): string {

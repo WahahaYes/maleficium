@@ -1,8 +1,7 @@
-// CompileButton.tsx — minimal icon-first compile affordance.
+// CompileButton.tsx — the compile/cancel icon button.
 //
-// An icon (Play while idle/success, Stop while compiling) with a hover
-// tooltip naming the actual compile target. Cancel rides the same button
-// while compiling: visible exactly while compiling.
+// Play starts a compile; while one runs the same button shows Stop and
+// cancels it. The tooltip names the file that will be compiled.
 
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';

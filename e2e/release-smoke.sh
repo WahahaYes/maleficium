@@ -6,7 +6,7 @@
 # ubuntu:24.04 container, asserts the payload (binaries, desktop entry,
 # icons, control fields), and launches both bundles under Xvfb. A launch
 # that survives the timeout wins (timeout kill = still running).
-# What it does NOT cover: how anything looks (human smoke list rel.7).
+# What it does NOT cover: how anything looks (that needs a human pass).
 #
 # Usage: sh e2e/release-smoke.sh <artifact-dir> [timeout-secs]
 # POSIX sh. Needs: docker.

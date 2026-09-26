@@ -99,7 +99,7 @@ export interface MenuContext {
   preset: ViewPreset;
   logCollapsed: boolean;
   outlineVisible: boolean;
-  /** Outline section lines for the choose-1 / choose-N demo submenus. */
+  /** Outline section lines for the Go to Section and Pick Sections submenus. */
   outlineLines: { line: number; title: string }[];
   /** Currently multi-picked outline lines. */
   outlinePicks: number[];

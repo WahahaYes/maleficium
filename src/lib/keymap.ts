@@ -72,10 +72,11 @@ export type MenuChordId =
   | 'edit.find'
   | 'search.find-in-project';
 
-/** Menu-owned chords. Returns the registry id, or null. CodeMirror text inputs
- *  keep Ctrl+A (native select-all) and Ctrl+F (its own find panel) — the menu
- *  command and the native behavior coincide, so we only claim them when focus
- *  is OUTSIDE the editor. */
+/**
+ * Menu-owned chords: the registry id, or null. Inside the editor, Ctrl+A and
+ * Ctrl+F stay with CodeMirror (same behavior as the menu command), so they
+ * are claimed only when focus is outside it.
+ */
 export function menuChordId(e: KeyboardEvent): MenuChordId | null {
   const mod = e.ctrlKey || e.metaKey;
   const t = e.target as HTMLElement | null;

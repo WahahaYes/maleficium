@@ -135,13 +135,9 @@ export function useBitmapWindow({
   // when its own document was superseded or a newer render of the same page
   // started.
   //
-  // Vector, not raster: the canvas carries the exact vector rasterization
-  // (one backing px per device px — no upscale blur), and the selectable text
-  // comes from a pdf.js TextLayer (real DOM spans over the canvas). The
-  // canvas is paint; the text div is the document: zooming re-renders the
-  // vector at the new scale (never stretches pixels), and copy/paste +
-  // find-in-page work because the glyphs are DOM. Canvas + text layer is
-  // the single path.
+  // The canvas is rasterized at one backing pixel per device pixel, and zoom
+  // re-renders rather than stretching. Selectable text comes from a pdf.js
+  // TextLayer of DOM spans over the canvas, so copy and find work.
   const renderBitmap = useCallback(
     async (
       pdf: DocLike,

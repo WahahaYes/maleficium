@@ -1,6 +1,6 @@
-//! Shared core: guard validation, outdir derivation, sidecar
-//! resolution, fs ops, compile orchestration, synctex arg-building,
-//! document structure over the file graph.
+//! Shared core behind the desktop commands and the MCP server: session
+//! roots and fs ops, compile and engine outputs, SyncTeX, the project index,
+//! search and replace, structure, history, templates, and export.
 
 pub mod compile;
 pub mod engine;
