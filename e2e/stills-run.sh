@@ -964,15 +964,10 @@ palette() {
   sleep 1
   $XDO key Return >/dev/null 2>&1 || true
 }
-quick_open() {
-  # $1 = file name typed into Quick Open (Ctrl+P).
-  key ctrl+p; sleep 2
+tree_click() {
+  # $1 = row y of a file in the tree (rows sort by name: ch.tex, main.tex).
   # shellcheck disable=SC2086
-  $XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
-  sleep 1
-  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
-  sleep 1
-  $XDO key Return >/dev/null 2>&1 || true
+  $XDO mousemove --window "$WIN" 70 "$1" click 1 >/dev/null 2>&1 || true
   sleep 2
 }
 start_app "$EXT"; wait_window 300
@@ -989,9 +984,9 @@ main body, replaced by rename
 '
 wait_event file.reload "$m_active" 20
 m_open=$(now_ms)
-quick_open ch.tex
+tree_click 104
 wait_event file.open "$m_open" 20
-quick_open main.tex
+tree_click 130
 m_bg=$(now_ms)
 replace_over "$EXT/ch.tex" 'chapter body, replaced by rename
 '
