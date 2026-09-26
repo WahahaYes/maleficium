@@ -47,7 +47,7 @@ import {
   TreeEntry,
 } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
-import { cancelCompile } from './lib/compile';
+import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
@@ -615,6 +615,7 @@ export default function App({
     compilePhase,
     compileTimer,
     offline,
+    compiled,
     progress,
     autoCompile,
     setAutoCompile,
@@ -1305,7 +1306,11 @@ export default function App({
           />
         </Box>
       )}
-      <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+      <Typography
+        variant="caption"
+        title={compileLogTitle(log, compiled)}
+        sx={{ display: 'block', mt: 1 }}
+      >
         {log}
       </Typography>
     </Box>
@@ -1640,6 +1645,7 @@ export default function App({
         phase={compilePhase}
         timer={compileTimer}
         message={compilePhase === 'compiling' ? (progress ?? log) : log}
+        messageTitle={compilePhase === 'compiling' ? undefined : compileLogTitle(log, compiled)}
         offline={compilePhase === 'compiling' ? null : offline}
         warnings={precheck?.findings.length ?? 0}
         onOpenWarnings={openPrecheck}
