@@ -5,7 +5,7 @@
 # compiles it, and captures:
 #   editor.png         file tree, editor, and the PDF at 100%
 #   search.png         project search results (dark theme, editor-wide)
-#   replace-light.png  a replace preview (GitHub Light theme, editor-wide)
+#   replace-light.png  a replace preview (Solarized Light theme, editor-wide)
 # The PNGs replace the old ones only once all three are captured.
 #
 # Usage: sh scripts/generate-readme-screenshots.sh
@@ -188,12 +188,12 @@ typ "curse"
 sleep 3
 shot search
 
-# replace-light.png: GitHub Light, then a replace preview.
+# replace-light.png: Solarized Light, then a replace preview.
 click 143 15
 click 174 361
 sleep 1
 click 800 257
-typ "GitHub Light"
+typ "Solarized Light"
 sleep 1
 key Down
 key Return
