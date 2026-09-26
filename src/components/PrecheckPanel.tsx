@@ -2,9 +2,10 @@
 //
 // Sits above the status bar; the compile keeps running underneath. Each row
 // jumps to where the document asks for the dependency. The checkbox turns
-// the automatic popup off (the Settings toggle turns it back on).
+// the automatic popup off (the Settings toggle turns it back on). Escape
+// closes it unless something else took the key or a dialog is open.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -37,6 +38,17 @@ export default function PrecheckPanel({
   onClose: (dontShowAgain: boolean) => void;
 }) {
   const [dontShow, setDontShow] = useState(false);
+  const closeRef = useRef(() => onClose(dontShow));
+  closeRef.current = () => onClose(dontShow);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('.MuiDialog-root')) return;
+      closeRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const n = precheck.findings.length;
   return (
     <Paper
@@ -45,9 +57,6 @@ export default function PrecheckPanel({
       aria-labelledby="precheck-title"
       data-testid="precheck-panel"
       elevation={8}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose(dontShow);
-      }}
       sx={{
         position: 'fixed',
         right: 16,

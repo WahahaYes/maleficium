@@ -61,7 +61,7 @@ Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard 
 STILLS_OUT=/tmp/stills ./e2e/stills-run.sh
 ```
 
-There are no pixel assertions; the stills are for human review. It is the one harness that starts the frontend, so after each state it also asserts the app's event log: one `log.open` per launch, valid JSONL, and the expected events for that state (saves, compiles, PDF loads, page renders, zoom, and the pre-compile warnings panel).
+There are no pixel assertions; the stills are for human review. It is the one harness that starts the frontend, so after each state it also asserts the app's event log: one `log.open` per launch, valid JSONL, and the expected events for that state (saves, compiles, PDF loads, page renders, zoom, the pre-compile warnings panel, and reloads or conflicts when an open file changes on disk).
 
 The cold-compile state reads the TeX bundle through `bundle-mirror.py`, a local cache that only needs the network on its first fill.
 

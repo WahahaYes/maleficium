@@ -137,9 +137,9 @@ until curl -s -o /dev/null "http://localhost:$PORT/"; do
 done
 log "vite serving on :$PORT"
 
-# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7 8").
+# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7 8 9").
 want() {
-  case " ${STILLS_STATES:-1 2 3 4 5 6 7 8} " in *" $1 "*) return 0 ;; esac
+  case " ${STILLS_STATES:-1 2 3 4 5 6 7 8 9} " in *" $1 "*) return 0 ;; esac
   return 1
 }
 
@@ -851,7 +851,8 @@ if want 8; then
 # State 8 — Pre-compile warnings. A document asking for a package outside
 # the bundle and for biber pops the warnings panel after Ctrl+R, once per
 # finding set; "Don't show this again" turns the popup off, so a changed
-# set stays quiet, and Tools > Show Pre-compile Warnings still opens it.
+# set stays quiet, Tools > Show Pre-compile Warnings still opens it, and
+# Escape closes it.
 APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
 mkdir -p "$FIX/precheck"
 printf '\\documentclass{article}\n\\usepackage{nopkgmaleficium}\n\\usepackage{biblatex}\n\\begin{document}\nx\n\\end{document}\n' >"$FIX/precheck/main.tex"
@@ -895,11 +896,9 @@ shot 08-precheck-dont-show
 # shellcheck disable=SC2086
 $XDO mousemove --window "$WIN" 1540 836 click 1 >/dev/null 2>&1 || true
 wait_event precheck.panel-dismissed "$m_same" 20
-# A changed set: the edit lands on disk in place, the open buffer reloads it.
+# A changed set: the edit lands on disk; the clean buffer reloads it.
 m_new=$(now_ms)
 printf '\\documentclass{article}\n\\usepackage{nopkgmaleficium}\n\\usepackage{biblatex}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n' >"$FIX/precheck/main.tex"
-wait_event fs.external "$m_new" 20
-palette "reload from disk"
 wait_event file.reload "$m_new" 20
 click_editor
 m_quiet=$(now_ms)
@@ -910,6 +909,9 @@ palette "pre-compile warnings"
 wait_event precheck.panel-shown "$m_quiet" 20
 sleep 1
 shot 08-precheck-request
+m_esc=$(now_ms)
+key Escape
+wait_event precheck.panel-dismissed "$m_esc" 10
 stop_app
 python3 - "$APPLOG" "$m_first" "$m_same" "$m_new" "$m_quiet" <<'EOF2' || die "pre-compile warnings panel check failed"
 import json, sys
@@ -928,10 +930,112 @@ assert not acts(between(same, quiet), "precheck.panel-shown"), "the same set pop
 dis = acts(between(same), "precheck.panel-dismissed")
 assert dis and dis[0]["dontShowAgain"] is True, "dismissed: %s" % dis
 assert [e["on"] for e in acts(between(same), "precheck.popup-setting")] == [False], "popup setting"
+assert len(dis) == 2 and dis[1]["dontShowAgain"] is False, "Escape close: %s" % dis
 later = acts(between(quiet), "compile.precheck")
 assert any(e["kind"] == "shell-escape" for e in later), "the changed set lacks minted: %s" % later
 assert shown[1]["count"] == len(later), "request count %s vs %d" % (shown[1], len(later))
 print("stills: warnings panel popped once (%d findings: %s), stayed off for a changed set, opened on request (%d)" % (shown[0]["count"], ",".join(kinds), shown[1]["count"]))
+EOF2
+
+fi
+
+if want 9; then
+# State 9 — External changes to open files. A clean buffer takes the disk
+# content quietly, whether the file was rewritten in place or replaced by a
+# rename (atomic save), and whether it is the active tab or a background one.
+# A buffer with unsaved edits raises the conflict dialog instead, and writes
+# to it (autosave here) are held until the user chooses; keeping the edits
+# lets the next save replace the disk version.
+APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
+EXT="$FIX/ext"
+mkdir -p "$EXT"
+printf '\\documentclass{article}\n\\begin{document}\n\\input{ch}\nmain body\n\\end{document}\n' >"$EXT/main.tex"
+printf 'chapter body\n' >"$EXT/ch.tex"
+replace_over() {
+  # $1 = file, $2 = content: write a sibling temp file, rename it over $1.
+  python3 -c 'import os, sys; t = sys.argv[1] + ".tmp~"; open(t, "w").write(sys.argv[2]); os.replace(t, sys.argv[1])' "$1" "$2"
+}
+palette() {
+  key ctrl+shift+p; sleep 2
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
+  sleep 1
+  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
+  sleep 1
+  $XDO key Return >/dev/null 2>&1 || true
+}
+quick_open() {
+  # $1 = file name typed into Quick Open (Ctrl+P).
+  key ctrl+p; sleep 2
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
+  sleep 1
+  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
+  sleep 1
+  $XDO key Return >/dev/null 2>&1 || true
+  sleep 2
+}
+start_app "$EXT"; wait_window 300
+# shellcheck disable=SC2086
+$XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
+sleep 2
+open_project
+m_active=$(now_ms)
+replace_over "$EXT/main.tex" '\documentclass{article}
+\begin{document}
+\input{ch}
+main body, replaced by rename
+\end{document}
+'
+wait_event file.reload "$m_active" 20
+m_open=$(now_ms)
+quick_open ch.tex
+wait_event file.open "$m_open" 20
+quick_open main.tex
+m_bg=$(now_ms)
+replace_over "$EXT/ch.tex" 'chapter body, replaced by rename
+'
+wait_event file.reload "$m_bg" 20
+click_editor
+m_dirty=$(now_ms)
+# Type, then change the file before autosave (1.2 s) can write the edit.
+$XDO type --delay 20 "zz" >/dev/null 2>&1 || true
+printf '\\documentclass{article}\n\\begin{document}\n\\input{ch}\nmain body, edited outside\n\\end{document}\n' >"$EXT/main.tex"
+wait_event file.external-conflict "$m_dirty" 20
+wait_event file.save-failed "$m_dirty" 20
+sleep 1
+shot 09-conflict
+grep -q 'edited outside' "$EXT/main.tex" || die "a held write reached disk during the conflict"
+m_keep=$(now_ms)
+key Escape
+wait_event file.keep-mine "$m_keep" 10
+wait_event file.save "$m_keep" 20
+sleep 1
+shot 09-kept
+stop_app
+python3 - "$APPLOG" "$EXT" "$m_active" "$m_bg" "$m_dirty" "$m_keep" <<'EOF2' || die "external change check failed"
+import json, sys
+path, ext = sys.argv[1], sys.argv[2]
+active, bg, dirty, keep = map(int, sys.argv[3:])
+evs = [json.loads(l) for l in open(path).read().splitlines() if l.strip()]
+def acts(name, a, b=None):
+    return [e for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == name and e["at"] > a and (b is None or e["at"] <= b)]
+def paths(es):
+    return [e["event"]["path"].rsplit("/", 1)[-1] for e in es]
+r1 = acts("file.reload", active, bg)
+assert "main.tex" in paths(r1) and all(e["actor"] == "system" for e in r1), "active rename-over: %s" % r1
+assert "ch.tex" in paths(acts("file.reload", bg, dirty)), "background rename-over: %s" % acts("file.reload", bg, dirty)
+assert not acts("file.external-conflict", active, dirty), "a clean buffer raised a conflict"
+assert paths(acts("file.external-conflict", dirty, keep)) == ["main.tex"], "conflict: %s" % acts("file.external-conflict", dirty, keep)
+held = [e for e in acts("file.save-failed", dirty, keep) if e["event"].get("trigger") == "auto"]
+assert held and "changed on disk" in held[0]["event"]["error"], "autosave not held: %s" % held
+assert not acts("file.reload", dirty, keep), "unsaved edits were reloaded over"
+assert paths(acts("file.keep-mine", keep)) == ["main.tex"]
+saved = [e for e in acts("file.save", keep) if e["event"]["path"].endswith("/main.tex")]
+assert saved, "no save after keeping edits"
+text = open(ext + "/main.tex").read()
+assert "zz" in text and "edited outside" not in text, "disk after keep: %r" % text
+print("stills: external changes ok: rename-over reloads (active + background), conflict held %d autosave(s), keep-mine saved" % len(held))
 EOF2
 
 fi

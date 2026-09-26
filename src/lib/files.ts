@@ -1,6 +1,7 @@
 import { dialog, fs } from './fs-provider';
 import { joinPath } from './paths';
 import { TEXT_EXTENSIONS } from './generated/structure';
+import { writesHeld } from './externalChange';
 
 export type TreeEntry = {
   name: string;
@@ -166,7 +167,9 @@ export async function loadTex(path: string): Promise<string> {
   return await fs().readText(path);
 }
 
+/** Write a buffer; refused while the file has an unresolved disk change. */
 export async function saveTex(path: string, content: string): Promise<void> {
+  if (writesHeld(path)) throw new Error('changed on disk: reload or keep your edits first');
   await fs().writeText(path, content);
 }
 

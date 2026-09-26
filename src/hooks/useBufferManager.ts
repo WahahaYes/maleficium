@@ -19,7 +19,6 @@ export interface UseBufferManagerDeps {
   /** Boot document content: the editor falls back here when nothing is open. */
   emptyTex: string;
   setLargeFile: (v: string | null) => void;
-  setReloadPath: (v: string | null) => void;
   ownWrites: OwnWrites;
 }
 
@@ -32,7 +31,6 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     setTex,
     emptyTex,
     setLargeFile,
-    setReloadPath,
     ownWrites,
   } = deps;
 
@@ -117,7 +115,6 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
           setFileName(rest[rest.length - 1]);
           setPreviewFile(null);
           setLargeFile(null);
-          setReloadPath(null);
         }
       } else {
         // Nothing left open: boot document, never the closed file's husk.
@@ -125,7 +122,6 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
         setFileName('hello.tex');
         setPreviewFile(null);
         setLargeFile(null);
-        setReloadPath(null);
       }
     } else if (previewFile === path) {
       setPreviewFile(null);

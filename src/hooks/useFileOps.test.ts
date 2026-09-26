@@ -66,8 +66,6 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
   const state = {
     fileName: '/p/main.tex',
     previewFile: null as string | null,
-    reloadPath: null as string | null,
-    tex: '',
     buffers: new Map<string, BufferState>(),
     selected: [] as string[],
     ownWrites: [] as string[],
@@ -79,13 +77,10 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     projectId: 'p1',
     scratch: null,
     fileName: state.fileName,
-    reloadPath: state.reloadPath,
     previewFile: state.previewFile,
     setFileName: (v) => (state.fileName = v),
     mainFile: '/p/main.tex',
-    setTex: (v) => (state.tex = v),
     setPreviewFile: (v) => (state.previewFile = v),
-    setReloadPath: (v) => (state.reloadPath = v),
     setBuffers: (u) => (state.buffers = typeof u === 'function' ? u(state.buffers) : u),
     trash,
     ownWrites: {
@@ -129,7 +124,12 @@ beforeEach(() => {
 describe('useFileOps delete → undo', () => {
   it('moves the file to the app-local trash, then restores it', async () => {
     const { state, trash, ops } = harness();
-    state.buffers.set('/p/fig.tex', { value: 'fig body', dirty: false, version: 1 });
+    state.buffers.set('/p/fig.tex', {
+      value: 'fig body',
+      dirty: false,
+      disk: 'fig body',
+      version: 1,
+    });
     state.previewFile = '/p/fig.tex';
 
     await ops().handleDelete('/p/fig.tex');
@@ -154,7 +154,7 @@ describe('useFileOps delete → undo', () => {
 
   it('reports a failed delete and leaves the file and buffer alone', async () => {
     const { state, trash, ops } = harness();
-    state.buffers.set('/p/gone.tex', { value: 'x', dirty: true, version: 1 });
+    state.buffers.set('/p/gone.tex', { value: 'x', dirty: true, disk: '', version: 1 });
 
     await ops().handleDelete('/p/gone.tex');
 
@@ -184,7 +184,7 @@ describe('useFileOps create and rename', () => {
 
   it('renames the open file: disk, buffer key and active file all follow', async () => {
     const { state, ops } = harness();
-    const buf = { value: 'main edited', dirty: true, version: 3 };
+    const buf = { value: 'main edited', dirty: true, disk: 'main', version: 3 };
     state.buffers.set('/p/main.tex', buf);
 
     await ops().handleRename('/p/main.tex', 'paper.tex');

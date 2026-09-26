@@ -27,23 +27,12 @@ export interface UseRevisionHistoryDeps {
   fileName: string;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   setTex: (v: string) => void;
-  setReloadPath: (v: string | null) => void;
   setLog: (v: string) => void;
   ownWrites: OwnWrites;
 }
 
 export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
-  const {
-    root,
-    projectId,
-    relInProject,
-    fileName,
-    setBuffers,
-    setTex,
-    setReloadPath,
-    setLog,
-    ownWrites,
-  } = deps;
+  const { root, projectId, relInProject, fileName, setBuffers, setTex, setLog, ownWrites } = deps;
 
   const [revisionCount, setRevisionCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -140,7 +129,6 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
         ownWrites.wrote(fileName, text);
         setBuffers((b) => markSaved(updateBuffer(b, fileName, text), fileName));
         setTex(text);
-        setReloadPath(null);
         setLog('restored ' + rel);
         emit({
           scope: 'fs',
@@ -158,7 +146,6 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
       fileName,
       setBuffers,
       setLog,
-      setReloadPath,
       setTex,
       history,
       ownWrites,

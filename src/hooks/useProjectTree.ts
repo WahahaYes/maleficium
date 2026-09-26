@@ -29,7 +29,8 @@ export interface UseProjectTreeDeps {
   setTree: (v: TreeEntry[]) => void;
   fileNameRef: RefObject<string>;
   ownWrites: OwnWrites;
-  setReloadPath: (v: string | null) => void;
+  /** Re-check open buffers whose files changed on disk. */
+  checkExternal: (paths: readonly string[]) => Promise<void>;
   setLog: (v: string) => void;
   trash: FileHistory;
   resolveMain: (r: string, opened: string | null) => Promise<string | null>;
@@ -47,7 +48,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     setTree,
     fileNameRef,
     ownWrites,
-    setReloadPath,
+    checkExternal,
     setLog,
     trash,
     resolveMain,
@@ -87,7 +88,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   );
 
   // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
-  // open-file edits offer reload; on-disk deletes mark the buffer.
+  // open buffers re-check their files; on-disk deletes mark the buffer.
   useEffect(() => {
     if (!root || !projectId) return;
     const rootId = projectId;
@@ -113,11 +114,11 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           batch.map((ev) => ev.path),
         )
         .catch(indexFailed);
+      void checkExternal(batch.filter((ev) => ev.kind !== 'delete').map((ev) => ev.path));
       for (const ev of batch) {
         // Echoes of our own writes: the disk still holds what we wrote.
         if (await ownWrites.isEcho(ev.path)) continue;
         if (cancelled) return;
-        if (ev.path === fileNameRef.current && ev.kind === 'modify') setReloadPath(ev.path);
         if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);
           emit({

@@ -95,7 +95,10 @@ export default function FindBar({ viewOf, seed, fontSizePx, onClose }: FindBarPr
       <Box
         sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') close();
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            close();
+          }
         }}
       >
         <Tooltip title={replaceOpen ? 'Hide replace' : 'Show replace'}>
@@ -165,7 +168,10 @@ export default function FindBar({ viewOf, seed, fontSizePx, onClose }: FindBarPr
         <Box
           sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') close();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              close();
+            }
           }}
         >
           <Box sx={{ minWidth: 104 }} />

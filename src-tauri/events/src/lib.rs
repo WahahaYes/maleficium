@@ -335,6 +335,12 @@ pub enum AppEvent {
     FileReload { path: String, chars: u64 },
     #[serde(rename = "file.reload-failed")]
     FileReloadFailed { path: String, error: String },
+    /// An open file changed on disk while its buffer has unsaved edits.
+    #[serde(rename = "file.external-conflict")]
+    FileExternalConflict { path: String },
+    /// The user kept their edits over a disk change; the next save wins.
+    #[serde(rename = "file.keep-mine")]
+    FileKeepMine { path: String },
     #[serde(rename = "file.delete")]
     FileDelete { path: String },
     #[serde(rename = "file.delete-failed")]

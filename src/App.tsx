@@ -34,6 +34,8 @@ import SettingsDialog from './components/SettingsDialog';
 import type { AppearancePrefs } from './lib/appearance';
 import StatusBar from './components/StatusBar';
 import PrecheckPanel from './components/PrecheckPanel';
+import ExternalChangeDialog from './components/ExternalChangeDialog';
+import { useExternalChanges } from './hooks/useExternalChanges';
 import Pane, { PaneSplitter } from './components/Pane';
 import {
   listDir1Level,
@@ -105,7 +107,6 @@ export default function App({
   const [mainCandidates, setMainCandidates] = useState<string[]>([]);
   const [trash] = useState(() => new FileHistory());
 
-  const [reloadPath, setReloadPath] = useState<string | null>(null);
   const [log, setLog] = useState('ready');
   const [largeFile, setLargeFile] = useState<string | null>(null);
   // Non-text selection (image/video/pdf/binary): rich preview, never the editor.
@@ -126,7 +127,7 @@ export default function App({
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
   // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
-  // our own writes must not raise the reload banner. Windowed suppression.
+  // our own writes are not external changes.
   const [ownWrites] = useState(() => createOwnWrites());
   const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
     useBufferManager({
@@ -137,9 +138,15 @@ export default function App({
       setTex,
       emptyTex: HELLO,
       setLargeFile,
-      setReloadPath,
       ownWrites,
     });
+  const { conflicts, checkExternal, resolveExternal } = useExternalChanges({
+    buffers,
+    setBuffers,
+    fileName,
+    setTex,
+    ownWrites,
+  });
 
   // Revision history: app-local, keyed by the backend-minted project id.
   const rootRef = useRef<string | null>(root);
@@ -169,7 +176,6 @@ export default function App({
     fileName,
     setBuffers,
     setTex,
-    setReloadPath,
     setLog,
     ownWrites,
   });
@@ -227,7 +233,6 @@ export default function App({
         setPreviewFile(path);
         setFileName(path);
         setLargeFile(null);
-        setReloadPath(null);
         setLog('previewing ' + path);
         emit({
           scope: 'fs',
@@ -246,7 +251,6 @@ export default function App({
         setFileName(path);
         setPreviewFile(null);
         setLargeFile(null);
-        setReloadPath(null);
         setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
         emit({
           scope: 'fs',
@@ -294,7 +298,6 @@ export default function App({
         });
         setTex(content);
         setFileName(path);
-        setReloadPath(null);
         setLog('loaded ' + path);
         emit({
           scope: 'fs',
@@ -635,7 +638,7 @@ export default function App({
       setTree,
       fileNameRef,
       ownWrites,
-      setReloadPath,
+      checkExternal,
       setLog,
       trash,
       resolveMain,
@@ -647,25 +650,21 @@ export default function App({
       handleSelect,
       warmCompile,
     });
-  const { handleCreate, handleRename, handleReload, handleDelete, handleClean, handleUndo } =
-    useFileOps({
-      root,
-      projectId,
-      scratch,
-      fileName,
-      reloadPath,
-      previewFile,
-      setFileName,
-      mainFile,
-      setTex,
-      setPreviewFile,
-      setReloadPath,
-      setBuffers,
-      trash,
-      ownWrites,
-      reloadTree,
-      handleSelect,
-    });
+  const { handleCreate, handleRename, handleDelete, handleClean, handleUndo } = useFileOps({
+    root,
+    projectId,
+    scratch,
+    fileName,
+    previewFile,
+    setFileName,
+    mainFile,
+    setPreviewFile,
+    setBuffers,
+    trash,
+    ownWrites,
+    reloadTree,
+    handleSelect,
+  });
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -905,7 +904,6 @@ export default function App({
     setFileName,
     setPreviewFile,
     setLargeFile,
-    setReloadPath,
     forwardSyncRef,
     forwardSyncLineRef,
   });
@@ -1011,7 +1009,7 @@ export default function App({
         relPath: relInProject(fileName),
         storeReady: projectId != null,
       }) === 'ready',
-    reloadPending: reloadPath != null,
+    reloadPending: conflicts.length > 0,
     theme: themeMode,
     density,
     recentProjects,
@@ -1059,9 +1057,11 @@ export default function App({
       void handleSetMain();
     },
     reloadFromDisk: () => {
-      void handleReload();
+      void resolveExternal('reload');
     },
-    keepMine: () => setReloadPath(null),
+    keepMine: () => {
+      void resolveExternal('keep');
+    },
     clean: () => {
       void handleClean();
     },
@@ -1255,17 +1255,6 @@ export default function App({
           void handleCloseAll();
         }}
       />
-      {reloadPath ? (
-        <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-          <Typography variant="body2">Changed on disk: {reloadPath}</Typography>
-          <Button size="small" variant="outlined" onClick={handleReload}>
-            Reload
-          </Button>
-          <Button size="small" onClick={() => setReloadPath(null)}>
-            Keep mine
-          </Button>
-        </Box>
-      ) : null}
       {largeFile ? (
         <Typography variant="body2" sx={{ mt: 1 }}>
           Large file — not loaded into the editor ({largeFile}). Open externally to edit.
@@ -1638,6 +1627,14 @@ export default function App({
         warnings={precheck?.findings.length ?? 0}
         onOpenWarnings={openPrecheck}
       />
+      {conflicts.length > 0 ? (
+        <ExternalChangeDialog
+          path={relInProject(conflicts[0]) ?? conflicts[0]}
+          more={conflicts.length - 1}
+          onReload={() => void resolveExternal('reload')}
+          onKeep={() => void resolveExternal('keep')}
+        />
+      ) : null}
       {precheck && precheckOpen ? (
         <PrecheckPanel
           key={`${precheck.target}:${precheck.findings.length}`}

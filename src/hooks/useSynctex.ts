@@ -36,7 +36,6 @@ export interface UseSynctexDeps {
   setFileName: (v: string) => void;
   setPreviewFile: (v: string | null) => void;
   setLargeFile: (v: string | null) => void;
-  setReloadPath: (v: string | null) => void;
   /** Latest-closure handle for the keymap listener and the menu dispatcher. */
   forwardSyncRef: RefObject<() => Promise<void>>;
   /** Latest-closure handle for the editor's double-click bridge. */
@@ -57,7 +56,6 @@ export function useSynctex(deps: UseSynctexDeps) {
     setFileName,
     setPreviewFile,
     setLargeFile,
-    setReloadPath,
     forwardSyncRef,
     forwardSyncLineRef,
   } = deps;
@@ -194,7 +192,6 @@ export function useSynctex(deps: UseSynctexDeps) {
           setFileName(hitFile);
           setPreviewFile(null);
           setLargeFile(null);
-          setReloadPath(null);
         } catch {
           /* unreadable hit file — still reveal the line number below */
         }

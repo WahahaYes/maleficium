@@ -5,9 +5,9 @@
 // stay undoable; nothing is removed in place.
 
 import { emit } from '../lib/events';
-import { createFile, loadTex, renamePath } from '../lib/files';
+import { createFile, renamePath } from '../lib/files';
 import { moveToTrash, undoTrash } from '../lib/trash';
-import { dropBuffer, reloadBuffer, renameBuffer, type BufferState } from '../lib/buffers';
+import { dropBuffer, renameBuffer, type BufferState } from '../lib/buffers';
 import { cleanOutputs } from '../lib/compile';
 import { sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { FileHistory } from '../lib/file-history';
@@ -18,13 +18,10 @@ export interface UseFileOpsDeps {
   projectId: string | null;
   scratch: SessionRoot | null;
   fileName: string;
-  reloadPath: string | null;
   previewFile: string | null;
   setFileName: (v: string) => void;
   mainFile: string | null;
-  setTex: (v: string) => void;
   setPreviewFile: (v: string | null) => void;
-  setReloadPath: (v: string | null) => void;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   trash: FileHistory;
   ownWrites: OwnWrites;
@@ -38,13 +35,10 @@ export function useFileOps(deps: UseFileOpsDeps) {
     projectId,
     scratch,
     fileName,
-    reloadPath,
     previewFile,
     setFileName,
     mainFile,
-    setTex,
     setPreviewFile,
-    setReloadPath,
     setBuffers,
     trash,
     ownWrites,
@@ -84,7 +78,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
       setBuffers((b) => renameBuffer(b, oldPath, full));
       if (fileName === oldPath) {
         setFileName(full);
-        setReloadPath(null);
       }
       emit({
         scope: 'fs',
@@ -101,31 +94,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
         actor: 'user',
         message: 'rename failed: ' + String(e).slice(0, 120),
         event: { action: 'file.rename-failed', from: oldPath, error: String(e).slice(0, 200) },
-      });
-    }
-  }
-
-  async function handleReload() {
-    if (!reloadPath) return;
-    try {
-      const content = await loadTex(reloadPath);
-      setBuffers((b) => reloadBuffer(b, reloadPath, content));
-      if (reloadPath === fileName) setTex(content);
-      setReloadPath(null);
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        actor: 'user',
-        message: 'reloaded ' + reloadPath,
-        event: { action: 'file.reload', path: reloadPath, chars: content.length },
-      });
-    } catch (e) {
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        actor: 'user',
-        message: 'reload failed: ' + String(e).slice(0, 120),
-        event: { action: 'file.reload-failed', path: reloadPath, error: String(e).slice(0, 200) },
       });
     }
   }
@@ -224,7 +192,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
   return {
     handleCreate,
     handleRename,
-    handleReload,
     handleDelete,
     handleClean,
     handleUndo,

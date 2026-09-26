@@ -6,6 +6,8 @@
 export interface BufferState {
   value: string;
   dirty: boolean;
+  /** The file's content as last read or written by the app. */
+  disk: string;
   /** Monotonic version for memo identity per buffer. */
   version: number;
 }
@@ -17,7 +19,7 @@ export function getOrCreateBuffer(
 ): BufferState {
   const existing = buffers.get(path);
   if (existing) return existing;
-  const next: BufferState = { value: loadedValue, dirty: false, version: 0 };
+  const next: BufferState = { value: loadedValue, dirty: false, disk: loadedValue, version: 0 };
   buffers.set(path, next);
   return next;
 }
@@ -34,7 +36,7 @@ export function updateBuffer(
   const prev = buffers.get(path);
   if (prev && prev.value === value) return buffers;
   const next = new Map(buffers);
-  next.set(path, { value, dirty: true, version: (prev?.version ?? 0) + 1 });
+  next.set(path, { value, dirty: true, disk: prev?.disk ?? '', version: (prev?.version ?? 0) + 1 });
   return next;
 }
 
@@ -43,9 +45,9 @@ export function markSaved(
   path: string,
 ): Map<string, BufferState> {
   const prev = buffers.get(path);
-  if (!prev || !prev.dirty) return buffers;
+  if (!prev || (!prev.dirty && prev.disk === prev.value)) return buffers;
   const next = new Map(buffers);
-  next.set(path, { ...prev, dirty: false });
+  next.set(path, { ...prev, dirty: false, disk: prev.value });
   return next;
 }
 
@@ -97,6 +99,24 @@ export function reloadBuffer(
   content: string,
 ): Map<string, BufferState> {
   const next = new Map(buffers);
-  next.set(path, { value: content, dirty: false, version: (buffers.get(path)?.version ?? 0) + 1 });
+  next.set(path, {
+    value: content,
+    dirty: false,
+    disk: content,
+    version: (buffers.get(path)?.version ?? 0) + 1,
+  });
+  return next;
+}
+
+/** Record `content` as what the disk holds, keeping the buffer's text. */
+export function acknowledgeDisk(
+  buffers: Map<string, BufferState>,
+  path: string,
+  content: string,
+): Map<string, BufferState> {
+  const prev = buffers.get(path);
+  if (!prev || prev.disk === content) return buffers;
+  const next = new Map(buffers);
+  next.set(path, { ...prev, dirty: prev.value !== content, disk: content });
   return next;
 }
