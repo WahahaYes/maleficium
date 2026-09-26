@@ -40,7 +40,27 @@ export class FileHistory {
   }
 }
 
-export function trashName(originalPath: string, at = Date.now()): string {
-  const base = originalPath.slice(originalPath.lastIndexOf('/') + 1) || 'file';
-  return `${base}.${at}`;
+/**
+ * Escape one path component so `__` in a trash name is only ever a separator:
+ * `%` -> `%25`, then `_` -> `%5F`. Same as core `escape_component`.
+ */
+function escapeComponent(s: string): string {
+  return s.replace(/%/g, '%25').replace(/_/g, '%5F');
+}
+
+/**
+ * Trash entry name: `<base>__<c1>__<c2>...__<ms>`, where c1..cn are the path
+ * components relative to `root` and every component is escaped. Same format
+ * as core `trash_name` (src-tauri/src/core/fs.rs), whose stateless undo reads
+ * rel back out of the name.
+ */
+export function trashName(root: string, originalPath: string, at = Date.now()): string {
+  const prefix = root.endsWith('/') ? root : root + '/';
+  if (!originalPath.startsWith(prefix)) {
+    throw new Error(`not in project: ${originalPath}`);
+  }
+  const rel = originalPath.slice(prefix.length);
+  const base = rel.slice(rel.lastIndexOf('/') + 1) || 'file';
+  const flat = rel.split('/').map(escapeComponent).join('__');
+  return `${escapeComponent(base)}__${flat}__${at}`;
 }

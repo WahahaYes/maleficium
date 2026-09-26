@@ -99,8 +99,8 @@ export function useFileOps(deps: UseFileOpsDeps) {
   }
 
   async function handleDelete(path: string) {
-    if (!root) return;
-    const r = await moveToTrash(trash, root, path);
+    if (!root || !projectId) return;
+    const r = await moveToTrash(trash, projectId, root, path);
     if (r.ok) {
       emit({
         scope: 'fs',

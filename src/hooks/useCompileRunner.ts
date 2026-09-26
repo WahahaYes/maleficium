@@ -11,6 +11,7 @@ import { markSaved, type BufferState } from '../lib/buffers';
 import {
   cancelCompile,
   compileLogText,
+  type CompiledOutput,
   compileTex,
   describeFinding,
   engineLog,
@@ -94,6 +95,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const [compileTimer, setCompileTimer] = useState(0);
   const [compileStart, setCompileStart] = useState<number | null>(null);
   const [offline, setOffline] = useState<OfflineBadge | null>(null);
+  /** The latest successful run's line and pdf, for the status tooltip. */
+  const [compiled, setCompiled] = useState<CompiledOutput | null>(null);
   const [progress, setProgress] = useState(IDLE_PROGRESS);
   const [precheck, setPrecheck] = useState<PrecheckFindings | null>(null);
   const [precheckOpen, setPrecheckOpen] = useState(false);
@@ -404,7 +407,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           failure: 'engine-error',
           missing: null,
         };
-    setLog(compileLogText(r));
+    const logText = compileLogText(r, src?.mainRel);
+    setLog(logText);
+    setCompiled(r.ok && r.pdfUrl ? { text: logText, pdfUrl: String(r.pdfUrl) } : null);
     if (r.missing) {
       const m = r.missing;
       const line = missingLine(m, r.ok)!;
@@ -713,6 +718,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     compilePhase,
     compileTimer,
     offline,
+    compiled,
     progress: progressLabel(progress),
     autoCompile,
     setAutoCompile,

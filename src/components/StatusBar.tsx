@@ -20,6 +20,7 @@ export default function StatusBar({
   phase,
   timer,
   message,
+  messageTitle,
   offline,
   warnings,
   onOpenWarnings,
@@ -35,6 +36,8 @@ export default function StatusBar({
   phase: string;
   timer: number;
   message: string;
+  /** Tooltip for the message; defaults to the message itself. */
+  messageTitle?: string;
   /** The project's offline readiness; absent outside a project. */
   offline?: OfflineBadge | null;
   /** Pre-compile findings of the latest run; the chip opens their panel. */
@@ -69,6 +72,7 @@ export default function StatusBar({
       <Typography
         variant="caption"
         noWrap
+        title={messageTitle ?? message}
         sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
       >
         {phase}

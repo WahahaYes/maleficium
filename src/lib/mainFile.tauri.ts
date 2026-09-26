@@ -3,7 +3,6 @@
 // Metadata/paths only; file contents read transiently, never stored.
 
 import { fs } from './fs-provider';
-import { hashRoot } from './paths';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
 import { joinPath } from './paths';
@@ -32,8 +31,13 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
   return out;
 }
 
+/**
+ * Resolve the main file for `root`. `rootId` is the project's grant id
+ * (`ProjectGrant.rootId`), the key the explicit association is stored under.
+ */
 export async function resolveMainFileTauri(
   root: string,
+  rootId: string,
   openedFile: string | null,
 ): Promise<MainFileResolution> {
   return resolveMainFile({
@@ -42,20 +46,25 @@ export async function resolveMainFileTauri(
     readText: (p) => fs().readText(p),
     listTexFiles: listTexFilesRecursive,
     // App-local store read.
-    readConfig: async (r) => {
-      const rel = getMainFileFor(hashRoot(r));
+    readConfig: async () => {
+      const rel = getMainFileFor(rootId);
       return rel ? JSON.stringify({ mainFile: rel }) : null;
     },
   });
 }
 
 /**
- * Persist explicit user association to the app-local store.
- * Takes the project root + the file's path (absolute or rel); stores rel.
+ * Persist explicit user association to the app-local store, keyed by the
+ * grant's `rootId`. Takes the project root + the file's path (absolute or
+ * rel); stores rel.
  */
-export async function setMainFile(root: string, absOrRelPath: string): Promise<void> {
+export async function setMainFile(
+  rootId: string,
+  root: string,
+  absOrRelPath: string,
+): Promise<void> {
   const rel = absOrRelPath.startsWith(root + '/')
     ? absOrRelPath.slice(root.length + 1)
     : absOrRelPath;
-  setMainFileFor(hashRoot(root), rel);
+  setMainFileFor(rootId, rel);
 }

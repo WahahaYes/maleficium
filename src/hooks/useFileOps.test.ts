@@ -137,7 +137,8 @@ describe('useFileOps delete → undo', () => {
     expect(files.has('/p/fig.tex')).toBe(false);
     const [entry] = trash.list();
     expect(entry.originalPath).toBe('/p/fig.tex');
-    expect(entry.trashPath.startsWith('/app/data/maleficium-trash/')).toBe(true);
+    // Sharded by the grant's root id (projectId), never a frontend path hash.
+    expect(entry.trashPath.startsWith('/app/data/maleficium-trash/p1/')).toBe(true);
     expect(files.get(entry.trashPath)).toBe('fig body');
     expect(state.buffers.has('/p/fig.tex')).toBe(false);
     expect(state.previewFile).toBeNull();
