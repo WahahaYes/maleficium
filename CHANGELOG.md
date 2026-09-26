@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 - 2026-09-26
+
+Bug-fix release. If you installed 0.1.0, please update: compiling did not work in the 0.1.0 packages.
+
+### Fixes
+
+- **Compiling works in the installed app.** The 0.1.0 `.deb` and AppImage could not find their bundled TeX engine, so every compile failed with "bundled maleficium-tectonic sidecar missing". SyncTeX was affected the same way.
+- **The main file follows the project you open.** Opening a project while another was open (for example, creating one from a template while the welcome project was showing) left the previous project's main file in the editor header.
+- **The AppImage no longer opens a blank window on newer distributions** such as Ubuntu 26.04. It carried its own copies of graphics libraries that clash with the system's newer drivers; it now uses the system's.
+
+### Known limits
+
+- Linux x86_64 only. macOS and Windows builds will come in a later release.
+- Tectonic is the only engine. Documents that need `biber` or shell escape rely on tools outside the app; the pre-compile check flags them.
+- 0.1.x makes no promise that settings or history carry over between versions.
+
 ## 0.1.0 - 2026-09-26
 
 First public release, for Linux x86_64 (`.deb` and AppImage).
