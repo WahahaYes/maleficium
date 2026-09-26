@@ -1,4 +1,4 @@
-// templates.ts — project templates over IPC, and the gallery's grouping.
+// templates.ts — project templates over IPC, and the gallery's sections.
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -16,6 +16,7 @@ export type TemplateList = { templates: TemplateInfo[]; unreadable: string[] };
 /** A project made from a template: its absolute root and main file. */
 export type Created = { root: string; main: string };
 
+export const BUILTIN_HEADING = 'Built-in';
 export const USER_CATEGORY = 'Your templates';
 
 export async function listTemplates(): Promise<TemplateList> {
@@ -48,28 +49,50 @@ export async function welcomeProject(): Promise<Created> {
   return await invoke<Created>('template_welcome');
 }
 
+/** One labeled part of the gallery: its heading and its category groups. */
+export type GallerySection = {
+  heading: string;
+  /** Shown under the heading. */
+  note: string;
+  groups: { category: string; items: TemplateInfo[] }[];
+};
+
 /**
- * Gallery sections: bundled categories in first-seen order, then the user's
- * own templates last, each sorted by name.
+ * The gallery: built-in templates grouped by category in first-seen order,
+ * then the user's own, each group sorted by name. Empty sections are left out.
  */
-export function groupTemplates(
-  list: TemplateInfo[],
-): { category: string; items: TemplateInfo[] }[] {
+export function gallerySections(list: TemplateInfo[]): GallerySection[] {
   const order: string[] = [];
   const by = new Map<string, TemplateInfo[]>();
+  const own: TemplateInfo[] = [];
   for (const t of list) {
-    const c = t.user ? USER_CATEGORY : t.category;
-    if (!by.has(c)) {
-      by.set(c, []);
-      if (!t.user) order.push(c);
+    if (t.user) {
+      own.push(t);
+      continue;
     }
-    by.get(c)!.push(t);
+    if (!by.has(t.category)) {
+      by.set(t.category, []);
+      order.push(t.category);
+    }
+    by.get(t.category)!.push(t);
   }
-  if (by.has(USER_CATEGORY) && !order.includes(USER_CATEGORY)) order.push(USER_CATEGORY);
-  return order.map((category) => ({
-    category,
-    items: [...by.get(category)!].sort((a, b) => a.name.localeCompare(b.name)),
-  }));
+  const byName = (items: TemplateInfo[]) => [...items].sort((a, b) => a.name.localeCompare(b.name));
+  const sections: GallerySection[] = [];
+  if (order.length > 0) {
+    sections.push({
+      heading: BUILTIN_HEADING,
+      note: 'Included with Maleficium.',
+      groups: order.map((category) => ({ category, items: byName(by.get(category)!) })),
+    });
+  }
+  if (own.length > 0) {
+    sections.push({
+      heading: USER_CATEGORY,
+      note: 'Saved or imported by you.',
+      groups: [{ category: '', items: byName(own) }],
+    });
+  }
+  return sections;
 }
 
 /** A template id from a display name: lowercase letters, digits and dashes. */

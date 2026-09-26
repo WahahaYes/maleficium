@@ -21,7 +21,7 @@ import { setMainFileFor } from '../lib/mainFile.store';
 import { hashRoot, joinPath } from '../lib/paths';
 import type { SessionRoot } from '../lib/preview-bus';
 import {
-  groupTemplates,
+  gallerySections,
   importFolderAsTemplate,
   instantiateTemplate,
   listTemplates,
@@ -183,45 +183,62 @@ export default function TemplateDialogs({
       <Dialog open onClose={onClose} maxWidth="md" fullWidth aria-label="New project from template">
         <DialogTitle>New Project from Template</DialogTitle>
         <DialogContent dividers>
-          {groupTemplates(templates).map((g) => (
-            <Box key={g.category} sx={{ mb: 2 }}>
-              <Typography variant="overline" color="text.secondary">
-                {g.category}
+          {gallerySections(templates).map((section) => (
+            <Box
+              key={section.heading}
+              component="section"
+              data-gallery-section={section.heading}
+              sx={{ mb: 3 }}
+            >
+              <Typography variant="subtitle1" component="h3">
+                {section.heading}
               </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                  gap: 1,
-                }}
-              >
-                {g.items.map((t) => (
-                  <ButtonBase
-                    key={t.id}
-                    data-template={t.id}
-                    onClick={() => {
-                      setPicked(t);
-                      setFolder(t.id);
-                    }}
-                    onDoubleClick={() => void create()}
+              <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
+                {section.note}
+              </Typography>
+              {section.groups.map((g) => (
+                <Box key={g.category} sx={{ mb: 2 }}>
+                  {g.category ? (
+                    <Typography variant="overline" color="text.secondary">
+                      {g.category}
+                    </Typography>
+                  ) : null}
+                  <Box
                     sx={{
-                      display: 'block',
-                      textAlign: 'left',
-                      p: 1.5,
-                      border: 1,
-                      borderRadius: 1,
-                      borderColor: picked?.id === t.id ? 'primary.main' : 'divider',
-                      bgcolor: picked?.id === t.id ? 'action.selected' : 'transparent',
-                      '&:hover': { bgcolor: 'action.hover' },
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                      gap: 1,
                     }}
                   >
-                    <Typography variant="subtitle2">{t.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t.description}
-                    </Typography>
-                  </ButtonBase>
-                ))}
-              </Box>
+                    {g.items.map((t) => (
+                      <ButtonBase
+                        key={t.id}
+                        data-template={t.id}
+                        onClick={() => {
+                          setPicked(t);
+                          setFolder(t.id);
+                        }}
+                        onDoubleClick={() => void create()}
+                        sx={{
+                          display: 'block',
+                          textAlign: 'left',
+                          p: 1.5,
+                          border: 1,
+                          borderRadius: 1,
+                          borderColor: picked?.id === t.id ? 'primary.main' : 'divider',
+                          bgcolor: picked?.id === t.id ? 'action.selected' : 'transparent',
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
+                        <Typography variant="subtitle2">{t.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t.description}
+                        </Typography>
+                      </ButtonBase>
+                    ))}
+                  </Box>
+                </Box>
+              ))}
             </Box>
           ))}
         </DialogContent>
