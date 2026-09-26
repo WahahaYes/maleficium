@@ -58,13 +58,7 @@ sed -i '0,/"version": "[^"]*"/s//"version": "'"$VER"'"/' "$ROOT/src-tauri/tauri.
     || die "no sidecars in src-tauri/binaries; run sh scripts/fetch-sidecars.sh first"
 (cd "$ROOT" && cargo check --manifest-path src-tauri/Cargo.toml --offline >/dev/null 2>&1) \
     || (cd "$ROOT" && cargo check --manifest-path src-tauri/Cargo.toml >/dev/null)
-python3 - "$ROOT/package.json" "$ROOT/src-tauri/Cargo.toml" "$ROOT/src-tauri/tauri.conf.json" "$VER" <<'EOF'
-import json, re, sys
-pkg, cargo, tauri, ver = sys.argv[1:5]
-assert json.load(open(pkg))["version"] == ver, "package.json not bumped"
-assert re.search(r'^version = "%s"$' % re.escape(ver), open(cargo).read(), re.M), "Cargo.toml not bumped"
-assert json.load(open(tauri))["version"] == ver, "tauri.conf.json not bumped"
-EOF
+python3 "$ROOT/scripts/release-meta.py" check "$VER" || die "manifests not bumped to $VER"
 
 # Write the CHANGELOG section: notes file, else subjects since the last
 # tag, else a stub the releaser fills before publishing. An existing
@@ -144,13 +138,7 @@ done
 git -C "$ROOT" push origin main "v$VER"
 NOTES_TMP=$(mktemp /tmp/maleficium-release-notes-XXXXXX.md)
 trap 'rm -f "$NOTES_TMP"' EXIT
-python3 - "$ROOT/CHANGELOG.md" "$VER" <<'EOF' > "$NOTES_TMP"
-import re, sys
-text = open(sys.argv[1]).read()
-m = re.search(r'^## %s(?: [^\n]*)?\n(.*?)(?=^## |\Z)' % re.escape(sys.argv[2]), text, re.S | re.M)
-sys.stdout.write(m.group(1).strip() + "\n" if m else "")
-EOF
-[ -s "$NOTES_TMP" ] || die "no CHANGELOG section found for $VER"
+python3 "$ROOT/scripts/release-meta.py" notes "$VER" > "$NOTES_TMP" || die "no CHANGELOG section found for $VER"
 if gh release view "v$VER" >/dev/null 2>&1; then
     gh release upload "v$VER" --clobber "$OUT"/*.deb "$OUT"/*.AppImage
 else
