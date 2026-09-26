@@ -124,9 +124,10 @@ pub fn sidecar_triple() -> Option<&'static str> {
     }
 }
 
-/// Locate a bundled sidecar binary by name: next to the app, else in the
-/// dev tree. Errors say whether this platform has no engine at all or the
-/// binary was never fetched.
+/// Locate a bundled sidecar binary by name: next to the app, where the
+/// bundler installs it without the triple suffix, else as
+/// `binaries/<name>-<triple>` in the dev tree. Errors say whether this
+/// platform has no engine at all or the binary was never fetched.
 pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
     let triple = sidecar_triple().ok_or_else(|| {
         format!(
@@ -136,29 +137,26 @@ pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
             std::env::consts::ARCH
         )
     })?;
-    let exe_name = if cfg!(windows) {
-        format!("{}-{}.exe", name, triple)
-    } else {
-        format!("{}-{}", name, triple)
-    };
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join(&exe_name);
-            if p.exists() {
-                return Ok(p);
-            }
-        }
-    }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("binaries")
-        .join(&exe_name);
-    if dev.exists() {
-        return Ok(dev);
-    }
-    Err(format!(
-        "bundled {} sidecar missing ({}): run scripts/fetch-sidecars.sh",
-        name, exe_name
-    ))
+    let exe = std::env::current_exe().ok();
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    find_sidecar(exe.as_deref().and_then(Path::parent), &dev, name, triple).ok_or_else(|| {
+        format!(
+            "bundled {} sidecar missing ({}-{}): run scripts/fetch-sidecars.sh",
+            name, name, triple
+        )
+    })
+}
+
+fn find_sidecar(
+    app_dir: Option<&Path>,
+    dev_dir: &Path,
+    name: &str,
+    triple: &str,
+) -> Option<PathBuf> {
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    let bundled = app_dir.map(|d| d.join(format!("{name}{ext}")));
+    let dev = dev_dir.join(format!("{name}-{triple}{ext}"));
+    bundled.into_iter().chain([dev]).find(|p| p.is_file())
 }
 
 /// Entry kind for directory listings.
@@ -236,6 +234,39 @@ mod tests {
     fn sidecar_triple_names_this_host() {
         // CI and dev hosts are all bundled platforms.
         assert!(sidecar_triple().is_some_and(|t| !t.is_empty()));
+    }
+
+    #[test]
+    fn sidecar_found_next_to_app_without_triple() {
+        let app = crate::test_scratch::dir("sidecar-app");
+        std::fs::create_dir_all(&app).unwrap();
+        let dev = crate::test_scratch::dir("sidecar-dev");
+        std::fs::create_dir_all(&dev).unwrap();
+        let ext = if cfg!(windows) { ".exe" } else { "" };
+        let installed = app.join(format!("maleficium-tectonic{ext}"));
+        std::fs::write(&installed, b"").unwrap();
+        std::fs::write(dev.join(format!("maleficium-tectonic-t{ext}")), b"").unwrap();
+        let found = find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t");
+        assert_eq!(found, Some(installed));
+    }
+
+    #[test]
+    fn sidecar_falls_back_to_dev_tree() {
+        let app = crate::test_scratch::dir("sidecar-app-empty");
+        std::fs::create_dir_all(&app).unwrap();
+        let dev = crate::test_scratch::dir("sidecar-dev-only");
+        std::fs::create_dir_all(&dev).unwrap();
+        let ext = if cfg!(windows) { ".exe" } else { "" };
+        let fetched = dev.join(format!("maleficium-synctex-t{ext}"));
+        std::fs::write(&fetched, b"").unwrap();
+        assert_eq!(
+            find_sidecar(Some(&app), &dev, "maleficium-synctex", "t"),
+            Some(fetched)
+        );
+        assert_eq!(
+            find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t"),
+            None
+        );
     }
 
     #[test]
