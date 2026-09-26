@@ -3,17 +3,19 @@
 // Viewport-render O(visible) only — never measures full content. Stable
 // prop identity via memo + useCallback at call site.
 
-import { memo, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import { useTheme } from '@mui/material/styles';
 import { EditorView, basicSetup } from 'codemirror';
-import { hoverTooltip } from '@codemirror/view';
-import { Compartment, EditorState, EditorSelection } from '@codemirror/state';
-import { openSearchPanel } from '@codemirror/search';
+import { hoverTooltip, keymap } from '@codemirror/view';
+import { Compartment, EditorState, EditorSelection, Prec } from '@codemirror/state';
+import { search } from '@codemirror/search';
 import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
 import type { AppearancePrefs } from '../lib/appearance';
 import { editorTheme } from '../lib/editorTheme';
+import FindBar from './FindBar';
 
 export interface EditorViewportProps {
   value: string;
@@ -83,6 +85,26 @@ function EditorViewport({
   const muiTheme = useTheme();
   // Theme compartment: prefs + tokens restyle the live view on mode flip.
   const themeCompartment = useRef(new Compartment()).current;
+  // MUI find bar state: opened by Ctrl+F or the menu, seeded from selection.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findSeed, setFindSeed] = useState('');
+  const [findKey, setFindKey] = useState(0);
+  const viewOf = useCallback(() => viewRef.current, []);
+  const doOpenFind = useCallback(() => {
+    const view = viewRef.current;
+    let seed = '';
+    if (view) {
+      const sel = view.state.selection.main;
+      if (!sel.empty && sel.to - sel.from <= 100) {
+        seed = view.state.sliceDoc(sel.from, sel.to);
+      }
+    }
+    setFindSeed(seed);
+    setFindKey((k) => k + 1);
+    setFindOpen(true);
+  }, []);
+  const openBarRef = useRef(() => {});
+  openBarRef.current = doOpenFind;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -94,6 +116,19 @@ function EditorViewport({
         texMode,
         // Wrap long lines instead of horizontal scroll.
         EditorView.lineWrapping,
+        // In-file find uses the MUI bar below, never the stock panel.
+        search(),
+        Prec.highest(
+          keymap.of([
+            {
+              key: 'Mod-f',
+              run: () => {
+                openBarRef.current();
+                return true;
+              },
+            },
+          ]),
+        ),
         // Hover a reference, macro or input: where it is defined.
         hoverTooltip(async (view, pos) => {
           const hover = definitionRef?.current?.hover;
@@ -300,9 +335,7 @@ function EditorViewport({
         return { text: line.text, col: head - line.from };
       },
       openFind: () => {
-        const view = viewRef.current;
-        if (!view) return;
-        openSearchPanel(view);
+        doOpenFind();
       },
       caretLine: () => {
         const view = viewRef.current;
@@ -318,15 +351,28 @@ function EditorViewport({
     return () => {
       viewportRef.current = null;
     };
-  }, [viewportRef]);
+  }, [viewportRef, doOpenFind]);
 
   return (
-    <Paper
-      elevation={0}
-      sx={{ p: 1, fontSize: 14, overflow: 'auto', border: 1, borderColor: 'divider' }}
-    >
-      <div ref={hostRef} />
-    </Paper>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 1,
+          fontSize: 14,
+          overflow: 'auto',
+          border: 1,
+          borderColor: 'divider',
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        <div ref={hostRef} />
+      </Paper>
+      {findOpen ? (
+        <FindBar key={findKey} viewOf={viewOf} seed={findSeed} onClose={() => setFindOpen(false)} />
+      ) : null}
+    </Box>
   );
 }
 
