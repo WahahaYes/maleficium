@@ -21,16 +21,17 @@ repos:
       - id: shellcheck
         args: ['--severity=warning']
   - repo: local
+    # Non-login shells (IDEs, agents) often lack ~/.cargo/bin on PATH.
     hooks:
       - id: cargo-fmt
         name: cargo fmt --check
-        entry: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo fmt --manifest-path src-tauri/Cargo.toml -- --check'
         language: system
         types: [rust]
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy warnings
-        entry: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings'
         language: system
         types: [rust]
         pass_filenames: false
