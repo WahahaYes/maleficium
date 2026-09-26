@@ -62,4 +62,5 @@ This bumps the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri
 
 - Without `--notes-file`, the notes are the commit subjects since the last tag.
 - The build runs in Docker by default. `--host` builds on this machine, `--out` sets the artifact directory, and `--skip-build` stops after the tag.
+- Rerunning for the same version is safe. Manifests already at that version are left as they are, an existing `CHANGELOG.md` section for it is kept unless `--notes-file` is passed, which replaces that section in place. If `vX.Y.Z` already tags `HEAD`, the script skips straight to build and publish (delete the local tag first to change its notes). A `vX.Y.Z` tag on any other commit is an error.
 - Nothing leaves the machine unless you pass `--publish`, which pushes `main` and the tag and creates the GitHub release with the `.deb` and `.AppImage` attached.

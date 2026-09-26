@@ -35,8 +35,17 @@ need git; need python3; need npm; need cargo
 
 [ -z "$(git -C "$ROOT" status --porcelain)" ] || die "tree is dirty; commit or stash first"
 [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "main" ] || die "run from main"
-git -C "$ROOT" rev-parse "v$VER" >/dev/null 2>&1 && die "tag v$VER already exists"
+# Idempotent per version: a tag v$VER at HEAD means the local steps already
+# ran, so resume at build/publish. A tag anywhere else is a real conflict.
+RESUME=0
+if TAGGED=$(git -C "$ROOT" rev-parse -q --verify "v$VER^{commit}" 2>/dev/null); then
+    [ "$TAGGED" = "$(git -C "$ROOT" rev-parse HEAD)" ] || die "tag v$VER exists and is not HEAD"
+    [ -z "$NOTES_FILE" ] || die "v$VER already tagged at HEAD; delete the local tag to change its notes"
+    RESUME=1
+    printf 'release: v%s already tagged at HEAD; skipping bump, changelog, commit, tag\n' "$VER" >&2
+fi
 
+if [ "$RESUME" = 0 ]; then
 # Bump package.json + package-lock.json together, no tag, no network.
 (cd "$ROOT" && npm version --no-git-tag-version --allow-same-version "$VER" >/dev/null)
 # Bump the Rust and Tauri manifests (first version line is the package one).
@@ -57,37 +66,51 @@ assert re.search(r'^version = "%s"$' % re.escape(ver), open(cargo).read(), re.M)
 assert json.load(open(tauri))["version"] == ver, "tauri.conf.json not bumped"
 EOF
 
-# Prepend the CHANGELOG section: notes file, else subjects since the last
-# tag, else a stub the releaser fills before publishing.
-DATE=$(date +%Y-%m-%d)
+# Write the CHANGELOG section: notes file, else subjects since the last
+# tag, else a stub the releaser fills before publishing. An existing
+# section for this version is kept as written unless --notes-file is
+# passed, which replaces it in place.
+DATE=$(date +%Y-%m-%d); NOTES=""
 if [ -n "$NOTES_FILE" ]; then
     NOTES=$(cat "$NOTES_FILE")
+elif grep -Eq "^## $(printf '%s' "$VER" | sed 's/\./\\./g')( |\$)" "$ROOT/CHANGELOG.md"; then
+    printf 'release: keeping the existing CHANGELOG section for %s\n' "$VER" >&2
 elif PREV=$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null); then
     NOTES=$(git -C "$ROOT" log "$PREV..HEAD" --format='- %s')
 else
     NOTES="- TBD: fill highlights before publishing."
     printf 'release: no notes file and no previous tag; using a stub\n' >&2
 fi
-python3 - "$ROOT/CHANGELOG.md" "$VER" "$DATE" "$NOTES" <<'EOF'
-import sys
+[ -z "$NOTES" ] || python3 - "$ROOT/CHANGELOG.md" "$VER" "$DATE" "$NOTES" <<'EOF'
+import re, sys
 path, ver, date, notes = sys.argv[1:5]
 with open(path) as f:
     text = f.read()
 section = "## %s - %s\n\n%s\n\n" % (ver, date, notes.rstrip())
 lines = text.split("\n")
-for i, line in enumerate(lines):
-    if line.startswith("## "):
-        lines.insert(i, section.rstrip("\n"))
-        lines.insert(i + 1, "")
-        break
+head = re.compile(r"^## %s(?: |$)" % re.escape(ver))
+start = next((i for i, line in enumerate(lines) if head.match(line)), None)
+if start is not None:
+    # Replace this version's section up to the next heading.
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    lines[start:end] = section.rstrip("\n").split("\n") + [""]
 else:
-    lines.extend(["", section.rstrip("\n")])
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            lines.insert(i, section.rstrip("\n"))
+            lines.insert(i + 1, "")
+            break
+    else:
+        lines.extend(["", section.rstrip("\n")])
 with open(path, "w") as f:
     f.write("\n".join(lines))
 EOF
 git -C "$ROOT" add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
-git -C "$ROOT" commit -m "release $VER" >/dev/null
+# Nothing staged means every manifest and the CHANGELOG were already at
+# $VER; tag the current HEAD instead of making an empty release commit.
+git -C "$ROOT" diff --cached --quiet || git -C "$ROOT" commit -m "release $VER" >/dev/null
 git -C "$ROOT" tag -a "v$VER" -m "v$VER"
+fi
 
 if [ "$SKIP_BUILD" = 0 ]; then
     mkdir -p "$OUT"
@@ -111,7 +134,12 @@ trap 'rm -f "$NOTES_TMP"' EXIT
 python3 - "$ROOT/CHANGELOG.md" "$VER" <<'EOF' > "$NOTES_TMP"
 import re, sys
 text = open(sys.argv[1]).read()
-m = re.search(r'^## %s.*?\n\n(.*?)\n\n(?=## |\Z)' % re.escape(sys.argv[2]), text, re.S | re.M)
-sys.stdout.write(m.group(1) if m else "")
+m = re.search(r'^## %s(?: [^\n]*)?\n(.*?)(?=^## |\Z)' % re.escape(sys.argv[2]), text, re.S | re.M)
+sys.stdout.write(m.group(1).strip() + "\n" if m else "")
 EOF
-gh release create "v$VER" --title "v$VER" --notes-file "$NOTES_TMP" "$OUT"/*.deb "$OUT"/*.AppImage
+[ -s "$NOTES_TMP" ] || die "no CHANGELOG section found for $VER"
+if gh release view "v$VER" >/dev/null 2>&1; then
+    gh release upload "v$VER" --clobber "$OUT"/*.deb "$OUT"/*.AppImage
+else
+    gh release create "v$VER" --title "v$VER" --notes-file "$NOTES_TMP" "$OUT"/*.deb "$OUT"/*.AppImage
+fi
