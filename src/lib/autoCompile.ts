@@ -17,7 +17,7 @@ export type AutoState = {
 
 export type AutoInput =
   | { kind: 'enable'; on: boolean }
-  | { kind: 'save'; at: number }
+  | { kind: 'save'; at: number; path?: string }
   | { kind: 'tick'; at: number }
   | { kind: 'start' }
   | { kind: 'finish'; at: number }

@@ -134,6 +134,7 @@ export default function App({
       previewFile,
       setPreviewFile,
       setTex,
+      emptyTex: HELLO,
       setLargeFile,
       setReloadPath,
       ownWrites,

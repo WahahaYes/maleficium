@@ -537,10 +537,15 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       );
     }
   });
+  // Path of the save that armed the pending run: a file closed since
+  // (e.g. close-all persists, then evicts) must not fire it.
+  const savePathRef = useRef<string | null>(null);
   autoFireRef.current = () => {
     // A main file from before a root switch must never auto-fire: the
     // backend would refuse it as outside the project.
     if (mainFile && mainFile.includes('/') && root && !mainFile.startsWith(root + '/')) return;
+    const saved = savePathRef.current;
+    if (saved && !buffers.has(saved)) return;
     const target = mainFile ?? fileName;
     emit({
       scope: 'compile',
@@ -555,8 +560,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     () =>
       transport().subscribe((e) => {
         const a = e.event.action;
-        if (a === 'file.save') feedAuto.current({ kind: 'save', at: Date.now() });
-        else if (a === 'compile.start') feedAuto.current({ kind: 'start' });
+        if (a === 'file.save') {
+          savePathRef.current = e.event.path;
+          feedAuto.current({ kind: 'save', at: Date.now(), path: e.event.path });
+        } else if (a === 'compile.start') feedAuto.current({ kind: 'start' });
         else if (a === 'compile.finish') feedAuto.current({ kind: 'finish', at: Date.now() });
       }),
     [],
