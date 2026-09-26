@@ -400,7 +400,7 @@ mod tests {
     /// present, a large real-world paper. Prints ms; loose caps.
     #[test]
     fn budget_cold_build() {
-        let dir = crate::test_scratch::dir(&format!("ix-budget"));
+        let dir = crate::test_scratch::dir("ix-budget");
         let _ = std::fs::remove_dir_all(&dir);
         for c in 0..30 {
             let ch = dir.join(format!("chapters/c{c:02}"));
