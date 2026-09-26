@@ -117,6 +117,7 @@ if [ "$SKIP_BUILD" = 0 ]; then
     if [ "$HOST" = 1 ]; then
         [ -n "$(ls -A "$ROOT/src-tauri/binaries" 2>/dev/null)" ] || die "no sidecars; run sh scripts/fetch-sidecars.sh first"
         (cd "$ROOT" && npm run tauri build -- --bundles deb,appimage)
+        sh "$ROOT/scripts/repack-appimage.sh" "$ROOT"/src-tauri/target/release/bundle/appimage/*.AppImage
     else
         docker build --output "type=local,dest=$OUT" "$ROOT"
     fi
