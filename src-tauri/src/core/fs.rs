@@ -71,8 +71,7 @@ pub fn resolve_in(id: &str, candidate: &str) -> Result<PathBuf, String> {
     } else {
         root.join(candidate)
     };
-    let canon = joined
-        .canonicalize()
+    let canon = dunce::canonicalize(&joined)
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
     if !canon.starts_with(&root) {
         return Err(format!("forbidden path (outside project): {}", candidate));
@@ -221,8 +220,7 @@ pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
     let root = session_root(id)?;
     let home = trash_home(&root);
     let src = PathBuf::from(trash_path);
-    let canon_src = src
-        .canonicalize()
+    let canon_src = dunce::canonicalize(&src)
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", trash_path, e))?;
     if !canon_src.starts_with(&home) {
         return Err("forbidden path (not in trash)".to_string());
@@ -304,7 +302,7 @@ mod tests {
         let dir = crate::test_scratch::dir(&format!("fs-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("t-{}", name);
         grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)

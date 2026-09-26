@@ -107,7 +107,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("out-{}", name);
         crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)

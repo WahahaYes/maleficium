@@ -298,7 +298,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, text).unwrap();
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("ix-{}", name);
         super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
@@ -413,7 +413,7 @@ mod tests {
                 std::fs::write(ch.join(format!("s{s:03}.tex")), body).unwrap();
             }
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         super::super::grant_root("ix-budget", &canon.to_string_lossy()).unwrap();
         let t = Instant::now();
         let n = open("ix-budget").unwrap();
@@ -430,7 +430,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let tvcg = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../refs/TVCG_Paper_Ref");
-        if let Ok(canon) = tvcg.canonicalize() {
+        if let Ok(canon) = dunce::canonicalize(&tvcg) {
             super::super::grant_root("ix-tvcg", &canon.to_string_lossy()).unwrap();
             let t = Instant::now();
             let n = open("ix-tvcg").unwrap();
