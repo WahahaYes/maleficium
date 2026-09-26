@@ -56,9 +56,12 @@ COPY . .
 # linuxdeploy/appimagetool are AppImages themselves; there is no FUSE in a
 # build container, so let them extract and run instead of mounting.
 ENV APPIMAGE_EXTRACT_AND_RUN=1
+# The target dir is a cache mount, so bundle/ still holds packages from
+# earlier versions; clear it so only this build's artifacts reach /out.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/src-tauri/target \
-    npm run tauri build -- --bundles deb,appimage \
+    rm -rf src-tauri/target/release/bundle \
+    && npm run tauri build -- --bundles deb,appimage \
     && sh scripts/repack-appimage.sh src-tauri/target/release/bundle/appimage/*.AppImage \
     && mkdir -p /out \
     && cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage /out/

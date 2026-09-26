@@ -116,8 +116,11 @@ if [ "$SKIP_BUILD" = 0 ]; then
     mkdir -p "$OUT"
     if [ "$HOST" = 1 ]; then
         [ -n "$(ls -A "$ROOT/src-tauri/binaries" 2>/dev/null)" ] || die "no sidecars; run sh scripts/fetch-sidecars.sh first"
+        BUNDLE="$ROOT/src-tauri/target/release/bundle"
+        rm -rf "$BUNDLE"
         (cd "$ROOT" && npm run tauri build -- --bundles deb,appimage)
-        sh "$ROOT/scripts/repack-appimage.sh" "$ROOT"/src-tauri/target/release/bundle/appimage/*.AppImage
+        sh "$ROOT/scripts/repack-appimage.sh" "$BUNDLE"/appimage/*.AppImage
+        cp "$BUNDLE"/deb/*.deb "$BUNDLE"/appimage/*.AppImage "$OUT"/
     else
         docker build --output "type=local,dest=$OUT" "$ROOT"
     fi
@@ -128,8 +131,17 @@ if [ "$PUBLISH" = 0 ]; then
     [ "$SKIP_BUILD" = 1 ] || printf '  gh release create v%s --title v%s --notes-file <notes> %s/*.deb %s/*.AppImage\n' "$VER" "$VER" "$OUT" "$OUT"
     exit 0
 fi
-git -C "$ROOT" push origin main "v$VER"
 [ -n "$(ls "$OUT"/*.deb "$OUT"/*.AppImage 2>/dev/null)" ] || die "no artifacts in $OUT; build first"
+# Every artifact is uploaded, so one left over from another version would
+# ship alongside this one. Checked before anything is pushed.
+for f in "$OUT"/*.deb "$OUT"/*.AppImage; do
+    [ -e "$f" ] || continue
+    case "${f##*/}" in
+        (*_"$VER"_*) ;;
+        (*) die "$f is not a $VER artifact; clear $OUT of other versions" ;;
+    esac
+done
+git -C "$ROOT" push origin main "v$VER"
 NOTES_TMP=$(mktemp /tmp/maleficium-release-notes-XXXXXX.md)
 trap 'rm -f "$NOTES_TMP"' EXIT
 python3 - "$ROOT/CHANGELOG.md" "$VER" <<'EOF' > "$NOTES_TMP"
