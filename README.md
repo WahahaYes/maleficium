@@ -1,60 +1,76 @@
 # Maleficium
 
-Desktop-native LaTeX editor. TypeScript + React + MUI frontend, Tauri 2 + Rust backend. Linux-first, fully offline via a bundled Tectonic engine.
+A desktop LaTeX editor that works offline. Edit on the left, see the PDF on the right, and click between them. Maleficium ships its own TeX engine (Tectonic), so there is no TeX distribution to install.
 
-## Screenshots
+Linux x86_64 for now. Built with Tauri 2 and Rust, with a React + MUI frontend.
 
 ![Edit, compile, and preview side by side](docs/screenshots/compile-preview.png)
-![New project from a template](docs/screenshots/template-gallery.png)
-![First-run welcome tour](docs/screenshots/welcome-tour.png)
 
 ## Features
 
-- Editor with LaTeX-aware search, replace preview, and undo-safe apply.
-- One-key compile with live progress and a pre-compile problem check.
-- Side-by-side PDF preview with SyncTeX forward and inverse search.
-- Project file tree, quick file finder, and command palette.
-- Ten starter templates (article, report, book, beamer, letter, CV, resume, journal, assignment, welcome).
-- Curated color themes with a searchable picker.
-- Revision history stored in Rust, shared by the app and its automation API.
+- **Compile with one key.** Ctrl+R compiles and shows live progress. A pre-compile check lists missing packages, fonts, and tools before the engine hits them.
+- **PDF preview with SyncTeX.** Double-click a line to find it in the PDF. Click the PDF to jump back to the source.
+- **Project navigation.** File tree, document outline, go to definition for labels, citations, and macros, a quick file finder (Ctrl+P), and a command palette (Ctrl+Shift+P).
+- **Search and replace across the project.** Every replacement is shown before it is applied, and the whole replace can be undone in one step.
+- **Revision history.** Each save keeps a revision, and any revision can be restored (Ctrl+H). History lives in the app's data folder, never in your project.
+- **Templates.** Nine built-in starter templates (article, report, book, presentation, letter, CV, resume, journal paper, assignment), free to use under CC0. You can also save your own.
+- **Themes.** Popular VS Code color themes, dark and light, with a searchable picker.
 
-## Install (Linux x86_64)
+![New project from a template](docs/screenshots/template-gallery.png)
 
-From the [releases page](https://github.com/wahahayes/maleficium/releases):
+## Install
+
+Download from the [releases page](https://github.com/wahahayes/maleficium/releases).
+
+Debian / Ubuntu:
 
 ```sh
 sudo apt install ./Maleficium_0.1.0_amd64.deb
 ```
 
-or run the AppImage:
+Any other distribution, with the AppImage:
 
 ```sh
 chmod +x Maleficium_0.1.0_amd64.AppImage
 ./Maleficium_0.1.0_amd64.AppImage
 ```
 
-If the AppImage fails with a FUSE error, prefix the run with
-`APPIMAGE_EXTRACT_AND_RUN=1`.
+If the AppImage fails with a FUSE error, run it with `APPIMAGE_EXTRACT_AND_RUN=1` set.
 
-## Build from source
+To build it yourself, see [BUILDING.md](BUILDING.md).
 
-See [BUILDING.md](BUILDING.md) for the Docker and host routes.
+## Getting started
+
+On first launch Maleficium opens a short welcome project. After that:
+
+1. **File > Open Project** (Ctrl+O) opens any folder of `.tex` files, or **File > New Project from Template** starts a new one.
+2. Press **Ctrl+R** to compile. Maleficium finds the main file itself. To choose a different one, right-click a `.tex` file in the tree and pick **Set as Main File**.
+3. Press **?** to see every keyboard shortcut.
+
+![First-run welcome tour](docs/screenshots/welcome-tour.png)
 
 ## Offline and privacy
 
-The first compile downloads the Tectonic engine bundle (about 300
-files) and needs network access. After that the app works fully
-offline. That bundle fetch is the only network call the app makes:
-no telemetry, no auto-updater, nothing else leaves the machine.
+The first compile downloads the TeX support files the engine needs, so it needs a network connection. After that Maleficium works fully offline.
 
-## Status and known limits
+That download is the only network traffic the app makes. There is no telemetry and no auto-updater.
 
-0.1.0 ships Linux x86_64 only (`.deb` and AppImage); macOS and
-Windows builds wait for a later release. There is no update
-mechanism yet — watch the releases page. 0.1.x makes no user-data
-compatibility promises between builds.
+## Known limits in 0.1.0
 
-## License
+- Linux x86_64 only. macOS and Windows builds will come in a later release.
+- No automatic updates. Check the releases page for new versions.
+- 0.1.x makes no promise that settings or history carry over between versions.
+- The engine is Tectonic only. Documents that need `biber` or shell escape depend on tools outside the app, and the pre-compile check flags them.
 
-Apache 2.0 — see `LICENSE`, including the accreditation notice.
-Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
+## Documentation
+
+- [Building from source](BUILDING.md), including how releases are cut
+- [Contributing](CONTRIBUTING.md): setup, checks, and house rules
+- [Test harnesses](e2e/README.md)
+- [Built-in templates](src-tauri/templates/README.md): origins and license
+
+## Contributing and license
+
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
+Licensed under Apache 2.0 ([LICENSE](LICENSE)). The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).

@@ -1,64 +1,72 @@
 # Contributing to Maleficium
 
+Thanks for helping. This page covers setup, the checks every change must pass, and the house rules for code, comments, and commits.
+
+## Setup
+
+Install the toolchain and system packages listed in [BUILDING.md](BUILDING.md), then:
+
+```sh
+npm ci
+sh scripts/fetch-sidecars.sh   # bundled Tectonic + SyncTeX
+npm run dev:desktop            # the app, with hot reload
+```
+
+`npm run dev` serves the frontend alone in a browser. Both dev commands pick a free port, so several checkouts can run side by side.
+
+Optional: `pre-commit install` runs the format, lint, and type checks on each commit.
+
+## Before you commit
+
+Run these from the repo root:
+
+```sh
+./node_modules/.bin/tsc --noEmit --skipLibCheck   # not npx tsc
+npm run lint && npm run format:check
+npm test
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+npm run build
+cargo check --manifest-path src-tauri/Cargo.toml
+e2e/project-footprint.sh
+```
+
+A GUI change is not confirmed until someone has clicked through it in the real app on a desktop.
+
 ## Commits
 
-One concern per commit. Brief single line, lowercase, no prefix, no trailing period.
+One concern per commit, with a single-line message: lowercase, no prefix, no trailing period.
 
 - Good: `associate latex main file`, `restore dpr-folded preview scale`
 - Bad: `feat: associate main file`, `fix preview scale bug`, two concerns in one commit
 
-Stage only your own files — never `add -A` / `commit -a`. `package.json` +
-`package-lock.json` always ship in the same commit, in sync. Release
-commits use the message `release X.Y.Z` (see `BUILDING.md`).
+Stage your own files by name; never `git add -A` or `git commit -a`. `package.json` and `package-lock.json` always change in the same commit. Release commits are `release X.Y.Z` (see [BUILDING.md](BUILDING.md)).
 
 ## Code comments
 
-Comments state what the code does now, in one or two lines. Never
-reference prior state, bugfixes, history, dates, tickets, or other
-locations in the codebase — history and rationale live outside the repo.
+A comment says what the code does now, in a line or two. It does not mention earlier versions, bug fixes, dates, tickets, or other files. That history belongs in commits and issues.
 
-## Verify before claiming (run in this dir)
+## No legacy code
 
-- `./node_modules/.bin/tsc --noEmit --skipLibCheck` (never `npx tsc`)
-- `npm test -- --run` and `cargo test --manifest-path src-tauri/Cargo.toml --lib`
-- `npm run build` and `cargo check --manifest-path src-tauri/Cargo.toml`
-- `e2e/project-footprint.sh`
+Before 1.0 there is nothing to stay backward compatible with. When a behavior moves, the old path is deleted in the same change: no fallbacks, aliases, re-exports, or `@deprecated` shims.
 
-GUI-only claims stay unconfirmed without a click-through on a real desktop.
+Fallbacks that keep the app working on a supported setup are fine, such as copy-then-delete across devices or a download when there is no native save dialog.
 
-## No legacy
+## Third-party code
 
-Pre-1.0 there is nothing to be backward-compatible with. Moving a
-behavior deletes the old path in the same change — no fallbacks,
-aliases, re-exports, `@deprecated` shims, or dual-read resolvers. Real
-runtime fallbacks for supported environments (cross-device
-copy-then-delete, web-fallback save dialog, honest non-repo
-degradation) are robustness, not legacy — keep those.
+Other projects may inform a design, but never copy their code or license text. Only MIT-style licensed code may be followed closely.
 
-## Licenses
+## Templates
 
-Reference material is semantic inspiration only — never copy code or
-license text. Only MIT-style patterns may be followed closely.
+Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs the CC0 header and a row in the table in [src-tauri/templates/README.md](src-tauri/templates/README.md), which records where each template came from.
 
 ## Styling
 
-Theme tokens are the only styling source: palette keys, spacing
-multipliers, and shape scale — never hardcoded hex, manual shadows, or
-custom CSS outside the SyncTeX exception in `App.css`. Depth comes from
-divider borders and the flattened shadow scale, not elevation.
-Appearance prefs flow through `AppearancePrefs` into the theme factory;
-vendored palettes live under `src/assets/themes/`.
+Style only through theme tokens: palette keys, spacing multipliers, and the shape scale. No hardcoded colors, hand-written shadows, or custom CSS (the one exception is the SyncTeX highlight in `src/App.css`). Depth comes from divider borders and the flat shadow scale, not elevation.
+
+Appearance settings flow through `AppearancePrefs` into the theme factory. Bundled color themes live in `src/assets/themes/`.
 
 ## Tests and harnesses
 
-Tests (`*.test.ts`, `src/test/`, `e2e/`) are product code. `e2e/` holds
-the proof harnesses and driver configs; generated output lives only in
-OS tmp, never committed. No demo or tooling-only code in the tree.
+Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output goes to the OS temp dir and is never committed. See [e2e/README.md](e2e/README.md) for what each harness proves and how to run it.
 
-Harness runs go through `e2e/worktree-run.sh`: one reused worktree and
-its own cargo target under `/var/tmp`, so a run never rebuilds your dev
-checkout. Stills build the app once per run, and the cold-compile state
-reads the TeX bundle through `e2e/bundle-mirror.py` (network only on its
-first fill). Cargo never prunes its caches: `npm run clean` drops the
-incremental ones, `-- --all` removes the target dirs, `-- --dry-run`
-shows sizes first; it refuses while a build or harness is running.
+Rust build caches grow without limit. `npm run clean` drops the incremental caches; add `-- --all` to remove the target dirs, or `-- --dry-run` to see sizes first.

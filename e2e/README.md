@@ -1,24 +1,92 @@
-# e2e/ — proof harnesses + driver scripts (product test code)
+# e2e — end-to-end harnesses
 
-Separated from `src/` and `src-tauri/`: this folder drives the built app or replicates its derivations — it never ships in the product bundle.
+These scripts check the built app and its automation sidecar from the outside. They are test code and never ship in the app bundle. Run every command from the repo root.
 
-## Isolation
+| Harness | Needs a window? | What it proves |
+| --- | --- | --- |
+| `project-footprint.sh` | no | The app never writes into a user's project |
+| `history-surface.sh` | no | The revision history surface is wired up and restores exact bytes |
+| `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
+| `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
+| `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
+| `release-smoke.sh` | Docker | The `.deb` and AppImage install and launch |
 
-- `worktree-run.sh` — runs any harness from a pinned-commit scratch worktree: `./e2e/worktree-run.sh [<ref>] -- <command...>`. Freezes the source against live-checkout churn (another writer saving `src/` mid-run kills vite and wedges captures) and restores committed fixtures. Carries the uncommitted `e2e/` diff under test (tracked as a patch, untracked by copy); symlinks `node_modules`; shares the main checkout's Rust target dir via `CARGO_TARGET_DIR`. Removes the worktree on success, keeps it on failure. GUI harnesses still serialize on `:1420` (stills pins its devUrl there, vite binds it with `strictPort`; `STILLS_PORT` moves it while a dev app holds `:1420`) — isolation freezes the source, it does not multiplex the port. Dev loops pick a free port pair (`scripts/dev.sh`) but start at `:1420` too.
+## Running in isolation
 
-## Contents
+Run harnesses through `worktree-run.sh`, which checks out a pinned commit into a separate worktree so edits in your checkout cannot disturb a run:
 
-- `project-footprint.sh` — static project-footprint audit (no window needed). Copies `playground/simple/` to a scratch git repo, replicates each app-local path derivation in bash, and asserts porcelain discipline at every step. Run: `./e2e/project-footprint.sh` from `maleficium/`. Also pins statically: no `$HOME` in `capabilities/`, `security.csp` enforced, `opener` absent incl. lockfiles.
-- `driver-run.sh` — live run over the stdio sidecar: grant → compile → poll → synctex → delete → undo over JSON-RPC against a scratch copy of `playground/simple/`, then asserts porcelain discipline + artifact homes. A second half drives heavy documents: 1000-file open latency (one directory level, never the tree), cancel mid-compile on a 3000-page document, and the D.5 budgets — pdf load, page render, peak memory — measured through the same pdf.js build and viewport formula the preview uses, and printed as stream lines beside their baselines. Exits nonzero when any check or budget misses. Run: `./e2e/driver-run.sh` from `maleficium/`.
-  - Heavy fixtures (3000 pages, 1000 files) are generated from `src/test/make-fixture.ts` into OS tmp on first run and reused after; point `DRIVER_FIXTURES` elsewhere (still tmp) to relocate them. `DRIVER_LOG` sets the JSONL run log, `WARM_ONLY=1` stops after the first compile, `POLL_ROUNDS` bounds it, `MCP_ROOT_OVERRIDE` drives a caller-owned tree in place.
-  - D.5 needs `@napi-rs/canvas`, an optional dependency of `pdfjs-dist`: on a box without it (`--no-optional`, restricted CI image, no prebuilt binary) the probe prints `skip:` with the reason and the run stays green; budgets are simply not measured there.
-- `search-run.sh` — project-index run over the stdio sidecar, no compile and no network: search (literal, regex, invalid regex, cap), main-document ranking, hit columns against the file, a file written mid-run found by the stat walk, `find_files`, the structure tools reading the index, `definition` (label, bib summary, input at a position, undefined key), and replace (preview writes nothing, apply by token, apply-once, undo restores exact bytes, a stale plan refused whole), against a scratch copy of `playground/simple/`; asserts nothing is written into the project. Run: `./e2e/search-run.sh` from `maleficium/` after `cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp`.
-- `stills-run.sh` — mechanical still capture for the shell states (Default / Compiling / Failure; 3000pp deferred, see script header). Launches the app under Xvfb with a contained HOME, opens scratch fixtures hands-free (Ctrl+O; the `?project=` preset skips the dialog), drives compile/failure with Ctrl+R, captures PNGs to OS tmp with `import`. No pixel assertions — stills are filed artifacts for on-demand review. Run: `STILLS_OUT=/tmp/stills ./e2e/stills-run.sh` from `maleficium/` (needs Xvfb, xdotool, ImageMagick); `STILLS_PORT=1450` serves it beside a running dev app.
-  - The stills run also asserts the app's own event log after every state (the only harness that launches the real app; the driver never starts the frontend log): created under the contained HOME, truncated at launch (exactly one `log.open`), valid JSONL, carrying the state's payloads (`file.save` + `revision.record` after the State 1 save, `compile.finish` after the State 2/3 compiles, `preview.pdf-load` + `preview.page-render` once the State 1/2 pdf paints, and a page-1 `preview.page-render` after every settled `preview.zoom` in State 6, which captures the preview at 50%, 150% and 300%; State 7 counts `preview.page-render` per page: fit page and a zoom step render each page once, a held fit page and a fixed-zoom scroll render nothing, and a beamer deck opens with one page-1 render at its 4:3 aspect; State 8 pops the pre-compile warnings panel once per finding set, turns the popup off through "Don't show this again", and reopens it from Tools > Show Pre-compile Warnings).
-- The app records its event stream as JSONL at `~/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl` (Linux; truncated at launch, newest 2000 lines kept). Read the current run hands-free: `cat` the file for everything, `grep '"action":"compile.finish"'` for one fact, match on `event.action` payloads rather than prose. Fix the path for a stills run with `STILLS_HOME=/tmp/x` (then `$STILLS_HOME/...` holds the log).
+```sh
+./e2e/worktree-run.sh [<ref>] -- ./e2e/stills-run.sh
+```
+
+- It carries your uncommitted `e2e/` changes into the worktree, so you can test a harness before committing it.
+- It reuses one worktree under `/var/tmp` and its own Cargo target dir, so warm runs rebuild nothing and never touch your dev build.
+- `node_modules` is symlinked in; vite gets its own dep cache.
+- If another run holds the worktree, it falls back to a throwaway one (kept on failure for inspection).
+
+GUI harnesses serve on port 1420. Set `STILLS_PORT` to move a stills run while a dev app holds that port.
+
+## The harnesses
+
+### project-footprint.sh
+
+A static audit. Copies `playground/simple/` into a scratch git repo, replays each of the app's path derivations (trash, history, outputs, event log, main-file association) in bash, and asserts `git status` stays clean. It also pins the security config: no `$HOME` in capabilities, CSP enforced, and the opener plugin absent (lockfiles included).
+
+### history-surface.sh
+
+A static audit of the revision history: both entry points reach one command, the UI speaks in user terms, and a restore through the store's blob layout returns the exact original bytes.
+
+### search-run.sh
+
+Drives the `maleficium-mcp` sidecar over JSON-RPC against a scratch copy of `playground/simple/`, with no compile and no network. Covers search (literal, regex, invalid regex, result cap), main-document ranking, a file written mid-run, `find_files`, the structure tools, go to definition, and replace (preview writes nothing, apply once by token, undo restores exact bytes, a stale plan is refused). Build the sidecar first:
+
+```sh
+cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp
+./e2e/search-run.sh
+```
+
+### driver-run.sh
+
+Drives the sidecar through grant → compile → poll → SyncTeX → delete → undo, then checks nothing landed in the project. A second half runs heavy documents: opening a 1000-file folder, cancelling a 3000-page compile, and render budgets (PDF load, page render, peak memory) measured with the same pdf.js build the preview uses. Exits non-zero when a check or budget misses.
+
+- Heavy fixtures are generated by `src/test/make-fixture.ts` into the OS temp dir on first run and reused. `DRIVER_FIXTURES` relocates them.
+- `DRIVER_LOG` sets the JSONL run log, `WARM_ONLY=1` stops after the first compile, `POLL_ROUNDS` bounds polling, and `MCP_ROOT_OVERRIDE` drives an existing folder in place.
+- The render budgets need `@napi-rs/canvas`, an optional dependency of `pdfjs-dist`. Without it the probe prints `skip:` and the run stays green.
+
+### stills-run.sh
+
+Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard shortcuts, and captures a PNG per state into `STILLS_OUT`. Needs Xvfb, xdotool, and ImageMagick.
+
+```sh
+STILLS_OUT=/tmp/stills ./e2e/stills-run.sh
+```
+
+There are no pixel assertions; the stills are for human review. It is the one harness that starts the frontend, so after each state it also asserts the app's event log: one `log.open` per launch, valid JSONL, and the expected events for that state (saves, compiles, PDF loads, page renders, zoom, and the pre-compile warnings panel).
+
+The cold-compile state reads the TeX bundle through `bundle-mirror.py`, a local cache that only needs the network on its first fill.
+
+### release-smoke.sh
+
+Installs the `.deb` in a clean Ubuntu 24.04 container, checks the payload (binaries, desktop entry, icons, control fields), and launches both bundles under Xvfb. It does not check how anything looks.
+
+```sh
+sh e2e/release-smoke.sh <artifact-dir> [timeout-secs]
+```
+
+## Reading the app's event log
+
+The app records every event as JSONL, one object per line, truncated at each launch:
+
+```sh
+L=~/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl
+cat "$L"                                  # the whole run
+grep '"action":"compile.finish"' "$L"     # one kind of event
+```
+
+Match on `event.action` rather than the message text. For a stills run, set `STILLS_HOME=/tmp/x` and read the log under `$STILLS_HOME` instead.
 
 ## Conventions
 
-- Harnesses resolve the repo root from their own path (`DEVROOT=…/..`) — no hardcoded absolute paths, no writes outside OS tmp.
-- Never commit megabyte fixtures: reuse `playground/simple/` (small sources) or generate into tmp at runtime.
-- Name tests for the functionality, never the session or slice.
+- Harnesses find the repo root from their own path. No hardcoded absolute paths, and no writes outside the OS temp dir.
+- Never commit large fixtures: reuse `playground/simple/` or generate into the temp dir at runtime.
+- Name tests for what they check, not for when they were written.

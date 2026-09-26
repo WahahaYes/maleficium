@@ -48,22 +48,16 @@ Artifacts land in:
 
 If the AppImage step fails with a FUSE error, run the build with `APPIMAGE_EXTRACT_AND_RUN=1` set.
 
-## Release cadence
+## Cutting a release
 
-Releases are cut manually with `scripts/release.sh`; there is no CI and no
-bot. One command from a clean `main` bumps the version in `package.json`
-(+ lockfile), `src-tauri/Cargo.toml` (+ lockfile) and
-`src-tauri/tauri.conf.json` together, prepends the `CHANGELOG.md` entry,
-commits, tags, and builds:
+Releases are cut by hand with `scripts/release.sh`; there is no CI. From a clean `main`:
 
 ```sh
 sh scripts/release.sh 0.2.0 --notes-file /tmp/notes.md
 ```
 
-Release commits use the message `release X.Y.Z`. Notes default to the
-commit subjects since the previous tag when no file is given. The Docker
-build is the default; `--host` builds on the machine instead, `--out`
-redirects the artifacts, and `--skip-build` stops after the tag (a test
-aid). Nothing is pushed or published unless `--publish` is passed, which
-pushes `main` + the tag and opens the GitHub release with the `.deb` and
-`.AppImage` attached. Pushing and publishing stay an explicit human go.
+This bumps the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` (with their lockfiles), adds the entry to `CHANGELOG.md`, commits as `release X.Y.Z`, tags, and builds.
+
+- Without `--notes-file`, the notes are the commit subjects since the last tag.
+- The build runs in Docker by default. `--host` builds on this machine, `--out` sets the artifact directory, and `--skip-build` stops after the tag.
+- Nothing leaves the machine unless you pass `--publish`, which pushes `main` and the tag and creates the GitHub release with the `.deb` and `.AppImage` attached.
