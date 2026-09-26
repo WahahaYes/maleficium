@@ -151,6 +151,12 @@ export default function App({
   // Revision history: app-local, keyed by the backend-minted project id.
   const rootRef = useRef<string | null>(root);
   rootRef.current = root;
+  // Project switches move the ref at once, so async work started for the
+  // old root can tell it is stale before the next render.
+  const setRootNow = useCallback((v: string | null) => {
+    rootRef.current = v;
+    setRoot(v);
+  }, []);
 
   /** Project-relative path for a file inside the open project, else null. */
   const relInProject = useCallback((abs: string): string | null => {
@@ -192,6 +198,9 @@ export default function App({
 
   const resolveMain = useCallback(async (r: string, opened: string | null) => {
     const res = await resolveMainFileTauri(r, opened);
+    // A resolve for a root that is no longer open never touches the open
+    // project's main file.
+    if (r !== rootRef.current) return null;
     setMainFileState(res.mainFile);
     setMainSource(res.source);
     setMainCandidates(res.candidates);
@@ -259,7 +268,7 @@ export default function App({
           message: 'switched ' + path,
           event: { action: 'file.switch', path, dirty: kept.dirty },
         });
-        if (root && path.endsWith('.tex')) void resolveMain(root, path);
+        if (rootRef.current && path.endsWith('.tex')) void resolveMain(rootRef.current, path);
         return;
       }
       emit({
@@ -306,7 +315,7 @@ export default function App({
           message: 'loaded ' + path,
           event: { action: 'file.open', path, chars: content.length },
         });
-        if (root && path.endsWith('.tex')) void resolveMain(root, path);
+        if (rootRef.current && path.endsWith('.tex')) void resolveMain(rootRef.current, path);
       } catch (e) {
         setLog('load failed: ' + String(e).slice(0, 120));
         emit({
@@ -318,7 +327,7 @@ export default function App({
         });
       }
     },
-    [buffers, setBuffers, fileName, root, ownWrites, recordRevision, resolveMain],
+    [buffers, setBuffers, fileName, ownWrites, recordRevision, resolveMain],
   );
 
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
@@ -633,7 +642,7 @@ export default function App({
     useProjectTree({
       root,
       projectId,
-      setRoot,
+      setRoot: setRootNow,
       setProjectId,
       setTree,
       fileNameRef,

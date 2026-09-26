@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn zip_packs_sources_only_and_refuses_a_destination_inside() {
         let (id, root) = project("zip");
-        let out = crate::test_scratch::dir(&format!("export.zip"));
+        let out = crate::test_scratch::dir("export.zip");
         let e = export_zip(&id, &out.to_string_lossy()).unwrap();
         assert_eq!(
             e.files,
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn pdf_export_needs_a_compile_and_copies_bytes() {
         let (id, _root) = project("pdf");
-        let out = crate::test_scratch::dir(&format!("export.pdf"));
+        let out = crate::test_scratch::dir("export.pdf");
         assert!(export_pdf(&id, "main.tex", &out.to_string_lossy())
             .unwrap_err()
             .contains("compile first"));

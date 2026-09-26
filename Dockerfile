@@ -59,6 +59,7 @@ ENV APPIMAGE_EXTRACT_AND_RUN=1
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/src-tauri/target \
     npm run tauri build -- --bundles deb,appimage \
+    && sh scripts/repack-appimage.sh src-tauri/target/release/bundle/appimage/*.AppImage \
     && mkdir -p /out \
     && cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage /out/
 

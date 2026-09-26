@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn grant_project_mints_byte_hash_id() {
-        let dir = crate::test_scratch::dir(&format!("fs-proj-ü"));
+        let dir = crate::test_scratch::dir("fs-proj-ü");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (canon, id) = grant_project(&dir.to_string_lossy()).unwrap();

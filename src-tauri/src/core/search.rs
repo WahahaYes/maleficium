@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn searches_a_granted_root_and_rejects_others() {
-        let dir = crate::test_scratch::dir(&format!("search"));
+        let dir = crate::test_scratch::dir("search");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::write(dir.join("main.tex"), "\\input{ch/a}\nneedle\n").unwrap();
@@ -122,7 +122,7 @@ mod tests {
     /// Budget pin: a regex search over a synthetic 3000-file project.
     #[test]
     fn budget_regex_search() {
-        let dir = crate::test_scratch::dir(&format!("search-budget"));
+        let dir = crate::test_scratch::dir("search-budget");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for n in 0..3000 {

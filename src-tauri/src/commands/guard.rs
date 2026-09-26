@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn fails_closed_on_missing_path() {
-        let missing = crate::test_scratch::dir(&format!("guard-missing"));
+        let missing = crate::test_scratch::dir("guard-missing");
         let _ = fs::remove_dir_all(&missing);
         assert!(canonical_root(&missing.to_string_lossy()).is_err());
     }

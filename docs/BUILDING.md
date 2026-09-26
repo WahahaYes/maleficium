@@ -39,7 +39,10 @@ Fedora and Arch: install the Tauri 2 Linux prerequisites listed at <https://v2.t
 npm ci
 sh scripts/fetch-sidecars.sh
 npm run tauri build -- --bundles deb,appimage
+sh scripts/repack-appimage.sh src-tauri/target/release/bundle/appimage/*.AppImage
 ```
+
+The repack drops the `libwayland-*` libraries the bundler copies into the AppImage: they clash with a newer host Mesa and leave the window blank. The Docker build and `release.sh` run it for you.
 
 `fetch-sidecars.sh` puts the sha256-pinned Tectonic and a SyncTeX built from pinned source into `src-tauri/binaries/`; the bundler packs both next to the app binary.
 
