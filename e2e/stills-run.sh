@@ -864,6 +864,11 @@ palette() {
   sleep 1
   $XDO key Return >/dev/null 2>&1 || true
 }
+# A reused STILLS_HOME keeps the popup setting of an earlier run: start on.
+for db in "$FAKEHOME"/.local/share/io.github.wahahayes.maleficium/localstorage/*.localstorage; do
+  [ -f "$db" ] || continue
+  python3 -c 'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("DELETE FROM ItemTable WHERE key = ?", ("maleficium.precheckPopup.v1",)); c.commit()' "$db"
+done
 start_app "$FIX/precheck"; wait_window 300
 # shellcheck disable=SC2086
 $XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
@@ -890,9 +895,9 @@ shot 08-precheck-dont-show
 # shellcheck disable=SC2086
 $XDO mousemove --window "$WIN" 1540 836 click 1 >/dev/null 2>&1 || true
 wait_event precheck.panel-dismissed "$m_same" 20
-# A changed set: the edit lands on disk, the open buffer reloads it.
+# A changed set: the edit lands on disk in place, the open buffer reloads it.
 m_new=$(now_ms)
-sed -i 's/^\\usepackage{biblatex}$/\\usepackage{biblatex}\n\\usepackage{minted}/' "$FIX/precheck/main.tex"
+printf '\\documentclass{article}\n\\usepackage{nopkgmaleficium}\n\\usepackage{biblatex}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n' >"$FIX/precheck/main.tex"
 wait_event fs.external "$m_new" 20
 palette "reload from disk"
 wait_event file.reload "$m_new" 20
