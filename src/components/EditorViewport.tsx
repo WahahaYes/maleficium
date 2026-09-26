@@ -370,7 +370,13 @@ function EditorViewport({
         <div ref={hostRef} />
       </Paper>
       {findOpen ? (
-        <FindBar key={findKey} viewOf={viewOf} seed={findSeed} onClose={() => setFindOpen(false)} />
+        <FindBar
+          key={findKey}
+          viewOf={viewOf}
+          seed={findSeed}
+          fontSizePx={Math.max(10, (prefs ?? DEFAULT_PREFS).editorSize - 2)}
+          onClose={() => setFindOpen(false)}
+        />
       ) : null}
     </Box>
   );

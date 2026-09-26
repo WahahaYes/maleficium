@@ -12,9 +12,9 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import CloseIcon from '@mui/icons-material/Close';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import type { EditorView } from '@codemirror/view';
@@ -32,10 +32,12 @@ export interface FindBarProps {
   viewOf: () => EditorView | null;
   /** Seed query (usually the current selection). */
   seed: string;
+  /** Bar type size in px (editor size minus two, floored). */
+  fontSizePx: number;
   onClose: () => void;
 }
 
-export default function FindBar({ viewOf, seed, onClose }: FindBarProps) {
+export default function FindBar({ viewOf, seed, fontSizePx, onClose }: FindBarProps) {
   const [query, setQuery] = useState(seed);
   const [replace, setReplace] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -79,7 +81,17 @@ export default function FindBar({ viewOf, seed, onClose }: FindBarProps) {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        p: 1,
+        '& .MuiInputBase-input, & .MuiFormControlLabel-label, & .MuiButton-root': {
+          fontSize: `${fontSizePx}px`,
+        },
+      }}
+    >
       <Box
         sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
         onKeyDown={(e) => {
@@ -94,9 +106,9 @@ export default function FindBar({ viewOf, seed, onClose }: FindBarProps) {
             sx={{ width: 28, height: 28 }}
           >
             {replaceOpen ? (
-              <ExpandLessIcon fontSize="small" />
+              <ArrowDropDownIcon fontSize="small" />
             ) : (
-              <ExpandMoreIcon fontSize="small" />
+              <ArrowRightIcon fontSize="small" />
             )}
           </IconButton>
         </Tooltip>
