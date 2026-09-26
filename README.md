@@ -30,19 +30,19 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 ## Install
 
-Download from the [releases page](https://github.com/wahahayes/maleficium/releases). Linux x86_64 only for now.
+Download the `.deb` or AppImage from the [latest release](https://github.com/wahahayes/maleficium/releases/latest). Linux x86_64 only for now.
 
 Debian / Ubuntu:
 
 ```sh
-sudo apt install ./Maleficium_0.1.0_amd64.deb
+sudo apt install ./Maleficium_*_amd64.deb
 ```
 
 Any other distribution, with the AppImage:
 
 ```sh
-chmod +x Maleficium_0.1.0_amd64.AppImage
-./Maleficium_0.1.0_amd64.AppImage
+chmod +x Maleficium_*_amd64.AppImage
+./Maleficium_*_amd64.AppImage
 ```
 
 If the AppImage fails with a FUSE error, run it with `APPIMAGE_EXTRACT_AND_RUN=1` set. To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
@@ -55,7 +55,7 @@ On first launch Maleficium opens a short welcome project. After that:
 2. Press **Ctrl+R** to compile. Maleficium finds the main file itself. To choose a different one, right-click a `.tex` file in the tree and pick **Set as Main File**.
 3. Press **?** to see every keyboard shortcut.
 
-## Known limits in 0.1.0
+## Known limits in 0.1.x
 
 - Linux x86_64 only. macOS and Windows builds will come in a later release.
 - The MCP server for AI agents is not in the packaged app yet; build from source to try it.
