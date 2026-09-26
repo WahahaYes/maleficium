@@ -62,6 +62,7 @@ export type CommandId =
   | 'tools.compile'
   | 'tools.compile-file'
   | 'tools.make-offline'
+  | 'tools.precheck-warnings'
   | 'tools.auto-compile'
   | 'tools.cancel'
   | 'tools.forward-sync'
@@ -89,6 +90,8 @@ export interface MenuContext {
   compiling: boolean;
   /** Compile on save is on. */
   autoCompile: boolean;
+  /** Pre-compile findings of the latest run. */
+  precheckCount: number;
   pdfOpen: boolean;
   /** Live editor mounted (viewport bridge assigned) — Selection enabled. */
   editorReady: boolean;
@@ -153,6 +156,7 @@ export interface CommandActions {
   compile: () => void;
   compileFile: () => void;
   makeOffline: () => void;
+  showPrecheck: () => void;
   toggleAutoCompile: () => void;
   exportPdf: () => void;
   newFromTemplate: () => void;
@@ -540,7 +544,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
         },
         {
           id: 'appearance.settings',
-          label: 'Appearance…',
+          label: 'Settings…',
           enabled: true,
           run: a.showSettings,
         },
@@ -575,6 +579,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Make Available Offline',
           enabled: !ctx.compiling && ctx.hasProject,
           run: a.makeOffline,
+        },
+        {
+          id: 'tools.precheck-warnings',
+          label: 'Show Pre-compile Warnings',
+          enabled: ctx.precheckCount > 0,
+          run: a.showPrecheck,
         },
         {
           id: 'tools.cancel',

@@ -33,6 +33,7 @@ import ShortcutsDialog from './components/ShortcutsDialog';
 import SettingsDialog from './components/SettingsDialog';
 import type { AppearancePrefs } from './lib/appearance';
 import StatusBar from './components/StatusBar';
+import PrecheckPanel from './components/PrecheckPanel';
 import Pane, { PaneSplitter } from './components/Pane';
 import {
   listDir1Level,
@@ -600,6 +601,12 @@ export default function App({
     makeOffline,
     warmCompile,
     handleCompileFile,
+    precheck,
+    precheckOpen,
+    openPrecheck,
+    closePrecheck,
+    precheckPopup,
+    setPrecheckPopup,
   } = useCompileRunner({
     tex,
     fileName,
@@ -861,6 +868,11 @@ export default function App({
     },
     [root],
   );
+  const openFinding = useCallback(async (rootPath: string, rel: string, line: number) => {
+    const abs = joinPath(rootPath, rel);
+    if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
+    setHitSelect({ path: abs, line, col: 0, len: 0, key: Date.now() });
+  }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToDraft, setGoToDraft] = useState('');
@@ -979,6 +991,7 @@ export default function App({
     dirty: !!buffers.get(fileName)?.dirty,
     compiling: compilePhase === 'compiling',
     autoCompile,
+    precheckCount: precheck?.findings.length ?? 0,
     pdfOpen: pdfUrl != null,
     editorReady: viewportRef.current != null && largeFile == null,
     view: { tree: treeVisible, editor: editorVisible, preview: previewOpen },
@@ -1131,6 +1144,7 @@ export default function App({
     makeOffline: () => {
       void makeOffline();
     },
+    showPrecheck: openPrecheck,
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
     exportZip: () => void exporter.exportZipAs(),
@@ -1489,6 +1503,8 @@ export default function App({
         onClose={() => setSettingsOpen(false)}
         prefs={prefs}
         onChange={onPrefs}
+        precheckPopup={precheckPopup}
+        onPrecheckPopup={setPrecheckPopup}
       />
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>
@@ -1619,7 +1635,18 @@ export default function App({
         timer={compileTimer}
         message={compilePhase === 'compiling' ? (progress ?? log) : log}
         offline={compilePhase === 'compiling' ? null : offline}
+        warnings={precheck?.findings.length ?? 0}
+        onOpenWarnings={openPrecheck}
       />
+      {precheck && precheckOpen ? (
+        <PrecheckPanel
+          key={`${precheck.target}:${precheck.findings.length}`}
+          precheck={precheck}
+          popupEnabled={precheckPopup}
+          onJump={(r, rel, line) => void openFinding(r, rel, line)}
+          onClose={closePrecheck}
+        />
+      ) : null}
     </Box>
   );
 }

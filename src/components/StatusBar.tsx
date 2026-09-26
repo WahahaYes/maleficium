@@ -1,5 +1,5 @@
-// StatusBar.tsx — fixed 32px bottom bar (phase + timer + offline badge + main
-// + restorables).
+// StatusBar.tsx — fixed 32px bottom bar (phase + timer + pre-compile warnings
+// + offline badge + main + restorables).
 //
 // Constant height; scalar props only (no payload). Compile state lives here.
 // The revision count is the entry point to the History surface.
@@ -21,6 +21,8 @@ export default function StatusBar({
   timer,
   message,
   offline,
+  warnings,
+  onOpenWarnings,
 }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
@@ -35,6 +37,9 @@ export default function StatusBar({
   message: string;
   /** The project's offline readiness; absent outside a project. */
   offline?: OfflineBadge | null;
+  /** Pre-compile findings of the latest run; the chip opens their panel. */
+  warnings?: number;
+  onOpenWarnings?: () => void;
 }) {
   const color =
     phase === 'success'
@@ -69,6 +74,25 @@ export default function StatusBar({
         {phase}
         {phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
+      {onOpenWarnings && warnings != null && warnings > 0 ? (
+        <ButtonBase
+          onClick={onOpenWarnings}
+          data-testid="precheck-chip"
+          title={`${warnings} pre-compile warning${warnings === 1 ? '' : 's'} — click to review`}
+          sx={{
+            flexShrink: 0,
+            px: 0.75,
+            border: 1,
+            borderRadius: 1,
+            borderColor: 'divider',
+            typography: 'caption',
+            color: 'warning.main',
+            '&:hover': { bgcolor: 'action.hover' },
+          }}
+        >
+          ⚠ {warnings}
+        </ButtonBase>
+      ) : null}
       {offline ? (
         <Typography
           variant="caption"

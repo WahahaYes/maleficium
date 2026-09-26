@@ -29,7 +29,9 @@ import { foldProgress, IDLE_PROGRESS, progressLabel } from '../lib/compileProgre
 import { INITIAL_AUTO, parseAutoCompile, stepAuto, type AutoInput } from '../lib/autoCompile';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
 import { transport } from '../lib/event-transport';
-import type { Actor } from '../lib/generated/events';
+import type { Actor, PrecheckPanelVia } from '../lib/generated/events';
+import type { Finding } from '../lib/generated/structure';
+import { findingsKey, loadPrecheckPopup, savePrecheckPopup, shouldPop } from '../lib/precheckPanel';
 import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
@@ -37,6 +39,13 @@ import type { OwnWrites } from '../lib/own-writes';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
 export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
+
+/** The latest run's pre-compile findings; `path`s are relative to `rootPath`. */
+export interface PrecheckFindings {
+  target: string;
+  rootPath: string;
+  findings: Finding[];
+}
 
 export interface UseCompileRunnerDeps {
   tex: string;
@@ -86,6 +95,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const [compileStart, setCompileStart] = useState<number | null>(null);
   const [offline, setOffline] = useState<OfflineBadge | null>(null);
   const [progress, setProgress] = useState(IDLE_PROGRESS);
+  const [precheck, setPrecheck] = useState<PrecheckFindings | null>(null);
+  const [precheckOpen, setPrecheckOpen] = useState(false);
+  const [precheckPopup, setPrecheckPopupState] = useState(loadPrecheckPopup);
+  /** Finding-set key last popped per target. */
+  const precheckShownRef = useRef(new Map<string, string>());
   /** Emit a compile event that also moves the live progress line. */
   const emitProgress = (e: Parameters<typeof emit>[0]) => {
     emit(e);
@@ -161,8 +175,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     return [...(p ? [p] : []), ...(scratch ? [scratch] : [])];
   }
 
-  async function compile() {
-    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null));
+  async function compile(popup = true) {
+    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null), { popup });
   }
 
   // Shared compile runner: `target` is the main-file target, or an explicit
@@ -177,7 +191,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const phaseRef = useRef<CompilePhase>('idle');
   async function runCompile(
     target: string | null,
-    opts?: { skipPersist?: boolean; root?: SessionRoot; networked?: boolean },
+    opts?: { skipPersist?: boolean; root?: SessionRoot; networked?: boolean; popup?: boolean },
   ): Promise<boolean> {
     if (phaseRef.current === 'compiling') return false;
     phaseRef.current = 'compiling';
@@ -351,7 +365,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     // itself stops at the first. They inform, never block.
     if (src) {
       try {
-        for (const f of await precompileChecks(src.rootId, src.mainRel)) {
+        const findings = await precompileChecks(src.rootId, src.mainRel);
+        for (const f of findings) {
           emit({
             scope: 'compile',
             kind: 'warn',
@@ -360,7 +375,13 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             event: { action: 'compile.precheck', target: activeTarget, ...f },
           });
         }
+        showFindings(
+          { target: activeTarget, rootPath: src.rootPath, findings },
+          opts?.popup ?? !opts?.skipPersist,
+          actor,
+        );
       } catch (e) {
+        setPrecheck(null);
         emit({
           scope: 'compile',
           kind: 'warn',
@@ -530,7 +551,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       message: 'auto-compile after save: ' + target,
       event: { action: 'compile.auto', target },
     });
-    void compile();
+    void compile(false);
   };
   useEffect(
     () =>
@@ -546,7 +567,68 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   );
   useEffect(() => {
     feedAuto.current({ kind: 'reset' });
+    setPrecheck(null);
+    setPrecheckOpen(false);
   }, [projectId]);
+
+  /** Record a run's findings and pop the panel when the pop rule says so. */
+  function showFindings(p: PrecheckFindings, popup: boolean, actor: Actor) {
+    if (p.findings.length === 0) {
+      setPrecheck(null);
+      setPrecheckOpen(false);
+      return;
+    }
+    setPrecheck(p);
+    const key = findingsKey(p.findings);
+    const shown = precheckShownRef.current;
+    if (shouldPop({ enabled: precheckPopup, popup, key, lastShown: shown.get(p.target) })) {
+      shown.set(p.target, key);
+      announcePanel(p, 'auto', actor);
+    }
+  }
+  function announcePanel(p: PrecheckFindings, via: PrecheckPanelVia, actor: Actor) {
+    setPrecheckOpen(true);
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      actor,
+      message: `pre-compile warnings: ${p.findings.length} for ${p.target}`,
+      event: {
+        action: 'precheck.panel-shown',
+        target: p.target,
+        count: p.findings.length,
+        via,
+      },
+    });
+  }
+  /** Open the panel on request (status-bar chip or Tools menu). */
+  const openPrecheck = () => {
+    if (precheck) announcePanel(precheck, 'request', 'user');
+  };
+  const setPrecheckPopup = (on: boolean) => {
+    setPrecheckPopupState(on);
+    savePrecheckPopup(on);
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      actor: 'user',
+      message: on ? 'pre-compile warnings popup on' : 'pre-compile warnings popup off',
+      event: { action: 'precheck.popup-setting', on },
+    });
+  };
+  const closePrecheck = (dontShowAgain: boolean) => {
+    setPrecheckOpen(false);
+    emit({
+      scope: 'compile',
+      kind: 'info',
+      actor: 'user',
+      message: dontShowAgain
+        ? 'pre-compile warnings closed (popup off)'
+        : 'pre-compile warnings closed',
+      event: { action: 'precheck.panel-dismissed', dontShowAgain },
+    });
+    if (dontShowAgain) setPrecheckPopup(false);
+  };
   const setAutoCompile = (on: boolean) => {
     setAutoCompileState(on);
     feedAuto.current({ kind: 'enable', on });
@@ -637,5 +719,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     makeOffline,
     warmCompile,
     handleCompileFile,
+    precheck,
+    precheckOpen,
+    openPrecheck,
+    closePrecheck,
+    precheckPopup,
+    setPrecheckPopup,
   };
 }

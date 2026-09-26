@@ -266,6 +266,15 @@ pub struct BatchFile {
     pub rev: String,
 }
 
+/// How the pre-compile panel came up: on its own after a compile, or at the
+/// user's request (the status-bar chip or Tools > Show Pre-compile Warnings).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrecheckPanelVia {
+    Auto,
+    Request,
+}
+
 /// Every fact the app reports, tagged by `action`. Paths are as the
 /// emitting surface holds them; `compile.problem` is root-relative.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -406,6 +415,19 @@ pub enum AppEvent {
     /// The pre-compile checks could not run; the compile goes ahead.
     #[serde(rename = "compile.precheck-failed")]
     CompilePrecheckFailed { target: String, error: String },
+    /// The pre-compile panel opened over `count` findings for `target`.
+    #[serde(rename = "precheck.panel-shown")]
+    PrecheckPanelShown {
+        target: String,
+        count: u32,
+        via: PrecheckPanelVia,
+    },
+    /// The pre-compile panel closed; `dontShowAgain` turned its popup off.
+    #[serde(rename = "precheck.panel-dismissed")]
+    PrecheckPanelDismissed { dont_show_again: bool },
+    /// The setting that lets the panel open on its own changed.
+    #[serde(rename = "precheck.popup-setting")]
+    PrecheckPopupSetting { on: bool },
     /// The engine entered a phase of the run.
     #[serde(rename = "compile.phase")]
     CompilePhase {
@@ -662,6 +684,7 @@ pub fn typescript() -> String {
         ExportKind::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
+        PrecheckPanelVia::decl(&cfg),
         Revision::decl(&cfg),
         RetentionInfo::decl(&cfg),
         RecordOutcome::decl(&cfg),

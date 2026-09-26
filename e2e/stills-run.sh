@@ -137,9 +137,9 @@ until curl -s -o /dev/null "http://localhost:$PORT/"; do
 done
 log "vite serving on :$PORT"
 
-# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7").
+# STILLS_STATES picks states to run (default all: "1 2 3 4 5 6 7 8").
 want() {
-  case " ${STILLS_STATES:-1 2 3 4 5 6 7} " in *" $1 "*) return 0 ;; esac
+  case " ${STILLS_STATES:-1 2 3 4 5 6 7 8} " in *" $1 "*) return 0 ;; esac
   return 1
 }
 
@@ -845,6 +845,90 @@ if p1 and "width" in p1[0]:
 assert not bad, "; ".join(bad)
 print("stills: render counts ok")
 EOF
+fi
+
+if want 8; then
+# State 8 — Pre-compile warnings. A document asking for a package outside
+# the bundle and for biber pops the warnings panel after Ctrl+R, once per
+# finding set; "Don't show this again" turns the popup off, so a changed
+# set stays quiet, and Tools > Show Pre-compile Warnings still opens it.
+APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
+mkdir -p "$FIX/precheck"
+printf '\\documentclass{article}\n\\usepackage{nopkgmaleficium}\n\\usepackage{biblatex}\n\\begin{document}\nx\n\\end{document}\n' >"$FIX/precheck/main.tex"
+palette() {
+  key ctrl+shift+p; sleep 2
+  # shellcheck disable=SC2086
+  $XDO mousemove --window "$WIN" 800 91 click 1 >/dev/null 2>&1 || true
+  sleep 1
+  $XDO type --delay 40 "$1" >/dev/null 2>&1 || true
+  sleep 1
+  $XDO key Return >/dev/null 2>&1 || true
+}
+start_app "$FIX/precheck"; wait_window 300
+# shellcheck disable=SC2086
+$XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
+sleep 2
+open_project
+click_editor
+m_first=$(now_ms)
+key ctrl+r
+wait_event precheck.panel-shown "$m_first" 120
+wait_event compile.finish "$m_first" 300
+sleep 2
+shot 08-precheck-panel
+click_editor
+m_same=$(now_ms)
+key ctrl+r
+wait_event compile.finish "$m_same" 300
+sleep 1
+# The panel's footer row sits 40px above the window bottom, 16px in from the
+# right, 440px wide: the checkbox leads it and Close ends it.
+# shellcheck disable=SC2086
+$XDO mousemove --window "$WIN" 1176 836 click 1 >/dev/null 2>&1 || true
+sleep 1
+shot 08-precheck-dont-show
+# shellcheck disable=SC2086
+$XDO mousemove --window "$WIN" 1540 836 click 1 >/dev/null 2>&1 || true
+wait_event precheck.panel-dismissed "$m_same" 20
+# A changed set: the edit lands on disk, the open buffer reloads it.
+m_new=$(now_ms)
+sed -i 's/^\\usepackage{biblatex}$/\\usepackage{biblatex}\n\\usepackage{minted}/' "$FIX/precheck/main.tex"
+wait_event fs.external "$m_new" 20
+palette "reload from disk"
+wait_event file.reload "$m_new" 20
+click_editor
+m_quiet=$(now_ms)
+key ctrl+r
+wait_event compile.finish "$m_quiet" 300
+sleep 2
+palette "pre-compile warnings"
+wait_event precheck.panel-shown "$m_quiet" 20
+sleep 1
+shot 08-precheck-request
+stop_app
+python3 - "$APPLOG" "$m_first" "$m_same" "$m_new" "$m_quiet" <<'EOF2' || die "pre-compile warnings panel check failed"
+import json, sys
+path, first, same, new, quiet = sys.argv[1], *map(int, sys.argv[2:])
+evs = [json.loads(l) for l in open(path).read().splitlines() if l.strip()]
+def between(a, b=None):
+    return [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["at"] > a and (b is None or e["at"] <= b)]
+def acts(es, name):
+    return [e for e in es if e.get("action") == name]
+shown = acts(between(first), "precheck.panel-shown")
+assert [e["via"] for e in shown] == ["auto", "request"], "panel shows: %s" % shown
+kinds = sorted({e["kind"] for e in acts(between(first, same), "compile.precheck")})
+assert "external-tool" in kinds, "first run findings: %s" % kinds
+assert shown[0]["count"] == len(acts(between(first, same), "compile.precheck")), "auto count %s" % shown[0]
+assert not acts(between(same, quiet), "precheck.panel-shown"), "the same set popped again"
+dis = acts(between(same), "precheck.panel-dismissed")
+assert dis and dis[0]["dontShowAgain"] is True, "dismissed: %s" % dis
+assert [e["on"] for e in acts(between(same), "precheck.popup-setting")] == [False], "popup setting"
+later = acts(between(quiet), "compile.precheck")
+assert any(e["kind"] == "shell-escape" for e in later), "the changed set lacks minted: %s" % later
+assert shown[1]["count"] == len(later), "request count %s vs %d" % (shown[1], len(later))
+print("stills: warnings panel popped once (%d findings: %s), stayed off for a changed set, opened on request (%d)" % (shown[0]["count"], ",".join(kinds), shown[1]["count"]))
+EOF2
+
 fi
 
 log "stills in $OUT:"

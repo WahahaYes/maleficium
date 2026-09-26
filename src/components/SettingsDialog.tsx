@@ -1,6 +1,7 @@
-// SettingsDialog.tsx — appearance controls over the prefs object.
+// SettingsDialog.tsx — appearance controls over the prefs object, plus
+// compile behavior.
 //
-// Every control writes prefs; persistence lives with the caller. The
+// Every control writes through its callback; persistence lives with the caller. The
 // theme picker is a searchable dropdown grouped by family; sizes offer
 // named presets plus a slider override.
 
@@ -10,7 +11,9 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Slider from '@mui/material/Slider';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -91,16 +94,21 @@ export default function SettingsDialog({
   onClose,
   prefs,
   onChange,
+  precheckPopup,
+  onPrecheckPopup,
 }: {
   open: boolean;
   onClose: () => void;
   prefs: AppearancePrefs;
   onChange: (p: AppearancePrefs) => void;
+  /** Whether pre-compile warnings open their panel after a compile. */
+  precheckPopup: boolean;
+  onPrecheckPopup: (on: boolean) => void;
 }) {
   const set = (patch: Partial<AppearancePrefs>) => onChange({ ...prefs, ...patch });
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Appearance</DialogTitle>
+      <DialogTitle>Settings</DialogTitle>
       <DialogContent>
         <Box sx={{ mt: 2 }}>
           <Autocomplete
@@ -203,6 +211,21 @@ export default function SettingsDialog({
           format={(v) => `${v}px`}
           onPick={(v) => set({ editorSize: v })}
         />
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="caption">Compile</Typography>
+          <FormControlLabel
+            sx={{ display: 'flex', ml: 0, mr: 0, justifyContent: 'space-between' }}
+            labelPlacement="start"
+            control={
+              <Switch
+                size="small"
+                checked={precheckPopup}
+                onChange={(e) => onPrecheckPopup(e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">Show pre-compile warnings popup</Typography>}
+          />
+        </Box>
       </DialogContent>
     </Dialog>
   );

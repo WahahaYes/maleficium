@@ -22,6 +22,7 @@ export const DEVICE_PREF_KEYS = {
   layout: 'maleficium.layout',
   previewZoom: 'maleficium.previewZoom.v1',
   autoCompile: 'maleficium.autoCompile.v1',
+  precheckPopup: 'maleficium.precheckPopup.v1',
 } as const;
 
 /** Pointers into project state. Server-owned from birth. */
