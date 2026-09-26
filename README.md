@@ -37,7 +37,7 @@ chmod +x Maleficium_0.1.0_amd64.AppImage
 
 If the AppImage fails with a FUSE error, run it with `APPIMAGE_EXTRACT_AND_RUN=1` set.
 
-To build it yourself, see [BUILDING.md](BUILDING.md).
+To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Getting started
 
@@ -64,13 +64,13 @@ That download is the only network traffic the app makes. There is no telemetry a
 
 ## Documentation
 
-- [Building from source](BUILDING.md), including how releases are cut
-- [Contributing](CONTRIBUTING.md): setup, checks, and house rules
+- [Building from source](docs/BUILDING.md), including how releases are cut
+- [Contributing](docs/CONTRIBUTING.md): setup, checks, and house rules
 - [Test harnesses](e2e/README.md)
 - [Built-in templates](src-tauri/templates/README.md): origins and license
 
 ## Contributing and license
 
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 Licensed under Apache 2.0 ([LICENSE](LICENSE)). The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).

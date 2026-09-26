@@ -52,7 +52,7 @@ case "$MODE" in
             done
         fi
         command -v cargo >/dev/null 2>&1 || {
-            echo "dev: cargo not found; install Rust 1.98.1+ or add cargo to PATH (see BUILDING.md)" >&2
+            echo "dev: cargo not found; install Rust 1.98.1+ or add cargo to PATH (see docs/BUILDING.md)" >&2
             exit 1
         }
         exec tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$DEV_PORT\"}}" "$@" ;;

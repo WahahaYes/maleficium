@@ -5,7 +5,7 @@
 #
 # The artifacts (*.deb, *.AppImage) land flat in the --output directory.
 # Needs network during the build (npm, crates.io, Tectonic release assets,
-# SyncTeX source). See BUILDING.md.
+# SyncTeX source). See docs/BUILDING.md.
 #
 # Ubuntu 24.04 rather than a newer base on purpose: the binaries link against
 # the build host's glibc, so an older base runs on more distributions.

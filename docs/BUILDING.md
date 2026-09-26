@@ -2,6 +2,8 @@
 
 Release target: Linux x86_64, `.deb` and AppImage. Both routes below need network access during the build (npm, crates.io, Tectonic release assets, SyncTeX source).
 
+Run every command below from the repo root.
+
 ## Docker (reproducible)
 
 ```sh

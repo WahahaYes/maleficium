@@ -57,7 +57,7 @@ Other projects may inform a design, but never copy their code or license text. O
 
 ## Templates
 
-Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs the CC0 header and a row in the table in [src-tauri/templates/README.md](src-tauri/templates/README.md), which records where each template came from.
+Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs the CC0 header and a row in the table in [src-tauri/templates/README.md](../src-tauri/templates/README.md), which records where each template came from.
 
 ## Styling
 
@@ -67,6 +67,6 @@ Appearance settings flow through `AppearancePrefs` into the theme factory. Bundl
 
 ## Tests and harnesses
 
-Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output goes to the OS temp dir and is never committed. See [e2e/README.md](e2e/README.md) for what each harness proves and how to run it.
+Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output goes to the OS temp dir and is never committed. See [e2e/README.md](../e2e/README.md) for what each harness proves and how to run it.
 
 Rust build caches grow without limit. `npm run clean` drops the incremental caches; add `-- --all` to remove the target dirs, or `-- --dry-run` to see sizes first.
