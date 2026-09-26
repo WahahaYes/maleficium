@@ -14,14 +14,14 @@ npm run dev:desktop            # the app, with hot reload
 
 `npm run dev` serves the frontend alone in a browser. Both dev commands pick a free port, so several checkouts can run side by side.
 
-Optional: `pre-commit install` runs the format, lint, and type checks on each commit.
+Recommended: `pre-commit install` runs the format, lint, and type checks on each commit, and checks each commit message.
 
 ## Before you commit
 
 Run these from the repo root:
 
 ```sh
-./node_modules/.bin/tsc --noEmit --skipLibCheck   # not npx tsc
+./node_modules/.bin/tsc --noEmit --skipLibCheck
 npm run lint && npm run format:check
 npm test
 cargo test --manifest-path src-tauri/Cargo.toml --lib
@@ -39,7 +39,7 @@ One concern per commit, with a single-line message: lowercase, no prefix, no tra
 - Good: `associate latex main file`, `restore dpr-folded preview scale`
 - Bad: `feat: associate main file`, `fix preview scale bug`, two concerns in one commit
 
-Stage your own files by name; never `git add -A` or `git commit -a`. `package.json` and `package-lock.json` always change in the same commit. Release commits are `release X.Y.Z` (see [BUILDING.md](BUILDING.md)).
+No trailers such as `Co-Authored-By`; the commit-msg hook rejects them. `package.json` and `package-lock.json` always change in the same commit. Release commits are `release X.Y.Z` (see [BUILDING.md](BUILDING.md)).
 
 ## Code comments
 
@@ -51,9 +51,9 @@ Before 1.0 there is nothing to stay backward compatible with. When a behavior mo
 
 Fallbacks that keep the app working on a supported setup are fine, such as copy-then-delete across devices or a download when there is no native save dialog.
 
-## Third-party code
+## License
 
-Other projects may inform a design, but never copy their code or license text. Only MIT-style licensed code may be followed closely.
+Maleficium is Apache 2.0, and contributions are accepted under the same license. Bundled third-party files (themes, engine binaries) need a compatible license and an entry in [NOTICE](../NOTICE).
 
 ## Templates
 
@@ -61,7 +61,7 @@ Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs t
 
 ## README screenshots
 
-The images in `docs/screenshots/` are generated, not hand-taken. After a visible UI change, run `sh scripts/generate-readme-screenshots.sh`: it builds HEAD in the harness worktree, opens `docs/screenshots/demo-project/` in the app under Xvfb, and rewrites the PNGs. Needs Xvfb, xdotool, and ImageMagick.
+The images in `docs/screenshots/` are generated, not hand-taken. After a visible UI change, run `sh scripts/generate-readme-screenshots.sh`: it builds the current commit in a separate worktree, opens `docs/screenshots/demo-project/` in the app under Xvfb, and rewrites the PNGs. Needs Xvfb, xdotool, and ImageMagick.
 
 ## Styling
 
