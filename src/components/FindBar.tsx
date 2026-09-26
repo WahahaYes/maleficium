@@ -99,18 +99,15 @@ export default function FindBar({ viewOf, seed, fontSizePx, onClose }: FindBarPr
         }}
       >
         <Tooltip title={replaceOpen ? 'Hide replace' : 'Show replace'}>
-          <IconButton
+          <Button
             size="small"
             aria-label="toggle replace"
             onClick={() => setReplaceOpen((v) => !v)}
-            sx={{ width: 28, height: 28 }}
+            endIcon={replaceOpen ? <ArrowDropDownIcon /> : <ArrowRightIcon />}
+            sx={{ minWidth: 104 }}
           >
-            {replaceOpen ? (
-              <ArrowDropDownIcon fontSize="small" />
-            ) : (
-              <ArrowRightIcon fontSize="small" />
-            )}
-          </IconButton>
+            Replace
+          </Button>
         </Tooltip>
         <TextField
           size="small"
@@ -171,7 +168,7 @@ export default function FindBar({ viewOf, seed, fontSizePx, onClose }: FindBarPr
             if (e.key === 'Escape') close();
           }}
         >
-          <Box sx={{ width: 28 }} />
+          <Box sx={{ minWidth: 104 }} />
           <TextField
             size="small"
             label="Replace"
