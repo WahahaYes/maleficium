@@ -30,7 +30,9 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 ## Install
 
-Download the `.deb` or AppImage from the [latest release](https://github.com/wahahayes/maleficium/releases/latest). Linux x86_64 only for now.
+Download from the [latest release](https://github.com/wahahayes/maleficium/releases/latest).
+
+### Linux (x86_64)
 
 Debian / Ubuntu:
 
@@ -45,7 +47,23 @@ chmod +x Maleficium_*_amd64.AppImage
 ./Maleficium_*_amd64.AppImage
 ```
 
-If the AppImage fails with a FUSE error, run it with `APPIMAGE_EXTRACT_AND_RUN=1` set. To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
+If the AppImage fails with a FUSE error, run it with `APPIMAGE_EXTRACT_AND_RUN=1` set.
+
+### macOS (preview)
+
+Download the `.dmg` for your Mac: `aarch64` for Apple silicon, `x64` for Intel. Open it and drag Maleficium to Applications.
+
+The app is not signed with an Apple Developer ID yet, so macOS blocks it the first time. Open it once, then go to **System Settings > Privacy & Security** and click **Open Anyway**. If macOS says the app is damaged, clear the download quarantine flag and open it again:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Maleficium.app
+```
+
+### Windows (preview)
+
+Download `Maleficium_*_x64-setup.exe` and run it. The installer is not code-signed yet, so SmartScreen warns about an unrecognized app: click **More info**, then **Run anyway**.
+
+To build Maleficium yourself, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Getting started
 
@@ -57,7 +75,7 @@ On first launch Maleficium opens a short welcome project. After that:
 
 ## Known limits in 0.1.x
 
-- Linux x86_64 only. macOS and Windows builds will come in a later release.
+- macOS and Windows builds are previews: unsigned, and less tested than Linux.
 - The MCP server for AI agents is not in the packaged app yet; build from source to try it.
 - No automatic updates. Check the releases page for new versions.
 - 0.1.x makes no promise that settings or history carry over between versions.
