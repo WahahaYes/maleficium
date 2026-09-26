@@ -86,11 +86,12 @@ if [ -f "$dest" ] && [ "$(sha "$dest")" = "$SYNCTEX_SHA" ]; then
     say "synctex $SYNCTEX_TRIPLE present"
     exit 0
 fi
-# SHIM: extra headers MinGW lacks (scripts/synctex-shim/win).
-SHIM="-I$ROOT/scripts/synctex-shim"
+# SHIM: extra headers MinGW lacks (scripts/synctex-shim/win). LIBS: the
+# parser's Windows path helpers (PathFindFileNameA) live in shlwapi.
+SHIM="-I$ROOT/scripts/synctex-shim"; LIBS="-lz -lm"
 case "$SYNCTEX_TRIPLE" in
     (*apple-darwin) CC=cc; LINK="" ;;
-    (*windows*) CC=gcc; LINK="-static"; SHIM="$SHIM -I$ROOT/scripts/synctex-shim/win" ;;
+    (*windows*) CC=gcc; LINK="-static"; SHIM="$SHIM -I$ROOT/scripts/synctex-shim/win"; LIBS="$LIBS -lshlwapi" ;;
     (*) CC=gcc; LINK="-static" ;;
 esac
 need git; need "$CC"
@@ -99,11 +100,11 @@ src="$WORK/synctex-src"
 git init -q "$src"
 git -C "$src" fetch -q --depth 1 "$SYNCTEX_REPO" "$SYNCTEX_REV" || die "synctex source fetch failed"
 git -C "$src" checkout -q FETCH_HEAD
-# $LINK and $SHIM are unquoted on purpose: $LINK is empty on macOS, where
-# -static is unsupported, and $SHIM holds one or two -I flags.
+# $LINK, $SHIM and $LIBS are unquoted on purpose: $LINK is empty on macOS,
+# where -static is unsupported; the others hold several flags.
 # shellcheck disable=SC2086
 (cd "$src" && "$CC" -O2 $LINK -s -I. $SHIM -o "$WORK/synctex$EXE" \
-    synctex_main.c synctex_parser.c synctex_parser_utils.c -lz -lm) || die "synctex build failed (zlib installed?)"
+    synctex_main.c synctex_parser.c synctex_parser_utils.c $LIBS) || die "synctex build failed (zlib installed?)"
 
 # Smoke: compile a two-page document with the host Tectonic, then query both ways.
 host_tectonic="$BIN/maleficium-tectonic-$SYNCTEX_TRIPLE$EXE"
