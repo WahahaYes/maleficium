@@ -109,18 +109,11 @@ pub fn resolve_read(id: &str, candidate: &str) -> Result<PathBuf, String> {
     Ok(root.join(candidate))
 }
 
+/// App-scoped trash home for one root: the same dir the app's undo reads
+/// (`appTrashDir(appDataDir(), root)` in `src/lib/paths.ts`).
 fn trash_home(root: &Path) -> PathBuf {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| {
-                let mut p = PathBuf::from(h);
-                p.push(".local/share");
-                p
-            })
-        })
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("maleficium-trash")
+    super::data_base_dir()
+        .join("maleficium-trash")
         .join(hash_root(&root.to_string_lossy()))
 }
 
@@ -321,6 +314,24 @@ mod tests {
         let back = undo_trash(&id, &trashed).unwrap();
         assert_eq!(back, abs);
         assert_eq!(std::fs::read_to_string(dir.join("a.tex")).unwrap(), "hello");
+    }
+
+    #[test]
+    fn mcp_delete_lands_in_app_trash_dir() {
+        let (id, dir) = grant_tmp("apptrash");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/a.tex"), "x").unwrap();
+        let abs = dir.join("sub/a.tex").to_string_lossy().to_string();
+        let trashed = PathBuf::from(trash_file(&id, "sub/a.tex", &abs).unwrap());
+        let app_dir = super::super::data_base_dir()
+            .join("maleficium-trash")
+            .join(hash_root(&dir.to_string_lossy()));
+        assert_eq!(trashed.parent().unwrap(), app_dir);
+        let name = trashed.file_name().unwrap().to_string_lossy().to_string();
+        let stamp = name.strip_prefix("a.tex__sub__a.tex__").unwrap();
+        assert!(!stamp.is_empty() && stamp.bytes().all(|b| b.is_ascii_digit()));
+        undo_trash(&id, &trashed.to_string_lossy()).unwrap();
+        assert!(dir.join("sub/a.tex").exists());
     }
 
     #[test]

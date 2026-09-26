@@ -1,20 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { hashRoot, joinPath, appTrashDir, dialogStart } from './paths';
+import { joinPath, appTrashDir, dialogStart } from './paths';
 import { previewKindFor, isPreviewable } from './files';
 
 describe('app-local paths', () => {
-  it('hashRoot is deterministic 8-hex', () => {
-    expect(hashRoot('/home/u/paper')).toBe(hashRoot('/home/u/paper'));
-    expect(hashRoot('/home/u/paper')).toMatch(/^[0-9a-f]{8}$/);
-    expect(hashRoot('/home/u/other')).not.toBe(hashRoot('/home/u/paper'));
-  });
-  it('trash dirs shard per root under the app home', () => {
-    const t = appTrashDir('/app/data', '/home/u/paper');
-    expect(t.startsWith('/app/data/maleficium-trash/')).toBe(true);
-    // Same root → same shard; different roots → different shards.
-    expect(appTrashDir('/app/data', '/home/u/other')).not.toBe(t);
-    // Never inside the project dir.
-    expect(t.startsWith('/home/u/paper')).toBe(false);
+  it('trash dirs shard by the grant root id under the app home', () => {
+    // The backend's id is used verbatim: the frontend never hashes paths.
+    expect(appTrashDir('/app/data', '53bf67b2')).toBe('/app/data/maleficium-trash/53bf67b2');
+    expect(appTrashDir('/app/data', '1a2b3c4d')).not.toBe(appTrashDir('/app/data', '53bf67b2'));
   });
   it('dialogs start at home unless given an absolute path', () => {
     expect(dialogStart(undefined, '/home/u')).toBe('/home/u');

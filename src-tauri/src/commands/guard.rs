@@ -167,4 +167,22 @@ mod tests {
         assert!(is_bare_filename("a..b"));
         assert!(!is_bare_filename("a\0b"));
     }
+
+    #[test]
+    fn grant_root_id_is_the_utf8_hash_for_non_ascii_roots() {
+        // The frontend keys main-file associations and trash by this id and
+        // never rehashes; a UTF-16 hash gave 6ea6b60c here.
+        assert_eq!(crate::core::hash_root("/home/josé/thèse"), "53bf67b2");
+        let dir = scratch("non-ascii").join("josé").join("thèse");
+        fs::create_dir_all(&dir).unwrap();
+        let (canon, root_id) = crate::core::grant_project(&dir.to_string_lossy()).unwrap();
+        assert_eq!(root_id, crate::core::hash_root(&canon.to_string_lossy()));
+        let grant = ProjectGrant {
+            path: canon.to_string_lossy().to_string(),
+            root_id: root_id.clone(),
+        };
+        let json = serde_json::to_value(&grant).unwrap();
+        assert_eq!(json["rootId"], root_id);
+        assert!(json["path"].as_str().unwrap().ends_with("/josé/thèse"));
+    }
 }

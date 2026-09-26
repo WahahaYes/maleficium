@@ -17,8 +17,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { emit } from '../lib/events';
 import { dialog } from '../lib/fs-provider';
-import { setMainFileFor } from '../lib/mainFile.store';
-import { hashRoot, joinPath } from '../lib/paths';
+import { joinPath } from '../lib/paths';
 import type { SessionRoot } from '../lib/preview-bus';
 import {
   gallerySections,
@@ -46,7 +45,8 @@ export default function TemplateDialogs({
   project: SessionRoot | null;
   /** The open project's main file, root-relative. */
   mainRel: string | null;
-  openRoot: (root: string) => Promise<void>;
+  /** Open `root`; `main` is recorded as its main file under the grant's root id. */
+  openRoot: (root: string, main?: string) => Promise<void>;
 }) {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [picked, setPicked] = useState<TemplateInfo | null>(null);
@@ -109,7 +109,6 @@ export default function TemplateDialogs({
     setBusy(true);
     try {
       const c = await instantiateTemplate(picked.id, location, folder.trim() || picked.id);
-      setMainFileFor(hashRoot(c.root), c.main);
       emit({
         scope: 'app',
         kind: 'success',
@@ -118,7 +117,7 @@ export default function TemplateDialogs({
         event: { action: 'template.create', template: picked.id, root: c.root },
       });
       onClose();
-      await openRoot(c.root);
+      await openRoot(c.root, c.main);
     } catch (e) {
       emit({
         scope: 'app',

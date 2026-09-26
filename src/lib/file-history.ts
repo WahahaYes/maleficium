@@ -40,7 +40,17 @@ export class FileHistory {
   }
 }
 
-export function trashName(originalPath: string, at = Date.now()): string {
-  const base = originalPath.slice(originalPath.lastIndexOf('/') + 1) || 'file';
-  return `${base}.${at}`;
+/**
+ * Trash entry name: `<base>__<rel with / as __>__<ms>`, rel relative to
+ * `root`. Same format as core `trash_name` (src-tauri/src/core/fs.rs), whose
+ * stateless undo reads rel back out of the name.
+ */
+export function trashName(root: string, originalPath: string, at = Date.now()): string {
+  const prefix = root.endsWith('/') ? root : root + '/';
+  if (!originalPath.startsWith(prefix)) {
+    throw new Error(`not in project: ${originalPath}`);
+  }
+  const rel = originalPath.slice(prefix.length);
+  const base = rel.slice(rel.lastIndexOf('/') + 1) || 'file';
+  return `${base}__${rel.split('/').join('__')}__${at}`;
 }

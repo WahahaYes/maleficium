@@ -38,7 +38,7 @@ describe('moveToTrash', () => {
     vi.mocked(readFile).mockResolvedValueOnce(original);
 
     const history = new FileHistory();
-    const result = await moveToTrash(history, '/root', '/root/fig.png');
+    const result = await moveToTrash(history, '1a2b3c4d', '/root', '/root/fig.png');
 
     expect(result).toMatchObject({ ok: true });
     expect(vi.mocked(readFile)).toHaveBeenCalledWith('/root/fig.png');
@@ -54,13 +54,37 @@ describe('moveToTrash', () => {
     vi.mocked(rename).mockResolvedValueOnce(undefined);
 
     const history = new FileHistory();
-    const result = await moveToTrash(history, '/root', '/root/main.tex');
+    const result = await moveToTrash(history, '1a2b3c4d', '/root', '/root/main.tex');
 
     expect(result).toMatchObject({ ok: true });
+    // The trash dir is the grant's root id, not a frontend hash of the path.
+    expect(history.list()[0]?.trashPath.startsWith('/app/data/maleficium-trash/1a2b3c4d/')).toBe(
+      true,
+    );
     expect(vi.mocked(readFile)).not.toHaveBeenCalled();
     expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
     expect(vi.mocked(remove)).not.toHaveBeenCalled();
     expect(history.size).toBe(1);
+  });
+
+  it('names the entry by its project-relative path, as core does', async () => {
+    vi.mocked(rename).mockResolvedValueOnce(undefined);
+
+    const history = new FileHistory();
+    await moveToTrash(history, '1a2b3c4d', '/root', '/root/sub/a.tex');
+
+    const dest = history.list()[0]?.trashPath ?? '';
+    expect(dest).toMatch(/^\/app\/data\/maleficium-trash\/1a2b3c4d\/a\.tex__sub__a\.tex__\d+$/);
+    expect(vi.mocked(rename)).toHaveBeenCalledWith('/root/sub/a.tex', dest);
+  });
+
+  it('refuses a path outside the project root', async () => {
+    const history = new FileHistory();
+    const result = await moveToTrash(history, '1a2b3c4d', '/root', '/other/a.tex');
+
+    expect(result.ok).toBe(false);
+    expect(vi.mocked(rename)).not.toHaveBeenCalled();
+    expect(history.size).toBe(0);
   });
 
   it('reports failure without throwing when the trash home is unreachable', async () => {
@@ -69,7 +93,7 @@ describe('moveToTrash', () => {
     vi.mocked(rename).mockResolvedValue(undefined);
 
     const history = new FileHistory();
-    const result = await moveToTrash(history, '/root', '/root/main.tex');
+    const result = await moveToTrash(history, '1a2b3c4d', '/root', '/root/main.tex');
 
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
@@ -82,7 +106,7 @@ describe('moveToTrash', () => {
     vi.mocked(readFile).mockRejectedValueOnce(new Error('unreadable'));
 
     const history = new FileHistory();
-    const result = await moveToTrash(history, '/root', '/root/fig.png');
+    const result = await moveToTrash(history, '1a2b3c4d', '/root', '/root/fig.png');
 
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
