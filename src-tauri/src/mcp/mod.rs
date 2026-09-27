@@ -80,7 +80,14 @@ struct CompileRunOut {
 struct CompilePollParams {
     job_id: String,
     tail_lines: Option<usize>,
+    /// Wait up to this long (ms, at most 60000) for a running job to finish
+    /// before answering.
+    wait_ms: Option<u64>,
 }
+
+/// The longest a poll waits for a running job, and how often it looks.
+const MAX_POLL_WAIT_MS: u64 = 60_000;
+const POLL_STEP: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CompilePollOut {
@@ -314,13 +321,20 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Poll a compile job; running jobs report lines so far. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required"
+        description = "Poll a compile job; running jobs report lines so far. Pass wait_ms (up to 60000) to wait for the job to finish instead of polling in a loop. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required"
     )]
-    fn compile_poll(
+    async fn compile_poll(
         &self,
         Parameters(p): Parameters<CompilePollParams>,
     ) -> Result<Json<CompilePollOut>, String> {
-        let r = core::poll_job(&p.job_id, p.tail_lines.unwrap_or(50))?;
+        let tail = p.tail_lines.unwrap_or(50);
+        let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(0).min(MAX_POLL_WAIT_MS));
+        let deadline = tokio::time::Instant::now() + wait;
+        let mut r = core::poll_job(&p.job_id, tail)?;
+        while r.status == core::JobStatus::Running && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + POLL_STEP)).await;
+            r = core::poll_job(&p.job_id, tail)?;
+        }
         Ok(Json(CompilePollOut {
             status: r.status.as_str().to_string(),
             pdf_url: r.pdf_url,

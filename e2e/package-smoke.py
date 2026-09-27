@@ -87,8 +87,7 @@ def compile_probe(cmd, scratch, env=None):
     deadline = time.time() + 300
     rec = {"status": "running"}
     while rec["status"] == "running" and time.time() < deadline:
-        time.sleep(2)
-        rec = call("compile_poll", {"job_id": job, "tail_lines": 5})
+        rec = call("compile_poll", {"job_id": job, "tail_lines": 5, "wait_ms": 30000})
     if rec["status"] != "success":
         fail("compile %s: %s" % (rec["status"], str(rec)[:300]))
     hit = call("synctex_forward", {"root_id": "smoke", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
