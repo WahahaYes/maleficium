@@ -86,7 +86,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::write(dir.join("main.tex"), "\\input{ch/a}\nneedle\n").unwrap();
         std::fs::write(dir.join("ch/a.tex"), "a needle here\n").unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         super::super::grant_root("search-t", &canon.to_string_lossy()).unwrap();
         let q = Query {
             pattern: "needle".into(),
@@ -133,7 +133,7 @@ mod tests {
             );
             std::fs::write(dir.join(format!("f{n:04}.tex")), body).unwrap();
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         super::super::grant_root("search-budget", &canon.to_string_lossy()).unwrap();
         super::super::index::open("search-budget").unwrap();
         super::super::index::set_watched("search-budget", true).unwrap();

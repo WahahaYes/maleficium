@@ -47,6 +47,11 @@ describe('recent projects store', () => {
     touchRecentProject('   ');
     expect(getRecentProjects()).not.toContain('relative/nope');
   });
+  it('keeps Windows roots (drive and UNC)', () => {
+    touchRecentProject('C:\\Users\\u\\paper');
+    touchRecentProject('\\\\srv\\share\\thesis');
+    expect(getRecentProjects()).toEqual(['\\\\srv\\share\\thesis', 'C:\\Users\\u\\paper']);
+  });
   it('prunes stale roots by caller predicate', () => {
     touchRecentProject('/gone');
     touchRecentProject('/here');

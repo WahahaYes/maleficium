@@ -81,6 +81,7 @@ export function presetOf(v: ViewState): ViewPreset {
 }
 
 import type { Density } from './theme';
+import { baseName } from './paths';
 
 export interface MenuContext {
   hasProject: boolean;
@@ -210,7 +211,7 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           children: [
             ...ctx.recentProjects.map((r) => ({
               id: 'file.recent' as const,
-              label: r.split('/').pop() || r,
+              label: baseName(r) || r,
               enabled: true,
               run: () => a.openRecent(r),
             })),

@@ -4,7 +4,7 @@
 //! laid over it by the app. Lives in memory; nothing is written anywhere.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
@@ -272,7 +272,11 @@ pub fn touch(root_id: &str, paths: &[String]) -> Result<(), String> {
 /// Lay an unsaved buffer over `rel`, or lift it (`None`).
 pub fn overlay(root_id: &str, rel: &str, text: Option<String>) -> Result<(), String> {
     crate::commands::guard::reject_empty_nul(rel)?;
-    if Path::new(rel).is_absolute() || rel.split('/').any(|s| s == "..") {
+    // Components, not a `/` split: on Windows `a\..\..` climbs too.
+    let escapes = Path::new(rel)
+        .components()
+        .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir));
+    if escapes {
         return Err(format!("forbidden path (outside project): {}", rel));
     }
     let live = live_of(root_id);
@@ -298,7 +302,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, text).unwrap();
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("ix-{}", name);
         super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
@@ -379,8 +383,9 @@ mod tests {
             assert_eq!(l.index.get("a.tex").unwrap().text, Some("buf"))
         })
         .unwrap();
-        assert!(overlay(&id, "../x.tex", Some("y".into())).is_err());
-        assert!(overlay(&id, "/etc/x", Some("y".into())).is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(overlay(&id, bad, Some("y".into())).is_err(), "{bad}");
+        }
     }
 
     #[test]
@@ -413,7 +418,7 @@ mod tests {
                 std::fs::write(ch.join(format!("s{s:03}.tex")), body).unwrap();
             }
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         super::super::grant_root("ix-budget", &canon.to_string_lossy()).unwrap();
         let t = Instant::now();
         let n = open("ix-budget").unwrap();
@@ -430,7 +435,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let tvcg = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../refs/TVCG_Paper_Ref");
-        if let Ok(canon) = tvcg.canonicalize() {
+        if let Ok(canon) = dunce::canonicalize(&tvcg) {
             super::super::grant_root("ix-tvcg", &canon.to_string_lossy()).unwrap();
             let t = Instant::now();
             let n = open("ix-tvcg").unwrap();

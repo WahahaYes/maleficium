@@ -159,7 +159,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, text).unwrap();
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("rp-{}", name);
         super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)

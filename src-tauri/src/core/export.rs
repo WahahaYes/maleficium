@@ -28,11 +28,11 @@ fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
     let name = d
         .file_name()
         .ok_or_else(|| format!("export destination has no file name: {dest}"))?;
-    let parent = d
-        .parent()
-        .ok_or_else(|| format!("export destination has no directory: {dest}"))?
-        .canonicalize()
-        .map_err(|e| format!("export directory unreachable: {e}"))?;
+    let parent = dunce::canonicalize(
+        d.parent()
+            .ok_or_else(|| format!("export destination has no directory: {dest}"))?,
+    )
+    .map_err(|e| format!("export directory unreachable: {e}"))?;
     let out = parent.join(name);
     if out.starts_with(root) {
         return Err(String::from(
@@ -217,7 +217,7 @@ mod tests {
         std::fs::write(dir.join("ch/a.tex"), "y").unwrap();
         std::fs::write(dir.join("main.aux"), "z").unwrap();
         std::fs::write(dir.join(".git/HEAD"), "ref").unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("exp-{name}");
         super::super::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)

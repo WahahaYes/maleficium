@@ -53,8 +53,7 @@ pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
     reject_empty_nul(raw)?;
     let path = Path::new(raw);
     require_absolute(path, raw)?;
-    let canon = path
-        .canonicalize()
+    let canon = dunce::canonicalize(path)
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", raw, e))?;
     if !canon.is_dir() {
         return Err(format!("forbidden path (not a directory): {}", raw));
@@ -116,7 +115,7 @@ mod tests {
         let base = crate::test_scratch::dir(&format!("guard-{}", name));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
-        base.canonicalize().unwrap()
+        dunce::canonicalize(&base).unwrap()
     }
 
     #[test]
@@ -149,7 +148,7 @@ mod tests {
         assert!(canonical_root(&file.to_string_lossy()).is_err());
         assert_eq!(
             canonical_root(&base.to_string_lossy()).unwrap(),
-            base.canonicalize().unwrap()
+            dunce::canonicalize(&base).unwrap()
         );
     }
 
@@ -183,6 +182,10 @@ mod tests {
         };
         let json = serde_json::to_value(&grant).unwrap();
         assert_eq!(json["rootId"], root_id);
-        assert!(json["path"].as_str().unwrap().ends_with("/josé/thèse"));
+        let path = json["path"].as_str().unwrap();
+        assert!(
+            Path::new(path).ends_with(Path::new("josé").join("thèse")),
+            "{path}"
+        );
     }
 }

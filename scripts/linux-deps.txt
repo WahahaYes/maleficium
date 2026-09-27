@@ -1,0 +1,16 @@
+build-essential
+ca-certificates
+curl
+file
+git
+pkg-config
+python3
+wget
+xz-utils
+libwebkit2gtk-4.1-dev
+libxdo-dev
+libssl-dev
+libayatana-appindicator3-dev
+librsvg2-dev
+zlib1g-dev
+libgraphite2-3

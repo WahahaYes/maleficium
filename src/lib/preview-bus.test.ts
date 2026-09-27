@@ -22,6 +22,15 @@ describe('sourceFor', () => {
   });
 });
 
+describe('sourceFor on Windows roots', () => {
+  const win = [{ rootId: 'proj', path: 'C:\\Users\\u\\paper' }];
+  it('rebases either separator and refuses a prefix sibling', () => {
+    expect(sourceFor('C:\\Users\\u\\paper\\ch\\main.tex', win)?.mainRel).toBe('ch/main.tex');
+    expect(sourceFor('C:/Users/u/paper/main.tex', win)?.mainRel).toBe('main.tex');
+    expect(sourceFor('C:\\Users\\u\\paper2\\main.tex', win)).toBeNull();
+  });
+});
+
 describe('emitPdf', () => {
   it('derives docKey from the source', () => {
     const seen: PreviewDoc[] = [];
