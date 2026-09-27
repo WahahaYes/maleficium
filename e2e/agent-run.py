@@ -397,11 +397,9 @@ class Judge:
         return True, "success"
 
     def o_clean_log(self, main):
-        """No error diagnostics, and every reference and citation resolves.
-
-        diagnostics alone is not enough: the engine log it reads is Tectonic's
-        console, which carries no LaTeX warnings on a successful compile, so
-        undefined references come from labels_refs and citations instead."""
+        """No error or undefined-key diagnostics, and every reference and
+        citation resolves in the index too (two sources, so one tool's miss
+        cannot pass a broken document)."""
         rec = self.compiled(main)
         if rec.get("status") != "success":
             return False, "did not compile"
@@ -410,7 +408,7 @@ class Judge:
         if not ok:
             return False, "diagnostics refused: " + d
         bad = ["%s:%s %s" % (x.get("path"), x["line"], x["message"][:80]) for x in d["diagnostics"]
-               if x["severity"] == "error" or re.search(r"undefined", x["message"], re.I)]
+               if x["severity"] == "error" or re.search(r"undefined|multiply defined", x["message"], re.I)]
         ok, lr = m.call("labels_refs", {"root_id": "judge", "main_rel": main})
         if not ok:
             return False, "labels_refs refused: " + lr

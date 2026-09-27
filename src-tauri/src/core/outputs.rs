@@ -16,9 +16,16 @@ pub fn outputs_of(root_id: &str, main_rel: &str) -> Result<MainOutputs, String> 
 
 /// Where one main file's engine log lives: the engine's console output
 /// (`error:`/`warning: file:line:` records plus the TeX transcript on
-/// failure), written by the compile paths. The engine runs without
-/// `--keep-logs`, so this name never collides with its own transcript.
+/// failure), written by the compile paths.
 pub fn log_file(outdir: &Path, main_file: &str) -> PathBuf {
+    let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
+    outdir.join(format!("{}.engine.log", stem))
+}
+
+/// TeX's own transcript of the last pass (the engine runs with
+/// `--keep-logs`): the only record of warnings such as undefined references,
+/// which never reach the console of a successful compile.
+pub fn tex_log_file(outdir: &Path, main_file: &str) -> PathBuf {
     let stem = main_file.strip_suffix(".tex").unwrap_or(main_file);
     outdir.join(format!("{}.log", stem))
 }
@@ -31,6 +38,12 @@ fn log_path(o: &MainOutputs) -> PathBuf {
 /// failed write only costs the log, never the compile result.
 pub fn write_engine_log(log: &Path, lines: &[String]) {
     let _ = std::fs::write(log, lines.join("\n"));
+}
+
+/// TeX's transcript of the last compile, empty when it left none.
+pub fn tex_log(root_id: &str, main_rel: &str) -> Result<String, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    Ok(std::fs::read_to_string(tex_log_file(&o.outdir, &o.main_file)).unwrap_or_default())
 }
 
 /// The full engine log of the last compile.
@@ -124,7 +137,7 @@ mod tests {
         assert!(!o.outdir.starts_with(&root));
         std::fs::create_dir_all(o.outdir.join("keep")).unwrap();
         std::fs::write(o.outdir.join("main.pdf"), "%PDF").unwrap();
-        std::fs::write(o.outdir.join("main.log"), "a\nb\nc").unwrap();
+        std::fs::write(log_path(&o), "a\nb\nc").unwrap();
         assert!(outputs_fresh(&id, "main.tex").unwrap());
         assert_eq!(engine_log(&id, "main.tex").unwrap(), "a\nb\nc");
         assert_eq!(log_tail(&id, "main.tex", 2).unwrap(), "b\nc");

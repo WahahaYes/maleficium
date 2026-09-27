@@ -614,7 +614,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Structured diagnostics from main_rel's last compile log: root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100)."
+        description = "Structured diagnostics from main_rel's last compile: the engine's errors, and TeX's warnings for undefined references and citations and duplicate labels (placed on the line that uses or defines the key), each with root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100)."
     )]
     fn diagnostics(
         &self,
