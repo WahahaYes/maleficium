@@ -14,7 +14,7 @@ Then the same checks everywhere:
      event log: the webview ran the UI, IPC reached Rust, project files
      resolved through the fs scope; any error event fails
   3. the app is still running afterwards (plus the AppImage on Linux)
-  4. macOS and Windows: a screenshot of the launch (--shots DIR)
+  4. a screenshot of the launch (--shots DIR)
 What it does NOT cover: how anything looks or behaves under input.
 
 Usage: python3 e2e/package-smoke.py <artifact-dir> [--shots DIR]
@@ -161,21 +161,42 @@ def launch(name, cmd, events=None, shot=None, env=None):
 # ---- per OS ----------------------------------------------------------------
 
 
-def linux_in_container(dir, image):
+def linux_in_container(dir, image, shots):
     """Re-run this script inside a clean `image` against the same artifacts."""
-    run(["docker", "run", "--rm", "-v", "%s:/pkg:ro" % os.path.abspath(dir), "-v", "%s:/e2e:ro" % HERE, image,
+    mounts, args = [], ""
+    if shots:
+        mounts = ["-v", "%s:/shots" % os.path.abspath(shots), "-e", "SHOTS_OWNER=%d:%d" % (os.getuid(), os.getgid())]
+        args = " --shots /shots"
+    run(["docker", "run", "--rm", "-v", "%s:/pkg:ro" % os.path.abspath(dir), "-v", "%s:/e2e:ro" % HERE] + mounts + [image,
          "bash", "-c", "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq python3 >/dev/null"
-         " && python3 /e2e/package-smoke.py /pkg --in-container"])
+         " && python3 /e2e/package-smoke.py /pkg --in-container" + args])
 
 
-def linux(dir):
+LINUX_DISPLAY = "99"  # a fixed Xvfb display for the deb launch, so the shot knows where to look
+LINUX_SCREEN = "1280x800x24"  # xvfb-run's default is 640x480x8
+LINUX_XAUTH = "/tmp/smoke-xauth"  # xvfb-run's cookie, so the shot may connect
+
+
+def linux_shot(dest):
+    """Grab the whole Xvfb screen as a PNG; chown it back to the host user."""
+    with open(dest, "wb") as out:
+        run(["bash", "-c", "set -o pipefail; xwd -root -silent -display :%s | xwdtopnm 2>/dev/null | pnmtopng" % LINUX_DISPLAY],
+            stdout=out, env=dict(os.environ, XAUTHORITY=LINUX_XAUTH))
+    owner = os.environ.get("SHOTS_OWNER")
+    if owner:
+        uid, gid = owner.split(":")
+        os.chown(dest, int(uid), int(gid))
+
+
+def linux(dir, shots):
     deb = one(dir, "Maleficium_*_amd64.deb")
     img = deb[: -len(".deb")] + ".AppImage"
     if not os.path.isfile(img):
         fail("missing %s" % img)
     fields = run(["dpkg-deb", "-f", deb, "Package", "Version", "Depends"], capture_output=True, text=True).stdout
     say("control: " + " ".join(fields.split()))
-    run(["apt-get", "install", "-y", "-qq", os.path.abspath(deb), "xvfb"], stdout=subprocess.DEVNULL,
+    run(["apt-get", "install", "-y", "-qq", os.path.abspath(deb), "xvfb", "x11-apps", "netpbm",
+         "matchbox-window-manager"], stdout=subprocess.DEVNULL,
         env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
     files = run(["dpkg", "-L", "maleficium"], capture_output=True, text=True).stdout.splitlines()
     for want in ["/usr/bin/maleficium", "/usr/bin/maleficium-mcp", "/usr/bin/maleficium-tectonic", "/usr/bin/maleficium-synctex"]:
@@ -195,7 +216,13 @@ def linux(dir):
     env["HOME"] = home
     compile_probe("/usr/bin/maleficium-mcp", os.path.join(home, "doc"), env)
     events = os.path.join(home, ".local/share", IDENT, "maleficium-log/events.jsonl")
-    launch("deb", ["xvfb-run", "-a", "maleficium"], events=events, env=env)
+    shot = None
+    if shots:
+        shot = lambda: linux_shot(os.path.join(shots, "linux-x86_64.png"))
+    # matchbox maximizes the window to the whole screen, as a desktop session would
+    session = "matchbox-window-manager -use_titlebar no & exec maleficium"
+    launch("deb", ["xvfb-run", "-n", LINUX_DISPLAY, "-f", LINUX_XAUTH, "-s", "-screen 0 " + LINUX_SCREEN, "sh", "-c", session],
+           events=events, shot=shot, env=env)
     launch("AppImage", ["xvfb-run", "-a", os.path.abspath(img)], env=dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
 
 
@@ -262,7 +289,7 @@ def windows(dir, shots):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("dir", help="directory holding this host's packages (scripts/package.sh --out)")
-    ap.add_argument("--shots", help="macOS/Windows: save a launch screenshot here")
+    ap.add_argument("--shots", help="save a launch screenshot here")
     ap.add_argument("--image", default="ubuntu:24.04", help="Linux: clean image to install into")
     ap.add_argument("--in-container", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
@@ -270,7 +297,7 @@ def main():
         os.makedirs(a.shots, exist_ok=True)
     system = platform.system()
     if system == "Linux":
-        linux(a.dir) if a.in_container else linux_in_container(a.dir, a.image)
+        linux(a.dir, a.shots) if a.in_container else linux_in_container(a.dir, a.image, a.shots)
     elif system == "Darwin":
         macos(a.dir, a.shots)
     elif system == "Windows":
