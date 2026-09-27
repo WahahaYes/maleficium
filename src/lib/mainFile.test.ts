@@ -87,3 +87,40 @@ describe('resolveMainFile order', () => {
     expect(r).toMatchObject({ mainFile: null, source: 'none' });
   });
 });
+
+describe('resolveMainFile on Windows paths', () => {
+  const root = 'C:\\Users\\u\\r';
+  const texts: Record<string, string> = {
+    'C:\\Users\\u\\r\\sub\\ch.tex': '%!TEX root = ../main.tex\n',
+  };
+  const deps = {
+    root,
+    readText: async (p: string) => texts[p] ?? '',
+    listTexFiles: async () => [],
+  };
+  it('joins a relative config main onto the root', async () => {
+    const r = await resolveMainFile({
+      ...deps,
+      openedFile: null,
+      readConfig: async () => '{"mainFile":"sub/main.tex"}',
+    });
+    expect(r).toMatchObject({ mainFile: 'C:\\Users\\u\\r\\sub\\main.tex', source: 'config' });
+  });
+  it('keeps an absolute config main and resolves magic next to the opened file', async () => {
+    const abs = await resolveMainFile({
+      ...deps,
+      openedFile: null,
+      readConfig: async () => '{"mainFile":"D:\\\\other\\\\main.tex"}',
+    });
+    expect(abs.mainFile).toBe('D:\\other\\main.tex');
+    const magic = await resolveMainFile({
+      ...deps,
+      openedFile: 'C:\\Users\\u\\r\\sub\\ch.tex',
+      readConfig: async () => null,
+    });
+    expect(magic).toMatchObject({
+      mainFile: 'C:\\Users\\u\\r\\sub\\..\\main.tex',
+      source: 'magic',
+    });
+  });
+});

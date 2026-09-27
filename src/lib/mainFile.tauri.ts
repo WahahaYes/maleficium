@@ -5,7 +5,7 @@
 import { fs } from './fs-provider';
 import { resolveMainFile, type MainFileResolution } from './mainFile';
 import { getMainFileFor, setMainFileFor } from './mainFile.store';
-import { joinPath } from './paths';
+import { joinPath, relUnder } from './paths';
 
 async function listTexFilesRecursive(root: string): Promise<string[]> {
   const out: string[] = [];
@@ -63,8 +63,6 @@ export async function setMainFile(
   root: string,
   absOrRelPath: string,
 ): Promise<void> {
-  const rel = absOrRelPath.startsWith(root + '/')
-    ? absOrRelPath.slice(root.length + 1)
-    : absOrRelPath;
+  const rel = relUnder(root, absOrRelPath) ?? absOrRelPath;
   setMainFileFor(rootId, rel);
 }

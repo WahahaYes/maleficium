@@ -1,5 +1,5 @@
 import { dialog, fs } from './fs-provider';
-import { joinPath } from './paths';
+import { baseName, dirName, joinPath, safeName } from './paths';
 import { TEXT_EXTENSIONS } from './generated/structure';
 import { writesHeld } from './externalChange';
 
@@ -22,7 +22,7 @@ const TEXT_EXT = new Set(TEXT_EXTENSIONS);
 
 /** Lowercased extension including the dot, or '' when there is none. */
 export function extOf(path: string): string {
-  const name = path.slice(path.lastIndexOf('/') + 1);
+  const name = baseName(path);
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.slice(dot).toLowerCase() : '';
 }
@@ -110,7 +110,7 @@ export async function openProject(): Promise<string | null> {
 
 /** Create an empty file (parents must exist); returns the absolute path. */
 export async function createFile(dir: string, name: string): Promise<string> {
-  const clean = name.trim().replace(/\//g, '_') || 'untitled.tex';
+  const clean = safeName(name) || 'untitled.tex';
   const full = joinPath(dir, clean);
   await fs().writeBytes(full, new Uint8Array());
   return full;
@@ -118,10 +118,9 @@ export async function createFile(dir: string, name: string): Promise<string> {
 
 /** Rename within the same tree; returns the new absolute path. */
 export async function renamePath(oldPath: string, newName: string): Promise<string> {
-  const clean = newName.trim().replace(/\//g, '_');
+  const clean = safeName(newName);
   if (!clean) throw new Error('empty name');
-  const dir = oldPath.slice(0, oldPath.lastIndexOf('/'));
-  const full = dir + '/' + clean;
+  const full = joinPath(dirName(oldPath), clean);
   await fs().rename(oldPath, full);
   return full;
 }

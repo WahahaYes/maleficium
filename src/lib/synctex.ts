@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { hasDir, joinPath, relUnder } from './paths';
 
 /**
  * SyncTeX via the bundled sidecar, addressed by session root and
@@ -58,7 +59,7 @@ export async function inverse_sync(
 
 /** Root-relative path of `abs`, or null when it lies outside `rootPath`. */
 export function relTo(rootPath: string, abs: string): string | null {
-  return abs.startsWith(rootPath + '/') ? abs.slice(rootPath.length + 1) : null;
+  return relUnder(rootPath, abs);
 }
 
 /**
@@ -72,7 +73,7 @@ export function syncAvailable(pdfUrl: string | null, compiling: boolean): boolea
 
 /** Absolute source path for a query: bare names resolve against the workdir. */
 export function texPathFor(file: string, workdirHint: string): string {
-  return file.includes('/') ? file : workdirHint + '/' + file;
+  return hasDir(file) ? file : joinPath(workdirHint, file);
 }
 
 /**

@@ -4,7 +4,7 @@
 // explicit association → `%!TEX root` magic → `\documentclass` scan
 // (first wins, deterministic) → single-.tex fallback → none. Never throws.
 
-import { joinPath } from './paths';
+import { dirName, isAbsolutePath, joinPath } from './paths';
 
 export type MainFileSource = 'config' | 'magic' | 'scan' | 'single' | 'none';
 
@@ -50,7 +50,7 @@ function parseConfigMain(raw: string | null, root: string): string | null {
     const j = JSON.parse(raw) as { mainFile?: unknown };
     if (typeof j.mainFile === 'string' && j.mainFile.trim()) {
       const v = j.mainFile.trim();
-      return v.startsWith('/') ? v : joinPath(root, v);
+      return isAbsolutePath(v) ? v : joinPath(root, v);
     }
   } catch {
     /* unparseable stored association — fall through to detection */
@@ -73,8 +73,8 @@ export async function resolveMainFile(deps: MainFileDeps): Promise<MainFileResol
         const content = await readText(openedFile);
         const magic = parseMagicComment(content);
         if (magic) {
-          const base = openedFile.slice(0, openedFile.lastIndexOf('/'));
-          const resolved = magic.startsWith('/') ? magic : joinPath(base || root, magic);
+          const base = dirName(openedFile);
+          const resolved = isAbsolutePath(magic) ? magic : joinPath(base || root, magic);
           return { mainFile: resolved, source: 'magic', candidates: [] };
         }
       } catch {

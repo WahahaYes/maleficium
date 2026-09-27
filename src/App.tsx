@@ -18,7 +18,7 @@ import Preview from './components/Preview';
 import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
-import { joinPath } from './lib/paths';
+import { baseName, dirName, hasDir, joinPath, relUnder } from './lib/paths';
 import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
@@ -167,7 +167,7 @@ export default function App({
   /** Project-relative path for a file inside the open project, else null. */
   const relInProject = useCallback((abs: string): string | null => {
     const r = rootRef.current;
-    return r && abs.startsWith(r + '/') ? abs.slice(r.length + 1) : null;
+    return r ? relUnder(r, abs) : null;
   }, []);
   const {
     revisionCount,
@@ -216,7 +216,7 @@ export default function App({
   const handleSelect = useCallback(
     async (path: string) => {
       // Persist current buffer before switching (dirty survives switch via map).
-      if (fileName.includes('/') && path !== fileName) {
+      if (hasDir(fileName) && path !== fileName) {
         const cur = buffers.get(fileName);
         if (cur?.dirty) {
           try {
@@ -343,7 +343,7 @@ export default function App({
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
 
   async function handleSetMain() {
-    if (!root || !projectId || !fileName.includes('/')) return;
+    if (!root || !projectId || !hasDir(fileName)) return;
     await setMainFile(projectId, root, fileName);
     const m = await resolveMain(root, projectId, fileName);
     setLog('main file: ' + (m ?? '(none)'));
@@ -448,15 +448,12 @@ export default function App({
       if (g.path && g.rootId) setScratch({ rootId: g.rootId, path: g.path });
     });
   }, []);
-  const workdirHint = fileName.includes('/')
-    ? fileName.slice(0, fileName.lastIndexOf('/'))
-    : (scratch?.path ?? '');
-  const mainDir = mainFile ? mainFile.slice(0, mainFile.lastIndexOf('/')) : workdirHint;
+  const workdirHint = hasDir(fileName) ? dirName(fileName) : (scratch?.path ?? '');
+  const mainDir = mainFile ? dirName(mainFile) : workdirHint;
   // Repo-relative for display (absolute kept in tooltips); plain language.
   const relOf = (abs: string | null): string | null => {
     if (!abs) return null;
-    if (root && abs.startsWith(root + '/')) return abs.slice(root.length + 1);
-    return abs;
+    return (root ? relUnder(root, abs) : null) ?? abs;
   };
 
   const save = useCallback(async () => {
@@ -471,7 +468,7 @@ export default function App({
       });
       return;
     }
-    if (fileName.includes('/')) {
+    if (hasDir(fileName)) {
       const cur = buffers.get(fileName);
       const text = cur?.value ?? tex;
       await saveTex(fileName, text);
@@ -500,7 +497,7 @@ export default function App({
   }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
 
   useEffect(() => {
-    if (!fileName.includes('/')) return;
+    if (!hasDir(fileName)) return;
     const t = setTimeout(() => {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
@@ -966,7 +963,7 @@ export default function App({
     (v: string) => {
       const t0 = performance.now();
       setTex(v);
-      if (fileName.includes('/')) {
+      if (hasDir(fileName)) {
         setBuffers((b) => updateBuffer(b, fileName, v));
       }
       // Keystroke-to-paint probe emission.
@@ -989,11 +986,11 @@ export default function App({
   // ---- Command registry binding ----
   // Menus, icon buttons, and chords invoke these actions. Rename uses the
   // same project-file predicate the registry gates on.
-  const isProjectFile = (p: string) => root != null && p.includes('/') && p.startsWith(root + '/');
-  const compileTarget = mainFile ?? (fileName.includes('/') ? fileName : null);
+  const isProjectFile = (p: string) => root != null && hasDir(p) && relUnder(root, p) !== null;
+  const compileTarget = mainFile ?? (hasDir(fileName) ? fileName : null);
   const workingLabel = (() => {
     const t = compileTarget ?? largeFile ?? fileName;
-    const base = t.slice(t.lastIndexOf('/') + 1) || t;
+    const base = baseName(t) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
   const [templateMode, setTemplateMode] = useState<TemplateDialogMode>(null);
@@ -1107,7 +1104,7 @@ export default function App({
         });
         return;
       }
-      setRenameDraft(fileName.slice(fileName.lastIndexOf('/') + 1));
+      setRenameDraft(baseName(fileName));
       setRenameOpen(true);
     },
     deleteActive: () => {
@@ -1518,9 +1515,7 @@ export default function App({
         onPrecheckPopup={setPrecheckPopup}
       />
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>
-          Rename {fileName.slice(fileName.lastIndexOf('/') + 1) || fileName}
-        </DialogTitle>
+        <DialogTitle>Rename {baseName(fileName) || fileName}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus

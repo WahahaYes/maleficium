@@ -6,10 +6,11 @@ import { exportPdf, exportZip } from '../lib/compile';
 import { emit } from '../lib/events';
 import type { ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
+import { baseName } from '../lib/paths';
 
 /** The last path segment without a `.tex` suffix, for default file names. */
 function stem(path: string): string {
-  const base = path.slice(path.lastIndexOf('/') + 1);
+  const base = baseName(path);
   return base.endsWith('.tex') ? base.slice(0, -4) : base;
 }
 
