@@ -16,6 +16,8 @@ set -eu
 unset CDPATH
 DIR="${1:-}"; TIMEOUT="${2:-20}"
 [ -n "$DIR" ] || { echo "usage: sh e2e/release-smoke.sh <artifact-dir> [timeout-secs]" >&2; exit 2; }
+# docker -v needs an absolute path: a relative one is taken as a named volume.
+DIR=$(cd "$DIR" && pwd)
 set -- "$DIR"/Maleficium_*_amd64.deb
 [ $# -eq 1 ] && [ -f "$1" ] || { echo "smoke: need exactly one Maleficium_<version>_amd64.deb in $DIR" >&2; exit 1; }
 DEB=$1
