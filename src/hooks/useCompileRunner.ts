@@ -37,6 +37,7 @@ import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { OwnWrites } from '../lib/own-writes';
+import { hasDir, joinPath, relUnder } from '../lib/paths';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
 export type CompilePhase = 'idle' | 'compiling' | 'success' | 'failure';
@@ -179,7 +180,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   }
 
   async function compile(popup = true) {
-    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null), { popup });
+    await runCompile(mainFile ?? (hasDir(fileName) ? fileName : null), { popup });
   }
 
   // Shared compile runner: `target` is the main-file target, or an explicit
@@ -307,7 +308,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     // Warm skips persist entirely (disk is fresh, warm never writes).
     const skipPersist = opts?.skipPersist === true;
     try {
-      if (target && target.includes('/')) {
+      if (target && hasDir(target)) {
         if (!skipPersist) {
           // Persist ALL dirty buffers so \input parts compile from disk.
           for (const [p, buf] of buffers) {
@@ -328,7 +329,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           // A visible file with no buffer is the untitled flow: its text
           // lives nowhere else, so it goes to the target. Any other
           // visible file was persisted above to its own path.
-          if (!buffers.has(target) && !fileName.includes('/')) {
+          if (!buffers.has(target) && !hasDir(fileName)) {
             await saveTex(target, tex);
             ownWrites.wrote(target, tex);
           }
@@ -336,7 +337,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       } else {
         if (!scratch) throw new Error('scratch root unavailable');
         workdir = scratch.path;
-        const t2 = workdir + '/' + fileName;
+        const t2 = joinPath(workdir, fileName);
         await saveTex(t2, tex);
         ownWrites.wrote(t2, tex);
         setMainFileState(t2);
@@ -360,7 +361,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       }
       return false;
     }
-    const activeTarget = target ?? (fileName.includes('/') ? fileName : workdir! + '/' + fileName);
+    const activeTarget = target ?? (hasDir(fileName) ? fileName : joinPath(workdir!, fileName));
     // The backend compiles by session root: a target outside every granted
     // root fails here, never reaching the engine.
     const src = sourceFor(activeTarget, sessionRoots(opts?.root));
@@ -545,7 +546,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   autoFireRef.current = () => {
     // A main file from before a root switch must never auto-fire: the
     // backend would refuse it as outside the project.
-    if (mainFile && mainFile.includes('/') && root && !mainFile.startsWith(root + '/')) return;
+    if (mainFile && hasDir(mainFile) && root && relUnder(root, mainFile) === null) return;
     const saved = savePathRef.current;
     if (saved && !buffers.has(saved)) return;
     const target = mainFile ?? fileName;
@@ -646,7 +647,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
 
   /** One networked compile of the main file, proven offline right after. */
   async function makeOffline() {
-    await runCompile(mainFile ?? (fileName.includes('/') ? fileName : null), { networked: true });
+    await runCompile(mainFile ?? (hasDir(fileName) ? fileName : null), { networked: true });
   }
 
   // Cache-warm on open: a background compile of a freshly opened project's

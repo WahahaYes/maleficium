@@ -9,6 +9,7 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
+import { baseName } from '../lib/paths';
 
 export default function BufferTabs({
   buffers,
@@ -27,7 +28,7 @@ export default function BufferTabs({
 }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   if (buffers.size === 0) return null;
-  const base = (p: string) => p.slice(p.lastIndexOf('/') + 1) || p;
+  const base = (p: string) => baseName(p) || p;
   // Stable order: insertion order of the Map (open order).
   return (
     <Box
