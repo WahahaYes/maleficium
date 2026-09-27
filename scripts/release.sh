@@ -1,141 +1,187 @@
 #!/bin/sh
-# Cut a release: bump X.Y.Z in every manifest, prepend the CHANGELOG entry,
-# commit it, tag vX.Y.Z, build the .deb + AppImage, and (only with
-# --publish) push and open the GitHub release. Local steps run by default;
-# nothing leaves the machine without --publish.
-# Usage: sh scripts/release.sh X.Y.Z [--notes-file FILE] [--host] [--out DIR] [--publish] [--skip-build]
-# POSIX sh. Needs: git, python3, npm, cargo, docker (or a release-ready host with --host), gh (with --publish).
+# Release in three steps, each ending where a person takes over. main is
+# protected, so nothing here pushes to main or creates a tag.
+#
+#   release.sh prepare X.Y.Z [--notes-file FILE] [--no-push]
+#       Cut (or update) branch release-X.Y.Z from origin/main in a scratch
+#       worktree, bump every manifest to X.Y.Z, turn CHANGELOG.md's
+#       Unreleased section into X.Y.Z (FILE replaces it instead), commit
+#       "release X.Y.Z", push, and open the release PR. Rerunning updates the
+#       same branch and PR. --no-push stops after the commit and keeps the
+#       worktree for inspection.
+#   release.sh draft X.Y.Z [--out DIR]
+#       After the PR merges: run the release workflow on main, which builds
+#       every platform and attaches the packages to a DRAFT GitHub release,
+#       then download the Linux packages into DIR and smoke them. Publishing
+#       the draft on GitHub (by hand) creates the vX.Y.Z tag.
+#   release.sh build [--host] [--out DIR]
+#       Build this checkout's Linux packages locally (Docker, or this host
+#       with --host) to smoke before opening a release PR. Publishes nothing.
+#
+# POSIX sh. Needs git and python3; prepare also npm, cargo and gh; draft gh
+# and docker; build docker (or a release-ready host with --host).
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
 
-usage() { printf 'usage: sh scripts/release.sh X.Y.Z [--notes-file FILE] [--host] [--out DIR] [--publish] [--skip-build]\n' >&2; exit 2; }
-
-VER="${1:-}"; shift || usage
-case "$VER" in (*[!0-9.]*|""|.*|*.|*..*) usage;; esac
-case "$VER" in ?*.?*.?*) ;; (*) usage;; esac
-
-NOTES_FILE=""; HOST=0; OUT="../maleficium-release"; PUBLISH=0; SKIP_BUILD=0
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --notes-file) NOTES_FILE="${2:-}"; shift 2 || usage ;;
-        --host) HOST=1; shift ;;
-        --out) OUT="${2:-}"; shift 2 || usage ;;
-        --publish) PUBLISH=1; shift ;;
-        --skip-build) SKIP_BUILD=1; shift ;;
-        *) usage ;;
-    esac
-done
-
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { printf 'release: %s\n' "$1" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
-need git; need python3; need npm; need cargo
-[ "$SKIP_BUILD" = 1 ] || { [ "$HOST" = 1 ] || need docker; }
-[ "$PUBLISH" = 1 ] && need gh
+version() {
+    case "$1" in (*[!0-9.]*|""|.*|*.|*..*) usage;; esac
+    case "$1" in ?*.?*.?*) ;; (*) usage;; esac
+}
+# The version a ref's package.json carries.
+version_at() { git -C "$ROOT" show "$1:package.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'; }
+tag_exists() { git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$1" >/dev/null 2>&1; }
 
-[ -z "$(git -C "$ROOT" status --porcelain)" ] || die "tree is dirty; commit or stash first"
-[ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" = "main" ] || die "run from main"
-# Idempotent per version: a tag v$VER at HEAD means the local steps already
-# ran, so resume at build/publish. A tag anywhere else is a real conflict.
-RESUME=0
-if TAGGED=$(git -C "$ROOT" rev-parse -q --verify "v$VER^{commit}" 2>/dev/null); then
-    [ "$TAGGED" = "$(git -C "$ROOT" rev-parse HEAD)" ] || die "tag v$VER exists and is not HEAD"
-    [ -z "$NOTES_FILE" ] || die "v$VER already tagged at HEAD; delete the local tag to change its notes"
-    RESUME=1
-    printf 'release: v%s already tagged at HEAD; skipping bump, changelog, commit, tag\n' "$VER" >&2
-fi
+cmd_prepare() {
+    VER="${1:-}"; shift || usage; version "$VER"
+    NOTES_FILE=""; PUSH=1
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --notes-file) NOTES_FILE="${2:-}"; shift 2 || usage ;;
+            --no-push) PUSH=0; shift ;;
+            *) usage ;;
+        esac
+    done
+    need git; need python3; need npm; need cargo; need gh
+    # The commit hooks run prettier from ./node_modules; the scratch worktree
+    # borrows this checkout's.
+    [ -d "$ROOT/node_modules" ] || die "no node_modules in $ROOT; run npm ci first"
+    [ -z "$NOTES_FILE" ] || NOTES_FILE=$(cd -- "$(dirname -- "$NOTES_FILE")" && pwd -P)/$(basename -- "$NOTES_FILE")
+    [ -z "$NOTES_FILE" ] || [ -s "$NOTES_FILE" ] || die "notes file $NOTES_FILE is missing or empty"
 
-if [ "$RESUME" = 0 ]; then
-# Bump package.json + package-lock.json together, no tag, no network.
-(cd "$ROOT" && npm version --no-git-tag-version --allow-same-version "$VER" >/dev/null)
-# Bump the Rust and Tauri manifests (first version line is the package one).
-# sed, not a JSON round-trip: loaders reformat unrelated inline arrays.
-sed -i '0,/^version = "[^"]*"/s//version = "'"$VER"'"/' "$ROOT/src-tauri/Cargo.toml"
-sed -i '0,/"version": "[^"]*"/s//"version": "'"$VER"'"/' "$ROOT/src-tauri/tauri.conf.json"
-# Re-sync Cargo.lock to the bumped version. The check needs the sidecars
-# present (the Tauri build script resolves them as resources).
-[ -n "$(ls -A "$ROOT/src-tauri/binaries" 2>/dev/null)" ] \
-    || die "no sidecars in src-tauri/binaries; run sh scripts/fetch-sidecars.sh first"
-(cd "$ROOT" && cargo check --manifest-path src-tauri/Cargo.toml --offline >/dev/null 2>&1) \
-    || (cd "$ROOT" && cargo check --manifest-path src-tauri/Cargo.toml >/dev/null)
-python3 "$ROOT/scripts/release-meta.py" check "$VER" || die "manifests not bumped to $VER"
+    BRANCH="release-$VER"
+    git -C "$ROOT" fetch --quiet origin main
+    tag_exists "$VER" && die "v$VER is already tagged; that version is released"
+    [ "$(version_at origin/main)" != "$VER" ] || die "origin/main is already at $VER; run: sh scripts/release.sh draft $VER"
 
-# Write the CHANGELOG section: notes file, else subjects since the last
-# tag, else a stub the releaser fills before publishing. An existing
-# section for this version is kept as written unless --notes-file is
-# passed, which replaces it in place.
-DATE=$(date +%Y-%m-%d); NOTES=""
-if [ -n "$NOTES_FILE" ]; then
-    NOTES=$(cat "$NOTES_FILE")
-elif grep -Eq "^## $(printf '%s' "$VER" | sed 's/\./\\./g')( |\$)" "$ROOT/CHANGELOG.md"; then
-    printf 'release: keeping the existing CHANGELOG section for %s\n' "$VER" >&2
-elif PREV=$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null); then
-    NOTES=$(git -C "$ROOT" log "$PREV..HEAD" --format='- %s')
-else
-    NOTES="- TBD: fill highlights before publishing."
-    printf 'release: no notes file and no previous tag; using a stub\n' >&2
-fi
-[ -z "$NOTES" ] || python3 - "$ROOT/CHANGELOG.md" "$VER" "$DATE" "$NOTES" <<'EOF'
-import re, sys
-path, ver, date, notes = sys.argv[1:5]
-with open(path) as f:
-    text = f.read()
-section = "## %s - %s\n\n%s\n\n" % (ver, date, notes.rstrip())
-lines = text.split("\n")
-head = re.compile(r"^## %s(?: |$)" % re.escape(ver))
-start = next((i for i, line in enumerate(lines) if head.match(line)), None)
-if start is not None:
-    # Replace this version's section up to the next heading.
-    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-    lines[start:end] = section.rstrip("\n").split("\n") + [""]
-else:
-    for i, line in enumerate(lines):
-        if line.startswith("## "):
-            lines.insert(i, section.rstrip("\n"))
-            lines.insert(i + 1, "")
-            break
-    else:
-        lines.extend(["", section.rstrip("\n")])
-with open(path, "w") as f:
-    f.write("\n".join(lines))
-EOF
-git -C "$ROOT" add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
-# Nothing staged means every manifest and the CHANGELOG were already at
-# $VER; tag the current HEAD instead of making an empty release commit.
-git -C "$ROOT" diff --cached --quiet || git -C "$ROOT" commit -m "release $VER" >/dev/null
-git -C "$ROOT" tag -a "v$VER" -m "v$VER"
-fi
+    # A detached scratch worktree: no local branch, so it works while
+    # release-X.Y.Z is checked out elsewhere. Kept only by a successful
+    # --no-push.
+    WT=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-$BRANCH-XXXXXX")
+    KEEP=0
+    cleanup() {
+        [ "$KEEP" = 0 ] || return 0
+        git -C "$ROOT" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
+        git -C "$ROOT" worktree prune
+    }
+    trap cleanup EXIT
+    # Rerun: continue the pushed branch, merging main in rather than rebasing.
+    if git -C "$ROOT" fetch --quiet origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null; then
+        git -C "$ROOT" worktree add --quiet --detach "$WT" "origin/$BRANCH"
+        git -C "$WT" merge --quiet --no-edit origin/main
+    else
+        git -C "$ROOT" worktree add --quiet --detach "$WT" origin/main
+    fi
+    ln -s "$ROOT/node_modules" "$WT/node_modules"
+    # This script's own release-meta.py, run against the worktree.
+    meta() { RELEASE_ROOT="$WT" python3 "$ROOT/scripts/release-meta.py" "$@"; }
 
-if [ "$SKIP_BUILD" = 0 ]; then
+    # Bump the manifests. sed, not a JSON round-trip: loaders reformat
+    # unrelated inline arrays. cargo metadata re-syncs Cargo.lock without a
+    # build or the sidecars.
+    (cd "$WT" && npm version --no-git-tag-version --allow-same-version "$VER" >/dev/null)
+    sed -i.bak '0,/^version = "[^"]*"/s//version = "'"$VER"'"/' "$WT/src-tauri/Cargo.toml"
+    sed -i.bak '0,/"version": "[^"]*"/s//"version": "'"$VER"'"/' "$WT/src-tauri/tauri.conf.json"
+    rm -f "$WT/src-tauri/Cargo.toml.bak" "$WT/src-tauri/tauri.conf.json.bak"
+    cargo metadata --manifest-path "$WT/src-tauri/Cargo.toml" --format-version 1 --offline >/dev/null 2>&1 \
+        || cargo metadata --manifest-path "$WT/src-tauri/Cargo.toml" --format-version 1 >/dev/null
+    meta check "$VER" || die "manifests not bumped to $VER"
+    meta changelog "$VER" "$(date +%Y-%m-%d)" ${NOTES_FILE:+"$NOTES_FILE"} \
+        || die "no CHANGELOG notes for $VER"
+    meta stale \
+        || die "a version is hardcoded outside the manifests; read it from the build instead"
+
+    git -C "$WT" add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock \
+        src-tauri/tauri.conf.json CHANGELOG.md
+    git -C "$WT" diff --cached --quiet || git -C "$WT" commit --quiet -m "release $VER"
+    if [ "$PUSH" = 0 ]; then
+        KEEP=1
+        printf 'release: committed for %s in %s (not pushed; remove with git worktree remove)\n' "$BRANCH" "$WT"
+        git -C "$WT" log --oneline origin/main..
+        return
+    fi
+    git -C "$WT" push --quiet origin "HEAD:refs/heads/$BRANCH"
+    PR=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
+    if [ -n "$PR" ]; then
+        printf 'release: updated %s\n' "$PR"
+    else
+        # shellcheck disable=SC2016 # the backticks are Markdown
+        BODY=$(printf 'Bumps every manifest to %s and turns its CHANGELOG section into the release notes the release workflow publishes.\n\nAfter merge: `sh scripts/release.sh draft %s` builds every platform into a draft release and smokes the Linux packages. Nothing is published or tagged until the draft is published by hand.\n\n## Release notes\n\n%s\n' \
+            "$VER" "$VER" "$(meta notes "$VER")")
+        gh pr create --base main --head "$BRANCH" --title "release $VER" --body "$BODY"
+    fi
+}
+
+cmd_draft() {
+    VER="${1:-}"; shift || usage; version "$VER"
+    OUT="$ROOT/../maleficium-release-$VER"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --out) OUT="${2:-}"; shift 2 || usage ;;
+            *) usage ;;
+        esac
+    done
+    need git; need python3; need gh; need docker
+    git -C "$ROOT" fetch --quiet origin main
+    [ "$(version_at origin/main)" = "$VER" ] \
+        || die "origin/main is at $(version_at origin/main), not $VER; merge the release PR first"
+    tag_exists "$VER" && die "v$VER is already tagged; that version is published"
+    [ ! -e "$OUT" ] || [ -z "$(ls -A "$OUT")" ] || die "$OUT is not empty; pass a fresh --out"
+
+    SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    gh workflow run release.yml --ref main -f version="$VER"
+    # The dispatch returns no run id: find the run by its name and start time.
+    RUN=""; i=0
+    while [ -z "$RUN" ] && [ $i -lt 30 ]; do
+        sleep 2; i=$((i + 1))
+        RUN=$(gh run list --workflow release.yml --event workflow_dispatch --limit 10 \
+            --json databaseId,displayTitle,createdAt \
+            --jq "[.[] | select(.displayTitle == \"release $VER\" and .createdAt >= \"$SINCE\")][0].databaseId // empty")
+    done
+    [ -n "$RUN" ] || die "dispatched, but no release run for $VER appeared; check the Actions tab"
+    printf 'release: watching run %s\n' "$RUN"
+    gh run watch "$RUN" --exit-status --interval 30 >/dev/null || die "release run $RUN failed: gh run view $RUN --log-failed"
+
+    mkdir -p "$OUT"
+    gh run download "$RUN" --pattern 'linux-*' --dir "$OUT"
+    # One matching artifact still lands in its own folder; flatten it.
+    find "$OUT" -mindepth 2 -type f -exec mv {} "$OUT" \;
+    find "$OUT" -mindepth 1 -type d -empty -delete
+    for f in "$OUT"/*; do
+        case "${f##*/}" in (*_"$VER"_*) ;; (*) die "$f is not a $VER package" ;; esac
+    done
+    python3 "$ROOT/e2e/package-smoke.py" "$OUT" || die "smoke failed on $OUT; do not publish the draft"
+    URL=$(gh release view "v$VER" --json url --jq .url)
+    printf 'release: draft v%s is ready and its Linux packages pass the smoke: %s\n' "$VER" "$URL"
+    printf 'release: publishing the draft on GitHub creates the v%s tag.\n' "$VER"
+}
+
+cmd_build() {
+    HOST=0; OUT="$ROOT/../maleficium-release"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --host) HOST=1; shift ;;
+            --out) OUT="${2:-}"; shift 2 || usage ;;
+            *) usage ;;
+        esac
+    done
     mkdir -p "$OUT"
     if [ "$HOST" = 1 ]; then
         sh "$ROOT/scripts/package.sh" --out "$OUT"
     else
+        need docker
         docker build --output "type=local,dest=$OUT" "$ROOT"
     fi
-fi
+    printf 'release: packages in %s; smoke them with python3 e2e/package-smoke.py %s\n' "$OUT" "$OUT"
+}
 
-if [ "$PUBLISH" = 0 ]; then
-    printf 'tagged v%s locally. To publish:\n  git push origin main v%s\n' "$VER" "$VER"
-    [ "$SKIP_BUILD" = 1 ] || printf '  gh release create v%s --title v%s --notes-file <notes> %s/*.deb %s/*.AppImage\n' "$VER" "$VER" "$OUT" "$OUT"
-    exit 0
-fi
-[ -n "$(ls "$OUT"/*.deb "$OUT"/*.AppImage 2>/dev/null)" ] || die "no artifacts in $OUT; build first"
-# Every artifact is uploaded, so one left over from another version would
-# ship alongside this one. Checked before anything is pushed.
-for f in "$OUT"/*.deb "$OUT"/*.AppImage; do
-    [ -e "$f" ] || continue
-    case "${f##*/}" in
-        (*_"$VER"_*) ;;
-        (*) die "$f is not a $VER artifact; clear $OUT of other versions" ;;
-    esac
-done
-git -C "$ROOT" push origin main "v$VER"
-NOTES_TMP=$(mktemp /tmp/maleficium-release-notes-XXXXXX.md)
-trap 'rm -f "$NOTES_TMP"' EXIT
-python3 "$ROOT/scripts/release-meta.py" notes "$VER" > "$NOTES_TMP" || die "no CHANGELOG section found for $VER"
-if gh release view "v$VER" >/dev/null 2>&1; then
-    gh release upload "v$VER" --clobber "$OUT"/*.deb "$OUT"/*.AppImage
-else
-    gh release create "v$VER" --title "v$VER" --notes-file "$NOTES_TMP" "$OUT"/*.deb "$OUT"/*.AppImage
-fi
+CMD="${1:-}"; shift || usage
+case "$CMD" in
+    prepare) cmd_prepare "$@" ;;
+    draft) cmd_draft "$@" ;;
+    build) cmd_build "$@" ;;
+    *) usage ;;
+esac

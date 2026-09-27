@@ -2,7 +2,7 @@
 # package.sh — build this host's release packages into one directory.
 #
 # The one build path: CI runs it on every OS, the Dockerfile runs it inside
-# Ubuntu 24.04, and release.sh --host runs it on a release-ready host.
+# Ubuntu 24.04, and release.sh build --host runs it on a release-ready host.
 #   Linux:   .deb + AppImage (the AppImage repacked without libwayland)
 #   macOS:   .dmg (ad-hoc signed; the host's own architecture)
 #   Windows: NSIS setup .exe (run from Git Bash or MSYS2)
