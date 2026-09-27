@@ -1,24 +1,22 @@
-# Draft a GitHub release for a version already prepared on main (manifests
-# bumped, CHANGELOG section written). Builds every platform via build.yml and
-# attaches the artifacts to a DRAFT release targeting the dispatched commit.
-# Nothing is published and no tag exists until a person publishes the draft,
-# which creates vX.Y.Z at that commit. Rerunning for the same version
-# replaces the draft's assets.
+# Publish a GitHub release when a vX.Y.Z tag is pushed. scripts/release.sh
+# pushes it on the merge commit of the release PR (only repository admins
+# may create v* tags). Checks that the tag is on main and that the manifests
+# and CHANGELOG are at X.Y.Z, builds every platform via build.yml, and
+# publishes the release with the CHANGELOG section as its notes. A failed
+# run can be rerun from the Actions tab; a leftover draft for the version is
+# published in place.
 name: release
+run-name: release ${{ github.ref_name }}
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version to release, X.Y.Z (no leading v)
-        required: true
-        type: string
+  push:
+    tags: ['v*']
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.version }}
+  group: release-${{ github.ref_name }}
 
 jobs:
   check:
@@ -27,26 +25,23 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Only from main
-        if: github.ref != 'refs/heads/main'
-        run: |
-          echo "::error::release runs only from main (got $GITHUB_REF)"
-          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Version, CHANGELOG and tag
+        with:
+          fetch-depth: 0
+      - name: Tag, main, manifests and CHANGELOG
         env:
-          VER: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          case "$VER" in (*[!0-9.]*|""|.*|*.|*..*) echo "::error::bad version $VER"; exit 1;; esac
-          python3 scripts/release-meta.py check "$VER"
-          python3 scripts/release-meta.py notes "$VER" >/dev/null
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VER" >/dev/null; then
-            echo "::error::tag v$VER already exists; that version is published"
+          VER="${GITHUB_REF_NAME#v}"
+          case "$VER" in (*[!0-9.]*|""|.*|*.|*..*) echo "::error::bad version tag $GITHUB_REF_NAME"; exit 1;; esac
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main"
             exit 1
           fi
-          if gh release view "v$VER" --json isDraft --jq .isDraft 2>/dev/null | grep -qx false; then
-            echo "::error::release v$VER is already published"
+          python3 scripts/release-meta.py check "$VER"
+          python3 scripts/release-meta.py notes "$VER" >/dev/null
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null | grep -qx false; then
+            echo "::error::release $GITHUB_REF_NAME is already published"
             exit 1
           fi
 
@@ -54,7 +49,7 @@ jobs:
     needs: check
     uses: ./.github/workflows/build.yml
 
-  draft:
+  publish:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -68,11 +63,11 @@ jobs:
           # Packages only: build.yml also uploads screenshot-* artifacts.
           pattern: '{linux,macos,windows}-*'
           merge-multiple: true
-      - name: Create or update the draft release
+      - name: Publish the release
         env:
-          VER: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          VER="${GITHUB_REF_NAME#v}"
           ls -l dist
           for f in dist/*; do
             case "${f##*/}" in
@@ -81,10 +76,9 @@ jobs:
             esac
           done
           python3 scripts/release-meta.py notes "$VER" > notes.md
-          if gh release view "v$VER" >/dev/null 2>&1; then
-            gh release edit "v$VER" --draft --target "$GITHUB_SHA" --notes-file notes.md
-            gh release upload "v$VER" --clobber dist/*
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber dist/*
+            gh release edit "$GITHUB_REF_NAME" --draft=false --title "$GITHUB_REF_NAME" --notes-file notes.md
           else
-            gh release create "v$VER" --draft --target "$GITHUB_SHA" \
-              --title "v$VER" --notes-file notes.md dist/*
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md dist/*
           fi
