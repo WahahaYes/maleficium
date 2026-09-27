@@ -403,14 +403,17 @@ pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, Stri
     })
 }
 
-/// Structured diagnostics from the last compile's engine log.
+/// Structured diagnostics from the last compile: its last engine run's
+/// console (an earlier run it retried is not the document's problem) and
+/// TeX's transcript.
 pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnostics, String> {
     let root = super::fs::session_root(root_id)?;
     let o = super::outputs_of(root_id, main_rel)?;
     let log = super::engine_log(root_id, main_rel)?;
+    let last = super::engine::last_attempt(&log);
     let main = rel_of(&root, &o.dir.join(&o.main_file));
     let tex = super::tex_log(root_id, main_rel)?;
-    let mut diagnostics = ms::diagnostics(&log, &root.to_string_lossy(), &o.dir.to_string_lossy());
+    let mut diagnostics = ms::diagnostics(last, &root.to_string_lossy(), &o.dir.to_string_lossy());
     diagnostics.extend(tex_log_warnings(root_id, main_rel, &tex)?);
     let over = diagnostics.len().saturating_sub(max);
     diagnostics.truncate(max);
@@ -420,7 +423,7 @@ pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnost
         main,
         diagnostics,
         truncated: over,
-        missing: missing_of(&log),
+        missing: missing_of(last),
     })
 }
 
@@ -677,6 +680,26 @@ mod tests {
             ]
         );
         assert!(d.diagnostics[0].message.contains("`nope'"));
+    }
+
+    #[test]
+    fn diagnostics_skip_a_run_the_compile_retried() {
+        let (id, _) = sample("retried");
+        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            super::super::log_file(&o.outdir, &o.main_file),
+            "note: using only cached resource files\n\
+             error: main.tex:1: ! LaTeX Error: File `beamer.cls' not found.\n\
+             trying online: fetching beamer.cls\n\
+             note: Running TeX ...\n\
+             note: Writing `main.pdf`",
+        )
+        .unwrap();
+        let d = diagnostics(&id, "paper/main.tex", 100).unwrap();
+        let _ = std::fs::remove_dir_all(&o.outdir);
+        assert!(d.diagnostics.is_empty(), "{:?}", d.diagnostics);
+        assert_eq!(d.missing, None);
     }
 
     #[test]

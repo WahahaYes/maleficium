@@ -205,6 +205,27 @@ pub fn compile(
     })
 }
 
+/// The status lines that start another engine run within one compile. They
+/// stay in the compile's lines, so a reader of the kept log can tell the
+/// runs apart.
+const TRY_ONLINE: &str = "trying online:";
+const VERIFY_OFFLINE: &str = "verifying offline:";
+
+/// The part of a kept engine log that the compile's last engine run wrote:
+/// earlier runs (a cached-only miss retried online, an online run before its
+/// offline check) were superseded, and their errors are not the document's.
+pub fn last_attempt(log: &str) -> &str {
+    let mut start = 0;
+    let mut at = 0;
+    for line in log.split_inclusive('\n') {
+        at += line.len();
+        if line.starts_with(TRY_ONLINE) || line.starts_with(VERIFY_OFFLINE) {
+            start = at;
+        }
+    }
+    &log[start..]
+}
+
 /// A status line carrying the online attempt: the status bar shows it
 /// while the engine is tried, and the event log keeps it.
 fn attempt_line(text: String) -> CompileLine {
@@ -262,9 +283,9 @@ fn compile_with(
             Some(MissingReason::NotCached | MissingReason::CacheEmpty)
         );
         if verify && mode == CacheMode::Online && status == JobStatus::Success {
-            on_line(&status_line(String::from(
-                "verifying offline: compiling from cached files only",
-            )));
+            let line = status_line(format!("{VERIFY_OFFLINE} compiling from cached files only"));
+            on_line(&line);
+            every_line.push(line);
             verify = false;
             mode = CacheMode::CachedOnly;
             continue;
@@ -274,7 +295,9 @@ fn compile_with(
                 .as_ref()
                 .and_then(|m| m.file.clone())
                 .unwrap_or_else(|| String::from("TeX support files"));
-            on_line(&attempt_line(format!("trying online: fetching {what}")));
+            let line = attempt_line(format!("{TRY_ONLINE} fetching {what}"));
+            on_line(&line);
+            every_line.push(line);
             mode = CacheMode::Online;
             continue;
         }
@@ -633,6 +656,18 @@ mod tests {
         assert_eq!(c.status, JobStatus::Success);
         assert_eq!(c.missing, None);
         assert!(!c.cached_only);
+        // The kept lines mark the retry, so the log's last run is the online
+        // one alone: the superseded miss is not the document's error.
+        let kept = c.texts().join("\n");
+        assert_eq!(last_attempt(&kept), "note: downloading booktabs.sty");
+    }
+
+    #[test]
+    fn last_attempt_is_the_log_after_the_last_rerun() {
+        let log = "error: a\ntrying online: fetching x\nerror: b\nverifying offline: y\nnote: c";
+        assert_eq!(last_attempt(log), "note: c");
+        assert_eq!(last_attempt("note: one run"), "note: one run");
+        assert_eq!(last_attempt("error: a\ntrying online: fetching x"), "");
     }
 
     #[test]
