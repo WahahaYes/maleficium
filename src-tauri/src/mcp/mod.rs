@@ -633,10 +633,19 @@ impl Maleficium {
 #[tool_handler(name = "maleficium")]
 impl rmcp::ServerHandler for Maleficium {}
 
-pub async fn run_stdio() -> anyhow::Result<()> {
+async fn run_stdio() -> anyhow::Result<()> {
     let service = Maleficium.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+/// The stdio server until the client hangs up: `maleficium-mcp` and
+/// `maleficium --mcp` both land here.
+pub fn serve_stdio() -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run_stdio())
 }
 
 #[cfg(test)]
