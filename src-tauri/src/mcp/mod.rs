@@ -7,7 +7,7 @@
 
 use rmcp::{
     handler::server::wrapper::{Json, Parameters},
-    tool, tool_router,
+    tool, tool_handler, tool_router,
     transport::stdio,
     ServiceExt,
 };
@@ -270,7 +270,7 @@ fn path_string(p: std::path::PathBuf) -> String {
     p.to_string_lossy().to_string()
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl Maleficium {
     #[tool(description = "Grant a session project root (absolute directory, canonicalized)")]
     fn grant(&self, Parameters(p): Parameters<GrantParams>) -> Result<Json<PathOut>, String> {
@@ -628,6 +628,11 @@ impl Maleficium {
     }
 }
 
+// Named explicitly: rmcp's default server info is its own crate name and
+// version, since its env! expands inside rmcp.
+#[tool_handler(name = "maleficium")]
+impl rmcp::ServerHandler for Maleficium {}
+
 pub async fn run_stdio() -> anyhow::Result<()> {
     let service = Maleficium.serve(stdio()).await?;
     service.waiting().await?;
@@ -638,6 +643,14 @@ pub async fn run_stdio() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::commands::synctex::{forward_sync, inverse_sync};
+
+    /// Clients show serverInfo; rmcp's default would name rmcp itself.
+    #[test]
+    fn server_names_itself_with_the_app_version() {
+        let info = rmcp::ServerHandler::get_info(&Maleficium).server_info;
+        assert_eq!(info.name, "maleficium");
+        assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+    }
 
     /// Both adapters sit on one implementation: every escape the desktop
     /// command refuses, the MCP tool refuses with the same error.
