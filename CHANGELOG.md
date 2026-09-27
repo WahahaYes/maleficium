@@ -6,6 +6,13 @@
 
 - **The MCP server ships in every package.** `maleficium --mcp` runs it from the app binary, so AI clients can point at the AppImage itself; Linux packages also install it as `maleficium-mcp`. The README's "Use with an AI agent" section has setup for Claude Code, Claude Desktop, VS Code, and opencode.
 - The server now names itself `maleficium` with the app's version when a client connects.
+- `diagnostics` now reports undefined references and citations and duplicate labels, on the line that uses or defines them. Before, a document that compiled with `??` in it read as clean.
+- `compile_poll` takes `wait_ms` to wait for a running compile instead of being called in a loop.
+- A delete without its confirm now says which path to pass back, rather than reporting a mismatch.
+
+### Fixes
+
+- **Compiling no longer fails on a font the engine has not downloaded yet.** Once the engine's cache was filled, a document that first needed another Latin Modern face (a new size or italic, for example) failed with "not loadable" instead of fetching it.
 
 ## 0.1.1 - 2026-09-26
 
