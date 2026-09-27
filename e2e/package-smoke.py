@@ -8,8 +8,10 @@ The one smoke path for every OS. Only installing is per OS:
            every binary is built for this machine
   Windows: silent NSIS install; check the installed binaries
 Then the same checks everywhere:
-  1. the installed maleficium-mcp compiles a page with its bundled engine
-     (sidecar lookup, the engine, app dirs, and native paths all work)
+  1. the installed MCP server, as maleficium-mcp and as the app's --mcp,
+     names itself, compiles a page with its bundled engine, and answers a
+     SyncTeX lookup (sidecar lookup, the engine, app dirs, and native paths
+     all work)
   2. the app's first launch opens the welcome project, read from its own
      event log: the webview ran the UI, IPC reached Rust, project files
      resolved through the fs scope; any error event fails
@@ -53,12 +55,13 @@ def one(dir, pattern):
 # ---- shared checks ---------------------------------------------------------
 
 
-def compile_probe(mcp, scratch, env=None):
-    """grant -> compile_run -> compile_poll over the installed MCP server's stdio."""
+def compile_probe(cmd, scratch, env=None):
+    """initialize -> grant -> compile_run -> compile_poll -> synctex_forward over
+    the stdio of an installed MCP server, started as `cmd` (a list)."""
     os.makedirs(scratch, exist_ok=True)
     with open(os.path.join(scratch, "main.tex"), "w") as f:
         f.write("\\documentclass{article}\n\\begin{document}\nSmoke.\n\\end{document}\n")
-    p = subprocess.Popen([mcp], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
     n = [0]
 
     def send(method, params):
@@ -73,7 +76,10 @@ def compile_probe(mcp, scratch, env=None):
             fail("%s: %s" % (name, "".join(c.get("text", "") for c in r["content"])))
         return r["structuredContent"]
 
-    send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "smoke", "version": "0"}})
+    who = send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                              "clientInfo": {"name": "smoke", "version": "0"}})["result"]["serverInfo"]
+    if who["name"] != "maleficium":
+        fail("%s: serverInfo is %s" % (" ".join(cmd), who))
     p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
     p.stdin.flush()
     call("grant", {"root_id": "smoke", "root": scratch})
@@ -83,11 +89,14 @@ def compile_probe(mcp, scratch, env=None):
     while rec["status"] == "running" and time.time() < deadline:
         time.sleep(2)
         rec = call("compile_poll", {"job_id": job, "tail_lines": 5})
-    p.stdin.close()
-    p.wait(timeout=10)
     if rec["status"] != "success":
         fail("compile %s: %s" % (rec["status"], str(rec)[:300]))
-    say("compile ok (installed engine, %s)" % rec.get("pdf_url"))
+    hit = call("synctex_forward", {"root_id": "smoke", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
+    p.stdin.close()
+    p.wait(timeout=10)
+    if hit.get("page") != 1:
+        fail("synctex_forward: %s" % hit)
+    say("%s: %s %s, compile + synctex ok" % (" ".join([os.path.basename(cmd[0])] + cmd[1:]), who["name"], who["version"]))
 
 
 def read_events(path):
@@ -214,7 +223,10 @@ def linux(dir, shots):
     home = tempfile.mkdtemp(prefix="smoke-home-")
     env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
     env["HOME"] = home
-    compile_probe("/usr/bin/maleficium-mcp", os.path.join(home, "doc"), env)
+    compile_probe(["/usr/bin/maleficium-mcp"], os.path.join(home, "doc"), env)
+    compile_probe(["/usr/bin/maleficium", "--mcp"], os.path.join(home, "doc-app"), env)
+    compile_probe([os.path.abspath(img), "--mcp"], os.path.join(home, "doc-appimage"),
+                  dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
     events = os.path.join(home, ".local/share", IDENT, "maleficium-log/events.jsonl")
     shot = None
     if shots:
@@ -248,9 +260,10 @@ def macos(dir, shots):
         if arch not in archs:
             fail("%s is %s, not %s" % (b, archs, arch))
     say("bundle ok (%s)" % arch)
-    compile_probe(os.path.join(bin, "maleficium-mcp"), os.path.join(t, "doc"))
     with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
         main = plistlib.load(f)["CFBundleExecutable"]
+    compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"))
+    compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"))
     events = os.path.expanduser("~/Library/Application Support/%s/maleficium-log/events.jsonl" % IDENT)
     shot = None
     if shots:
@@ -277,7 +290,8 @@ def windows(dir, shots):
         if not os.path.isfile(os.path.join(dest, b)):
             fail("install lacks %s" % b)
     say("install ok (%s)" % dest)
-    compile_probe(os.path.join(dest, "maleficium-mcp.exe"), os.path.join(dest, "..", "smoke-doc"))
+    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"))
+    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"))
     events = os.path.join(os.environ["APPDATA"], IDENT, "maleficium-log", "events.jsonl")
     shot = None
     if shots:
