@@ -133,13 +133,14 @@ cmd_draft() {
 
     SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     gh workflow run release.yml --ref main -f version="$VER"
-    # The dispatch returns no run id: find the run by its name and start time.
+    # The dispatch returns no run id: find the run by its name and start time
+    # ("release" alone before release.yml had a run-name).
     RUN=""; i=0
     while [ -z "$RUN" ] && [ $i -lt 30 ]; do
         sleep 2; i=$((i + 1))
         RUN=$(gh run list --workflow release.yml --event workflow_dispatch --limit 10 \
             --json databaseId,displayTitle,createdAt \
-            --jq "[.[] | select(.displayTitle == \"release $VER\" and .createdAt >= \"$SINCE\")][0].databaseId // empty")
+            --jq "[.[] | select((.displayTitle == \"release $VER\" or .displayTitle == \"release\") and .createdAt >= \"$SINCE\")][0].databaseId // empty")
     done
     [ -n "$RUN" ] || die "dispatched, but no release run for $VER appeared; check the Actions tab"
     printf 'release: watching run %s\n' "$RUN"
