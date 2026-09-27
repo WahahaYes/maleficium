@@ -182,6 +182,10 @@ mod tests {
         };
         let json = serde_json::to_value(&grant).unwrap();
         assert_eq!(json["rootId"], root_id);
-        assert!(json["path"].as_str().unwrap().ends_with("/josé/thèse"));
+        let path = json["path"].as_str().unwrap();
+        assert!(
+            Path::new(path).ends_with(Path::new("josé").join("thèse")),
+            "{path}"
+        );
     }
 }
