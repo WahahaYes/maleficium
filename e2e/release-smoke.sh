@@ -7,7 +7,9 @@
 # icons, control fields), compiles a one-page document through the
 # installed maleficium-mcp (proving the app finds its bundled engine the way
 # an installed copy lays it out), and launches both bundles under Xvfb. A
-# launch that survives the timeout wins (timeout kill = still running).
+# launch that survives the timeout wins (timeout kill = still running); the
+# .deb's first launch must also log the welcome-project open
+# (launch-events-check.py), so a blank window fails.
 # What it does NOT cover: how anything looks (that needs a human pass).
 #
 # Usage: sh e2e/release-smoke.sh <artifact-dir> [timeout-secs]
@@ -29,6 +31,7 @@ echo "smoke: control: $(dpkg -f "$DEB" Package Version Section 2>/dev/null | tr 
 PROBE=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-smoke-XXXXXX")
 trap 'rm -rf "$PROBE"' EXIT
 cp "$(dirname "$0")/mcp-compile-smoke.py" "$PROBE/compile.py"
+cp "$(dirname "$0")/launch-events-check.py" "$PROBE/launch.py"
 docker run --rm -e DEB_NAME="$DEB_NAME" -e IMG_NAME="$IMG_NAME" -v "$DIR:/pkg:ro" -v "$PROBE:/probe:ro" ubuntu:24.04 bash -c '
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -47,7 +50,10 @@ echo "smoke: appimage bundles no libwayland"
 export HOME=/tmp/fakehome && mkdir -p "$HOME"
 python3 /probe/compile.py /usr/bin/maleficium-mcp /tmp/doc
 T='"$TIMEOUT"'
-code=0; timeout -s KILL "$T" xvfb-run -a maleficium >/tmp/l.log 2>&1 || code=$?
+code=0; timeout -s KILL "$T" xvfb-run -a maleficium >/tmp/l.log 2>&1 & app=$!
+python3 /probe/launch.py "$HOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" "$T" \
+  || { tail -n 20 /tmp/l.log; exit 1; }
+wait "$app" || code=$?
 [ "$code" -eq 137 ] && echo "smoke: deb launch ok (alive ${T}s)" || { echo "smoke: FAIL deb exited early"; tail -n 5 /tmp/l.log; exit 1; }
 code=0; timeout -s KILL "$T" xvfb-run -a env APPIMAGE_EXTRACT_AND_RUN=1 "/pkg/$IMG_NAME" >/tmp/a.log 2>&1 || code=$?
 [ "$code" -eq 137 ] && echo "smoke: appimage launch ok (alive ${T}s)" || { echo "smoke: FAIL appimage exited early"; tail -n 5 /tmp/a.log; exit 1; }
