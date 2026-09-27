@@ -71,19 +71,30 @@ python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 
 `.github/workflows/build.yml` runs on each pull request: one job per target (`ubuntu-24.04`, `macos-15` for aarch64, `macos-15-intel` for x86_64, `windows-2025`). Only toolchain setup differs between them; each then runs `package.sh`, `package-smoke.py`, and `npm run check`, and uploads its packages plus a `screenshot-*` of the smoke launch.
 
-`.github/workflows/release.yml` drafts a release. Run it from the Actions tab on `main` with a version whose manifests and `CHANGELOG.md` section are already on `main`. It checks both, fails if that version is already tagged or published, runs `build.yml`, and creates a **draft** GitHub release, targeting that commit, with every package attached. Publishing the draft creates the `vX.Y.Z` tag. Rerunning it for the same version replaces the draft's assets.
+`.github/workflows/release.yml` publishes a release when a `vX.Y.Z` tag is pushed. It checks that the tag is on `main` and that the manifests and `CHANGELOG.md` section are at X.Y.Z, runs `build.yml` on the tagged commit, and publishes the GitHub release with every package attached and that CHANGELOG section as its notes. A failed run can be rerun from the Actions tab.
 
 ## Cutting a release
 
-`scripts/release.sh` prepares a release locally and can build and publish the Linux artifacts by itself. For all platforms, prepare with it and draft the release from CI (see above). From a clean `main`:
+`main` is protected: changes land only by pull request, every build job must pass, and `v*` tags can't be moved or deleted once created. Only repository admins can create them.
+
+Collect the notes under `## Unreleased` at the top of `CHANGELOG.md` as changes land. They become the GitHub release notes, so write them for users. Then, from any clean checkout with `npm ci` done:
 
 ```sh
-sh scripts/release.sh 0.2.0 --notes-file /tmp/notes.md
+sh scripts/release.sh X.Y.Z
 ```
 
-This bumps the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` (with their lockfiles), adds the entry to `CHANGELOG.md`, commits as `release X.Y.Z`, tags, and builds.
+That one command:
 
-- Without `--notes-file`, the notes are the commit subjects since the last tag.
-- The build runs in Docker by default. `--host` builds on this machine, `--out` sets the artifact directory, and `--skip-build` stops after the tag.
-- Rerunning for the same version is safe. Manifests already at that version are left as they are, an existing `CHANGELOG.md` section for it is kept unless `--notes-file` is passed, which replaces that section in place. If `vX.Y.Z` already tags `HEAD`, the script skips straight to build and publish (delete the local tag first to change its notes). A `vX.Y.Z` tag on any other commit is an error.
-- Nothing leaves the machine unless you pass `--publish`, which pushes `main` and the tag and creates the GitHub release with the `.deb` and `.AppImage` attached.
+1. Cuts `release-X.Y.Z` from `origin/main` in a scratch worktree (your checkout is untouched), bumps `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` with their lockfiles, renames `## Unreleased` to `## X.Y.Z - <date>`, commits `release X.Y.Z`, pushes, and opens the release PR.
+2. Waits for the PR's required builds and merges it (merging only the commit that was built).
+3. Tags the merge commit `vX.Y.Z` and pushes the tag, as you.
+4. Waits for `release.yml` (see [CI](#ci)) to build that commit and publish the release, then prints its URL.
+
+End to end it takes about as long as two CI runs.
+
+- `--notes-file FILE` uses FILE's text as the notes instead of `## Unreleased`.
+- Rerunning resumes where a run stopped: an open release PR is updated (merging `origin/main` in, keeping an existing `## X.Y.Z` section unless `--notes-file` replaces it), a merged release is tagged, and a pushed tag's release run is watched.
+- `--no-push` stops after the release commit and leaves the worktree for inspection.
+- It refuses a version number written into app source or docs, which the bump would leave stale (`release-meta.py stale`, also run in CI). The app reads its version from `package.json` at build time.
+
+`sh scripts/release.sh build [--host] [--out DIR]` builds this checkout's Linux packages locally, in Docker or with `--host` on this machine, to smoke with `e2e/package-smoke.py` before a release. It publishes nothing.
