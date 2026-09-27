@@ -48,7 +48,7 @@ fn query_for(root_id: &str, main_rel: &str) -> Result<Query, String> {
 
 fn run_sidecar(dir: &Path, args: &[String]) -> Result<String, String> {
     let bin = super::sidecar_path_for("maleficium-synctex")?;
-    let output = std::process::Command::new(&bin)
+    let output = super::quiet_command(&bin)
         .current_dir(dir)
         .args(args)
         .output()
@@ -88,9 +88,14 @@ fn rel_in_root(root: &Path, main_dir: &Path, input: &str) -> Option<String> {
     } else {
         main_dir.join(p)
     };
-    let canon = abs.canonicalize().ok()?;
+    let canon = dunce::canonicalize(&abs).ok()?;
     let rel = canon.strip_prefix(root).ok()?;
-    Some(rel.to_string_lossy().to_string())
+    Some(
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
 }
 
 fn parse_inverse(text: &str, root: &Path, main_dir: &Path) -> InverseHit {
@@ -153,7 +158,7 @@ mod tests {
         let dir = crate::test_scratch::dir(&format!("sync-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("sync-{}", name);
         crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
@@ -163,8 +168,9 @@ mod tests {
     fn query_requires_a_compiled_main_inside_the_root() {
         let (id, root) = grant_tmp("query");
         std::fs::write(root.join("main.tex"), "x").unwrap();
-        assert!(query_for(&id, "../escape.tex").is_err());
-        assert!(query_for(&id, "/etc/hostname").is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(query_for(&id, bad).is_err(), "{bad}");
+        }
         assert!(query_for(&id, "missing.tex").is_err());
         assert!(query_for("unknown-root", "main.tex").is_err());
         let err = query_for(&id, "main.tex").err().unwrap();

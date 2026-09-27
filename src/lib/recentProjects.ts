@@ -6,6 +6,7 @@
 // trimmed, deduped, capped); stale roots are pruned at restore time.
 
 import { PROJECT_POINTER_KEYS, store } from './app-store';
+import { isAbsolutePath } from './paths';
 
 const KEY = PROJECT_POINTER_KEYS.recentProjects;
 
@@ -19,7 +20,7 @@ function clean(list: unknown): string[] {
   for (const item of list) {
     if (typeof item !== 'string') continue;
     const p = item.trim();
-    if (!p || !p.startsWith('/') || seen.has(p)) continue;
+    if (!p || !isAbsolutePath(p) || seen.has(p)) continue;
     seen.add(p);
     out.push(p);
   }

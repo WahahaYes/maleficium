@@ -1851,6 +1851,8 @@ name = "maleficium"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "dirs",
+ "dunce",
  "libc",
  "maleficium-events",
  "maleficium-index",
@@ -1899,6 +1901,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+ "typed-path",
 ]
 
 [[package]]
@@ -4014,6 +4017,12 @@ dependencies = [
  "syn 2.0.119",
  "termcolor",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typeid"

@@ -5,7 +5,7 @@
 import { fs } from './fs-provider';
 import { appDataDir } from '@tauri-apps/api/path';
 import { FileHistory, trashName } from './file-history';
-import { appTrashDir } from './paths';
+import { appTrashDir, joinPath } from './paths';
 
 /**
  * `rootId` is the project's grant id (`ProjectGrant.rootId`); `root` is the
@@ -30,7 +30,7 @@ export async function moveToTrash(
   } catch (e) {
     return { ok: false, error: String(e) };
   }
-  const dest = dir + '/' + name;
+  const dest = joinPath(dir, name);
   try {
     await fs().rename(absPath, dest);
   } catch {

@@ -199,9 +199,8 @@ fn instantiate_in(
             parent.display()
         ));
     }
-    let parent = parent
-        .canonicalize()
-        .map_err(|e| format!("parent folder unreachable: {e}"))?;
+    let parent =
+        dunce::canonicalize(parent).map_err(|e| format!("parent folder unreachable: {e}"))?;
     if !parent.is_dir() {
         return Err(format!("parent is not a folder: {}", parent.display()));
     }
@@ -275,7 +274,11 @@ fn import_folder_in(base: &Path, dir: &str, info: TemplateInfo) -> Result<Templa
     if !d.is_absolute() || !d.is_dir() {
         return Err(format!("not a folder: {dir}"));
     }
-    store_template(base, &d.canonicalize().map_err(|e| e.to_string())?, info)
+    store_template(
+        base,
+        &dunce::canonicalize(d).map_err(|e| e.to_string())?,
+        info,
+    )
 }
 
 #[cfg(test)]
@@ -286,7 +289,7 @@ mod tests {
         let d = crate::test_scratch::dir(&format!("tpl-{name}"));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        d.canonicalize().unwrap()
+        dunce::canonicalize(&d).unwrap()
     }
 
     #[test]

@@ -1,0 +1,6 @@
+# std's canonicalize returns \\?\C:\ paths on Windows, which leak to the UI,
+# the engine and root comparisons; dunce returns C:\ where that is lossless.
+disallowed-methods = [
+    { path = "std::path::Path::canonicalize", reason = "use dunce::canonicalize" },
+    { path = "std::fs::canonicalize", reason = "use dunce::canonicalize" },
+]

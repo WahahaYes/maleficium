@@ -291,9 +291,10 @@ mod tests {
         let dir = crate::test_scratch::dir("job");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         super::super::fs::grant_root("job-escape", &canon.to_string_lossy()).unwrap();
-        assert!(run("job-escape", "../outside.tex", false, 5).is_err());
-        assert!(run("job-escape", "/etc/hostname", false, 5).is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(run("job-escape", bad, false, 5).is_err(), "{bad}");
+        }
     }
 }

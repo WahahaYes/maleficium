@@ -647,8 +647,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
+        // Creating symlinks on Windows needs a privilege; there link.tex is
+        // simply missing, which must be refused the same way.
+        #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/hostname", dir.join("link.tex")).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         core::grant_root("sym", &canon.to_string_lossy()).unwrap();
         // A compiled output, so tex_rel validation is reached.
         let out = core::main_outputs(&canon.join("main.tex")).unwrap();

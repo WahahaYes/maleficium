@@ -344,7 +344,7 @@ pub struct Precheck {
 /// Installed font families, lowercased, from fontconfig; `None` where
 /// fontconfig is absent.
 fn font_families() -> Option<HashSet<String>> {
-    let out = std::process::Command::new("fc-list")
+    let out = super::quiet_command("fc-list")
         .args([":", "family"])
         .output()
         .ok()
@@ -454,7 +454,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, text).unwrap();
         }
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("st-{}", name);
         super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)

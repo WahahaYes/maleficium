@@ -3,6 +3,8 @@
 // 50-entry memory stack of path references only, never file bytes.
 // Inverse of every op is a move: delete moves to the app-local trash home.
 
+import { relUnder } from './paths';
+
 export interface FileHistoryEntry {
   /** Original absolute path before the op. */
   originalPath: string;
@@ -55,11 +57,10 @@ function escapeComponent(s: string): string {
  * rel back out of the name.
  */
 export function trashName(root: string, originalPath: string, at = Date.now()): string {
-  const prefix = root.endsWith('/') ? root : root + '/';
-  if (!originalPath.startsWith(prefix)) {
+  const rel = relUnder(root, originalPath);
+  if (rel === null) {
     throw new Error(`not in project: ${originalPath}`);
   }
-  const rel = originalPath.slice(prefix.length);
   const base = rel.slice(rel.lastIndexOf('/') + 1) || 'file';
   const flat = rel.split('/').map(escapeComponent).join('__');
   return `${escapeComponent(base)}__${flat}__${at}`;

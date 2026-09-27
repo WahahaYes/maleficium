@@ -80,30 +80,23 @@ pub fn out_dir_for(base: &Path, root: &str) -> PathBuf {
 
 const APP_ID: &str = "io.github.wahahayes.maleficium";
 
-/// `$<xdg_var>/<app id>`, else `$HOME/<home_rel>/<app id>`, else the OS tmp
-/// tree when neither resolves.
-fn xdg_app_dir(xdg_var: &str, home_rel: &str) -> PathBuf {
-    if let Ok(xdg) = std::env::var(xdg_var) {
-        if !xdg.is_empty() {
-            return PathBuf::from(xdg).join(APP_ID);
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home).join(home_rel).join(APP_ID);
-        }
-    }
-    std::env::temp_dir()
+/// `<base>/<app id>`, else the OS tmp tree when the OS reports no base.
+/// `dirs` is what Tauri's `appDataDir()`/`appCacheDir()` resolve through,
+/// so core and the webview agree on every OS: XDG dirs (else `~/.local/share`,
+/// `~/.cache`) on Linux, `~/Library/...` on macOS, `%APPDATA%` and
+/// `%LOCALAPPDATA%` on Windows.
+fn app_dir(base: Option<PathBuf>) -> PathBuf {
+    base.unwrap_or_else(std::env::temp_dir).join(APP_ID)
 }
 
 /// Base dir for all engine outputs: the OS app-cache dir.
 pub fn out_base_dir() -> PathBuf {
-    xdg_app_dir("XDG_CACHE_HOME", ".cache")
+    app_dir(dirs::cache_dir())
 }
 
 /// The OS app-data dir: state the app keeps about projects.
 pub fn data_base_dir() -> PathBuf {
-    xdg_app_dir("XDG_DATA_HOME", ".local/share")
+    app_dir(dirs::data_dir())
 }
 
 /// Scratch project for untitled documents: under the OS app-data dir.
@@ -122,6 +115,20 @@ pub fn sidecar_triple() -> Option<&'static str> {
         ("windows", "x86_64") => Some("x86_64-pc-windows-msvc"),
         _ => None,
     }
+}
+
+/// A child process that opens no console window on Windows: the release app
+/// has no console of its own, so each spawn would otherwise flash one.
+pub fn quiet_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
 }
 
 /// Locate a bundled sidecar binary by name: next to the app, where the

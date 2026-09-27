@@ -9,6 +9,7 @@ import type { BufferState } from '../lib/buffers';
 import { emit } from '../lib/events';
 import { saveTex } from '../lib/files';
 import type { OwnWrites } from '../lib/own-writes';
+import { hasDir } from '../lib/paths';
 
 export interface UseBufferManagerDeps {
   fileName: string;
@@ -40,7 +41,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
 
   async function handleCloseBuffer(path: string) {
     // Persist-then-evict: close never loses work silently.
-    if (path === fileName && fileName.includes('/')) {
+    if (path === fileName && hasDir(fileName)) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         try {
@@ -76,7 +77,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
 
   // Close without emitting (batch callers emit once for the batch).
   async function closeBufferQuiet(path: string): Promise<boolean> {
-    if (path === fileName && fileName.includes('/')) {
+    if (path === fileName && hasDir(fileName)) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         try {

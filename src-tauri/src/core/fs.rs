@@ -71,8 +71,7 @@ pub fn resolve_in(id: &str, candidate: &str) -> Result<PathBuf, String> {
     } else {
         root.join(candidate)
     };
-    let canon = joined
-        .canonicalize()
+    let canon = dunce::canonicalize(&joined)
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
     if !canon.starts_with(&root) {
         return Err(format!("forbidden path (outside project): {}", candidate));
@@ -191,7 +190,13 @@ fn split_trash_name(name: &str) -> Option<(String, String)> {
 /// Move a project file to the app-local trash home. Returns the trash path.
 pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> {
     let abs = resolve_in(id, rel)?;
-    if confirm != abs.to_string_lossy() {
+    // Compared as paths, not strings: on Windows the caller may spell the
+    // same file with `/`, mixed separators, or another letter case. Only an
+    // absolute path confirms (a bare name would resolve against the CWD).
+    let confirmed = confirm == abs.to_string_lossy()
+        || (Path::new(confirm).is_absolute()
+            && dunce::canonicalize(confirm).is_ok_and(|c| c == abs));
+    if !confirmed {
         return Err(format!(
             "confirmation mismatch: pass the file path back as confirm to delete {}",
             abs.display()
@@ -221,8 +226,7 @@ pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
     let root = session_root(id)?;
     let home = trash_home(&root);
     let src = PathBuf::from(trash_path);
-    let canon_src = src
-        .canonicalize()
+    let canon_src = dunce::canonicalize(&src)
         .map_err(|e| format!("forbidden path (unresolvable): {}: {}", trash_path, e))?;
     if !canon_src.starts_with(&home) {
         return Err("forbidden path (not in trash)".to_string());
@@ -304,7 +308,7 @@ mod tests {
         let dir = crate::test_scratch::dir(&format!("fs-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("t-{}", name);
         grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
@@ -335,8 +339,10 @@ mod tests {
     #[test]
     fn resolve_blocks_escape() {
         let (id, _dir) = grant_tmp("escape");
-        assert!(resolve_in(&id, "../outside.tex").is_err());
-        assert!(resolve_in(&id, "/etc/hostname").is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(resolve_in(&id, bad).is_err(), "{bad}");
+            assert!(resolve_read(&id, bad).is_err(), "{bad}");
+        }
         assert!(resolve_in(&id, "").is_err());
         assert!(resolve_in(&id, "a\0b").is_err());
     }
@@ -346,7 +352,17 @@ mod tests {
         let (id, dir) = grant_tmp("confirm");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
         assert!(trash_file(&id, "a.tex", "wrong").is_err());
+        assert!(trash_file(&id, "a.tex", "a.tex").is_err());
         assert!(dir.join("a.tex").exists());
+    }
+
+    #[test]
+    fn trash_confirm_accepts_another_spelling_of_the_same_file() {
+        let (id, dir) = grant_tmp("confirm-spelling");
+        std::fs::write(dir.join("a.tex"), "hi").unwrap();
+        let spelled = format!("{}/./a.tex", dir.to_string_lossy());
+        assert!(trash_file(&id, "a.tex", &spelled).is_ok());
+        assert!(!dir.join("a.tex").exists());
     }
 
     #[test]

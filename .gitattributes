@@ -1,0 +1,5 @@
+# LF everywhere, so a Windows checkout lints and formats like any other.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

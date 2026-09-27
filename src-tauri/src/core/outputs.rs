@@ -107,7 +107,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
-        let canon = dir.canonicalize().unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("out-{}", name);
         crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
@@ -138,7 +138,9 @@ mod tests {
     #[test]
     fn outputs_refuse_paths_outside_the_root() {
         let (id, _) = project("esc");
-        for bad in ["../x.tex", "/etc/hostname", "ch", "missing.tex", ""] {
+        let mut bads = crate::test_scratch::escapes();
+        bads.extend(["ch", "missing.tex", ""]);
+        for bad in bads {
             assert!(outputs_fresh(&id, bad).is_err(), "{}", bad);
             assert!(clean_outputs(&id, bad).is_err(), "{}", bad);
             assert!(engine_log(&id, bad).is_err(), "{}", bad);

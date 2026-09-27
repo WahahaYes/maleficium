@@ -12,6 +12,7 @@ import { cleanOutputs } from '../lib/compile';
 import { sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { FileHistory } from '../lib/file-history';
 import type { OwnWrites } from '../lib/own-writes';
+import { hasDir } from '../lib/paths';
 
 export interface UseFileOpsDeps {
   root: string | null;
@@ -124,7 +125,7 @@ export function useFileOps(deps: UseFileOpsDeps) {
   }
 
   async function handleClean() {
-    const target = mainFile ?? (fileName.includes('/') ? fileName : null);
+    const target = mainFile ?? (hasDir(fileName) ? fileName : null);
     const project = root && projectId ? [{ rootId: projectId, path: root }] : [];
     const src = target ? sourceFor(target, scratch ? [...project, scratch] : project) : null;
     if (!src) {

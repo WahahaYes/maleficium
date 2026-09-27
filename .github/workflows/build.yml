@@ -1,0 +1,97 @@
+# Release packages for every platform, built, smoked, and tested the same way
+# on each OS's own runner. Every job runs the same three commands:
+#   sh scripts/package.sh --out out      build this host's packages
+#   python e2e/package-smoke.py out      install them, compile through the
+#                                        installed engine, check the first
+#                                        launch, screenshot it
+#   npm run check                        lint, format, types, every test suite
+# Only toolchain setup differs per OS. Pins live in rust-toolchain.toml and
+# .nvmrc. Linux builds on the oldest Ubuntu the packages support (24.04:
+# the bundled Tectonic needs glibc 2.39), for the widest glibc baseline.
+# Unsigned apart from macOS ad-hoc signing. Runs on pull requests;
+# release.yml calls it and attaches the package artifacts.
+name: build
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, artifact: linux-x86_64 }
+          - { runner: macos-15, artifact: macos-aarch64 }
+          - { runner: macos-15-intel, artifact: macos-x86_64 }
+          - { runner: windows-2025, artifact: windows-x86_64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Toolchains: the only per-OS part.
+      - name: Linux build packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
+      # SyncTeX builds under MINGW64 (gcc + static zlib); the app itself
+      # builds with the runner's MSVC toolchain.
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            curl git python tar mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Sidecars
+        if: runner.os != 'Windows'
+        run: sh scripts/fetch-sidecars.sh
+      - name: Sidecars
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: sh scripts/fetch-sidecars.sh
+
+      # The same on every OS from here.
+      - name: Package
+        run: sh scripts/package.sh --out out
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/*
+          if-no-files-found: error
+      - name: Smoke the installed packages
+        run: python e2e/package-smoke.py out --shots "$RUNNER_TEMP/shots"
+      - name: Upload launch screenshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshot-${{ matrix.artifact }}
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: ignore
+      - name: Check (lint, format, types, tests)
+        if: ${{ !cancelled() }}
+        run: npm run check

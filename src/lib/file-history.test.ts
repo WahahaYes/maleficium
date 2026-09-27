@@ -7,6 +7,11 @@ describe('trashName', () => {
     expect(trashName('/p/', '/p/main.tex', 7)).toBe('main.tex__main.tex__7');
   });
 
+  it('encodes Windows paths with the same /-rel components', () => {
+    expect(trashName('C:\\p', 'C:\\p\\sub\\a.tex', 1234)).toBe('a.tex__sub__a.tex__1234');
+    expect(() => trashName('C:\\p', 'C:\\q\\a.tex', 1)).toThrow('not in project');
+  });
+
   it('matches the core format the MCP delete writes', () => {
     // Same literal as src-tauri/src/core/fs.rs `mcp_delete_lands_in_app_trash_dir`,
     // so core `undo_trash` can read rel back out of an app-trashed entry.

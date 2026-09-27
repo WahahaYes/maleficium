@@ -21,6 +21,7 @@ import {
   syncAvailable,
   texPathFor,
 } from '../lib/synctex';
+import { joinPath } from '../lib/paths';
 
 export interface UseSynctexDeps {
   pdfUrl: string | null;
@@ -176,7 +177,7 @@ export function useSynctex(deps: UseSynctexDeps) {
       return;
     }
     const { line } = result;
-    const hitFile = result.relPath ? source.rootPath + '/' + result.relPath : null;
+    const hitFile = result.relPath ? joinPath(source.rootPath, result.relPath) : null;
     if (line != null) {
       // Jump the owning file when SyncTeX names one (multi-file projects);
       // otherwise reveal the line in the current buffer.
