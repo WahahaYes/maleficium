@@ -1,12 +1,15 @@
-# Release artifacts for every platform: Linux .deb + AppImage (the same
-# Dockerfile release.sh uses), macOS .dmg for Apple silicon and Intel, and a
-# Windows NSIS installer. Unsigned apart from macOS ad-hoc signing. Runs on
-# pull requests so a PR proves all three build; release.yml calls it.
-# Each job then installs what it built the way a user would, compiles a page
-# through the installed maleficium-mcp (e2e/mcp-compile-smoke.py), launches the
-# app and requires its first-run welcome open in the event log
-# (e2e/launch-events-check.py), screenshots it (macOS, Windows: uploaded as
-# screenshot-* artifacts), and runs the Rust and vitest suites on that OS.
+# Release packages for every platform, built, smoked, and tested the same way
+# on each OS's own runner. Every job runs the same three commands:
+#   sh scripts/package.sh --out out      build this host's packages
+#   python e2e/package-smoke.py out      install them, compile through the
+#                                        installed engine, check the first
+#                                        launch, screenshot it
+#   npm run check                        lint, format, types, every test suite
+# Only toolchain setup differs per OS. Pins live in rust-toolchain.toml and
+# .nvmrc. Linux builds on the oldest Ubuntu the packages support (24.04:
+# the bundled Tectonic needs glibc 2.39), for the widest glibc baseline.
+# Unsigned apart from macOS ad-hoc signing. Runs on pull requests;
+# release.yml calls it and attaches the package artifacts.
 name: build
 
 on:
@@ -20,171 +23,75 @@ concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # Match the Dockerfile's pins.
-  NODE_VERSION: 22.23.2
-  RUST_VERSION: 1.98.1
-
 jobs:
-  linux:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build .deb and AppImage in Docker
-        run: docker build --output type=local,dest=out .
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: linux-x86_64
-          path: out/*
-          if-no-files-found: error
-      - name: Smoke the .deb and AppImage
-        run: sh e2e/release-smoke.sh out 20
-
-  macos:
+  package:
+    name: ${{ matrix.artifact }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            arch: aarch64
-          - runner: macos-15-intel
-            arch: x86_64
+          - { runner: ubuntu-24.04, artifact: linux-x86_64 }
+          - { runner: macos-15, artifact: macos-aarch64 }
+          - { runner: macos-15-intel, artifact: macos-x86_64 }
+          - { runner: windows-2025, artifact: windows-x86_64 }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Rust toolchain
-        run: rustup toolchain install "$RUST_VERSION" --profile minimal && rustup default "$RUST_VERSION"
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-      - run: npm ci
-      - name: Sidecars (Tectonic, host-built SyncTeX)
-        run: sh scripts/fetch-sidecars.sh
-      - name: Build .dmg
-        run: npm run tauri build -- --bundles dmg
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: macos-${{ matrix.arch }}
-          path: src-tauri/target/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-      - name: Smoke the installed .dmg
-        run: |
-          set -eu
-          mnt="$RUNNER_TEMP/dmg"
-          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" src-tauri/target/release/bundle/dmg/*.dmg
-          cp -R "$mnt/Maleficium.app" "$RUNNER_TEMP/"
-          hdiutil detach "$mnt"
-          app="$RUNNER_TEMP/Maleficium.app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          bin="$app/Contents/MacOS"
-          ls -l "$bin"
-          for b in maleficium-mcp maleficium-tectonic maleficium-synctex; do
-            [ -x "$bin/$b" ] || { echo "smoke: FAIL bundle is missing $b"; exit 1; }
-            lipo -archs "$bin/$b" | grep -qw "${{ matrix.arch == 'aarch64' && 'arm64' || 'x86_64' }}" \
-              || { echo "smoke: FAIL $b is $(lipo -archs "$bin/$b")"; exit 1; }
-          done
-          python3 e2e/mcp-compile-smoke.py "$bin/maleficium-mcp" "$RUNNER_TEMP/doc"
-          main=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
-          "$bin/$main" >"$RUNNER_TEMP/launch.log" 2>&1 & pid=$!
-          ok=0
-          python3 e2e/launch-events-check.py \
-            "$HOME/Library/Application Support/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" 60 || ok=$?
-          sleep 5
-          mkdir -p "$RUNNER_TEMP/shots"
-          screencapture -x "$RUNNER_TEMP/shots/macos-${{ matrix.arch }}.png" || echo "smoke: no screenshot"
-          [ "$ok" -eq 0 ] || { cat "$RUNNER_TEMP/launch.log"; kill "$pid"; exit 1; }
-          kill -0 "$pid" || { echo "smoke: FAIL app exited early"; cat "$RUNNER_TEMP/launch.log"; exit 1; }
-          kill "$pid"
-          echo "smoke: launch ok"
-      - name: Upload launch screenshot
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: screenshot-macos-${{ matrix.arch }}
-          path: ${{ runner.temp }}/shots/*.png
-          if-no-files-found: ignore
-      - name: Rust tests
-        run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
-      - name: Frontend tests
-        run: npm test
 
-  windows:
-    runs-on: windows-2025
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Toolchains: the only per-OS part.
+      - name: Linux build packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
       # SyncTeX builds under MINGW64 (gcc + static zlib); the app itself
       # builds with the runner's MSVC toolchain.
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        if: runner.os == 'Windows'
         with:
           msystem: MINGW64
           update: false
           install: >-
             curl git python tar mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
-      - name: Sidecars (Tectonic, host-built SyncTeX)
-        shell: msys2 {0}
-        run: sh scripts/fetch-sidecars.sh
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Rust toolchain
-        shell: bash
-        run: rustup toolchain install "$RUST_VERSION" --profile minimal && rustup default "$RUST_VERSION"
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
       - run: npm ci
-      - name: Build NSIS installer
-        run: npm run tauri build -- --bundles nsis
+      - name: Sidecars
+        if: runner.os != 'Windows'
+        run: sh scripts/fetch-sidecars.sh
+      - name: Sidecars
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: sh scripts/fetch-sidecars.sh
+
+      # The same on every OS from here.
+      - name: Package
+        run: sh scripts/package.sh --out out
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-x86_64
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          name: ${{ matrix.artifact }}
+          path: out/*
           if-no-files-found: error
-      - name: Smoke the installed NSIS package
-        shell: pwsh
-        run: |
-          $setup = (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe)[0].FullName
-          $dir = Join-Path $env:RUNNER_TEMP 'Maleficium'
-          $p = Start-Process -FilePath $setup -ArgumentList '/S', "/D=$dir" -Wait -PassThru
-          if ($p.ExitCode) { throw "smoke: FAIL installer exited $($p.ExitCode)" }
-          Get-ChildItem $dir
-          foreach ($b in 'Maleficium.exe', 'maleficium-mcp.exe', 'maleficium-tectonic.exe', 'maleficium-synctex.exe') {
-            if (-not (Test-Path (Join-Path $dir $b))) { throw "smoke: FAIL install is missing $b" }
-          }
-          python e2e/mcp-compile-smoke.py (Join-Path $dir 'maleficium-mcp.exe') (Join-Path $env:RUNNER_TEMP 'doc')
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $app = Start-Process -FilePath (Join-Path $dir 'Maleficium.exe') -PassThru
-          $events = Join-Path $env:APPDATA 'io.github.wahahayes.maleficium\maleficium-log\events.jsonl'
-          python e2e/launch-events-check.py $events 60
-          $ok = $LASTEXITCODE -eq 0
-          Start-Sleep 5
-          try {
-            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-            $shots = Join-Path $env:RUNNER_TEMP 'shots'
-            New-Item -ItemType Directory -Force $shots | Out-Null
-            $bmp.Save((Join-Path $shots 'windows-x86_64.png'))
-          } catch { "smoke: no screenshot ($_)" }
-          if (-not $ok) { Stop-Process -Id $app.Id -ErrorAction SilentlyContinue; exit 1 }
-          if ($app.HasExited) { throw "smoke: FAIL app exited early ($($app.ExitCode))" }
-          Stop-Process -Id $app.Id
-          'smoke: launch ok'
+      - name: Smoke the installed packages
+        run: python e2e/package-smoke.py out --shots "$RUNNER_TEMP/shots"
       - name: Upload launch screenshot
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: screenshot-windows-x86_64
+          name: screenshot-${{ matrix.artifact }}
           path: ${{ runner.temp }}/shots/*.png
           if-no-files-found: ignore
-      - name: Rust tests
-        run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
-      - name: Frontend tests
-        run: npm test
+      - name: Check (lint, format, types, tests)
+        if: ${{ !cancelled() }}
+        run: npm run check
