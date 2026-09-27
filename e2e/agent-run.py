@@ -110,8 +110,7 @@ class Mcp:
         deadline = time.time() + timeout
         rec = {"status": "running"}
         while rec.get("status") == "running" and time.time() < deadline:
-            time.sleep(1)
-            ok, rec = self.call("compile_poll", {"job_id": job["job_id"], "tail_lines": 40})
+            ok, rec = self.call("compile_poll", {"job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
             if not ok:
                 return {"status": "poll-error", "error": rec}
         return rec
