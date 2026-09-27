@@ -75,15 +75,33 @@ python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 
 ## Cutting a release
 
-`scripts/release.sh` prepares a release locally and can build and publish the Linux artifacts by itself. For all platforms, prepare with it and draft the release from CI (see above). From a clean `main`:
+`main` is protected: changes land only by pull request, every build job must pass, and `v*` tags can't be moved or deleted once created. So a release is three steps, and `scripts/release.sh` stops after each one.
+
+**1. Write the notes.** Collect them under `## Unreleased` at the top of `CHANGELOG.md` as changes land. They become the GitHub release notes, so write them for users.
+
+**2. Open the release PR.**
 
 ```sh
-sh scripts/release.sh 0.2.0 --notes-file /tmp/notes.md
+sh scripts/release.sh prepare X.Y.Z
 ```
 
-This bumps the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` (with their lockfiles), adds the entry to `CHANGELOG.md`, commits as `release X.Y.Z`, tags, and builds.
+This cuts `release-X.Y.Z` from `origin/main` in a scratch worktree (your checkout is untouched), bumps `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` with their lockfiles, renames `## Unreleased` to `## X.Y.Z - <date>`, commits `release X.Y.Z`, pushes, and opens the PR.
 
-- Without `--notes-file`, the notes are the commit subjects since the last tag.
-- The build runs in Docker by default. `--host` builds on this machine, `--out` sets the artifact directory, and `--skip-build` stops after the tag.
-- Rerunning for the same version is safe. Manifests already at that version are left as they are, an existing `CHANGELOG.md` section for it is kept unless `--notes-file` is passed, which replaces that section in place. If `vX.Y.Z` already tags `HEAD`, the script skips straight to build and publish (delete the local tag first to change its notes). A `vX.Y.Z` tag on any other commit is an error.
-- Nothing leaves the machine unless you pass `--publish`, which pushes `main` and the tag and creates the GitHub release with the `.deb` and `.AppImage` attached.
+- `--notes-file FILE` uses FILE's text as the notes instead of `## Unreleased`.
+- Rerunning updates the same branch and PR. The branch takes `origin/main` by merge, and an existing `## X.Y.Z` section is kept unless `--notes-file` replaces it.
+- `--no-push` stops after the commit and leaves the worktree for inspection.
+- It refuses a version that is already tagged or already on `main`, and a version number written into app source or docs, which the bump would leave stale (`release-meta.py stale`, also run in CI). The app reads its version from `package.json` at build time.
+
+Review the notes in the PR and merge it once the builds pass.
+
+**3. Draft and smoke.**
+
+```sh
+sh scripts/release.sh draft X.Y.Z
+```
+
+This runs `release.yml` on `main` (see [CI](#ci)), waits for it, downloads the Linux packages into `../maleficium-release-X.Y.Z` (`--out` to change), and runs `package-smoke.py` on them. macOS and Windows packages were already smoked by the workflow's own build jobs.
+
+**4. Publish.** Read the draft on GitHub's Releases page and publish it. That creates the `vX.Y.Z` tag at the release commit. Only repository admins can create `v*` tags.
+
+`sh scripts/release.sh build [--host] [--out DIR]` builds this checkout's Linux packages locally, in Docker or with `--host` on this machine, for a smoke before opening a release PR. It publishes nothing.
