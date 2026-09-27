@@ -137,7 +137,7 @@ fn command(out: &MainOutputs, cache: &Path, mode: CacheMode) -> Result<Command, 
     let mut cmd = super::quiet_command(super::sidecar_path_for("maleficium-tectonic")?);
     cmd.args(["-X", "compile", &out.main_file, "--outdir"])
         .arg(&out.outdir)
-        .args(["--synctex", "-b", &bundle_url()]);
+        .args(["--synctex", "--keep-logs", "-b", &bundle_url()]);
     if mode == CacheMode::CachedOnly {
         cmd.arg("-C");
     }
@@ -197,6 +197,9 @@ pub fn compile(
     let cache = cache_dir();
     std::fs::create_dir_all(&cache).map_err(|e| format!("engine cache unreachable: {}", e))?;
     std::fs::create_dir_all(&out.outdir).map_err(|e| format!("outdir unreachable: {}", e))?;
+    // A run that stops before TeX writes its transcript must not leave the
+    // last compile's warnings standing.
+    let _ = std::fs::remove_file(super::tex_log_file(&out.outdir, &out.main_file));
     compile_with(&cache, networked, on_line, &mut |mode, emit| {
         run(out, &cache, mode, slot, timeout_secs, &mut *emit)
     })
