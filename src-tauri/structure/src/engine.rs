@@ -105,7 +105,16 @@ static INPUT_UNOPENED: LazyLock<Regex> =
 /// a quoted XeTeX font name (`"Foo Sans"`, `"[foo.otf]"`) does not match.
 static TFM_MISSING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"Font \S+?=([^\s"\[\]=]+)(?: at [0-9.]+pt| scaled -?[0-9]+)? not loadable: Metric \(TFM\) file (?:or installed font )?not found"#,
+        r#"Font [^\s=]+=([^\s"\[\]=]+)(?: at [0-9.]+pt| scaled -?[0-9]+)? not loadable: Metric \(TFM\) file (?:or installed font )?not found"#,
+    )
+    .unwrap()
+});
+/// XeTeX's miss of a font file fontspec names by file (the TU default's Latin
+/// Modern): `Font TU/lmr/m/it/8=[lmroman8-italic]:mapping=tex-text; at 8.0pt
+/// not loadable: ...`. The bracketed name is the file, `.otf` when bare.
+static OTF_MISSING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"Font [^\s=]+=\[([^\s"\[\]]+)\](?::\S*)?(?: at [0-9.]+pt| scaled -?[0-9]+)? not loadable: Metric \(TFM\) file or installed font not found"#,
     )
     .unwrap()
 });
@@ -234,21 +243,29 @@ fn first(lines: &[&str], re: &Regex) -> Option<String> {
         .find_map(|l| re.captures(l).map(|m| m[1].to_string()))
 }
 
-/// The TFM file a font miss names. TeX wraps its lines at 79 columns, so a
-/// line is also read joined to the next.
-fn missing_tfm(lines: &[&str]) -> Option<String> {
+/// The font file a font miss names: a TFM, or a font file fontspec loaded
+/// by name. TeX wraps its lines at 79 columns, so a line is also read joined
+/// to the next.
+fn missing_font(lines: &[&str]) -> Option<String> {
     let joined = lines.windows(2).map(|w| format!("{}{}", w[0], w[1]));
+    let with_ext = |name: String, ext: &str| {
+        if name.contains('.') {
+            name
+        } else {
+            format!("{name}.{ext}")
+        }
+    };
     lines
         .iter()
         .map(|l| l.to_string())
         .chain(joined)
-        .find_map(|l| TFM_MISSING.captures(&l).map(|m| m[1].to_string()))
-        .map(|name| {
-            if name.ends_with(".tfm") {
-                name
-            } else {
-                format!("{name}.tfm")
+        .find_map(|l| {
+            if let Some(m) = TFM_MISSING.captures(&l) {
+                return Some(with_ext(m[1].to_string(), "tfm"));
             }
+            OTF_MISSING
+                .captures(&l)
+                .map(|m| with_ext(m[1].to_string(), "otf"))
         })
 }
 
@@ -302,7 +319,7 @@ pub fn missing_dependency<S: AsRef<str>>(
     // file it reads directly (a format input, when the cache was left partly
     // fetched).
     if let Some(file) = first(&lines, &FILE_NOT_FOUND)
-        .or_else(|| missing_tfm(&lines))
+        .or_else(|| missing_font(&lines))
         .or_else(|| first(&lines, &INPUT_UNOPENED))
     {
         return if in_bundle(&file) {
@@ -353,6 +370,7 @@ mod tests {
         "minted.sty",
         "fontspec.sty",
         "cmr17.tfm",
+        "lmroman8-italic.otf",
     ];
 
     fn in_bundle(f: &str) -> bool {
@@ -439,6 +457,26 @@ error: main.tex:5: {miss}
             assert_eq!(
                 verdict(&c, false),
                 file("cmr17.tfm", MissingReason::NotCached),
+                "{miss}"
+            );
+        }
+    }
+
+    #[test]
+    fn cached_only_miss_of_a_bundled_opentype_font_is_not_cached() {
+        for miss in [
+            "Font TU/lmr/m/it/8=[lmroman8-italic]:mapping=tex-text; at 8.0pt not loadable: Metric (TFM) file or installed font not found.",
+            "! Font \\x=[lmroman8-italic.otf] not loadable: Metric (TFM) file or installed font not found.",
+        ] {
+            let c = format!(
+                "note: using only cached resource files
+note: Running TeX ...
+error: main.tex:90: {miss}
+{FONT_TRANSCRIPT}"
+            );
+            assert_eq!(
+                verdict(&c, false),
+                file("lmroman8-italic.otf", MissingReason::NotCached),
                 "{miss}"
             );
         }
