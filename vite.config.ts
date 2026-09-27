@@ -7,6 +7,8 @@ const host = process.env.TAURI_DEV_HOST;
 // scripts/dev.sh picks a free pair and exports DEV_PORT; e2e/stills-run.sh
 // exports its STILLS_PORT. Unset means tauri.conf.json's devUrl, 1420.
 const port = Number(process.env.DEV_PORT ?? 1420);
+// The app version shown in the UI, from the manifest release.sh bumps.
+const version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
 
 // Stills harness: one build and one vite serve every launch, so the project
 // preset cannot ride in devUrl (a different devUrl is a different build). The
@@ -38,6 +40,7 @@ function stillsPreset(file: string | undefined): Plugin {
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), stillsPreset(process.env.STILLS_PRESET_FILE)],
+  define: { __APP_VERSION__: JSON.stringify(version) },
   // A scratch worktree shares node_modules by symlink: its dep optimizer writes
   // to VITE_CACHE_DIR, never the node_modules/.vite a live dev server serves.
   cacheDir: process.env.VITE_CACHE_DIR ?? 'node_modules/.vite',
