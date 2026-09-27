@@ -333,8 +333,10 @@ mod tests {
     #[test]
     fn resolve_blocks_escape() {
         let (id, _dir) = grant_tmp("escape");
-        assert!(resolve_in(&id, "../outside.tex").is_err());
-        assert!(resolve_in(&id, "/etc/hostname").is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(resolve_in(&id, bad).is_err(), "{bad}");
+            assert!(resolve_read(&id, bad).is_err(), "{bad}");
+        }
         assert!(resolve_in(&id, "").is_err());
         assert!(resolve_in(&id, "a\0b").is_err());
     }

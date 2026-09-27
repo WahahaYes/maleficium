@@ -138,7 +138,9 @@ mod tests {
     #[test]
     fn outputs_refuse_paths_outside_the_root() {
         let (id, _) = project("esc");
-        for bad in ["../x.tex", "/etc/hostname", "ch", "missing.tex", ""] {
+        let mut bads = crate::test_scratch::escapes();
+        bads.extend(["ch", "missing.tex", ""]);
+        for bad in bads {
             assert!(outputs_fresh(&id, bad).is_err(), "{}", bad);
             assert!(clean_outputs(&id, bad).is_err(), "{}", bad);
             assert!(engine_log(&id, bad).is_err(), "{}", bad);
