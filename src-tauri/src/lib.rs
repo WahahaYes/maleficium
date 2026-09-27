@@ -17,7 +17,7 @@ pub fn run() {
             commands::guard::grant_untitled_access,
             commands::compile::compile_tex,
             commands::compile::cancel_compile,
-            commands::compile::engine_log,
+            commands::compile::compile_diagnostics,
             commands::compile::offline_readiness,
             commands::compile::precompile_checks,
             commands::compile::outputs_fresh,
