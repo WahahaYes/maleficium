@@ -1,0 +1,21 @@
+{
+  "id": "rename-undo",
+  "about": "Project-wide rename of a label through replace_preview/replace_apply, a compile to check it, then replace_undo; the project must end byte-identical to where it started.",
+  "template": "article",
+  "prompt": "In the LaTeX project at {project} (main file main.tex), rename the label sec:method to sec:approach everywhere it appears (its \\label and every reference to it) using the maleficium MCP server's project-wide replace: preview the replacement first, then apply it. Compile with the maleficium server to check the document still builds with no undefined references. Then undo that replace with the server's replace undo, so the project is exactly as it was before. Do not edit the files with any other tool.",
+  "timeout_s": 600,
+  "oracles": [
+    {
+      "called": ["replace_preview", "replace_apply", "compile_run", "replace_undo"]
+    },
+    {
+      "restored": null
+    },
+    {
+      "compiles": "main.tex"
+    },
+    {
+      "footprint": null
+    }
+  ]
+}

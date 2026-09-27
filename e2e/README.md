@@ -10,6 +10,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
 | `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
+| `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
 
 ## Running in isolation
 
@@ -74,6 +75,29 @@ python3 e2e/package-smoke.py <package-dir> [--shots DIR]
 ```
 
 A first launch needs no recent projects, so on macOS and Windows run it as a fresh user (CI runners are).
+
+### agent-run.py
+
+A real model does a LaTeX task through the MCP server, and the result is judged only on what the run leaves behind. Each scenario in `e2e/agent-scenarios/` names a built-in template, the edits that make it a fixture, a prompt, and oracles. Per run the harness:
+
+1. generates the fixture from `src-tauri/templates` into a fresh run dir;
+2. runs `opencode run --standalone --auto` headless inside `bwrap`, with the whole host read-only except the run dir and opencode's own state, and a per-run MCP config (`OPENCODE_CONFIG`) that starts the server under test with `--mcp` and a scratch `HOME`;
+3. judges the result after the agent exits: it compiles, references and citations resolve, the outline and file contents meet the spec, bytes are restored after an undo, nothing outside the project changed, and the run's own record of MCP calls shows the required tools succeeding in order. The model's prose is never read.
+
+```sh
+cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium
+python3 e2e/agent-run.py --self-test                    # oracles vs. solutions, no model
+python3 e2e/agent-run.py -n 3                           # free model, source build
+python3 e2e/agent-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor \
+    --bin ../out/Maleficium_0.1.1_amd64.AppImage         # recorded model, packaged build
+```
+
+- It needs `opencode` (signed in to the model's provider) and `bwrap`. Runs are manual only, never in CI or pre-commit.
+- Results go to `--out` (default `/var/tmp/maleficium-agent-runs/<time>`): a dir per run with `result.json` (oracles, metrics, the MCP call record), opencode's `events.jsonl` and live `opencode.log`, and the project as the agent left it; plus `summary.md`.
+- A run that hits its scenario's `timeout_s` is killed and reported as a timeout. opencode prints its JSON only at exit, so watch `opencode.log` to tell a stalled run from a slow one.
+- `--budget` (default $5) stops once the cost opencode reports adds up to it. Free models report $0.
+- Each scenario's engine cache is warmed once, cold, by compiling its solution (through `bundle-mirror.py` for the source build; online for a packaged build), and kept in `/var/tmp/maleficium-agent-cache`. Each run gets a copy.
+- A failure caused by a confusing tool description or error message is a finding about the MCP server, not the model.
 
 ## Reading the app's event log
 
