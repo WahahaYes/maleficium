@@ -7,7 +7,7 @@ import type {
   EventKind,
   OfflineReadiness,
 } from './generated/events';
-import type { Finding, MissingDependency } from './generated/structure';
+import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
 import type { OutputStamp } from './externalRefresh';
 
 /**
@@ -137,10 +137,17 @@ export async function cancelCompile(): Promise<string> {
   return await invoke<string>('cancel_compile');
 }
 
-/** The full engine log of the last compile, or null when there is none. */
-export async function engineLog(rootId: string, mainRel: string): Promise<string | null> {
+/**
+ * The last compile's problems from the core: the engine's errors plus TeX's
+ * warnings (undefined references and citations, duplicate labels), the same
+ * records the MCP diagnostics tool returns. Null when no log was kept.
+ */
+export async function compileDiagnostics(
+  rootId: string,
+  mainRel: string,
+): Promise<Diagnostic[] | null> {
   try {
-    return await invoke<string>('engine_log', { rootId, mainRel });
+    return await invoke<Diagnostic[]>('compile_diagnostics', { rootId, mainRel });
   } catch {
     // No log kept for this main file yet; callers fall back to the run's own output.
     return null;

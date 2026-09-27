@@ -23,7 +23,7 @@ pub use fs::{
 };
 pub use outputs::{
     clean_outputs, engine_log, log_file, log_tail, output_stamp, outputs_fresh, outputs_of,
-    write_engine_log, OutputStamp,
+    tex_log, tex_log_file, write_engine_log, OutputStamp,
 };
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 

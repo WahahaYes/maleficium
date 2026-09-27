@@ -317,9 +317,8 @@ for tid in tids + ["welcome"]:
     g = call("grant", {"root_id": "tpl-" + tid, "root": nc["root"]})
     j = call("compile_run", {"root_id": "tpl-" + tid, "rel": nc["main"]}).get("job_id") or ""
     rec = {"status": "running"}
-    for _ in range(150):
-        time.sleep(2)
-        rec = call("compile_poll", {"job_id": j, "tail_lines": 5})
+    for _ in range(15):
+        rec = call("compile_poll", {"job_id": j, "tail_lines": 5, "wait_ms": 20000})
         if rec.get("status") != "running":
             break
     if rec.get("status") != "success" or not os.path.exists(rec.get("pdf_url") or ""):

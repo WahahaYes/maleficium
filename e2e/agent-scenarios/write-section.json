@@ -1,0 +1,68 @@
+{
+  "id": "write-section",
+  "about": "Write a Related Work section to a spec: three given citations, a booktabs table with caption and label, referenced from the text; it must compile with every citation resolved.",
+  "template": "article",
+  "edits": [
+    {
+      "file": "references.bib",
+      "append": "\n@book{lamport1994,\n  author    = {Leslie Lamport},\n  title     = {{\\LaTeX}: A Document Preparation System},\n  publisher = {Addison-Wesley},\n  edition   = {2},\n  year      = {1994}\n}\n\n@book{mittelbach2004,\n  author    = {Frank Mittelbach and Michel Goossens},\n  title     = {The {\\LaTeX} Companion},\n  publisher = {Addison-Wesley},\n  edition   = {2},\n  year      = {2004}\n}\n\n@manual{oetiker2023,\n  author    = {Tobias Oetiker and Marcin Serwin},\n  title     = {The Not So Short Introduction to {\\LaTeX}},\n  year      = {2023}\n}\n"
+    }
+  ],
+  "solution": [
+    {
+      "file": "main.tex",
+      "find": "\\section{Method}\n",
+      "replace": "\\section{Related Work}\n\\label{sec:related}\nThree books frame this work~\\cite{lamport1994,mittelbach2004,oetiker2023};\nTable~\\ref{tab:related} compares them.\n\n\\begin{table}[h]\n  \\centering\n  \\begin{tabular}{llr}\n    \\toprule\n    Work & Kind & Year \\\\\n    \\midrule\n    Lamport~\\cite{lamport1994} & Manual & 1994 \\\\\n    Mittelbach~\\cite{mittelbach2004} & Reference & 2004 \\\\\n    Oetiker~\\cite{oetiker2023} & Tutorial & 2023 \\\\\n    \\bottomrule\n  \\end{tabular}\n  \\caption{The three works compared.}\n  \\label{tab:related}\n\\end{table}\n\n\\section{Method}\n"
+    }
+  ],
+  "prompt": "In the LaTeX project at {project} (main file main.tex), add a section titled \"Related Work\" between the Introduction and the Method sections. It must cite all three of these entries from references.bib: lamport1994, mittelbach2004 and oetiker2023, and it must include a table built with booktabs rules (\\toprule, \\midrule, \\bottomrule) that compares the three works, with a \\caption and a \\label that the section's text references. Do not change references.bib. The document must compile with no errors and no undefined citations or references: use the maleficium MCP server to compile and check it, and edit files with your own file tools.",
+  "timeout_s": 600,
+  "oracles": [
+    {
+      "compiles": "main.tex"
+    },
+    {
+      "clean_log": "main.tex"
+    },
+    {
+      "outline_has": {
+        "file": "main.tex",
+        "titles": ["Introduction", "Related Work", "Method"],
+        "ordered": true
+      }
+    },
+    {
+      "section_matches": {
+        "file": "main.tex",
+        "title": "Related Work",
+        "refs_own_label": true,
+        "patterns": [
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*lamport1994",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*mittelbach2004",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*oetiker2023",
+          "\\\\begin\\{table\\*?\\}",
+          "\\\\toprule",
+          "\\\\midrule",
+          "\\\\bottomrule",
+          "\\\\caption\\{"
+        ]
+      }
+    },
+    {
+      "file_matches": {
+        "file": "main.tex",
+        "patterns": [
+          "\\\\label\\{sec:method\\}",
+          "\\\\label\\{tab:results\\}",
+          "\\\\cite\\{knuth1984\\}"
+        ]
+      }
+    },
+    {
+      "unchanged": ["references.bib"]
+    },
+    {
+      "footprint": null
+    }
+  ]
+}
