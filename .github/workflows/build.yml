@@ -94,7 +94,7 @@ jobs:
           kill "$pid"
           echo "smoke: launch ok (alive 20s)"
       - name: Rust tests
-        run: cargo test --workspace --manifest-path src-tauri/Cargo.toml
+        run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
       - name: Frontend tests
         run: npm test
 
@@ -150,6 +150,6 @@ jobs:
           Stop-Process -Id $app.Id
           'smoke: launch ok (alive 20s)'
       - name: Rust tests
-        run: cargo test --workspace --manifest-path src-tauri/Cargo.toml
+        run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
       - name: Frontend tests
         run: npm test

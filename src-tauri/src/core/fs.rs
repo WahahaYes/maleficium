@@ -190,7 +190,13 @@ fn split_trash_name(name: &str) -> Option<(String, String)> {
 /// Move a project file to the app-local trash home. Returns the trash path.
 pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> {
     let abs = resolve_in(id, rel)?;
-    if confirm != abs.to_string_lossy() {
+    // Compared as paths, not strings: on Windows the caller may spell the
+    // same file with `/`, mixed separators, or another letter case. Only an
+    // absolute path confirms (a bare name would resolve against the CWD).
+    let confirmed = confirm == abs.to_string_lossy()
+        || (Path::new(confirm).is_absolute()
+            && dunce::canonicalize(confirm).is_ok_and(|c| c == abs));
+    if !confirmed {
         return Err(format!(
             "confirmation mismatch: pass the file path back as confirm to delete {}",
             abs.display()
@@ -346,7 +352,17 @@ mod tests {
         let (id, dir) = grant_tmp("confirm");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
         assert!(trash_file(&id, "a.tex", "wrong").is_err());
+        assert!(trash_file(&id, "a.tex", "a.tex").is_err());
         assert!(dir.join("a.tex").exists());
+    }
+
+    #[test]
+    fn trash_confirm_accepts_another_spelling_of_the_same_file() {
+        let (id, dir) = grant_tmp("confirm-spelling");
+        std::fs::write(dir.join("a.tex"), "hi").unwrap();
+        let spelled = format!("{}/./a.tex", dir.to_string_lossy());
+        assert!(trash_file(&id, "a.tex", &spelled).is_ok());
+        assert!(!dir.join("a.tex").exists());
     }
 
     #[test]
