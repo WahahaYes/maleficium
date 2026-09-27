@@ -14,7 +14,7 @@ import {
   type CompiledOutput,
   compileTex,
   describeFinding,
-  engineLog,
+  compileDiagnostics,
   missingLine,
   precompileChecks,
   offlineBadge,
@@ -149,20 +149,26 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     window.addEventListener('beforeunload', h);
     return () => window.removeEventListener('beforeunload', h);
   }, []);
-  /** Engine-log diagnostics onto the bus, root-relative to the run's root. */
+  /**
+   * The run's problems onto the bus, root-relative to its root: the core's
+   * diagnostics (engine errors plus TeX's warnings, as agents see them over
+   * MCP) for a target in a session root, else the run's own output parsed.
+   */
   const publishProblems = async (
-    text: string,
+    runLog: string,
     base: string,
-    src: { rootId: string; rootPath: string } | null,
+    src: { rootId: string; rootPath: string; mainRel: string } | null,
     actor: Actor,
   ) => {
     try {
-      const wsRoot = src?.rootPath ?? (root || workdirHint);
-      const entries = (await structure().diagnostics(text, wsRoot, base)).slice(0, 100);
-      for (const d of entries) {
+      const kept = src ? await compileDiagnostics(src.rootId, src.mainRel) : null;
+      const entries =
+        kept ??
+        (await structure().diagnostics(runLog, src?.rootPath ?? (root || workdirHint), base));
+      for (const d of entries.slice(0, 100)) {
         emit({
           scope: 'compile',
-          kind: d.external ? 'warn' : 'error',
+          kind: d.external || d.severity === 'warning' ? 'warn' : 'error',
           actor,
           message: `${d.path ?? '(outside project)'}:${d.line} ${d.message}`,
           event: { action: 'compile.problem', rootId: src?.rootId ?? null, ...d },
@@ -427,7 +433,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
     }
-    const readEngineLog = () => (src ? engineLog(src.rootId, src.mainRel) : Promise.resolve(null));
     if (r.ok && r.pdfUrl) {
       finish('success');
       setCompileStart(null);
@@ -446,6 +451,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
       emitPdf({ url: r.pdfUrl, source: src, revision: null });
+      await publishProblems(r.log, mainDir, src, actor);
       emit({
         scope: 'preview',
         kind: 'success',
@@ -471,8 +477,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           ms: Date.now() - t0,
         },
       });
-      const c = await readEngineLog();
-      await publishProblems(c ?? r.log, mainDir, src, actor);
+      await publishProblems(r.log, mainDir, src, actor);
     } else if (!r.ok) {
       finish('failure');
       setCompileStart(null);
@@ -490,8 +495,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           ms: Date.now() - t0,
         },
       });
-      const c = await readEngineLog();
-      await publishProblems(c ?? r.log, mainDir, src, actor);
+      await publishProblems(r.log, mainDir, src, actor);
     }
     clearInterval(hb);
     try {
