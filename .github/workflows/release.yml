@@ -5,6 +5,8 @@
 # which creates vX.Y.Z at that commit. Rerunning for the same version
 # replaces the draft's assets.
 name: release
+# release.sh draft finds its run by this name.
+run-name: release ${{ inputs.version }}
 
 on:
   workflow_dispatch:
