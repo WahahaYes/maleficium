@@ -438,7 +438,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Delete a project file to the app-local trash. Pass the file path back as confirm to act; without it returns the required token."
+        description = "Delete a project file to the app-local trash, in two calls: without confirm it is refused with the file's absolute path; call again with that absolute path as confirm to delete."
     )]
     fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<Json<DeleteOut>, String> {
         let confirm = p.confirm.as_deref().unwrap_or("");
