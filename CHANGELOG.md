@@ -12,6 +12,7 @@
 
 ### Fixes
 
+- **The log lists undefined references, undefined citations, and duplicate labels after every compile**, each a click away from its line. Before, a document that compiled with `??` in it showed no problems.
 - **Compiling no longer fails on a font the engine has not downloaded yet.** Once the engine's cache was filled, a document that first needed another Latin Modern face (a new size or italic, for example) failed with "not loadable" instead of fetching it.
 
 ## 0.1.1 - 2026-09-26
