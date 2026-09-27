@@ -55,6 +55,26 @@ fn alive(_pid: u32) -> bool {
     true
 }
 
+/// Paths every project-scoped call must refuse, spelled the ways this OS
+/// accepts: parent escapes and absolute paths to real files outside any
+/// project, plus on Windows the backslash, drive, rooted, verbatim and
+/// drive-relative forms. (UNC shares are left out: resolving one can wait
+/// on the network.)
+pub fn escapes() -> Vec<&'static str> {
+    let mut v = vec!["../outside.tex", "/etc/hostname"];
+    if cfg!(windows) {
+        v.extend([
+            r"..\outside.tex",
+            r"a\..\..\outside.tex",
+            r"C:\Windows\win.ini",
+            r"\Windows\win.ini",
+            r"\\?\C:\Windows\win.ini",
+            r"C:outside.tex",
+        ]);
+    }
+    v
+}
+
 /// A path for `name` inside this process's scratch root. The dir itself is
 /// not created; callers set it up as they need.
 pub fn dir(name: &str) -> PathBuf {

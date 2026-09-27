@@ -168,8 +168,9 @@ mod tests {
     fn query_requires_a_compiled_main_inside_the_root() {
         let (id, root) = grant_tmp("query");
         std::fs::write(root.join("main.tex"), "x").unwrap();
-        assert!(query_for(&id, "../escape.tex").is_err());
-        assert!(query_for(&id, "/etc/hostname").is_err());
+        for bad in crate::test_scratch::escapes() {
+            assert!(query_for(&id, bad).is_err(), "{bad}");
+        }
         assert!(query_for(&id, "missing.tex").is_err());
         assert!(query_for("unknown-root", "main.tex").is_err());
         let err = query_for(&id, "main.tex").err().unwrap();
