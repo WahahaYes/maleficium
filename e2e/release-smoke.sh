@@ -26,38 +26,7 @@ DEB_NAME=$(basename "$DEB"); IMG_NAME=$(basename "$IMG")
 echo "smoke: control: $(dpkg -f "$DEB" Package Version Section 2>/dev/null | tr '\n' ' ')"
 PROBE=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-smoke-XXXXXX")
 trap 'rm -rf "$PROBE"' EXIT
-# JSON-RPC over stdio: grant a scratch root, compile main.tex, poll to the end.
-cat > "$PROBE/compile.py" <<'EOF'
-import json, os, subprocess, sys, time
-root = "/tmp/doc"
-os.makedirs(root, exist_ok=True)
-with open(root + "/main.tex", "w") as f:
-    f.write("\\documentclass{article}\n\\begin{document}\nSmoke.\n\\end{document}\n")
-p = subprocess.Popen(["/usr/bin/maleficium-mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-n = [0]
-def send(method, params):
-    n[0] += 1
-    p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": n[0], "method": method, "params": params}) + "\n")
-    p.stdin.flush()
-    return json.loads(p.stdout.readline())
-def call(name, args):
-    r = send("tools/call", {"name": name, "arguments": args})["result"]
-    if r.get("isError"):
-        sys.exit("smoke: FAIL %s: %s" % (name, "".join(c.get("text", "") for c in r["content"])))
-    return r["structuredContent"]
-send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "smoke", "version": "0"}})
-p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"); p.stdin.flush()
-call("grant", {"root_id": "smoke", "root": root})
-job = call("compile_run", {"root_id": "smoke", "rel": "main.tex"})["job_id"]
-deadline = time.time() + 300
-rec = {"status": "running"}
-while rec["status"] == "running" and time.time() < deadline:
-    time.sleep(2)
-    rec = call("compile_poll", {"job_id": job, "tail_lines": 5})
-if rec["status"] != "success":
-    sys.exit("smoke: FAIL compile %s: %s" % (rec["status"], str(rec)[:300]))
-print("smoke: compile ok (installed engine, %s)" % rec.get("pdf_url"))
-EOF
+cp "$(dirname "$0")/mcp-compile-smoke.py" "$PROBE/compile.py"
 docker run --rm -e DEB_NAME="$DEB_NAME" -e IMG_NAME="$IMG_NAME" -v "$DIR:/pkg:ro" -v "$PROBE:/probe:ro" ubuntu:24.04 bash -c '
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -74,7 +43,7 @@ done
 rm -rf /tmp/squashfs-root
 echo "smoke: appimage bundles no libwayland"
 export HOME=/tmp/fakehome && mkdir -p "$HOME"
-python3 /probe/compile.py
+python3 /probe/compile.py /usr/bin/maleficium-mcp /tmp/doc
 T='"$TIMEOUT"'
 code=0; timeout -s KILL "$T" xvfb-run -a maleficium >/tmp/l.log 2>&1 || code=$?
 [ "$code" -eq 137 ] && echo "smoke: deb launch ok (alive ${T}s)" || { echo "smoke: FAIL deb exited early"; tail -n 5 /tmp/l.log; exit 1; }

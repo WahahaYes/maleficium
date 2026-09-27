@@ -10,6 +10,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
 | `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `release-smoke.sh` | Docker | The `.deb` and AppImage install and launch |
+| `mcp-compile-smoke.py` | no | An installed copy compiles a page with its bundled engine |
 
 ## Running in isolation
 
@@ -67,7 +68,7 @@ The cold-compile state reads the TeX bundle through `bundle-mirror.py`, a local 
 
 ### release-smoke.sh
 
-Installs the `.deb` in a clean Ubuntu 24.04 container, checks the payload (binaries, desktop entry, icons, control fields), and launches both bundles under Xvfb. It does not check how anything looks.
+Installs the `.deb` in a clean Ubuntu 24.04 container, checks the payload (binaries, desktop entry, icons, control fields), compiles a page through the installed `maleficium-mcp` with `mcp-compile-smoke.py`, and launches both bundles under Xvfb. It does not check how anything looks. CI runs it on every build; the macOS and Windows jobs in `build.yml` run the same compile probe against the installed `.app` and NSIS install.
 
 ```sh
 sh e2e/release-smoke.sh <artifact-dir> [timeout-secs]
