@@ -5,6 +5,11 @@
 //! Entries that resolve outside the root are flagged `external` and carry
 //! no path at all. Repeats (the engine reruns TeX and re-reports) collapse
 //! to their first occurrence.
+//!
+//! `root` and `base` are native paths of whichever OS ran the engine, and
+//! the root's own form picks the path rules (`C:\` or UNC → Windows, both
+//! separators; otherwise Unix). That keeps this crate host-independent: the
+//! Windows cases are tested on every OS.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -12,6 +17,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use typed_path::{Utf8TypedPath, Utf8TypedPathBuf};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema, TS,
@@ -35,44 +41,32 @@ pub struct Diagnostic {
     pub external: bool,
 }
 
-static LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:^|\s)(?:\./)?([\w\-./]+\.tex):(\d+):?\s*(.*)").unwrap());
+static LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:^|\s)((?:[A-Za-z]:)?[\w\-./\\]+\.tex):(\d+):?\s*(.*)").unwrap()
+});
 
-/// Lexical normalization of an absolute `/`-path: `.` and empty segments
-/// drop, `..` pops (never past `/`).
-fn normalize(p: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for part in p.split('/') {
-        match part {
-            ".." => {
-                out.pop();
-            }
-            "." | "" => {}
-            s => out.push(s),
-        }
-    }
-    format!("/{}", out.join("/"))
+/// `file` (absolute, or relative to `base`) as a root-relative `/`-path, or
+/// `None` when it resolves outside `root`. Lexical: `..` never climbs past
+/// the filesystem root.
+fn root_relative(file: &str, root: &Utf8TypedPathBuf, base: &Utf8TypedPathBuf) -> Option<String> {
+    let abs = base.join(file).normalize();
+    let rel = abs.strip_prefix(root.as_str()).ok()?;
+    Some(
+        rel.components()
+            .map(|c| c.as_str())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
 }
 
 pub fn diagnostics(log: &str, root: &str, base: &str) -> Vec<Diagnostic> {
-    let root = normalize(root);
-    let prefix = if root == "/" {
-        root.clone()
-    } else {
-        format!("{root}/")
-    };
-    let base = normalize(base);
+    let root = Utf8TypedPath::derive(root).normalize();
+    let base = Utf8TypedPath::derive(base).normalize();
     let mut seen = HashSet::new();
     log.lines()
         .filter_map(|line| {
             let m = LINE_RE.captures(line)?;
-            let file = &m[1];
-            let abs = if file.starts_with('/') {
-                normalize(file)
-            } else {
-                normalize(&format!("{base}/{file}"))
-            };
-            let path = abs.strip_prefix(&prefix).map(str::to_string);
+            let path = root_relative(&m[1], &root, &base);
             let severity = if line.trim_start().starts_with("warning:") {
                 Severity::Warning
             } else {
@@ -145,6 +139,52 @@ mod tests {
         );
         let json = serde_json::to_string(&diagnostics("/o/a.tex:5: m", "/proj", "/proj")).unwrap();
         assert!(!json.contains("/o/"), "{json}");
+    }
+
+    /// Windows roots, checked on every host: drive and UNC prefixes, both
+    /// separators (TeX echoes `\input{parts/x}` with `/`), subdirectory mains.
+    #[test]
+    fn windows_paths_rebase_onto_the_root() {
+        let root = r"C:\Users\ada\paper";
+        assert_eq!(
+            diagnostics("error: main.tex:3: bad", root, root),
+            vec![d(Some("main.tex"), 3, "bad")]
+        );
+        assert_eq!(
+            diagnostics("./parts/body.tex:12: oops", root, r"C:\Users\ada\paper\sub"),
+            vec![d(Some("sub/parts/body.tex"), 12, "oops")]
+        );
+        assert_eq!(
+            diagnostics(r"parts\a\..\c.tex:7: x", root, root),
+            vec![d(Some("parts/c.tex"), 7, "x")]
+        );
+        assert_eq!(
+            diagnostics(r"error: C:\Users\ada\paper\ch1.tex:5: m", root, root),
+            vec![d(Some("ch1.tex"), 5, "m")]
+        );
+        let unc = r"\\server\share\paper";
+        assert_eq!(
+            diagnostics("main.tex:2: m", unc, unc),
+            vec![d(Some("main.tex"), 2, "m")]
+        );
+    }
+
+    #[test]
+    fn windows_outside_root_is_external() {
+        let root = r"C:\Users\ada\paper";
+        for log in [
+            r"C:\Users\ada\other\a.tex:5: msg",
+            r"C:\Users\ada\paperback\a.tex:5: msg",
+            r"D:\paper\a.tex:5: msg",
+            r"..\x.tex:5: msg",
+            "../x.tex:5: msg",
+        ] {
+            assert_eq!(
+                diagnostics(log, root, root),
+                vec![d(None, 5, "msg")],
+                "{log}"
+            );
+        }
     }
 
     #[test]
