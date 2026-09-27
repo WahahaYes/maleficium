@@ -1589,7 +1589,7 @@ export default function App({
             Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            Version 0.1.0 · offline-first · Linux-first.
+            Version {__APP_VERSION__} · offline-first.
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             SyncTeX navigation by Jérôme Laurens (MIT) — bundled sidecar.

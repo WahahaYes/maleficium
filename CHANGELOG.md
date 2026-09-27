@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-09-27
+
+Maleficium now builds for macOS and Windows as previews, and its MCP server ships inside the app so AI agents can write and compile LaTeX through it.
+
+### New platforms (preview)
+
+- **macOS** (Apple silicon and Intel, one `.dmg` each) and **Windows** (x86_64, `setup.exe` installer). Both are unsigned: macOS asks you to click **Open Anyway** once, and Windows SmartScreen asks you to confirm. The README has the steps.
+- These builds pass automated checks on each platform (install, launch, compile, and the MCP server) but have not yet been tried by a person on a real Mac or Windows PC. Please report anything that goes wrong.
 
 ### For AI agents
 
@@ -14,6 +21,16 @@
 
 - **The log lists undefined references, undefined citations, and duplicate labels after every compile**, each a click away from its line. Before, a document that compiled with `??` in it showed no problems.
 - **Compiling no longer fails on a font the engine has not downloaded yet.** Once the engine's cache was filled, a document that first needed another Latin Modern face (a new size or italic, for example) failed with "not loadable" instead of fetching it.
+- **Compiling fetches missing font metrics** instead of failing when the engine's cache lacks them.
+- The status bar shows the compiled main file instead of the path of the cached PDF.
+- Files whose names contain `__` restore correctly from the trash.
+- The app and the MCP server now agree on a project's identity and trash, so a delete made by an agent can be undone in the app and the other way round.
+
+### Known limits
+
+- macOS and Windows builds are unsigned previews, less tested than Linux.
+- Tectonic is the only engine. Documents that need `biber` or shell escape rely on tools outside the app; the pre-compile check flags them.
+- 0.x makes no promise that settings or history carry over between versions.
 
 ## 0.1.1 - 2026-09-26
 
