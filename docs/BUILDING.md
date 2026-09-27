@@ -69,7 +69,7 @@ python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 
 ## CI
 
-`.github/workflows/build.yml` runs on each pull request: one job per target (`ubuntu-24.04`, `macos-15` for aarch64, `macos-15-intel` for x86_64, `windows-2025`). Only toolchain setup differs between them; each then runs `package.sh`, `package-smoke.py`, and `npm run check`, and uploads its packages plus a `screenshot-*` of the smoke launch (macOS, Windows).
+`.github/workflows/build.yml` runs on each pull request: one job per target (`ubuntu-24.04`, `macos-15` for aarch64, `macos-15-intel` for x86_64, `windows-2025`). Only toolchain setup differs between them; each then runs `package.sh`, `package-smoke.py`, and `npm run check`, and uploads its packages plus a `screenshot-*` of the smoke launch.
 
 `.github/workflows/release.yml` drafts a release. Run it from the Actions tab on `main` with a version whose manifests and `CHANGELOG.md` section are already on `main`. It checks both, fails if that version is already tagged or published, runs `build.yml`, and creates a **draft** GitHub release, targeting that commit, with every package attached. Publishing the draft creates the `vX.Y.Z` tag. Rerunning it for the same version replaces the draft's assets.
 
