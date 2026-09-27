@@ -12,7 +12,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 **It's open source, so you can make it yours.** Maleficium is Apache 2.0 and built to be changed at the source: fork it and shape it to the way you work. Menus and the command palette are built from one command registry, so a new action shows up in both from a single entry. A template is just a folder, a color theme is a standard VS Code theme file, and the Rust core behind the editor is the same one its automation tools use. [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) gets you from clone to running app. No fork needed for the everyday cases: save any project as a template, or import a folder as one, and it joins the gallery beside the CC0 built-ins.
 
-**It's built for working alongside AI agents.** Every action the app takes is written to a structured JSONL event log that an agent can read. When another process recompiles your document, the preview reloads on its own. A full agent interface, an MCP server that can compile, search, replace, and jump through SyncTeX, lives in the source tree today and will ship in the packaged app in a later release.
+**It's built for working alongside AI agents.** Every action the app takes is written to a structured JSONL event log that an agent can read. When another process recompiles your document, the preview reloads on its own. The app ships an MCP server, so an agent such as Claude Code can compile, search, replace, and jump through SyncTeX with the same core the editor uses ([Use with an AI agent](#use-with-an-ai-agent)).
 
 ## Features
 
@@ -73,10 +73,76 @@ On first launch Maleficium opens a short welcome project. After that:
 2. Press **Ctrl+R** to compile. Maleficium finds the main file itself. To choose a different one, right-click a `.tex` file in the tree and pick **Set as Main File**.
 3. Press **?** to see every keyboard shortcut.
 
+## Use with an AI agent
+
+Maleficium includes a local [MCP](https://modelcontextprotocol.io) server that speaks over stdio. Start it with `maleficium --mcp`, the app binary with one flag. Linux packages also install it as `maleficium-mcp`; both run the same server. It needs no network beyond the engine's first-compile download, and nothing runs until your agent starts it.
+
+Where the command lives:
+
+| Install  | Command                                                                       |
+| -------- | ----------------------------------------------------------------------------- |
+| `.deb`   | `/usr/bin/maleficium --mcp` (or `/usr/bin/maleficium-mcp`)                    |
+| AppImage | `/path/to/Maleficium_<version>_amd64.AppImage --mcp`                          |
+| macOS    | `/Applications/Maleficium.app/Contents/MacOS/maleficium --mcp`                |
+| Windows  | `%LOCALAPPDATA%\Maleficium\Maleficium.exe --mcp` (the default install folder) |
+
+Point the AppImage entry at wherever you keep the file; its mount point changes on every run, so use the AppImage itself rather than a path inside it. The examples below use the `.deb` path; substitute yours.
+
+**Claude Code:**
+
+```sh
+claude mcp add maleficium -- /usr/bin/maleficium --mcp
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "maleficium": { "command": "/usr/bin/maleficium", "args": ["--mcp"] }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json` in a workspace, or **MCP: Add Server** from the Command Palette):
+
+```json
+{
+  "servers": {
+    "maleficium": { "type": "stdio", "command": "/usr/bin/maleficium", "args": ["--mcp"] }
+  }
+}
+```
+
+**opencode** (`opencode.json`, or `opencode mcp add maleficium -- /usr/bin/maleficium --mcp`):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "maleficium": { "type": "local", "command": ["/usr/bin/maleficium", "--mcp"] }
+    }
+  }
+}
+```
+
+### What the agent can do
+
+An agent first calls `grant` with a project folder and a name for it; every other tool takes that name and refuses any path outside the folder. Then it can:
+
+- **Compile** with the bundled engine (`compile_run`, then `compile_poll` for the result), and read structured `diagnostics`, the log, and the `precompile_checks` for missing packages and tools.
+- **Read the project:** `list`, `read`, `find_files`, `search`, the `outline`, the `file_graph` of `\input`s, `labels_refs`, `citations`, and `definition` for any label, citation, or macro.
+- **Replace across the project:** `replace_preview` shows every change and writes nothing, `replace_apply` applies that exact plan, and `replace_undo` restores the whole batch.
+- **Jump through SyncTeX** both ways, **export** the PDF or a zip, and start a **new project from a template**.
+- **Delete** a file in two calls: the first is refused with the file's absolute path, and the second passes that path back as `confirm`. `undo` restores it.
+
+The server edits your files only through replace; agents write text with their own file tools. Build files, history, and logs stay outside the project, as with the app.
+
+**Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
+
 ## Known limits in 0.1.x
 
 - macOS and Windows builds are previews: unsigned, and less tested than Linux.
-- The MCP server for AI agents is not in the packaged app yet; build from source to try it.
 - No automatic updates. Check the releases page for new versions.
 - 0.1.x makes no promise that settings or history carry over between versions.
 - The engine is Tectonic only. Documents that need `biber` or shell escape depend on tools outside the app, and the pre-compile check flags them.

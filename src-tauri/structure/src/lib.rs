@@ -18,7 +18,7 @@ mod symbols;
 mod text;
 
 pub use checks::{precompile_checks, CheckEnv, CheckKind, Finding};
-pub use diagnostics::{diagnostics, Diagnostic, Severity};
+pub use diagnostics::{diagnostics, tex_warnings, Diagnostic, Severity, TexWarning, TexWarningKind};
 pub use engine::{
     external_needs, line_signal, missing_dependency, offline_reading, CompilePhase, ExternalNeeds,
     FetchOutcome, LineSignal, MissingDependency, MissingReason,

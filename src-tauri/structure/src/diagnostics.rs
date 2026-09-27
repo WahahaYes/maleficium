@@ -84,9 +84,101 @@ pub fn diagnostics(log: &str, root: &str, base: &str) -> Vec<Diagnostic> {
         .collect()
 }
 
+/// A LaTeX warning that only TeX's own transcript carries: the engine's
+/// console never shows it on a successful compile. It names a key and, for
+/// uses, the input line, but not the file; callers place it through the
+/// project's index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TexWarning {
+    pub kind: TexWarningKind,
+    pub key: String,
+    pub line: Option<u32>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TexWarningKind {
+    UndefinedReference,
+    UndefinedCitation,
+    DuplicateLabel,
+}
+
+static TEX_WARNING_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"LaTeX Warning: (?:(Reference|Citation) [`']([^']+)' on page \S+ undefined on input line (\d+)|Label `([^']+)' multiply defined)",
+    )
+    .unwrap()
+});
+
+/// TeX's log width: a longer line continues on the next.
+const TEX_LOG_WIDTH: usize = 79;
+
+/// The reference, citation and label warnings in a TeX transcript, first
+/// occurrence of each.
+pub fn tex_warnings(log: &str) -> Vec<TexWarning> {
+    let mut joined: Vec<String> = Vec::new();
+    let mut continues = false;
+    for line in log.lines() {
+        match joined.last_mut() {
+            Some(last) if continues => last.push_str(line),
+            _ => joined.push(line.to_string()),
+        }
+        continues = line.chars().count() == TEX_LOG_WIDTH;
+    }
+    let mut seen = HashSet::new();
+    joined
+        .iter()
+        .filter_map(|l| {
+            let m = TEX_WARNING_RE.captures(l)?;
+            let (kind, key, line) = match (m.get(1).map(|k| k.as_str()), m.get(4)) {
+                (Some("Reference"), _) => (TexWarningKind::UndefinedReference, &m[2], m[3].parse().ok()),
+                (Some(_), _) => (TexWarningKind::UndefinedCitation, &m[2], m[3].parse().ok()),
+                (None, Some(label)) => (TexWarningKind::DuplicateLabel, label.as_str(), None),
+                (None, None) => return None,
+            };
+            let message = m[0].trim_start_matches("LaTeX Warning: ").to_string();
+            Some(TexWarning { kind, key: key.to_string(), line, message })
+        })
+        .filter(|w| seen.insert((w.kind, w.key.clone(), w.line)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tex_warnings_name_the_key_and_line() {
+        let log = "(main.tex
+LaTeX Warning: Citation 'knuth1985' on page 1 undefined on input line 27.
+LaTeX Warning: Reference `sec:methods' on page 1 undefined on input line 27.
+LaTeX Warning: Reference `sec:methods' on page 1 undefined on input line 27.
+LaTeX Warning: Label `sec:intro' multiply defined.
+LaTeX Warning: There were undefined references.
+Package hyperref Warning: Rerun to get /PageLabels entry.";
+        let got: Vec<_> = tex_warnings(log)
+            .into_iter()
+            .map(|w| (w.kind, w.key, w.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (TexWarningKind::UndefinedCitation, "knuth1985".into(), Some(27)),
+                (TexWarningKind::UndefinedReference, "sec:methods".into(), Some(27)),
+                (TexWarningKind::DuplicateLabel, "sec:intro".into(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tex_warning_wrapped_at_79_columns_is_read_whole() {
+        let whole = "LaTeX Warning: Reference `sec:a-rather-long-label-name-for-wrapping' on page 12 undefined on input line 345.";
+        let (a, b) = whole.split_at(TEX_LOG_WIDTH);
+        let w = tex_warnings(&format!("{a}\n{b}\n"));
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].key, "sec:a-rather-long-label-name-for-wrapping");
+        assert_eq!(w[0].line, Some(345));
+    }
 
     fn d(path: Option<&str>, line: u32, message: &str) -> Diagnostic {
         Diagnostic {

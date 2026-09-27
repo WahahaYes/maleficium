@@ -65,7 +65,7 @@ npm run check                     # lint, format, types, vitest, cargo fmt/clipp
 python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 ```
 
-`package-smoke.py` installs the way a user would (Linux: the `.deb` in a clean `ubuntu:24.04` container, so needs Docker; macOS: the `.dmg`; Windows: a silent NSIS install), compiles a page through the installed `maleficium-mcp`, and requires the app's first launch to open the welcome project in its event log. See `e2e/README.md`.
+`package-smoke.py` installs the way a user would (Linux: the `.deb` in a clean `ubuntu:24.04` container, so needs Docker; macOS: the `.dmg`; Windows: a silent NSIS install), compiles a page and answers a SyncTeX lookup through the installed MCP server (as `maleficium-mcp` and as `maleficium --mcp`), and requires the app's first launch to open the welcome project in its event log. See `e2e/README.md`.
 
 ## CI
 

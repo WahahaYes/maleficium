@@ -1,0 +1,87 @@
+{
+  "id": "fix-broken",
+  "about": "Three faults: a package that does not exist (the precheck flags it), a missing \\end{table}, and a reference to a label that does not exist. Fixed means it compiles clean and keeps its content.",
+  "template": "article",
+  "edits": [
+    {
+      "file": "main.tex",
+      "find": "\\usepackage{booktabs}\n",
+      "replace": "\\usepackage{booktabs}\n\\usepackage{fancytabularx}\n"
+    },
+    {
+      "file": "main.tex",
+      "find": "  \\label{tab:results}\n\\end{table}\n",
+      "replace": "  \\label{tab:results}\n"
+    },
+    {
+      "file": "main.tex",
+      "find": "Section~\\ref{sec:method}",
+      "replace": "Section~\\ref{sec:methods}"
+    }
+  ],
+  "solution": [
+    {
+      "file": "main.tex",
+      "find": "\\usepackage{fancytabularx}\n",
+      "replace": ""
+    },
+    {
+      "file": "main.tex",
+      "find": "  \\label{tab:results}\n",
+      "replace": "  \\label{tab:results}\n\\end{table}\n"
+    },
+    {
+      "file": "main.tex",
+      "find": "Section~\\ref{sec:methods}",
+      "replace": "Section~\\ref{sec:method}"
+    }
+  ],
+  "prompt": "The LaTeX project at {project} (main file main.tex) no longer compiles cleanly. Fix it so that it compiles with no errors and no undefined references, keeping all of its existing content (sections, table, figure, equation, bibliography). Use the maleficium MCP server to compile and to check the result; edit the files with your own file tools.",
+  "timeout_s": 600,
+  "oracles": [
+    {
+      "compiles": "main.tex"
+    },
+    {
+      "clean_log": "main.tex"
+    },
+    {
+      "outline_has": {
+        "file": "main.tex",
+        "titles": ["Introduction", "Method", "Results", "Conclusion"],
+        "ordered": true
+      }
+    },
+    {
+      "file_lacks": {
+        "file": "main.tex",
+        "patterns": ["fancytabularx"]
+      }
+    },
+    {
+      "count_equal": {
+        "file": "main.tex",
+        "patterns": ["\\\\begin\\{table\\}", "\\\\end\\{table\\}"]
+      }
+    },
+    {
+      "file_matches": {
+        "file": "main.tex",
+        "patterns": [
+          "Section~\\\\ref\\{",
+          "\\\\toprule",
+          "\\\\begin\\{tikzpicture\\}",
+          "\\\\label\\{eq:energy\\}",
+          "\\\\cite\\{knuth1984\\}",
+          "\\\\printbibliography"
+        ]
+      }
+    },
+    {
+      "unchanged": ["references.bib"]
+    },
+    {
+      "footprint": null
+    }
+  ]
+}

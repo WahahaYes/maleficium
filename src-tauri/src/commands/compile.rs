@@ -117,9 +117,15 @@ pub fn offline_readiness(root_id: String) -> Result<OfflineReadiness, String> {
     core::compile::offline_readiness(&root_id)
 }
 
-#[tauri::command]
-pub fn engine_log(root_id: String, main_rel: String) -> Result<String, String> {
-    core::engine_log(&root_id, &main_rel)
+/// The last compile's problems, as the MCP diagnostics tool reports them:
+/// the engine's errors plus TeX's own warnings (undefined references and
+/// citations, duplicate labels), root-relative.
+#[tauri::command(async)]
+pub fn compile_diagnostics(
+    root_id: String,
+    main_rel: String,
+) -> Result<Vec<maleficium_structure::Diagnostic>, String> {
+    Ok(core::structure::diagnostics(&root_id, &main_rel, 100)?.diagnostics)
 }
 
 #[tauri::command]

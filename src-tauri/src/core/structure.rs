@@ -403,23 +403,81 @@ pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, Stri
     })
 }
 
-/// Structured diagnostics from the last compile's engine log.
+/// Structured diagnostics from the last compile: its last engine run's
+/// console (an earlier run it retried is not the document's problem) and
+/// TeX's transcript.
 pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnostics, String> {
     let root = super::fs::session_root(root_id)?;
     let o = super::outputs_of(root_id, main_rel)?;
     let log = super::engine_log(root_id, main_rel)?;
+    let last = super::engine::last_attempt(&log);
     let main = rel_of(&root, &o.dir.join(&o.main_file));
-    let mut diagnostics = ms::diagnostics(&log, &root.to_string_lossy(), &o.dir.to_string_lossy());
+    let tex = super::tex_log(root_id, main_rel)?;
+    let mut diagnostics = ms::diagnostics(last, &root.to_string_lossy(), &o.dir.to_string_lossy());
+    diagnostics.extend(tex_log_warnings(root_id, main_rel, &tex)?);
     let over = diagnostics.len().saturating_sub(max);
     diagnostics.truncate(max);
     Ok(Diagnostics {
         source: "disk".into(),
-        revision: ms::revision([("log", log.as_str())]),
+        revision: ms::revision([("log", log.as_str()), ("tex", tex.as_str())]),
         main,
         diagnostics,
         truncated: over,
-        missing: missing_of(&log),
+        missing: missing_of(last),
     })
+}
+
+/// The warnings only TeX's transcript carries (undefined references and
+/// citations, duplicate labels), placed through the index: the use at the
+/// warned input line, else the key's first use; each definition of a
+/// duplicate label.
+fn tex_log_warnings(
+    root_id: &str,
+    main_rel: &str,
+    tex: &str,
+) -> Result<Vec<ms::Diagnostic>, String> {
+    let warnings = ms::tex_warnings(tex);
+    if warnings.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lr = labels_refs(root_id, main_rel)?;
+    let cites = citations(root_id, main_rel)?.cites;
+    let at = |uses: &[KeyUse], key: &str, line: Option<u32>| {
+        uses.iter()
+            .filter(|u| u.key == key)
+            .min_by_key(|u| Some(u.line) != line)
+            .map(|u| (u.rel.clone(), u.line))
+    };
+    let mut out = Vec::new();
+    for w in warnings {
+        let places = match w.kind {
+            ms::TexWarningKind::UndefinedReference => {
+                at(&lr.refs, &w.key, w.line).into_iter().collect()
+            }
+            ms::TexWarningKind::UndefinedCitation => {
+                at(&cites, &w.key, w.line).into_iter().collect()
+            }
+            ms::TexWarningKind::DuplicateLabel => lr
+                .labels
+                .iter()
+                .filter(|l| l.key == w.key)
+                .map(|l| (l.rel.clone(), l.line))
+                .collect::<Vec<_>>(),
+        };
+        let places = if places.is_empty() {
+            vec![(lr.main.clone(), w.line.unwrap_or(0))]
+        } else {
+            places
+        };
+        out.extend(places.into_iter().map(|(rel, line)| ms::Diagnostic {
+            path: Some(rel),
+            line,
+            message: w.message.clone(),
+            severity: ms::Severity::Warning,
+            external: false,
+        }));
+    }
+    Ok(out)
 }
 
 /// What the compile that wrote `log` lacked: read from its console lines,
@@ -588,6 +646,63 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_place_tex_log_warnings_on_their_uses() {
+        let (id, _) = sample("texwarn");
+        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            super::super::log_file(&o.outdir, &o.main_file),
+            "note: done",
+        )
+        .unwrap();
+        std::fs::write(
+            super::super::tex_log_file(&o.outdir, &o.main_file),
+            "LaTeX Warning: Reference `nope' on page 1 undefined on input line 8.\n\
+             LaTeX Warning: Citation `ghost' on page 1 undefined on input line 8.\n\
+             LaTeX Warning: Label `sec:intro' multiply defined.\n",
+        )
+        .unwrap();
+        let d = diagnostics(&id, "paper/main.tex", 100).unwrap();
+        let _ = std::fs::remove_dir_all(&o.outdir);
+        let got: Vec<(Option<&str>, u32, ms::Severity)> = d
+            .diagnostics
+            .iter()
+            .map(|x| (x.path.as_deref(), x.line, x.severity))
+            .collect();
+        let w = ms::Severity::Warning;
+        assert_eq!(
+            got,
+            vec![
+                (Some("paper/main.tex"), 8, w),
+                (Some("paper/main.tex"), 8, w),
+                (Some("paper/main.tex"), 3, w),
+                (Some("paper/chapters/a.tex"), 1, w),
+            ]
+        );
+        assert!(d.diagnostics[0].message.contains("`nope'"));
+    }
+
+    #[test]
+    fn diagnostics_skip_a_run_the_compile_retried() {
+        let (id, _) = sample("retried");
+        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            super::super::log_file(&o.outdir, &o.main_file),
+            "note: using only cached resource files\n\
+             error: main.tex:1: ! LaTeX Error: File `beamer.cls' not found.\n\
+             trying online: fetching beamer.cls\n\
+             note: Running TeX ...\n\
+             note: Writing `main.pdf`",
+        )
+        .unwrap();
+        let d = diagnostics(&id, "paper/main.tex", 100).unwrap();
+        let _ = std::fs::remove_dir_all(&o.outdir);
+        assert!(d.diagnostics.is_empty(), "{:?}", d.diagnostics);
+        assert_eq!(d.missing, None);
+    }
+
+    #[test]
     fn diagnostics_rebase_the_engine_log() {
         let (id, root) = sample("diag");
         let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
@@ -596,7 +711,7 @@ mod tests {
             "error: main.tex:3: Undefined control sequence\n{}/paper/chapters/a.tex:1: x\n/usr/share/x.tex:2: y\n",
             root.to_string_lossy()
         );
-        std::fs::write(o.outdir.join("main.log"), log).unwrap();
+        std::fs::write(super::super::log_file(&o.outdir, &o.main_file), log).unwrap();
         let d = diagnostics(&id, "paper/main.tex", 2).unwrap();
         let _ = std::fs::remove_dir_all(&o.outdir);
         let got: Vec<(Option<&str>, u32, bool)> = d

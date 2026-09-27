@@ -197,10 +197,17 @@ pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> 
         || (Path::new(confirm).is_absolute()
             && dunce::canonicalize(confirm).is_ok_and(|c| c == abs));
     if !confirmed {
-        return Err(format!(
-            "confirmation mismatch: pass the file path back as confirm to delete {}",
-            abs.display()
-        ));
+        return Err(if confirm.is_empty() {
+            format!(
+                "confirm needed: call delete again with confirm set to {}",
+                abs.display()
+            )
+        } else {
+            format!(
+                "confirm must be the file's absolute path: {}",
+                abs.display()
+            )
+        });
     }
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
@@ -351,8 +358,22 @@ mod tests {
     fn trash_requires_matching_confirm() {
         let (id, dir) = grant_tmp("confirm");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
+        let abs = resolve_in(&id, "a.tex")
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        // The first call asks for the confirm, naming the value to pass.
+        let ask = trash_file(&id, "a.tex", "").unwrap_err();
+        assert!(
+            ask.starts_with("confirm needed") && ask.ends_with(&abs),
+            "{ask}"
+        );
+        let wrong = trash_file(&id, "a.tex", "a.tex").unwrap_err();
+        assert!(
+            wrong.contains("absolute path") && wrong.ends_with(&abs),
+            "{wrong}"
+        );
         assert!(trash_file(&id, "a.tex", "wrong").is_err());
-        assert!(trash_file(&id, "a.tex", "a.tex").is_err());
         assert!(dir.join("a.tex").exists());
     }
 
