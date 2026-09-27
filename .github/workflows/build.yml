@@ -3,8 +3,10 @@
 # Windows NSIS installer. Unsigned apart from macOS ad-hoc signing. Runs on
 # pull requests so a PR proves all three build; release.yml calls it.
 # Each job then installs what it built the way a user would, compiles a page
-# through the installed maleficium-mcp (e2e/mcp-compile-smoke.py), checks the
-# app stays up, and runs the Rust and vitest suites on that OS.
+# through the installed maleficium-mcp (e2e/mcp-compile-smoke.py), launches the
+# app and requires its first-run welcome open in the event log
+# (e2e/launch-events-check.py), screenshots it (macOS, Windows: uploaded as
+# screenshot-* artifacts), and runs the Rust and vitest suites on that OS.
 name: build
 
 on:
@@ -89,10 +91,23 @@ jobs:
           python3 e2e/mcp-compile-smoke.py "$bin/maleficium-mcp" "$RUNNER_TEMP/doc"
           main=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
           "$bin/$main" >"$RUNNER_TEMP/launch.log" 2>&1 & pid=$!
-          sleep 20
+          ok=0
+          python3 e2e/launch-events-check.py \
+            "$HOME/Library/Application Support/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" 60 || ok=$?
+          sleep 5
+          mkdir -p "$RUNNER_TEMP/shots"
+          screencapture -x "$RUNNER_TEMP/shots/macos-${{ matrix.arch }}.png" || echo "smoke: no screenshot"
+          [ "$ok" -eq 0 ] || { cat "$RUNNER_TEMP/launch.log"; kill "$pid"; exit 1; }
           kill -0 "$pid" || { echo "smoke: FAIL app exited early"; cat "$RUNNER_TEMP/launch.log"; exit 1; }
           kill "$pid"
-          echo "smoke: launch ok (alive 20s)"
+          echo "smoke: launch ok"
+      - name: Upload launch screenshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshot-macos-${{ matrix.arch }}
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: ignore
       - name: Rust tests
         run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
       - name: Frontend tests
@@ -145,10 +160,30 @@ jobs:
           python e2e/mcp-compile-smoke.py (Join-Path $dir 'maleficium-mcp.exe') (Join-Path $env:RUNNER_TEMP 'doc')
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $app = Start-Process -FilePath (Join-Path $dir 'Maleficium.exe') -PassThru
-          Start-Sleep 20
+          $events = Join-Path $env:APPDATA 'io.github.wahahayes.maleficium\maleficium-log\events.jsonl'
+          python e2e/launch-events-check.py $events 60
+          $ok = $LASTEXITCODE -eq 0
+          Start-Sleep 5
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $shots = Join-Path $env:RUNNER_TEMP 'shots'
+            New-Item -ItemType Directory -Force $shots | Out-Null
+            $bmp.Save((Join-Path $shots 'windows-x86_64.png'))
+          } catch { "smoke: no screenshot ($_)" }
+          if (-not $ok) { Stop-Process -Id $app.Id -ErrorAction SilentlyContinue; exit 1 }
           if ($app.HasExited) { throw "smoke: FAIL app exited early ($($app.ExitCode))" }
           Stop-Process -Id $app.Id
-          'smoke: launch ok (alive 20s)'
+          'smoke: launch ok'
+      - name: Upload launch screenshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshot-windows-x86_64
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: ignore
       - name: Rust tests
         run: cargo test --workspace --no-fail-fast --manifest-path src-tauri/Cargo.toml
       - name: Frontend tests
