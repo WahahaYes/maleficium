@@ -29,6 +29,8 @@ Manual only: it spends model credits. See e2e/README.md.
 """
 import argparse, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 
+from mcp_client import McpClient
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 TEMPLATES = os.path.join(ROOT, "src-tauri", "templates")
@@ -78,42 +80,21 @@ class Server:
         return env
 
 
-class Mcp:
-    """A scripted JSON-RPC client over the server's stdio (oracles, warming)."""
+class Mcp(McpClient):
+    """A scripted MCP client for oracles and cache warming."""
 
     def __init__(self, server, home):
-        self.p = subprocess.Popen(server.cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, text=True, bufsize=1, env=server.environ(home))
-        self.n = 0
-        self.send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                 "clientInfo": {"name": "agent-run", "version": "0"}})
-        self.p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
-        self.p.stdin.flush()
-
-    def send(self, method, params):
-        self.n += 1
-        self.p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": self.n, "method": method, "params": params}) + "\n")
-        self.p.stdin.flush()
-        while True:
-            line = self.p.stdout.readline()
-            if not line:
-                raise RuntimeError("server exited")
-            msg = json.loads(line)
-            if msg.get("id") == self.n:
-                return msg
+        super().__init__(server.cmd, "agent-run", env=server.environ(home), stderr=subprocess.DEVNULL)
 
     def call(self, name, args):
         """(ok, structuredContent or error text)"""
-        r = self.send("tools/call", {"name": name, "arguments": args})["result"]
-        if r.get("isError"):
-            return False, "".join(c.get("text", "") for c in r.get("content", []))
-        return True, r.get("structuredContent")
+        return self.tool(name, args)
 
     def list_tools(self):
         """Every tool name the server actually advertises, read from the live
         server rather than hardcoded, so the allowlist never drifts from the
         real MCP surface."""
-        return [t["name"] for t in self.send("tools/list", {})["result"]["tools"]]
+        return [t["name"] for t in self.request("tools/list", {})["result"]["tools"]]
 
     def compile(self, root_id, rel, timeout=600):
         ok, job = self.call("compile_run", {"root_id": root_id, "rel": rel})
@@ -129,8 +110,7 @@ class Mcp:
 
     def close(self):
         try:
-            self.p.stdin.close()
-            self.p.wait(timeout=20)
+            super().close(timeout=20)
         except Exception:
             self.p.kill()
 
