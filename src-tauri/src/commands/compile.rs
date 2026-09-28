@@ -144,6 +144,16 @@ pub fn output_stamp(
     core::output_stamp(&cx, &root_id, &main_rel)
 }
 
+/// The compiled pdf's path, or `None` before any compile left one.
+#[tauri::command]
+pub fn output_pdf(
+    cx: State<'_, Core>,
+    root_id: String,
+    main_rel: String,
+) -> Result<Option<String>, String> {
+    core::output_pdf(&cx, &root_id, &main_rel)
+}
+
 /// Copy the compiled pdf to `dest` (absolute, outside the project).
 #[tauri::command]
 pub fn export_pdf(
