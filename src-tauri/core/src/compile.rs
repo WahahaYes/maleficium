@@ -1,9 +1,12 @@
 //! Compile jobs against explicit session roots: each job runs the engine on
 //! a worker thread and is polled or cancelled by id.
 
+use crate::Core;
+
 use std::collections::HashMap;
 use std::process::Child;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use maleficium_structure::{MissingDependency, MissingReason};
 
@@ -54,18 +57,17 @@ struct LiveJob {
     done_rx: Option<std::sync::mpsc::Receiver<JobRecord>>,
 }
 
-static JOBS: OnceLock<Mutex<HashMap<String, LiveJob>>> = OnceLock::new();
-static NEXT_ID: OnceLock<Mutex<u64>> = OnceLock::new();
-
-fn jobs() -> &'static Mutex<HashMap<String, LiveJob>> {
-    JOBS.get_or_init(|| Mutex::new(HashMap::new()))
+/// Compile jobs by id.
+#[derive(Default)]
+pub(crate) struct Jobs {
+    live: Mutex<HashMap<String, LiveJob>>,
+    next: AtomicU64,
 }
 
-fn next_id() -> String {
-    let lock = NEXT_ID.get_or_init(|| Mutex::new(0));
-    let mut n = lock.lock().unwrap();
-    *n += 1;
-    format!("job-{}", *n)
+impl Jobs {
+    fn next_id(&self) -> String {
+        format!("job-{}", self.next.fetch_add(1, Ordering::Relaxed) + 1)
+    }
 }
 
 /// The failure message: the first 500 bytes of the last run's stderr, or
@@ -108,13 +110,19 @@ pub fn failure_text(c: &engine::Compiled) -> String {
 /// Keep what one compile showed: its engine log, and what it says about
 /// the project's offline readiness. Best effort: a failed write only costs
 /// the record, never the compile result.
-pub fn settle(root_id: &str, main_rel: &str, out: &super::MainOutputs, c: &engine::Compiled) {
+pub fn settle(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    out: &super::MainOutputs,
+    c: &engine::Compiled,
+) {
     let lines = c.texts();
     super::write_engine_log(&super::log_file(&out.outdir, &out.main_file), &lines);
-    let Ok(root) = super::fs::session_root(root_id) else {
+    let Ok(root) = super::fs::session_root(cx, root_id) else {
         return;
     };
-    let revision = super::structure::file_graph(root_id, main_rel)
+    let revision = super::structure::file_graph(cx, root_id, main_rel)
         .ok()
         .map(|g| g.revision);
     let outcome = readiness::Outcome {
@@ -132,8 +140,8 @@ pub fn settle(root_id: &str, main_rel: &str, out: &super::MainOutputs, c: &engin
 
 /// A project's offline readiness from its record, the engine cache, and
 /// this machine's tools and fonts.
-pub fn offline_readiness(root_id: &str) -> Result<OfflineReadiness, String> {
-    let root = super::fs::session_root(root_id)?;
+pub fn offline_readiness(cx: &Core, root_id: &str) -> Result<OfflineReadiness, String> {
+    let root = super::fs::session_root(cx, root_id)?;
     Ok(readiness::assess(
         readiness::load(&root).as_ref(),
         &engine::check_digest(&engine::cache_dir()),
@@ -144,17 +152,23 @@ pub fn offline_readiness(root_id: &str) -> Result<OfflineReadiness, String> {
 
 /// Start a compile job: resolves paths, then runs the engine on a worker
 /// thread. Returns the job id immediately; poll for the record.
-pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Result<String, String> {
-    let abs = super::fs::resolve_in(root_id, rel)?;
+pub fn run(
+    cx: &Core,
+    root_id: &str,
+    rel: &str,
+    networked: bool,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    let abs = super::fs::resolve_in(cx, root_id, rel)?;
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
     }
     let out = super::main_outputs(&abs)?;
 
-    let id = next_id();
+    let id = cx.jobs().next_id();
     let child = Arc::new(Mutex::new(None));
     let (tx, rx) = std::sync::mpsc::channel();
-    jobs().lock().unwrap().insert(
+    cx.jobs().live.lock().unwrap().insert(
         id.clone(),
         LiveJob {
             child: child.clone(),
@@ -166,9 +180,11 @@ pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Resu
 
     let job_id = id.clone();
     let (root_id, rel) = (root_id.to_string(), rel.to_string());
+    let cx = cx.clone();
     std::thread::spawn(move || {
+        let cx = &cx;
         let mut on_line = |l: &maleficium_events::CompileLine| {
-            if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
+            if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {
                 job.lines.push(l.text.clone());
             }
         };
@@ -181,9 +197,11 @@ pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Resu
                 missing: None,
             },
             Ok(c) => {
-                settle(&root_id, &rel, &out, &c);
+                settle(cx, &root_id, &rel, &out, &c);
                 // The record keeps the whole stream: every run and status line.
-                let lines = jobs()
+                let lines = cx
+                    .jobs()
+                    .live
                     .lock()
                     .unwrap()
                     .get(&job_id)
@@ -213,7 +231,7 @@ pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Resu
                 }
             }
         };
-        if let Some(job) = jobs().lock().unwrap().get_mut(&job_id) {
+        if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {
             job.lines = record.lines.clone();
             if let Some(tx) = job.done_tx.take() {
                 let _ = tx.send(record);
@@ -226,8 +244,8 @@ pub fn run(root_id: &str, rel: &str, networked: bool, timeout_secs: u64) -> Resu
 
 /// Non-blocking poll: running jobs report collected lines so far; finished
 /// jobs report the final record.
-pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
-    let mut guard = jobs().lock().unwrap();
+pub fn poll(cx: &Core, job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
+    let mut guard = cx.jobs().live.lock().unwrap();
     let job = guard
         .get_mut(job_id)
         .ok_or_else(|| format!("unknown job: {}", job_id))?;
@@ -264,8 +282,8 @@ pub fn poll(job_id: &str, tail_lines: usize) -> Result<JobRecord, String> {
 }
 
 /// Cancel a running job: takes the child, kills + reaps it.
-pub fn cancel(job_id: &str) -> Result<String, String> {
-    let mut guard = jobs().lock().unwrap();
+pub fn cancel(cx: &Core, job_id: &str) -> Result<String, String> {
+    let mut guard = cx.jobs().live.lock().unwrap();
     let job = guard
         .get_mut(job_id)
         .ok_or_else(|| format!("unknown job: {}", job_id))?;
@@ -278,12 +296,6 @@ pub fn cancel(job_id: &str) -> Result<String, String> {
         }
         None => Err(String::from("nothing to cancel")),
     }
-}
-
-/// Test-only: drop all job state between tests.
-#[cfg(test)]
-pub fn clear_jobs() {
-    jobs().lock().unwrap().clear();
 }
 
 #[cfg(test)]
@@ -338,26 +350,26 @@ mod tests {
 
     #[test]
     fn poll_unknown_job_fails() {
-        clear_jobs();
-        assert!(poll("job-404", 10).is_err());
+        let cx = &Core::default();
+        assert!(poll(cx, "job-404", 10).is_err());
     }
 
     #[test]
     fn cancel_unknown_job_fails() {
-        clear_jobs();
-        assert!(cancel("job-404").is_err());
+        let cx = &Core::default();
+        assert!(cancel(cx, "job-404").is_err());
     }
 
     #[test]
     fn run_rejects_outside_root() {
-        clear_jobs();
+        let cx = &Core::default();
         let dir = crate::test_scratch::dir("job");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
-        super::super::fs::grant_root("job-escape", &canon.to_string_lossy()).unwrap();
+        super::super::fs::grant_root(cx, "job-escape", &canon.to_string_lossy()).unwrap();
         for bad in crate::test_scratch::escapes() {
-            assert!(run("job-escape", bad, false, 5).is_err(), "{bad}");
+            assert!(run(cx, "job-escape", bad, false, 5).is_err(), "{bad}");
         }
     }
 }

@@ -1,7 +1,9 @@
 //! The runtime project-scope grant. Input validation lives in
 //! `maleficium_core::guard`.
 
+use maleficium_core::Core;
 use std::path::PathBuf;
+use tauri::State;
 
 use tauri::AppHandle;
 use tauri_plugin_fs::FsExt;
@@ -38,15 +40,19 @@ fn allow_granted(app: &AppHandle, canon: PathBuf, root_id: String) -> Result<Pro
 /// unconditional code path for every open route (dialog pick, recent,
 /// restore, preset).
 #[tauri::command]
-pub fn grant_project_access(app: AppHandle, root: String) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = maleficium_core::grant_project(&root)?;
+pub fn grant_project_access(
+    cx: State<'_, Core>,
+    app: AppHandle,
+    root: String,
+) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = maleficium_core::grant_project(&cx, &root)?;
     allow_granted(&app, canon, root_id)
 }
 
 /// Grant the backend-owned scratch root that untitled documents compile in.
 #[tauri::command]
-pub fn grant_untitled_access(app: AppHandle) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = maleficium_core::grant_untitled()?;
+pub fn grant_untitled_access(cx: State<'_, Core>, app: AppHandle) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = maleficium_core::grant_untitled(&cx)?;
     allow_granted(&app, canon, root_id)
 }
 
@@ -71,7 +77,8 @@ mod tests {
         assert_eq!(maleficium_core::hash_root("/home/josé/thèse"), "53bf67b2");
         let dir = scratch("non-ascii").join("josé").join("thèse");
         fs::create_dir_all(&dir).unwrap();
-        let (canon, root_id) = maleficium_core::grant_project(&dir.to_string_lossy()).unwrap();
+        let cx = &Core::default();
+        let (canon, root_id) = maleficium_core::grant_project(cx, &dir.to_string_lossy()).unwrap();
         assert_eq!(
             root_id,
             maleficium_core::hash_root(&canon.to_string_lossy())

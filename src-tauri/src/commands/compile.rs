@@ -1,3 +1,4 @@
+use maleficium_core::Core;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
@@ -19,6 +20,7 @@ impl Default for CompileState {
 /// the window must keep painting its progress and accept Cancel meanwhile.
 #[tauri::command(async)]
 pub fn compile_tex(
+    cx: State<'_, Core>,
     app: AppHandle,
     state: State<'_, CompileState>,
     root_id: String,
@@ -27,7 +29,7 @@ pub fn compile_tex(
 ) -> Result<CompileReport, String> {
     // The main file resolves inside the session root; the engine runs in its
     // directory and writes to the app-cache outdir derived from it.
-    let out = core::outputs_of(&root_id, &main_rel)?;
+    let out = core::outputs_of(&cx, &root_id, &main_rel)?;
     let _ = app.emit(
         "compile-line",
         CompileLine {
@@ -62,7 +64,7 @@ pub fn compile_tex(
             })
         }
     };
-    core::compile::settle(&root_id, &main_rel, &out, &c);
+    core::compile::settle(&cx, &root_id, &main_rel, &out, &c);
     let failed = |failure, message| CompileReport {
         pdf_url: None,
         failure: Some(failure),
@@ -108,13 +110,17 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
 
 /// Dependency checks over the saved document from `main_rel`, before compiling.
 #[tauri::command]
-pub fn precompile_checks(root_id: String, main_rel: String) -> Result<Precheck, String> {
-    core::structure::precompile_checks(&root_id, &main_rel)
+pub fn precompile_checks(
+    cx: State<'_, Core>,
+    root_id: String,
+    main_rel: String,
+) -> Result<Precheck, String> {
+    core::structure::precompile_checks(&cx, &root_id, &main_rel)
 }
 
 #[tauri::command]
-pub fn offline_readiness(root_id: String) -> Result<OfflineReadiness, String> {
-    core::compile::offline_readiness(&root_id)
+pub fn offline_readiness(cx: State<'_, Core>, root_id: String) -> Result<OfflineReadiness, String> {
+    core::compile::offline_readiness(&cx, &root_id)
 }
 
 /// The last compile's problems, as the MCP diagnostics tool reports them:
@@ -122,42 +128,57 @@ pub fn offline_readiness(root_id: String) -> Result<OfflineReadiness, String> {
 /// citations, duplicate labels), root-relative.
 #[tauri::command(async)]
 pub fn compile_diagnostics(
+    cx: State<'_, Core>,
     root_id: String,
     main_rel: String,
 ) -> Result<Vec<maleficium_structure::Diagnostic>, String> {
-    Ok(core::structure::diagnostics(&root_id, &main_rel, 100)?.diagnostics)
+    Ok(core::structure::diagnostics(&cx, &root_id, &main_rel, 100)?.diagnostics)
 }
 
 #[tauri::command]
 pub fn output_stamp(
+    cx: State<'_, Core>,
     root_id: String,
     main_rel: String,
 ) -> Result<Option<core::OutputStamp>, String> {
-    core::output_stamp(&root_id, &main_rel)
+    core::output_stamp(&cx, &root_id, &main_rel)
 }
 
 /// Copy the compiled pdf to `dest` (absolute, outside the project).
 #[tauri::command]
 pub fn export_pdf(
+    cx: State<'_, Core>,
     root_id: String,
     main_rel: String,
     dest: String,
 ) -> Result<core::export::Exported, String> {
-    core::export::export_pdf(&root_id, &main_rel, &dest)
+    core::export::export_pdf(&cx, &root_id, &main_rel, &dest)
 }
 
 /// Zip the project's sources to `dest` (absolute, outside the project).
 #[tauri::command(async)]
-pub fn export_zip(root_id: String, dest: String) -> Result<core::export::Exported, String> {
-    core::export::export_zip(&root_id, &dest)
+pub fn export_zip(
+    cx: State<'_, Core>,
+    root_id: String,
+    dest: String,
+) -> Result<core::export::Exported, String> {
+    core::export::export_zip(&cx, &root_id, &dest)
 }
 
 #[tauri::command]
-pub fn outputs_fresh(root_id: String, main_rel: String) -> Result<bool, String> {
-    core::outputs_fresh(&root_id, &main_rel)
+pub fn outputs_fresh(
+    cx: State<'_, Core>,
+    root_id: String,
+    main_rel: String,
+) -> Result<bool, String> {
+    core::outputs_fresh(&cx, &root_id, &main_rel)
 }
 
 #[tauri::command]
-pub fn clean_outputs(root_id: String, main_rel: String) -> Result<usize, String> {
-    core::clean_outputs(&root_id, &main_rel)
+pub fn clean_outputs(
+    cx: State<'_, Core>,
+    root_id: String,
+    main_rel: String,
+) -> Result<usize, String> {
+    core::clean_outputs(&cx, &root_id, &main_rel)
 }

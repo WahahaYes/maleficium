@@ -2,6 +2,8 @@
 //! user's own under app data. Instantiating writes one new project folder;
 //! saving or importing a template writes only under app data.
 
+use crate::Core;
+
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -256,10 +258,10 @@ fn store_template(base: &Path, src: &Path, info: TemplateInfo) -> Result<Templat
 }
 
 /// Save a granted project as a user template.
-pub fn save_project(root_id: &str, info: TemplateInfo) -> Result<TemplateInfo, String> {
+pub fn save_project(cx: &Core, root_id: &str, info: TemplateInfo) -> Result<TemplateInfo, String> {
     store_template(
         &super::data_base_dir(),
-        &super::fs::session_root(root_id)?,
+        &super::fs::session_root(cx, root_id)?,
         info,
     )
 }
