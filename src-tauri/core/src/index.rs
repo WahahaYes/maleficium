@@ -3,9 +3,11 @@
 //! before each read (processes without a watcher), with unsaved buffers
 //! laid over it by the app. Lives in memory; nothing is written anywhere.
 
+use crate::Core;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use maleficium_index::{Disk, ProjectIndex, Unindexed};
@@ -33,12 +35,12 @@ pub struct Live {
     pub truncated: usize,
 }
 
-type Registry = Mutex<HashMap<String, Arc<Mutex<Live>>>>;
+/// Each session root's live index.
+#[derive(Default)]
+pub(crate) struct Indexes(Mutex<HashMap<String, Arc<Mutex<Live>>>>);
 
-static LIVE: OnceLock<Registry> = OnceLock::new();
-
-fn live_of(root_id: &str) -> Arc<Mutex<Live>> {
-    let mut reg = LIVE.get_or_init(Default::default).lock().unwrap();
+fn live_of(cx: &Core, root_id: &str) -> Arc<Mutex<Live>> {
+    let mut reg = cx.indexes().0.lock().unwrap();
     reg.entry(root_id.to_string())
         .or_insert_with(|| {
             Arc::new(Mutex::new(Live {
@@ -212,9 +214,9 @@ impl Live {
 
 /// Run `f` on the root's index, current as of now: built on first use, and
 /// stat-walked first unless a watcher keeps it current.
-pub fn with<T>(root_id: &str, f: impl FnOnce(&Live) -> T) -> Result<T, String> {
-    let root = super::fs::session_root(root_id)?;
-    let live = live_of(root_id);
+pub fn with<T>(cx: &Core, root_id: &str, f: impl FnOnce(&Live) -> T) -> Result<T, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let live = live_of(cx, root_id);
     let mut l = live.lock().map_err(|_| "index lock poisoned".to_string())?;
     if !l.built || !l.watched {
         l.walk(&root);
@@ -224,9 +226,9 @@ pub fn with<T>(root_id: &str, f: impl FnOnce(&Live) -> T) -> Result<T, String> {
 
 /// Build (or rebuild) the root's index now, with no overlays: the opener
 /// lays its buffers over it afresh. Returns the files listed.
-pub fn open(root_id: &str) -> Result<usize, String> {
-    let root = super::fs::session_root(root_id)?;
-    let live = live_of(root_id);
+pub fn open(cx: &Core, root_id: &str) -> Result<usize, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let live = live_of(cx, root_id);
     let mut l = live.lock().map_err(|_| "index lock poisoned".to_string())?;
     let overlays: Vec<String> = l.index.overlays().map(str::to_string).collect();
     for rel in overlays {
@@ -237,8 +239,8 @@ pub fn open(root_id: &str) -> Result<usize, String> {
 }
 
 /// A watcher now reports this root's changes (`true`), or stopped (`false`).
-pub fn set_watched(root_id: &str, watched: bool) -> Result<(), String> {
-    let live = live_of(root_id);
+pub fn set_watched(cx: &Core, root_id: &str, watched: bool) -> Result<(), String> {
+    let live = live_of(cx, root_id);
     live.lock()
         .map_err(|_| "index lock poisoned".to_string())?
         .watched = watched;
@@ -246,8 +248,8 @@ pub fn set_watched(root_id: &str, watched: bool) -> Result<(), String> {
 }
 
 /// Apply a batch of changed paths (absolute or root-relative).
-pub fn touch(root_id: &str, paths: &[String]) -> Result<(), String> {
-    let root = super::fs::session_root(root_id)?;
+pub fn touch(cx: &Core, root_id: &str, paths: &[String]) -> Result<(), String> {
+    let root = super::fs::session_root(cx, root_id)?;
     let rels: Vec<String> = paths
         .iter()
         .filter_map(|p| {
@@ -259,7 +261,7 @@ pub fn touch(root_id: &str, paths: &[String]) -> Result<(), String> {
             }
         })
         .collect();
-    let live = live_of(root_id);
+    let live = live_of(cx, root_id);
     let mut l = live.lock().map_err(|_| "index lock poisoned".to_string())?;
     if !l.built {
         l.walk(&root);
@@ -270,7 +272,7 @@ pub fn touch(root_id: &str, paths: &[String]) -> Result<(), String> {
 }
 
 /// Lay an unsaved buffer over `rel`, or lift it (`None`).
-pub fn overlay(root_id: &str, rel: &str, text: Option<String>) -> Result<(), String> {
+pub fn overlay(cx: &Core, root_id: &str, rel: &str, text: Option<String>) -> Result<(), String> {
     crate::guard::reject_empty_nul(rel)?;
     // Components, not a `/` split: on Windows `a\..\..` climbs too.
     let escapes = Path::new(rel)
@@ -279,7 +281,7 @@ pub fn overlay(root_id: &str, rel: &str, text: Option<String>) -> Result<(), Str
     if escapes {
         return Err(format!("forbidden path (outside project): {}", rel));
     }
-    let live = live_of(root_id);
+    let live = live_of(cx, root_id);
     live.lock()
         .map_err(|_| "index lock poisoned".to_string())?
         .index
@@ -293,7 +295,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
+    fn project(cx: &Core, name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("ix-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -304,17 +306,22 @@ mod tests {
         }
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("ix-{}", name);
-        super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        super::super::grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
-    fn rels(id: &str) -> Vec<String> {
-        with(id, |l| l.index.iter().map(|f| f.rel.to_string()).collect()).unwrap()
+    fn rels(cx: &Core, id: &str) -> Vec<String> {
+        with(cx, id, |l| {
+            l.index.iter().map(|f| f.rel.to_string()).collect()
+        })
+        .unwrap()
     }
 
     #[test]
     fn walk_lists_files_and_skips_hidden_ones() {
+        let cx = &Core::default();
         let (id, _) = project(
+            cx,
             "walk",
             &[
                 ("main.tex", "x"),
@@ -325,8 +332,8 @@ mod tests {
                 ("out/main.pdf", "pdf"),
             ],
         );
-        assert_eq!(rels(&id), ["ch/a.tex", "fig.png", "main.tex"]);
-        with(&id, |l| {
+        assert_eq!(rels(cx, &id), ["ch/a.tex", "fig.png", "main.tex"]);
+        with(cx, &id, |l| {
             assert_eq!(
                 l.index.get("fig.png").unwrap().unindexed,
                 Some(Unindexed::NotText)
@@ -338,61 +345,65 @@ mod tests {
 
     #[test]
     fn unwatched_reads_see_disk_changes() {
-        let (id, dir) = project("stat", &[("a.tex", "one")]);
-        assert_eq!(rels(&id), ["a.tex"]);
+        let cx = &Core::default();
+        let (id, dir) = project(cx, "stat", &[("a.tex", "one")]);
+        assert_eq!(rels(cx, &id), ["a.tex"]);
         std::fs::write(dir.join("a.tex"), "two, longer").unwrap();
         std::fs::write(dir.join("b.tex"), "new").unwrap();
-        with(&id, |l| {
+        with(cx, &id, |l| {
             assert_eq!(l.index.get("a.tex").unwrap().text, Some("two, longer"))
         })
         .unwrap();
         std::fs::remove_file(dir.join("b.tex")).unwrap();
-        assert_eq!(rels(&id), ["a.tex"]);
+        assert_eq!(rels(cx, &id), ["a.tex"]);
     }
 
     #[test]
     fn watched_roots_apply_change_batches() {
-        let (id, dir) = project("watch", &[("a.tex", "one"), ("d/x.tex", "x")]);
-        open(&id).unwrap();
-        set_watched(&id, true).unwrap();
+        let cx = &Core::default();
+        let (id, dir) = project(cx, "watch", &[("a.tex", "one"), ("d/x.tex", "x")]);
+        open(cx, &id).unwrap();
+        set_watched(cx, &id, true).unwrap();
         std::fs::write(dir.join("a.tex"), "changed!").unwrap();
         // No batch yet: a watched index is not re-walked.
-        with(&id, |l| {
+        with(cx, &id, |l| {
             assert_eq!(l.index.get("a.tex").unwrap().text, Some("one"))
         })
         .unwrap();
-        touch(&id, &[dir.join("a.tex").to_string_lossy().into_owned()]).unwrap();
-        with(&id, |l| {
+        touch(cx, &id, &[dir.join("a.tex").to_string_lossy().into_owned()]).unwrap();
+        with(cx, &id, |l| {
             assert_eq!(l.index.get("a.tex").unwrap().text, Some("changed!"))
         })
         .unwrap();
         std::fs::remove_dir_all(dir.join("d")).unwrap();
-        touch(&id, &["d".to_string()]).unwrap();
-        assert_eq!(rels(&id), ["a.tex"]);
+        touch(cx, &id, &["d".to_string()]).unwrap();
+        assert_eq!(rels(cx, &id), ["a.tex"]);
         std::fs::create_dir_all(dir.join("e/f")).unwrap();
         std::fs::write(dir.join("e/f/g.tex"), "g").unwrap();
-        touch(&id, &["e".to_string()]).unwrap();
-        assert_eq!(rels(&id), ["a.tex", "e/f/g.tex"]);
+        touch(cx, &id, &["e".to_string()]).unwrap();
+        assert_eq!(rels(cx, &id), ["a.tex", "e/f/g.tex"]);
     }
 
     #[test]
     fn overlays_are_confined_to_the_root() {
-        let (id, _) = project("overlay", &[("a.tex", "disk")]);
-        overlay(&id, "a.tex", Some("buf".into())).unwrap();
-        with(&id, |l| {
+        let cx = &Core::default();
+        let (id, _) = project(cx, "overlay", &[("a.tex", "disk")]);
+        overlay(cx, &id, "a.tex", Some("buf".into())).unwrap();
+        with(cx, &id, |l| {
             assert_eq!(l.index.get("a.tex").unwrap().text, Some("buf"))
         })
         .unwrap();
         for bad in crate::test_scratch::escapes() {
-            assert!(overlay(&id, bad, Some("y".into())).is_err(), "{bad}");
+            assert!(overlay(cx, &id, bad, Some("y".into())).is_err(), "{bad}");
         }
     }
 
     #[test]
     fn non_utf8_text_is_listed_without_text() {
-        let (id, dir) = project("utf8", &[]);
+        let cx = &Core::default();
+        let (id, dir) = project(cx, "utf8", &[]);
         std::fs::write(dir.join("bad.tex"), [0xff, 0xfe]).unwrap();
-        with(&id, |l| {
+        with(cx, &id, |l| {
             assert_eq!(
                 l.index.get("bad.tex").unwrap().unindexed,
                 Some(Unindexed::NotUtf8)
@@ -405,6 +416,7 @@ mod tests {
     /// present, a large real-world paper. Prints ms; loose caps.
     #[test]
     fn budget_cold_build() {
+        let cx = &Core::default();
         let dir = crate::test_scratch::dir("ix-budget");
         let _ = std::fs::remove_dir_all(&dir);
         for c in 0..30 {
@@ -419,12 +431,12 @@ mod tests {
             }
         }
         let canon = dunce::canonicalize(&dir).unwrap();
-        super::super::grant_root("ix-budget", &canon.to_string_lossy()).unwrap();
+        super::super::grant_root(cx, "ix-budget", &canon.to_string_lossy()).unwrap();
         let t = Instant::now();
-        let n = open("ix-budget").unwrap();
+        let n = open(cx, "ix-budget").unwrap();
         let cold = t.elapsed().as_millis();
         let t = Instant::now();
-        with("ix-budget", |l| l.index.maps().labels.len()).unwrap();
+        with(cx, "ix-budget", |l| l.index.maps().labels.len()).unwrap();
         let rewalk = t.elapsed().as_millis();
         println!(
             "index budget: synthetic {n} files cold {cold} ms, stat re-walk + maps {rewalk} ms"
@@ -436,9 +448,9 @@ mod tests {
 
         let tvcg = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../refs/TVCG_Paper_Ref");
         if let Ok(canon) = dunce::canonicalize(&tvcg) {
-            super::super::grant_root("ix-tvcg", &canon.to_string_lossy()).unwrap();
+            super::super::grant_root(cx, "ix-tvcg", &canon.to_string_lossy()).unwrap();
             let t = Instant::now();
-            let n = open("ix-tvcg").unwrap();
+            let n = open(cx, "ix-tvcg").unwrap();
             let ms = t.elapsed().as_millis();
             println!("index budget: TVCG ref {n} files cold {ms} ms");
             assert!(ms < 10_000, "TVCG cold build {ms} ms over the 10 s cap");

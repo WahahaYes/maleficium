@@ -3,6 +3,8 @@
 //! a main file and a source file by root-relative path; the pdf and outdir
 //! are derived here, and results cross back as root-relative paths.
 
+use crate::Core;
+
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -32,9 +34,9 @@ struct Query {
 }
 
 /// Resolve the main file inside the root and require its compiled output.
-fn query_for(root_id: &str, main_rel: &str) -> Result<Query, String> {
-    let root = super::fs::session_root(root_id)?;
-    let out = super::outputs_of(root_id, main_rel)?;
+fn query_for(cx: &Core, root_id: &str, main_rel: &str) -> Result<Query, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let out = super::outputs_of(cx, root_id, main_rel)?;
     if !out.outdir.join(&out.pdf_name).is_file() {
         return Err(format!("no compiled output for {}", main_rel));
     }
@@ -107,13 +109,14 @@ fn parse_inverse(text: &str, root: &Path, main_dir: &Path) -> InverseHit {
 
 /// Forward (editor → PDF): the page showing `line` of `tex_rel`.
 pub fn forward(
+    cx: &Core,
     root_id: &str,
     main_rel: &str,
     tex_rel: &str,
     line: u32,
 ) -> Result<ForwardHit, String> {
-    let q = query_for(root_id, main_rel)?;
-    let tex = super::fs::resolve_in(root_id, tex_rel)?;
+    let q = query_for(cx, root_id, main_rel)?;
+    let tex = super::fs::resolve_in(cx, root_id, tex_rel)?;
     // CWD=outdir with the bare pdf name: an absolute `-o` resolves the `-i`
     // tag against the wrong file table. The gz stores absolute Input paths.
     let text = run_sidecar(
@@ -131,13 +134,14 @@ pub fn forward(
 
 /// Inverse (PDF → editor): the source line at a position on `page`.
 pub fn inverse(
+    cx: &Core,
     root_id: &str,
     main_rel: &str,
     page: u32,
     x: f32,
     y: f32,
 ) -> Result<InverseHit, String> {
-    let q = query_for(root_id, main_rel)?;
+    let q = query_for(cx, root_id, main_rel)?;
     // The tool resolves `<pdf>.synctex.gz` relative to CWD.
     let text = run_sidecar(
         &q.outdir,
@@ -154,26 +158,27 @@ pub fn inverse(
 mod tests {
     use super::*;
 
-    fn grant_tmp(name: &str) -> (String, PathBuf) {
+    fn grant_tmp(cx: &Core, name: &str) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("sync-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("sync-{}", name);
-        crate::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        crate::fs::grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
     #[test]
     fn query_requires_a_compiled_main_inside_the_root() {
-        let (id, root) = grant_tmp("query");
+        let cx = &Core::default();
+        let (id, root) = grant_tmp(cx, "query");
         std::fs::write(root.join("main.tex"), "x").unwrap();
         for bad in crate::test_scratch::escapes() {
-            assert!(query_for(&id, bad).is_err(), "{bad}");
+            assert!(query_for(cx, &id, bad).is_err(), "{bad}");
         }
-        assert!(query_for(&id, "missing.tex").is_err());
-        assert!(query_for("unknown-root", "main.tex").is_err());
-        let err = query_for(&id, "main.tex").err().unwrap();
+        assert!(query_for(cx, &id, "missing.tex").is_err());
+        assert!(query_for(cx, "unknown-root", "main.tex").is_err());
+        let err = query_for(cx, &id, "main.tex").err().unwrap();
         assert!(err.contains("no compiled output"), "{}", err);
     }
 
@@ -193,7 +198,8 @@ mod tests {
 
     #[test]
     fn inverse_parse_returns_root_relative_paths() {
-        let (_, root) = grant_tmp("inv");
+        let cx = &Core::default();
+        let (_, root) = grant_tmp(cx, "inv");
         std::fs::create_dir_all(root.join("ch")).unwrap();
         std::fs::write(root.join("ch/a.tex"), "x").unwrap();
         let abs = root.join("ch/a.tex");

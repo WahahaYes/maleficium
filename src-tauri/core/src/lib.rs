@@ -31,8 +31,38 @@ pub use outputs::{
 };
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 
+/// Session state one adapter owns: granted roots, compile jobs, live
+/// indexes, and held replace plans. Clones share the same state, so a
+/// worker thread can carry one. Each test builds its own.
+#[derive(Clone, Default)]
+pub struct Core(Arc<State>);
+
+#[derive(Default)]
+struct State {
+    sessions: fs::Sessions,
+    jobs: compile::Jobs,
+    indexes: index::Indexes,
+    plans: replace::Plans,
+}
+
+impl Core {
+    pub(crate) fn sessions(&self) -> &fs::Sessions {
+        &self.0.sessions
+    }
+    pub(crate) fn jobs(&self) -> &compile::Jobs {
+        &self.0.jobs
+    }
+    pub(crate) fn indexes(&self) -> &index::Indexes {
+        &self.0.indexes
+    }
+    pub(crate) fn plans(&self) -> &replace::Plans {
+        &self.0.plans
+    }
+}
+
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How a waited child resolved: exited (with status), killed after the
@@ -301,10 +331,11 @@ mod tests {
 
     #[test]
     fn untitled_scratch_is_an_app_data_session_root() {
+        let cx = &Core::default();
         assert!(untitled_dir().ends_with("io.github.wahahayes.maleficium/maleficium-untitled"));
-        let (canon, id) = grant_untitled().unwrap();
+        let (canon, id) = grant_untitled(cx).unwrap();
         assert!(canon.is_dir());
-        assert_eq!(session_root(&id).unwrap(), canon);
+        assert_eq!(session_root(cx, &id).unwrap(), canon);
         assert!(!canon.starts_with(std::env::temp_dir()) || std::env::var("HOME").is_err());
     }
 

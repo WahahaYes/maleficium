@@ -7,6 +7,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(maleficium_core::Core::default())
         .manage(commands::compile::CompileState::default())
         .invoke_handler(tauri::generate_handler![
             commands::guard::grant_project_access,
