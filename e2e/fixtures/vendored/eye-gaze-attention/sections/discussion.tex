@@ -1,0 +1,21 @@
+\section{Discussion}
+
+%% Removing as this was just a summary paragraph
+
+% In this work, we explored the potential role of eye tracking in wearable contextual AI systems: as a signal to convey user attention relative to the physical world.  We benchmarked the ET signal quality requirements for a wearable system to accurately and reliably sense objects, which could then be conveyed to contextual AI models as current or historical context.  We then referenced gaze data alongside object labels to convey a user's scanpath history to a VLM, prototyping ET's role in aggregating user attention over time.  Our experiments show that prior gaze fixations (scanpath history) enhance the VLM's understanding of image contents, and are a strong prior signal for human object interaction.
+
+We expect that ET's value would become even more prominent in future models which are trained specifically for egocentric understanding and / or with eye gaze as a direct input~\cite{koorathota_attention_2023}.  Our findings, building on prior works~\cite{toyama_recognition_2012,  burlingham_scanpaths_2024}, evidence that human actions and gaze patterns display temporal dependencies contingent with previous actions, similar to the dependencies in written language.  If we can effectively convey the traces of human attention and actions, VLMs may become able to better infer current / future context based on the patterns present in prior behavior.
+
+Our ET signal quality benchmark measures the likelihood of sensing objects, but has little considerations of edge cases (such as very small or very far objects).  In the future, supplementary computations might aid the ability to place gaze on the correct object, possibly via contextual cues~\cite{bi_bayesian_2013} for error correction or additional sensors~\cite{wei_predicting_2023}.  These could alleviate ET sensor quality from becoming a bottleneck when using gaze to infer human attention, specifically in more challenging contexts such as outdoors, where objects tend to be much further.
+
+\subsection{Future Work}
+
+While the ADT dataset provided a platform for simulating gaze-aided querying~\cite{pan_adt_2023}, it is critical to explore the impacts of eye tracking in real contextual AI scenarios.  Prototypes leveraging point-in-time gaze have seen high user acceptance~\cite{konrad_gazegpt_2024, wang_gvoila_2024}, and the inclusion of temporal context is likely to better improve an agent's ability to infer context and disambiguate a user's queries.  Thus, user experience investigations are important future avenues to follow up.
+
+This work explored contextual inferences that could be made in short intervals lasting no longer than a few seconds, yet the information contained in larger time scales could also be invaluable for improving contextual AI agent understanding.  Larger scales could enable better inferences of the current situation, and pave the way towards implicit personalization of contextual AI assistants~\cite{pardini_role_2022}.
+
+\subsection{Conclusion}
+
+We investigated eye tracking signals' ability to improve multimodal agents' understanding of the physical world.  Our results suggest that for close by scenarios, such as active grabbing / touching of objects and gaze selection, current ET systems could consistently place fixations on objects and convey relevant information to VLM agents.  In our experiments, we saw direct benefits when adding scanpath history to queries. Given these findings, future contextual agents which receive signals about user attentive state may obtain a greater understanding about the world, and better align with user intent, improving the usability of such systems.
+
+% If we end up with room later during drafting / camera ready, add some discussion about other applications (ET context for robotic teleoperation is a primary one)
