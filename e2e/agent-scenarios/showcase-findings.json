@@ -1,0 +1,91 @@
+{
+  "id": "showcase-findings",
+  "about": "One prompt, no fixture damage: add a Findings section with an equation, a booktabs table, a TikZ figure and three citations, each cross-referenced from the text. A showcase of what one stated prompt can produce, not a repair or rename task.",
+  "template": "article",
+  "edits": [
+    {
+      "file": "references.bib",
+      "append": "\n@article{turing1950,\n  author  = {A. M. Turing},\n  title   = {Computing Machinery and Intelligence},\n  journal = {Mind},\n  volume  = {59},\n  number  = {236},\n  year    = {1950}\n}\n\n@article{shannon1948,\n  author  = {C. E. Shannon},\n  title   = {A Mathematical Theory of Communication},\n  journal = {Bell System Technical Journal},\n  volume  = {27},\n  year    = {1948}\n}\n"
+    }
+  ],
+  "solution": [
+    {
+      "file": "main.tex",
+      "find": "\\section{Conclusion}\n",
+      "replace": "\\section{Findings}\n\\label{sec:findings}\nThe error follows the closed form in Equation~\\eqref{eq:err},\nbased on the classic results of~\\cite{turing1950,shannon1948,knuth1984}.\n\\begin{equation}\n  \\label{eq:err}\n  \\varepsilon = \\frac{1}{\\sqrt{n}}\n\\end{equation}\nTable~\\ref{tab:findings} and Figure~\\ref{fig:findings} summarise it.\n\n\\begin{table}[h]\n  \\centering\n  \\begin{tabular}{lr}\n    \\toprule\n    $n$ & $\\varepsilon$ \\\\\n    \\midrule\n    10 & 0.316 \\\\\n    100 & 0.100 \\\\\n    \\bottomrule\n  \\end{tabular}\n  \\caption{Error against sample size.}\n  \\label{tab:findings}\n\\end{table}\n\n\\begin{figure}[h]\n  \\centering\n  \\begin{tikzpicture}\n    \\draw[->] (0,0) -- (4,0) node[right] {$n$};\n    \\draw[->] (0,0) -- (0,2.5) node[above] {$\\varepsilon$};\n    \\draw[thick, red] (0.2,2.2) .. controls (1.5,0.6) and (2.5,0.3) .. (4,0.1);\n  \\end{tikzpicture}\n  \\caption{Error falling off with sample size.}\n  \\label{fig:findings}\n\\end{figure}\n\n\\section{Conclusion}\n"
+    }
+  ],
+  "prompt": "In the LaTeX project at {project} (main file main.tex), add a new section titled \"Findings\" right before the Conclusion section. It must: (1) contain a numbered equation with a \\label that the section's own text refers back to with \\eqref or \\ref; (2) contain a table built with booktabs rules (\\toprule, \\midrule, \\bottomrule) with a \\caption and a \\label that the text refers to; (3) contain a figure drawn in TikZ (no external image files) with a \\caption and a \\label that the text refers to; (4) cite all three of these entries from references.bib: knuth1984, turing1950 and shannon1948. Make up whatever plausible numbers or content you like. Do not change references.bib or any other section. The document must compile with no errors and no undefined citations or references: use the maleficium MCP server to compile and check it, and edit files with your own file tools.",
+  "timeout_s": 600,
+  "oracles": [
+    {
+      "compiles": "main.tex"
+    },
+    {
+      "clean_log": "main.tex"
+    },
+    {
+      "outline_has": {
+        "file": "main.tex",
+        "titles": ["Introduction", "Method", "Results", "Findings", "Conclusion"],
+        "ordered": true
+      }
+    },
+    {
+      "section_matches": {
+        "file": "main.tex",
+        "title": "Findings",
+        "refs_own_label": true,
+        "patterns": [
+          "\\\\begin\\{equation\\}",
+          "\\\\label\\{[a-zA-Z0-9_:-]*eq[a-zA-Z0-9_:-]*\\}",
+          "\\\\begin\\{table\\*?\\}",
+          "\\\\toprule",
+          "\\\\midrule",
+          "\\\\bottomrule",
+          "\\\\begin\\{figure\\}",
+          "\\\\begin\\{tikzpicture\\}",
+          "\\\\caption\\{",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*knuth1984",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*turing1950",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*shannon1948"
+        ]
+      }
+    },
+    {
+      "count_equal": {
+        "file": "main.tex",
+        "patterns": ["\\\\begin\\{table\\*?\\}", "\\\\end\\{table\\*?\\}"]
+      }
+    },
+    {
+      "count_equal": {
+        "file": "main.tex",
+        "patterns": ["\\\\begin\\{figure\\}", "\\\\end\\{figure\\}"]
+      }
+    },
+    {
+      "count_equal": {
+        "file": "main.tex",
+        "patterns": ["\\\\begin\\{equation\\}", "\\\\end\\{equation\\}"]
+      }
+    },
+    {
+      "file_matches": {
+        "file": "main.tex",
+        "patterns": [
+          "\\\\label\\{sec:method\\}",
+          "\\\\label\\{tab:results\\}",
+          "\\\\label\\{fig:sketch\\}",
+          "\\\\cite\\{knuth1984\\}"
+        ]
+      }
+    },
+    {
+      "unchanged": ["references.bib"]
+    },
+    {
+      "footprint": null
+    }
+  ]
+}

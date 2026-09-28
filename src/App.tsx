@@ -48,7 +48,7 @@ import {
 } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
-import { onPdf, type PreviewDoc } from './lib/preview-bus';
+import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
@@ -220,7 +220,7 @@ export default function App({
         const cur = buffers.get(fileName);
         if (cur?.dirty) {
           try {
-            await saveTex(fileName, cur.value);
+            await saveTex(fileName, cur.value, cur.disk);
             ownWrites.wrote(fileName, cur.value);
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
@@ -468,30 +468,48 @@ export default function App({
       });
       return;
     }
-    if (hasDir(fileName)) {
-      const cur = buffers.get(fileName);
-      const text = cur?.value ?? tex;
-      await saveTex(fileName, text);
-      ownWrites.wrote(fileName, text);
-      setBuffers((b) => markSaved(b, fileName));
-      await recordRevision(fileName, text);
-      setLog('saved ' + fileName);
+    try {
+      if (hasDir(fileName)) {
+        const cur = buffers.get(fileName);
+        const text = cur?.value ?? tex;
+        await saveTex(fileName, text, cur?.disk);
+        ownWrites.wrote(fileName, text);
+        setBuffers((b) => markSaved(b, fileName));
+        await recordRevision(fileName, text);
+        setLog('saved ' + fileName);
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          actor: 'user',
+          message: 'saved ' + fileName,
+          event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
+        });
+      } else {
+        await saveTexToDisk(fileName, tex);
+        setLog('saved ' + fileName);
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          actor: 'user',
+          message: 'saved ' + fileName,
+          event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
+        });
+      }
+    } catch (e) {
+      // Refused (held for a conflict, or the file changed on disk) or failed:
+      // the buffer stays dirty, and the user is told instead of nothing happening.
+      setLog('save failed: ' + fileName);
       emit({
         scope: 'fs',
-        kind: 'success',
+        kind: 'error',
         actor: 'user',
-        message: 'saved ' + fileName,
-        event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
-      });
-    } else {
-      await saveTexToDisk(fileName, tex);
-      setLog('saved ' + fileName);
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        actor: 'user',
-        message: 'saved ' + fileName,
-        event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
+        message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+        event: {
+          action: 'file.save-failed',
+          path: fileName,
+          trigger: 'manual',
+          error: String(e).slice(0, 200),
+        },
       });
     }
   }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
@@ -502,7 +520,7 @@ export default function App({
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         ownWrites.wrote(fileName, cur.value);
-        saveTex(fileName, cur.value)
+        saveTex(fileName, cur.value, cur.disk)
           .then(async () => {
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
@@ -1313,6 +1331,8 @@ export default function App({
     </Box>
   );
 
+  const mainDoc =
+    mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
   const previewPane = (
     <Box
       sx={{
@@ -1326,6 +1346,7 @@ export default function App({
       <Preview
         pdfUrl={pdfUrl}
         stamp={previewDoc?.stamp ?? 0}
+        mainSource={mainDoc}
         pageNumber={pageNumber}
         onPage={setPageNumber}
         onSync={handleForwardSync}

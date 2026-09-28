@@ -7,6 +7,7 @@
 // own compile refreshes exactly once (through its own finish).
 
 import type { AppEvent } from './generated/events';
+import type { PreviewSource } from './preview-bus';
 
 export type OutputStamp = { mtimeMs: number; bytes: number };
 
@@ -38,4 +39,30 @@ export function onPoll(
   if (s.adopt) return { state: { ...s, seen: now, adopt: false }, reload: false };
   if (now == null || same(s.seen, now)) return { state: s, reload: false };
   return { state: { ...s, seen: now }, reload: true };
+}
+
+/**
+ * What the refresh poll watches: a document and the pdf it shows (null while
+ * nothing is shown), keyed so a change of target starts a fresh fold.
+ */
+export type WatchTarget = { key: string; source: PreviewSource; url: string | null };
+
+/**
+ * The shown document when there is one; otherwise the open project's main
+ * file, so a pdf that someone else compiles first (an agent over MCP, on a
+ * project this app never built) still reaches the preview.
+ */
+export function watchTarget(
+  shown: { url: string | null; source: PreviewSource | null } | null,
+  main: PreviewSource | null,
+): WatchTarget | null {
+  if (shown?.source && shown.url) {
+    return {
+      key: `${shown.source.rootId}:${shown.source.mainRel}`,
+      source: shown.source,
+      url: shown.url,
+    };
+  }
+  if (main) return { key: `${main.rootId}:${main.mainRel}`, source: main, url: null };
+  return null;
 }

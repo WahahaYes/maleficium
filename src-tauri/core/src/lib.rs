@@ -1,11 +1,13 @@
-//! Shared core behind the desktop commands and the MCP server: session
+//! Shared core behind every adapter (desktop commands, MCP server): session
 //! roots and fs ops, compile and engine outputs, SyncTeX, the project index,
-//! search and replace, structure, history, templates, and export.
+//! search and replace, structure, history, templates, and export. No Tauri
+//! dependency.
 
 pub mod compile;
 pub mod engine;
 pub mod export;
 pub mod fs;
+pub mod guard;
 pub mod history;
 pub mod index;
 pub mod outputs;
@@ -15,6 +17,8 @@ pub mod search;
 pub mod structure;
 pub mod synctex;
 pub mod templates;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_scratch;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
@@ -22,13 +26,43 @@ pub use fs::{
     session_root, trash_file, undo_trash,
 };
 pub use outputs::{
-    clean_outputs, engine_log, log_file, log_tail, output_stamp, outputs_fresh, outputs_of,
-    tex_log, tex_log_file, write_engine_log, OutputStamp,
+    clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp, outputs_fresh,
+    outputs_of, tex_log, tex_log_file, write_engine_log, OutputStamp,
 };
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 
+/// Session state one adapter owns: granted roots, compile jobs, live
+/// indexes, and held replace plans. Clones share the same state, so a
+/// worker thread can carry one. Each test builds its own.
+#[derive(Clone, Default)]
+pub struct Core(Arc<State>);
+
+#[derive(Default)]
+struct State {
+    sessions: fs::Sessions,
+    jobs: compile::Jobs,
+    indexes: index::Indexes,
+    plans: replace::Plans,
+}
+
+impl Core {
+    pub(crate) fn sessions(&self) -> &fs::Sessions {
+        &self.0.sessions
+    }
+    pub(crate) fn jobs(&self) -> &compile::Jobs {
+        &self.0.jobs
+    }
+    pub(crate) fn indexes(&self) -> &index::Indexes {
+        &self.0.indexes
+    }
+    pub(crate) fn plans(&self) -> &replace::Plans {
+        &self.0.plans
+    }
+}
+
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How a waited child resolved: exited (with status), killed after the
@@ -145,7 +179,7 @@ pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
         )
     })?;
     let exe = std::env::current_exe().ok();
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../binaries");
     find_sidecar(exe.as_deref().and_then(Path::parent), &dev, name, triple).ok_or_else(|| {
         format!(
             "bundled {} sidecar missing ({}-{}): run scripts/fetch-sidecars.sh",
@@ -297,10 +331,11 @@ mod tests {
 
     #[test]
     fn untitled_scratch_is_an_app_data_session_root() {
+        let cx = &Core::default();
         assert!(untitled_dir().ends_with("io.github.wahahayes.maleficium/maleficium-untitled"));
-        let (canon, id) = grant_untitled().unwrap();
+        let (canon, id) = grant_untitled(cx).unwrap();
         assert!(canon.is_dir());
-        assert_eq!(session_root(&id).unwrap(), canon);
+        assert_eq!(session_root(cx, &id).unwrap(), canon);
         assert!(!canon.starts_with(std::env::temp_dir()) || std::env::var("HOME").is_err());
     }
 

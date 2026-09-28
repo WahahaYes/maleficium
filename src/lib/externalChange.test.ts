@@ -61,4 +61,17 @@ describe('held writes', () => {
     await saveTex('/p/a.tex', 'mine');
     expect(disk.get('/p/a.tex')).toBe('mine');
   });
+
+  it('refuses to save over an outside edit the watcher has not reported yet', async () => {
+    disk.set('/p/b.tex', 'theirs');
+    await expect(saveTex('/p/b.tex', 'mine', 'synced')).rejects.toThrow(/changed on disk/);
+    expect(disk.get('/p/b.tex')).toBe('theirs');
+  });
+  it('saves over the text the buffer last synced, or over its own text', async () => {
+    disk.set('/p/c.tex', 'synced');
+    await saveTex('/p/c.tex', 'mine', 'synced');
+    expect(disk.get('/p/c.tex')).toBe('mine');
+    await saveTex('/p/c.tex', 'mine', 'synced');
+    expect(disk.get('/p/c.tex')).toBe('mine');
+  });
 });

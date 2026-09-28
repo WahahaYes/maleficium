@@ -104,7 +104,7 @@ pass "compile artifacts land in cache shard, porcelain clean, no in-project out/
 # --- engine cache ---
 ENGINE_CACHE="$CACHEDIR/maleficium-tectonic"
 [[ "$ENGINE_CACHE" == "$ROOT"* ]] && fail "engine cache inside project: $ENGINE_CACHE"
-grep -q '"TECTONIC_CACHE_DIR", cache' "$DEVROOT/src-tauri/src/core/engine.rs" \
+grep -q '"TECTONIC_CACHE_DIR", cache' "$DEVROOT/src-tauri/core/src/engine.rs" \
     || fail "engine spawn no longer sets TECTONIC_CACHE_DIR"
 pass "engine cache is app-owned, outside project: $ENGINE_CACHE"
 
@@ -121,7 +121,7 @@ printf 'snapshot bytes' > "$HIST/blobs/ab/abcdef"
 if echo "$(porcelain)" | grep -q "maleficium-history"; then fail "history dir appeared in project"; fi
 pass "revision index + blobs land in app-data shard, porcelain clean"
 # history must derive its home from app-data, never from the project root
-HISTSRC="$DEVROOT/src-tauri/src/core/history.rs"
+HISTSRC="$DEVROOT/src-tauri/core/src/history.rs"
 [ -f "$HISTSRC" ] || fail "history store missing: $HISTSRC"
 grep -q '"maleficium-history"' "$HISTSRC" || fail "history store does not use the app-local derivation"
 grep -q "data_base_dir()" "$HISTSRC" || fail "history store does not root itself in app-data"
