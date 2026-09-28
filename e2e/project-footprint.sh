@@ -181,7 +181,7 @@ CSPKIND="$(python3 -c "import json,sys; c=json.load(open(sys.argv[1]))['app']['s
 [[ "$CSPKIND" == "object" ]] || fail "security.csp is null or not an object in tauri.conf.json"
 pass "security.csp is an enforced object"
 for f in \
-    "$CAPDIR/default.json" \
+    "$CAPDIR"/*.json \
     "$DEVROOT/src-tauri/src/lib.rs" \
     "$DEVROOT/src-tauri/Cargo.toml" \
     "$DEVROOT/package.json" \
