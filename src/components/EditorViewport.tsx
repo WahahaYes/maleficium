@@ -312,7 +312,11 @@ function EditorViewport({
         if (!view) return;
         try {
           const ln = view.state.doc.line(Math.min(Math.max(1, n), view.state.doc.lines));
-          view.dispatch({ selection: { anchor: ln.from }, scrollIntoView: true });
+          // Centered, so the line lands with its context around it.
+          view.dispatch({
+            selection: { anchor: ln.from },
+            effects: EditorView.scrollIntoView(ln.from, { y: 'center' }),
+          });
           view.focus();
         } catch {
           /* out of range — ignore */
