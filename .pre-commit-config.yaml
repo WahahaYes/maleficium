@@ -20,18 +20,23 @@ repos:
     hooks:
       - id: shellcheck
         args: ['--severity=warning']
+  # Formatters fix what they can: a hook that rewrites a file fails the
+  # commit, and re-staging the fixed file lets it through. npm run check
+  # and CI stay check-only.
   - repo: local
     # Non-login shells (IDEs, agents) often lack ~/.cargo/bin on PATH.
     hooks:
       - id: cargo-fmt
-        name: cargo fmt --check
-        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo fmt --manifest-path src-tauri/Cargo.toml -- --check'
+        name: cargo fmt
+        # --all: without it only the app crate is formatted, not the
+        # structure, events and index workspace crates.
+        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo fmt --all --manifest-path src-tauri/Cargo.toml'
         language: system
         types: [rust]
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy warnings
-        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings'
+        entry: sh -c 'PATH="$HOME/.cargo/bin:$PATH" exec cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings'
         language: system
         types: [rust]
         pass_filenames: false
@@ -46,18 +51,17 @@ repos:
   - repo: local
     hooks:
       - id: eslint
-        name: eslint
-        entry: ./node_modules/.bin/eslint .
+        name: eslint --fix
+        entry: ./node_modules/.bin/eslint --fix
         language: system
-        types: [ts]
-        pass_filenames: false
+        files: \.(ts|tsx|js|mjs|cjs)$
   - repo: local
     hooks:
-      - id: prettier-check
-        name: prettier --check
-        entry: ./node_modules/.bin/prettier --check .
+      - id: prettier
+        name: prettier --write
+        # Staged files only; .prettierignore still applies to named paths.
+        entry: ./node_modules/.bin/prettier --write --ignore-unknown
         language: system
-        pass_filenames: false
   - repo: local
     hooks:
       - id: no-ai-attribution
