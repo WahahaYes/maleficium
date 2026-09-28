@@ -209,7 +209,7 @@ def warm_cache(server, scenario):
     Filled by one cold compile (all online, through the mirror for the source
     build) of the solution plus FONT_SOAK, and kept across runs. Per scenario,
     because a second, different document in a warm cache can miss a font that
-    is never fetched (see the OpenType font bug filed 2026-09-27)."""
+    is never fetched from the online bundle."""
     home = os.path.join(CACHE_ROOT, server.kind, scenario["id"])
     if os.path.isdir(os.path.join(home, ".cache", IDENT, "maleficium-tectonic")):
         return home
