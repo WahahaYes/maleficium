@@ -111,10 +111,11 @@ pub enum RevisionSkipReason {
     IndexUnreadable,
 }
 
-/// A save the app made on the user's behalf (not an explicit Ctrl+S).
+/// What asked for a save: the user's Ctrl+S, or the app on their behalf.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum SaveTrigger {
+    Manual,
     Switch,
     Close,
     Auto,

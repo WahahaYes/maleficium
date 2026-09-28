@@ -312,11 +312,13 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       if (target && hasDir(target)) {
         if (!skipPersist) {
           // Persist ALL dirty buffers so \input parts compile from disk.
+          const saved: string[] = [];
           for (const [p, buf] of buffers) {
             if (buf.dirty) {
               try {
-                await saveTex(p, buf.value);
+                await saveTex(p, buf.value, buf.disk);
                 ownWrites.wrote(p, buf.value);
+                saved.push(p);
               } catch {
                 /* keep dirty, reported at finish */
               }
@@ -324,7 +326,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           }
           setBuffers((b) => {
             let n = b;
-            for (const [p, buf] of b) if (buf.dirty) n = markSaved(n, p);
+            for (const p of saved) n = markSaved(n, p);
             return n;
           });
           // A visible file with no buffer is the untitled flow: its text

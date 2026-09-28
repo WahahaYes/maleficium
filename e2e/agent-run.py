@@ -4,26 +4,30 @@
 Each scenario (e2e/agent-scenarios/*.json) names a built-in template, the
 edits that turn it into a fixture, a prompt, and oracles. Per run:
   1. the fixture is generated from src-tauri/templates into a fresh run dir;
-  2. opencode runs headless in a bubblewrap sandbox (the host is read-only;
-     only the run dir and opencode's own state are writable), with a per-run
-     MCP config pointing at the server under test (`maleficium --mcp`) and a
-     scratch HOME for that server, prewarmed with the TeX bundle;
+  2. an agent runner (opencode or claude, see --runner) drives the server
+     under test (`maleficium --mcp`) headless in a bubblewrap sandbox (the
+     host is read-only; only the run dir and the runner's own state are
+     writable), with a per-run MCP config and a scratch HOME for the server,
+     prewarmed with the TeX bundle;
   3. after the agent exits (or its timeout kills it), the oracles judge the
      artifacts: compiles, clean log, outline, file contents, bytes restored,
      nothing written outside the project, and the run's own tool-call record.
 Pass/fail never reads the model's prose. Results land in --out: one dir per
-run (result.json, events.jsonl, opencode.log, project/), plus summary.json
-and summary.md.
+run (result.json, events.jsonl, project/, plus opencode.log for the opencode
+runner), plus summary.json and summary.md.
 
 Usage:
-  python3 e2e/agent-run.py [--bin source|<AppImage>] [--model M] [-n N]
-                           [--scenario ID ...] [--out DIR] [--budget USD]
+  python3 e2e/agent-run.py [--runner opencode|claude] [--bin source|<AppImage>]
+                           [--model M] [-n N] [--scenario ID ...] [--out DIR]
+                           [--budget USD]
   python3 e2e/agent-run.py --self-test [--bin ...]   # oracles vs. solutions, no model
-Needs: opencode (authenticated), bwrap, python3. The source build needs
+Needs: python3, bwrap, and the chosen runner's CLI, authenticated
+(opencode: `opencode auth`; claude: `claude auth login`, or `claude setup-token`).
+The source build needs
 `cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium` first.
 Manual only: it spends model credits. See e2e/README.md.
 """
-import argparse, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time
+import argparse, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -32,8 +36,10 @@ SCENARIOS = os.path.join(HERE, "agent-scenarios")
 IDENT = "io.github.wahahayes.maleficium"
 CACHE_ROOT = "/var/tmp/maleficium-agent-cache"
 MIRROR_CACHE = "/var/tmp/maleficium-bundle-mirror"
-MIRROR_PORT = 18790
+MIRROR_PORT = int(os.environ.get("AGENT_MIRROR_PORT", "18790"))  # override to run beside another sweep
 FREE_MODEL = "opencode/muse-spark-1.3-contributor-free"
+CLAUDE_MODEL = "claude-sonnet-5"
+CLAUDE_BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"]  # no Bash, no WebFetch
 
 
 def say(msg):
@@ -102,6 +108,12 @@ class Mcp:
         if r.get("isError"):
             return False, "".join(c.get("text", "") for c in r.get("content", []))
         return True, r.get("structuredContent")
+
+    def list_tools(self):
+        """Every tool name the server actually advertises, read from the live
+        server rather than hardcoded, so the allowlist never drifts from the
+        real MCP surface."""
+        return [t["name"] for t in self.send("tools/list", {})["result"]["tools"]]
 
     def compile(self, root_id, rel, timeout=600):
         ok, job = self.call("compile_run", {"root_id": root_id, "rel": rel})
@@ -237,6 +249,17 @@ def warm_cache(server, scenario):
     return home
 
 
+def discover_tool_names(server):
+    """The server's real tool names, queried live (not hardcoded), for the
+    claude runner's --allowedTools list."""
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as home:
+        mcp = Mcp(server, home)
+        try:
+            return mcp.list_tools()
+        finally:
+            mcp.close()
+
+
 def seed_home(warm, home):
     src = os.path.join(warm, ".cache", IDENT, "maleficium-tectonic")
     dst = os.path.join(home, ".cache", IDENT, "maleficium-tectonic")
@@ -247,18 +270,20 @@ def seed_home(warm, home):
 # ---- one agent run ---------------------------------------------------------------
 
 
-def sandbox(run_dir, project, argv):
-    h = os.path.expanduser("~")
+def sandbox(run_dir, project, argv, extra_rw=()):
+    """bwrap argv: the whole host read-only except run_dir (rw) and any
+    extra_rw paths the runner's own client needs for its state. The claude
+    runner needs none (its whole HOME is inside run_dir); opencode needs its
+    real state dirs bound in (see run_agent_opencode)."""
     cmd = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
            "--bind", run_dir, run_dir]
-    for d in [".local/share/opencode", ".cache/opencode", ".local/state/opencode"]:
-        path = os.path.join(h, d)
+    for path in extra_rw:
         os.makedirs(path, exist_ok=True)
         cmd += ["--bind", path, path]
     return cmd + ["--die-with-parent", "--chdir", project] + argv
 
 
-def run_agent(scenario, server, model, run_dir, warm):
+def run_agent_opencode(scenario, server, model, run_dir, warm):
     project = os.path.join(run_dir, "project")
     home = os.path.join(run_dir, "home")
     make_fixture(scenario, project)
@@ -275,10 +300,12 @@ def run_agent(scenario, server, model, run_dir, warm):
     argv = ["env", "OPENCODE_CONFIG=" + config, "opencode", "run", "--standalone", "--auto", "--print-logs",
             "--format", "json", "-m", model, prompt]
     t0 = time.time()
+    h = os.path.expanduser("~")
+    extra_rw = [os.path.join(h, d) for d in (".local/share/opencode", ".cache/opencode", ".local/state/opencode")]
     with open(os.path.join(run_dir, "events.jsonl"), "w") as out, \
             open(os.path.join(run_dir, "opencode.log"), "w") as log:
-        p = subprocess.Popen(sandbox(run_dir, project, argv), stdout=out, stderr=log, stdin=subprocess.DEVNULL,
-                             start_new_session=True)
+        p = subprocess.Popen(sandbox(run_dir, project, argv, extra_rw=extra_rw), stdout=out, stderr=log,
+                             stdin=subprocess.DEVNULL, start_new_session=True)
         try:
             code = p.wait(timeout=scenario.get("timeout_s", 600))
             timed_out = False
@@ -291,7 +318,103 @@ def run_agent(scenario, server, model, run_dir, warm):
             "project": project, "home": home, "prompt": prompt}
 
 
-def read_events(path):
+CLAUDE_TOKEN_FILE = os.path.expanduser("~/.config/maleficium/claude-oauth-token")
+
+
+def claude_token():
+    """The claude runner's auth: CLAUDE_CODE_OAUTH_TOKEN from the environment,
+    else the token file. Both come from `claude setup-token`. Copying
+    ~/.claude/.credentials.json instead would leave a secret in every run dir
+    and let the child CLI rotate the user's refresh token."""
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+    if not token and os.path.isfile(CLAUDE_TOKEN_FILE):
+        with open(CLAUDE_TOKEN_FILE) as f:
+            token = f.read().strip()
+    if not token:
+        die("no token for the claude runner: run `claude setup-token` and put the token in "
+            "CLAUDE_CODE_OAUTH_TOKEN or %s (mode 0600)" % CLAUDE_TOKEN_FILE)
+    return token
+
+
+def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_turns, budget_usd, claude_bin):
+    """Drive `claude -p` against the server under test, isolated from the
+    user's Claude Code config (see e2e/README.md).
+
+    The CLI gets an empty scratch HOME and a long-lived token in its
+    environment (see claude_token), never a copy of ~/.claude's credentials,
+    loads no settings, and reaches no MCP server but maleficium. `--restricted`
+    keeps the file tools inside the project and drops shell and web tools.
+    `--bare` is not an option: it accepts only API-key auth. `--tools` trims
+    the advertised built-in tools, which otherwise dominate prompt cost.
+    """
+    project = os.path.join(run_dir, "project")
+    mcp_home = os.path.join(run_dir, "mcp-home")
+    claude_home = os.path.join(run_dir, "claude-home")
+    make_fixture(scenario, project)
+    seed_home(warm, mcp_home)
+    for rel, text in scenario.get("outside", {}).items():
+        with open(os.path.join(run_dir, rel), "w") as f:
+            f.write(text)
+    os.makedirs(os.path.join(claude_home, ".claude"), exist_ok=True, mode=0o700)
+    env = dict(os.environ, HOME=claude_home, CLAUDE_CODE_OAUTH_TOKEN=claude_token())
+    config = os.path.join(run_dir, "claude-mcp.json")
+    with open(config, "w") as f:
+        json.dump({"mcpServers": {"maleficium": {"type": "stdio", "command": server.cmd[0],
+                                                 "args": server.cmd[1:], "env": dict(server.env, HOME=mcp_home)}}},
+                  f, indent=2)
+    before = snapshot(run_dir, skip=("mcp-home", "claude-home"))
+    prompt = scenario["prompt"].replace("{project}", project)
+    allowed = CLAUDE_BUILTIN_TOOLS + ["mcp__maleficium__" + t for t in tool_names]
+    argv = [claude_bin, "-p",
+            "--output-format", "stream-json", "--verbose",
+            "--max-turns", str(max_turns), "--max-budget-usd", str(budget_usd),
+            "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence", "--restricted",
+            "--tools", ",".join(CLAUDE_BUILTIN_TOOLS),
+            "--mcp-config", config, "--strict-mcp-config",
+            "--allowedTools"] + allowed + ["--model", model, prompt]
+    events_path = os.path.join(run_dir, "events.jsonl")
+    t0 = time.time()
+    p = subprocess.Popen(sandbox(run_dir, project, argv), stdout=subprocess.PIPE,
+                         stderr=open(os.path.join(run_dir, "claude.stderr.log"), "w"),
+                         stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True, env=env)
+
+    def pump():
+        """Append each stream-json line to events.jsonl as it arrives, with an
+        added `_ts_ms` field (epoch ms) so a screen recording can be synced
+        to the transcript. Unparseable lines are kept as `_raw`."""
+        with open(events_path, "w") as out:
+            for line in iter(p.stdout.readline, ""):
+                ts_ms = round(time.time() * 1000, 1)
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                    if isinstance(e, dict):
+                        e["_ts_ms"] = ts_ms
+                    else:
+                        e = {"_ts_ms": ts_ms, "_raw": line}
+                except ValueError:
+                    e = {"_ts_ms": ts_ms, "_raw": line}
+                out.write(json.dumps(e) + "\n")
+                out.flush()
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    try:
+        code = p.wait(timeout=scenario.get("timeout_s", 600))
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
+        code, timed_out = None, True
+    reader.join(timeout=10)
+    wall = time.time() - t0
+    return {"exit": code, "timed_out": timed_out, "wall_s": round(wall, 1), "before": before,
+            "project": project, "home": mcp_home, "prompt": prompt}
+
+
+def read_events_opencode(path):
     """Metrics and the tool-call record from opencode's --format json stream."""
     calls, other, texts = [], [], []
     m = {"steps": 0, "tokens_in": 0, "tokens_out": 0, "tokens_reasoning": 0, "cost": 0.0}
@@ -333,6 +456,70 @@ def read_events(path):
     return m, calls, other, texts
 
 
+def read_events_claude(path):
+    """Metrics and the tool-call record from claude's timestamped stream-json
+    (see run_agent_claude's pump()). Same return shape as
+    read_events_opencode, so the oracles and summary are runner-agnostic.
+
+    stream-json for `claude -p` is a flat sequence of top-level events, not
+    opencode's nested step/part shape: `assistant` messages carry `text` and
+    `tool_use` content blocks, the next `user` message carries the matching
+    `tool_result` (linked by `tool_use_id`), and one final `result` event
+    carries num_turns, total_cost_usd (already summed across every model the
+    turn used, e.g. a fast classifier alongside the main model), and
+    per-model token counts in `modelUsage`.
+    """
+    calls, other, texts = [], [], []
+    m = {"steps": 0, "tokens_in": 0, "tokens_out": 0, "tokens_reasoning": 0, "cost": 0.0}
+    pending = {}  # tool_use id -> {"name": ..., "input": ...}
+    with open(path) as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            t = e.get("type")
+            if t == "assistant":
+                for c in e.get("message", {}).get("content", []):
+                    if c.get("type") == "text":
+                        texts.append(c.get("text", ""))
+                    elif c.get("type") == "tool_use":
+                        pending[c.get("id")] = {"name": c.get("name", ""), "input": c.get("input") or {}}
+            elif t == "user":
+                for c in e.get("message", {}).get("content", []):
+                    if c.get("type") != "tool_result":
+                        continue
+                    info = pending.pop(c.get("tool_use_id"), None)
+                    if info is None:
+                        continue
+                    ok = not c.get("is_error")
+                    content = c.get("content")
+                    if isinstance(content, list):
+                        content = "".join(x.get("text", "") for x in content if isinstance(x, dict))
+                    name = info["name"]
+                    if name.startswith("mcp__maleficium__"):
+                        calls.append({"tool": name[len("mcp__maleficium__"):], "input": info["input"], "ok": ok,
+                                      "status": "completed" if ok else "error",
+                                      "error": None if ok else str(content)[:600]})
+                    else:
+                        other.append({"tool": name, "status": "completed" if ok else "error", "input": info["input"]})
+            elif t == "result":
+                m["steps"] = e.get("num_turns", 0) or 0
+                m["cost"] = e.get("total_cost_usd", 0.0) or 0.0
+                for mu in (e.get("modelUsage") or {}).values():
+                    m["tokens_in"] += mu.get("inputTokens", 0) + mu.get("cacheReadInputTokens", 0) + \
+                        mu.get("cacheCreationInputTokens", 0)
+                    m["tokens_out"] += mu.get("outputTokens", 0)
+                    m["tokens_reasoning"] += mu.get("thinkingTokens", 0)
+                if e.get("result"):
+                    texts.append(str(e.get("result")))
+    m["cost"] = round(m["cost"], 6)
+    m["mcp_calls"] = len(calls)
+    m["mcp_errors"] = sum(1 for c in calls if not c["ok"])
+    m["other_calls"] = len(other)
+    return m, calls, other, texts
+
+
 # ---- oracles ---------------------------------------------------------------------
 
 
@@ -361,9 +548,10 @@ def escapes(path):
 class Judge:
     """Evaluates one scenario's oracles against a finished run."""
 
-    def __init__(self, scenario, server, project, home, fixture, calls, run_dir=None, before=None):
+    def __init__(self, scenario, server, project, home, fixture, calls, run_dir=None, before=None, own=()):
         self.s, self.server, self.project, self.home = scenario, server, project, home
         self.fixture, self.calls, self.run_dir, self.before = fixture, calls, run_dir, before
+        self.own = own  # extra top-level run_dir names the runner itself owns (not agent output)
         self._mcp = None
         self._compiled = {}
 
@@ -488,7 +676,8 @@ class Judge:
     def o_footprint(self, _):
         if self.before is None:
             return True, "n/a"
-        after = snapshot(self.run_dir, skip=("home", "events.jsonl", "opencode.log", "result.json"))
+        skip = ("home", "events.jsonl", "opencode.log", "result.json") + tuple(self.own)
+        after = snapshot(self.run_dir, skip=skip)
         outside = {k: v for k, v in after.items() if not k.startswith("project" + os.sep)}
         was = {k: v for k, v in self.before.items() if not k.startswith("project" + os.sep)}
         diff = sorted(set(outside) ^ set(was)) + sorted(k for k in outside if k in was and outside[k] != was[k])
@@ -602,19 +791,74 @@ def summarize(results, out):
     print("\n".join(lines))
 
 
+def run_scenario_once(scenario, server, runner, model, run_dir, warm, run=1, claude_tool_names=None,
+                      claude_max_turns=40, claude_budget_usd=2.0, claude_bin=None):
+    """Run one scenario once with the given runner ('opencode' or 'claude').
+
+    This is the callable surface for other harnesses that drive one scenario
+    at a time (e.g. a harness that also has the app open and screen-recording
+    while the agent runs): it does exactly what the CLI's per-run loop does --
+    generate the fixture, drive the agent, judge the result, write
+    run_dir/result.json -- and returns (result dict, transcript path). The
+    scenario/oracle code above is runner-agnostic; only this function and the
+    two run_agent_*/read_events_* pairs it dispatches to know which runner is
+    in play.
+    """
+    os.makedirs(run_dir, exist_ok=True)
+    if runner == "opencode":
+        r = run_agent_opencode(scenario, server, model, run_dir, warm)
+        events_path = os.path.join(run_dir, "events.jsonl")
+        metrics, calls, other, texts = read_events_opencode(events_path)
+    elif runner == "claude":
+        if claude_tool_names is None:
+            claude_tool_names = discover_tool_names(server)
+        r = run_agent_claude(scenario, server, model, run_dir, warm, claude_tool_names, claude_max_turns,
+                             claude_budget_usd, claude_bin or shutil.which("claude") or "/usr/bin/claude")
+        events_path = os.path.join(run_dir, "events.jsonl")
+        metrics, calls, other, texts = read_events_claude(events_path)
+    else:
+        die("unknown runner: %s (want opencode or claude)" % runner)
+    fixture_dir = tempfile.mkdtemp(dir="/var/tmp")
+    make_fixture(scenario, os.path.join(fixture_dir, "p"))
+    fixture = snapshot(os.path.join(fixture_dir, "p"))
+    shutil.rmtree(fixture_dir)
+    own = ("claude-home", "mcp-home", "claude.stderr.log") if runner == "claude" else ()
+    judged = Judge(scenario, server, r["project"], r["home"], fixture, calls, run_dir, r["before"], own=own).run()
+    passed = not r["timed_out"] and all(j["ok"] for j in judged)
+    result = {"scenario": scenario["id"], "run": run, "bin": server.kind, "runner": runner, "model": model,
+              "passed": passed, "timed_out": r["timed_out"], "exit": r["exit"], "wall_s": r["wall_s"],
+              "metrics": metrics, "oracles": judged, "calls": calls, "other_tools": other,
+              "final_text": texts[-1] if texts else ""}
+    with open(os.path.join(run_dir, "result.json"), "w") as f:
+        json.dump(result, f, indent=2)
+    return result, events_path
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--runner", choices=["opencode", "claude"], default="opencode")
     ap.add_argument("--bin", default="source", help="'source' (target/debug) or a packaged AppImage")
-    ap.add_argument("--model", default=FREE_MODEL)
+    ap.add_argument("--model", help="default: %s for opencode, %s for claude" % (FREE_MODEL, CLAUDE_MODEL))
+    ap.add_argument("--claude-bin", help="path to the claude CLI (default: PATH, else /usr/bin/claude)")
+    ap.add_argument("--max-turns", type=int, default=40, help="claude runner: --max-turns per run")
+    ap.add_argument("--max-budget-usd", type=float, default=2.0, help="claude runner: --max-budget-usd per run")
     ap.add_argument("-n", type=int, default=1, help="runs per scenario")
     ap.add_argument("--scenario", action="append", default=[], help="scenario id (repeatable; default all)")
     ap.add_argument("--out", help="results dir (default /var/tmp/maleficium-agent-runs/<stamp>)")
     ap.add_argument("--budget", type=float, default=5.0, help="stop once reported cost reaches this (USD)")
     ap.add_argument("--self-test", action="store_true", help="check the oracles against the solutions; no model")
     a = ap.parse_args()
-    for tool in ["bwrap", "opencode"]:
+    model = a.model or (CLAUDE_MODEL if a.runner == "claude" else FREE_MODEL)
+    needed = ["bwrap"] + (["opencode"] if a.runner == "opencode" else [])
+    for tool in needed:
         if not shutil.which(tool):
             die("needs %s on PATH" % tool)
+    claude_bin = None
+    if a.runner == "claude":
+        claude_bin = a.claude_bin or shutil.which("claude") or "/usr/bin/claude"
+        if not os.access(claude_bin, os.X_OK):
+            die("not executable: %s" % claude_bin)
+        claude_token()
     scenarios = load_scenarios(a.scenario)
     out = a.out or os.path.join("/var/tmp/maleficium-agent-runs", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out, exist_ok=True)
@@ -624,6 +868,10 @@ def main():
         warm = {s["id"]: warm_cache(server, s) for s in scenarios}
         if a.self_test:
             sys.exit(1 if self_test(scenarios, server, warm) else 0)
+        claude_tool_names = discover_tool_names(server) if a.runner == "claude" else None
+        if claude_tool_names is not None:
+            say("claude runner: %d maleficium tools discovered live: %s" % (len(claude_tool_names),
+                                                                            ", ".join(sorted(claude_tool_names))))
         results, spent = [], 0.0
         for i in range(a.n):
             for s in scenarios:
@@ -631,28 +879,18 @@ def main():
                     say("budget $%.2f reached; stopping" % a.budget)
                     break
                 run_dir = os.path.join(out, "%s-%s-%d" % (s["id"], server.kind, i + 1))
-                os.makedirs(run_dir)
-                say("run %s (%s, %s) ..." % (os.path.basename(run_dir), a.model, server.kind))
-                r = run_agent(s, server, a.model, run_dir, warm[s["id"]])
-                fixture_dir = tempfile.mkdtemp(dir="/var/tmp")
-                make_fixture(s, os.path.join(fixture_dir, "p"))
-                fixture = snapshot(os.path.join(fixture_dir, "p"))
-                shutil.rmtree(fixture_dir)
-                metrics, calls, other, texts = read_events(os.path.join(run_dir, "events.jsonl"))
-                judged = Judge(s, server, r["project"], r["home"], fixture, calls, run_dir, r["before"]).run()
-                passed = not r["timed_out"] and all(j["ok"] for j in judged)
+                say("run %s (%s, %s, %s) ..." % (os.path.basename(run_dir), a.runner, model, server.kind))
+                result, events_path = run_scenario_once(s, server, a.runner, model, run_dir, warm[s["id"]],
+                                                        run=i + 1, claude_tool_names=claude_tool_names,
+                                                        claude_max_turns=a.max_turns,
+                                                        claude_budget_usd=a.max_budget_usd, claude_bin=claude_bin)
+                metrics = result["metrics"]
                 spent += metrics["cost"]
-                result = {"scenario": s["id"], "run": i + 1, "bin": server.kind, "model": a.model,
-                          "passed": passed, "timed_out": r["timed_out"], "exit": r["exit"], "wall_s": r["wall_s"],
-                          "metrics": metrics, "oracles": judged, "calls": calls, "other_tools": other,
-                          "final_text": texts[-1] if texts else ""}
-                with open(os.path.join(run_dir, "result.json"), "w") as f:
-                    json.dump(result, f, indent=2)
                 results.append(result)
                 say("  %s in %.0fs, %d steps, %d MCP calls (%d errors), $%.4f (total $%.4f)%s" % (
-                    "PASS" if passed else "FAIL", r["wall_s"], metrics["steps"], metrics["mcp_calls"],
-                    metrics["mcp_errors"], metrics["cost"], spent, " TIMEOUT" if r["timed_out"] else ""))
-                for j in judged:
+                    "PASS" if result["passed"] else "FAIL", result["wall_s"], metrics["steps"], metrics["mcp_calls"],
+                    metrics["mcp_errors"], metrics["cost"], spent, " TIMEOUT" if result["timed_out"] else ""))
+                for j in result["oracles"]:
                     if not j["ok"]:
                         say("    %s: %s" % (j["oracle"], j["detail"]))
         summarize(results, out)

@@ -24,9 +24,9 @@ Run these from the repo root:
 ./node_modules/.bin/tsc --noEmit --skipLibCheck
 npm run lint && npm run format:check
 npm test
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
 npm run build
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml --workspace
 e2e/project-footprint.sh
 ```
 

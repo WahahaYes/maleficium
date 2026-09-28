@@ -1,0 +1,103 @@
+{
+  "id": "codrive",
+  "about": "Co-driving with the app open (e2e/codrive-run.py): write a Related Work section in main.tex and rewrite conclusion.tex, compiling over MCP after each step, while the app shows the project. conclusion.tex is the contested file: in contested mode the user is typing in it when the agent edits it. Headless, it is an ordinary two-file writing task.",
+  "template": "article",
+  "files": {
+    "conclusion.tex": "\\section{Conclusion}\n\\label{sec:conclusion}\nSay what the reader should remember.\n"
+  },
+  "edits": [
+    {
+      "file": "references.bib",
+      "append": "\n@book{lamport1994,\n  author    = {Leslie Lamport},\n  title     = {{\\LaTeX}: A Document Preparation System},\n  publisher = {Addison-Wesley},\n  edition   = {2},\n  year      = {1994}\n}\n\n@book{mittelbach2004,\n  author    = {Frank Mittelbach and Michel Goossens},\n  title     = {The {\\LaTeX} Companion},\n  publisher = {Addison-Wesley},\n  edition   = {2},\n  year      = {2004}\n}\n\n@manual{oetiker2023,\n  author    = {Tobias Oetiker and Marcin Serwin},\n  title     = {The Not So Short Introduction to {\\LaTeX}},\n  year      = {2023}\n}\n"
+    },
+    {
+      "file": "main.tex",
+      "find": "\\section{Conclusion}\nSay what the reader should remember.\n",
+      "replace": "\\input{conclusion}\n"
+    }
+  ],
+  "solution": [
+    {
+      "file": "main.tex",
+      "find": "\\section{Method}\n",
+      "replace": "\\section{Related Work}\n\\label{sec:related}\nThree books frame this work~\\cite{lamport1994,mittelbach2004,oetiker2023};\nTable~\\ref{tab:related} compares them.\n\n\\begin{table}[h]\n  \\centering\n  \\begin{tabular}{llr}\n    \\toprule\n    Work & Kind & Year \\\\\n    \\midrule\n    Lamport~\\cite{lamport1994} & Manual & 1994 \\\\\n    Mittelbach~\\cite{mittelbach2004} & Reference & 2004 \\\\\n    Oetiker~\\cite{oetiker2023} & Tutorial & 2023 \\\\\n    \\bottomrule\n  \\end{tabular}\n  \\caption{The three works compared.}\n  \\label{tab:related}\n\\end{table}\n\n\\section{Method}\n"
+    },
+    {
+      "file": "conclusion.tex",
+      "find": "Say what the reader should remember.\n",
+      "replace": "The three works in Table~\\ref{tab:related} span three decades of \\LaTeX{} practice.\nTogether they cover the manual, the reference and the tutorial a writer needs.\n"
+    }
+  ],
+  "prompt": "The LaTeX project at {project} (main file main.tex) is open in an editor that previews its PDF. Do two steps, and compile with the maleficium MCP server after each one so the preview shows your progress. Step 1: in main.tex, add a section titled \"Related Work\" between the Introduction and the Method sections. It must cite all three of these entries from references.bib: lamport1994, mittelbach2004 and oetiker2023, and it must include a table built with booktabs rules (\\toprule, \\midrule, \\bottomrule) that compares the three works, with a \\caption and a \\label that the section's text references. Step 2: in conclusion.tex, replace the placeholder sentence with two sentences that sum up that comparison and reference your table with \\ref. Do not change references.bib. The document must end up compiling with no errors and no undefined citations or references: use the maleficium MCP server to compile and check it, and edit files with your own file tools.",
+  "timeout_s": 600,
+  "codrive": {
+    "main": "main.tex",
+    "contested": "conclusion.tex",
+    "tree_rows": ["conclusion.tex", "main.tex", "references.bib"],
+    "marker": "% user draft, unsaved "
+  },
+  "oracles": [
+    {
+      "compiles": "main.tex"
+    },
+    {
+      "clean_log": "main.tex"
+    },
+    {
+      "outline_has": {
+        "file": "main.tex",
+        "titles": ["Introduction", "Related Work", "Method"],
+        "ordered": true
+      }
+    },
+    {
+      "section_matches": {
+        "file": "main.tex",
+        "title": "Related Work",
+        "refs_own_label": true,
+        "patterns": [
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*lamport1994",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*mittelbach2004",
+          "\\\\[a-zA-Z]*cite[a-zA-Z]*\\*?(\\[[^\\]]*\\])*\\{[^}]*oetiker2023",
+          "\\\\begin\\{table\\*?\\}",
+          "\\\\toprule",
+          "\\\\midrule",
+          "\\\\bottomrule",
+          "\\\\caption\\{"
+        ]
+      }
+    },
+    {
+      "file_lacks": {
+        "file": "conclusion.tex",
+        "patterns": ["Say what the reader should remember", "user draft"]
+      }
+    },
+    {
+      "file_matches": {
+        "file": "conclusion.tex",
+        "patterns": ["\\\\section\\{Conclusion\\}", "\\\\ref\\{"]
+      }
+    },
+    {
+      "file_matches": {
+        "file": "main.tex",
+        "patterns": [
+          "\\\\label\\{sec:method\\}",
+          "\\\\label\\{tab:results\\}",
+          "\\\\cite\\{knuth1984\\}",
+          "\\\\input\\{conclusion\\}"
+        ]
+      }
+    },
+    {
+      "unchanged": ["references.bib"]
+    },
+    {
+      "called": ["compile_run"]
+    },
+    {
+      "footprint": null
+    }
+  ]
+}

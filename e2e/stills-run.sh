@@ -183,7 +183,7 @@ wait_window() {
     best=0; WIN=""
     # shellcheck disable=SC2086
     for cand in $($XDO search --name "^Maleficium$" 2>/dev/null || true); do
-      # shellcheck disable=SC2086
+      # shellcheck disable=SC2046,SC2086
       set -- $($XDO getwindowgeometry "$cand" 2>/dev/null | sed -n 's/^ *Geometry: \([0-9]*\)x\([0-9]*\)/\1 \2/p')
       if [ "$((${1:-0} * ${2:-0}))" -gt "$best" ]; then
         best=$((${1:-0} * ${2:-0})); WIN=$cand
@@ -998,6 +998,12 @@ $XDO type --delay 20 "zz" >/dev/null 2>&1 || true
 printf '\\documentclass{article}\n\\begin{document}\n\\input{ch}\nmain body, edited outside\n\\end{document}\n' >"$EXT/main.tex"
 wait_event file.external-conflict "$m_dirty" 20
 wait_event file.save-failed "$m_dirty" 20
+# Ctrl+S while the write is held is refused too, and says so.
+m_manual=$(now_ms)
+key ctrl+s
+wait_event file.save-failed "$m_manual" 10
+grep -q '"trigger":"manual"' "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" ||
+  die "Ctrl+S during a held conflict failed silently"
 sleep 1
 shot 09-conflict
 grep -q 'edited outside' "$EXT/main.tex" || die "a held write reached disk during the conflict"

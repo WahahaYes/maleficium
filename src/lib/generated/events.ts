@@ -36,7 +36,7 @@ export type CleanSkippedReason = "no-project-file";
 
 export type RevisionSkipReason = "not-text" | "too-large" | "unchanged" | "unavailable" | "index-unreadable";
 
-export type SaveTrigger = "switch" | "close" | "auto";
+export type SaveTrigger = "manual" | "switch" | "close" | "auto";
 
 export type WatchChange = "create" | "modify" | "delete";
 

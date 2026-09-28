@@ -2,6 +2,8 @@
 //! compiled pdf as a copy, the sources as a zip. Nothing is written inside
 //! the project.
 
+use crate::Core;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -43,9 +45,14 @@ fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
 }
 
 /// Copy main_rel's compiled pdf to `dest`.
-pub fn export_pdf(root_id: &str, main_rel: &str, dest: &str) -> Result<Exported, String> {
-    let root = super::fs::session_root(root_id)?;
-    let o = super::outputs_of(root_id, main_rel)?;
+pub fn export_pdf(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    dest: &str,
+) -> Result<Exported, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let o = super::outputs_of(cx, root_id, main_rel)?;
     let pdf = o.outdir.join(&o.pdf_name);
     if !pdf.is_file() {
         return Err(format!("no compiled pdf for {main_rel}: compile first"));
@@ -93,8 +100,8 @@ pub(crate) fn source_files(root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Zip the project's sources (uncompressed) to `dest`.
-pub fn export_zip(root_id: &str, dest: &str) -> Result<Exported, String> {
-    let root = super::fs::session_root(root_id)?;
+pub fn export_zip(cx: &Core, root_id: &str, dest: &str) -> Result<Exported, String> {
+    let root = super::fs::session_root(cx, root_id)?;
     let out = destination(&root, dest)?;
     let files = source_files(&root)?;
     let mut entries = Vec::with_capacity(files.len());
@@ -208,7 +215,7 @@ mod tests {
         assert_eq!(&z[cd..cd + 4], &[0x50, 0x4b, 0x01, 0x02]);
     }
 
-    fn project(name: &str) -> (String, PathBuf) {
+    fn project(cx: &Core, name: &str) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("export-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("ch")).unwrap();
@@ -219,39 +226,41 @@ mod tests {
         std::fs::write(dir.join(".git/HEAD"), "ref").unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("exp-{name}");
-        super::super::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        super::super::fs::grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
     #[test]
     fn zip_packs_sources_only_and_refuses_a_destination_inside() {
-        let (id, root) = project("zip");
+        let cx = &Core::default();
+        let (id, root) = project(cx, "zip");
         let out = crate::test_scratch::dir("export.zip");
-        let e = export_zip(&id, &out.to_string_lossy()).unwrap();
+        let e = export_zip(cx, &id, &out.to_string_lossy()).unwrap();
         assert_eq!(
             e.files,
             vec!["ch/a.tex".to_string(), "main.tex".to_string()]
         );
         assert_eq!(e.bytes, std::fs::metadata(&out).unwrap().len());
         let inside = root.join("ch/out.zip");
-        assert!(export_zip(&id, &inside.to_string_lossy())
+        assert!(export_zip(cx, &id, &inside.to_string_lossy())
             .unwrap_err()
             .contains("inside the project"));
-        assert!(export_zip(&id, "relative.zip").is_err());
+        assert!(export_zip(cx, &id, "relative.zip").is_err());
         let _ = std::fs::remove_file(out);
     }
 
     #[test]
     fn pdf_export_needs_a_compile_and_copies_bytes() {
-        let (id, _root) = project("pdf");
+        let cx = &Core::default();
+        let (id, _root) = project(cx, "pdf");
         let out = crate::test_scratch::dir("export.pdf");
-        assert!(export_pdf(&id, "main.tex", &out.to_string_lossy())
+        assert!(export_pdf(cx, &id, "main.tex", &out.to_string_lossy())
             .unwrap_err()
             .contains("compile first"));
-        let o = super::super::outputs_of(&id, "main.tex").unwrap();
+        let o = super::super::outputs_of(cx, &id, "main.tex").unwrap();
         std::fs::create_dir_all(&o.outdir).unwrap();
         std::fs::write(o.outdir.join(&o.pdf_name), b"%PDF-1.7 test").unwrap();
-        let e = export_pdf(&id, "main.tex", &out.to_string_lossy()).unwrap();
+        let e = export_pdf(cx, &id, "main.tex", &out.to_string_lossy()).unwrap();
         assert_eq!(e.bytes, 13);
         assert_eq!(std::fs::read(&out).unwrap(), b"%PDF-1.7 test");
         let _ = std::fs::remove_file(out);

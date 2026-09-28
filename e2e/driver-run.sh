@@ -50,7 +50,7 @@ export DEVROOT
 export XDG_CACHE_HOME="${DRIVER_CACHE:-${TMPDIR:-/tmp}/maleficium-driver-cache-$(id -u)}"
 # App data (trash, readiness records) is per run: the scratch dir holds it.
 export XDG_DATA_HOME="$SCRATCH/data"
-ENGINE_RS="$DEVROOT/src-tauri/src/core/engine.rs"
+ENGINE_RS="$DEVROOT/src-tauri/core/src/engine.rs"
 BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' "$ENGINE_RS")"
 [ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
 export ENGINE_CACHE="$XDG_CACHE_HOME/io.github.wahahayes.maleficium/maleficium-tectonic/$BUNDLE_DIGEST"
