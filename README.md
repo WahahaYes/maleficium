@@ -142,6 +142,7 @@ An agent first calls `grant` with a project folder and a name for it; every othe
 - **Read the project:** `list`, `read`, `find_files`, `search`, the `outline`, the `file_graph` of `\input`s, `labels_refs`, `citations`, and `definition` for any label, citation, or macro.
 - **Replace across the project:** `replace_preview` shows every change and writes nothing, `replace_apply` applies that exact plan, and `replace_undo` restores the whole batch.
 - **Jump through SyncTeX** both ways, **export** the PDF or a zip, and start a **new project from a template**.
+- **See the output:** `snippet` shows where a line, label, or page landed in the PDF, with the source around it, and optionally the region as an image for layout questions.
 - **Delete** a file in two calls: the first is refused with the file's absolute path, and the second passes that path back as `confirm`. `undo` restores it.
 
 The server edits your files only through replace; agents write text with their own file tools. Build files, history, and logs stay outside the project, as with the app.
