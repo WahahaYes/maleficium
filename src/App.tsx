@@ -220,7 +220,7 @@ export default function App({
         const cur = buffers.get(fileName);
         if (cur?.dirty) {
           try {
-            await saveTex(fileName, cur.value);
+            await saveTex(fileName, cur.value, cur.disk);
             ownWrites.wrote(fileName, cur.value);
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);
@@ -471,7 +471,7 @@ export default function App({
     if (hasDir(fileName)) {
       const cur = buffers.get(fileName);
       const text = cur?.value ?? tex;
-      await saveTex(fileName, text);
+      await saveTex(fileName, text, cur?.disk);
       ownWrites.wrote(fileName, text);
       setBuffers((b) => markSaved(b, fileName));
       await recordRevision(fileName, text);
@@ -502,7 +502,7 @@ export default function App({
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         ownWrites.wrote(fileName, cur.value);
-        saveTex(fileName, cur.value)
+        saveTex(fileName, cur.value, cur.disk)
           .then(async () => {
             setBuffers((b) => markSaved(b, fileName));
             await recordRevision(fileName, cur.value);

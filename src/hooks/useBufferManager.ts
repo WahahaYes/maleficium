@@ -45,7 +45,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         try {
-          await saveTex(fileName, cur.value);
+          await saveTex(fileName, cur.value, cur.disk);
           ownWrites.wrote(fileName, cur.value);
         } catch (e) {
           // Close never loses work: the file stays open and dirty.
@@ -81,7 +81,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
         try {
-          await saveTex(fileName, cur.value);
+          await saveTex(fileName, cur.value, cur.disk);
           ownWrites.wrote(fileName, cur.value);
         } catch (e) {
           // Close never loses work: the file stays open and dirty.
