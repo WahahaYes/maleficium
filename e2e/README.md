@@ -80,10 +80,10 @@ A first launch needs no recent projects, so on macOS and Windows run it as a fre
 
 ### papers-run.py
 
-Compiles each real paper in `fixtures/vendored/` over the sidecar and prints a scoreboard: result, error and warning counts, pre-compile findings, and the first blocker. A paper passes when the compile succeeds with no error diagnostics; warnings are counted, not judged. Each paper's `fixture.json` names its main file and whether it is expected to pass today, so the run is a ratchet: it fails when an expected pass breaks, and when an expected failure starts passing, so the expectation gets flipped to lock the gain in. The engine cache persists in `/var/tmp/maleficium-papers-cache-<uid>` (`PAPERS_CACHE`), so only the first run needs the network.
+Compiles each real paper in `fixtures/vendored/` over the sidecar and prints a scoreboard: result, error and warning counts, pre-compile findings, and the first blocker. Under each paper it lists every diagnostic the app reported, as the app reported it, with its location (`--brief` hides them); `--json` records them all, so two runs can be diffed. A paper passes when the compile succeeds with no error diagnostics; warnings are counted, not judged. Each paper's `fixture.json` names its main file and whether it is expected to pass today, so the run is a ratchet: it fails when an expected pass breaks, and when an expected failure starts passing, so the expectation gets flipped to lock the gain in. The engine cache persists in `/var/tmp/maleficium-papers-cache-<uid>` (`PAPERS_CACHE`), so only the first run needs the network.
 
 ```sh
-python3 e2e/papers-run.py [--paper NAME ...] [--json OUT] [--bin PATH]
+python3 e2e/papers-run.py [--paper NAME ...] [--json OUT] [--brief] [--bin PATH]
 ```
 
 ### agent-run.py
