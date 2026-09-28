@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### For AI agents
+
+- **Agents can see how the PDF looks.** The new `snippet` tool finds where a source line, a label, or a page landed in the compiled PDF and returns that page, the region, and the source lines around it. With `with_image: true` it also returns the region as a PNG, so an agent can check a figure's size and placement or a table that overflows. Images are off by default because they cost model context.
+
 ## 0.2.1 - 2026-09-27
 
 ### Fixes
