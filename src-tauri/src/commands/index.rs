@@ -6,7 +6,7 @@ use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
 
-use crate::core::{index, replace, search};
+use maleficium_core::{index, replace, search};
 
 /// Build the index now; returns the files listed.
 #[tauri::command(async)]

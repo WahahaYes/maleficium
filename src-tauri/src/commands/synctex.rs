@@ -1,7 +1,7 @@
 //! SyncTeX commands: thin adapters over `core::synctex`. Authorization is the
 //! session root the open flow registered; nothing here re-derives it.
 
-use crate::core::{self, ForwardHit, InverseHit};
+use maleficium_core::{self as core, ForwardHit, InverseHit};
 
 #[tauri::command]
 pub fn forward_sync(

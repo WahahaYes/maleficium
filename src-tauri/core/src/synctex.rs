@@ -160,7 +160,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("sync-{}", name);
-        crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        crate::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 

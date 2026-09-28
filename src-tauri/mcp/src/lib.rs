@@ -13,7 +13,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::core;
+use maleficium_core as core;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Maleficium;
@@ -665,7 +665,6 @@ pub fn serve_stdio() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::synctex::{forward_sync, inverse_sync};
 
     /// Clients show serverInfo; rmcp's default would name rmcp itself.
     #[test]
@@ -675,11 +674,12 @@ mod tests {
         assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     }
 
-    /// Both adapters sit on one implementation: every escape the desktop
-    /// command refuses, the MCP tool refuses with the same error.
+    /// The MCP tools add nothing to core's confinement: every escape core
+    /// refuses (and so the desktop command, a direct forward), the tool
+    /// refuses with the same error.
     #[test]
     fn synctex_adapters_reject_identically() {
-        let dir = crate::test_scratch::dir("sym");
+        let dir = core::test_scratch::dir("sym");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
@@ -708,12 +708,7 @@ mod tests {
         ];
         for (root_id, main_rel, tex_rel) in cases {
             let main_rel = main_rel.to_string();
-            let desktop = forward_sync(
-                root_id.to_string(),
-                main_rel.clone(),
-                tex_rel.to_string(),
-                1,
-            );
+            let desktop = core::forward(root_id, &main_rel, tex_rel, 1);
             let mcp = m.synctex_forward(Parameters(ForwardParams {
                 root_id: root_id.to_string(),
                 main_rel: main_rel.clone(),
@@ -725,7 +720,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("accepted: {:?}", (root_id, &main_rel)));
             assert_eq!(mcp.err(), Some(err));
 
-            let desktop = inverse_sync(root_id.to_string(), main_rel.clone(), 1, 0.0, 0.0);
+            let desktop = core::inverse(root_id, &main_rel, 1, 0.0, 0.0);
             let mcp = m.synctex_inverse(Parameters(InverseParams {
                 root_id: root_id.to_string(),
                 main_rel: main_rel.clone(),

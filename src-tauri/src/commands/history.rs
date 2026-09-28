@@ -4,7 +4,7 @@
 use maleficium_events::{BatchFile, RecordOutcome, RetentionInfo, Revision};
 use tauri::ipc::Response;
 
-use crate::core::history;
+use maleficium_core::history;
 
 #[tauri::command]
 pub fn history_record(root_id: String, rel: String, text: String) -> RecordOutcome {

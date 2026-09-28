@@ -53,7 +53,7 @@ function escapeComponent(s: string): string {
 /**
  * Trash entry name: `<base>__<c1>__<c2>...__<ms>`, where c1..cn are the path
  * components relative to `root` and every component is escaped. Same format
- * as core `trash_name` (src-tauri/src/core/fs.rs), whose stateless undo reads
+ * as core `trash_name` (src-tauri/core/src/fs.rs), whose stateless undo reads
  * rel back out of the name.
  */
 export function trashName(root: string, originalPath: string, at = Date.now()): string {

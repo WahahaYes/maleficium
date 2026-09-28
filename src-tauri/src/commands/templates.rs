@@ -1,6 +1,6 @@
 //! Template commands: thin adapters over `core::templates`.
 
-use crate::core::templates::{self, Created, TemplateInfo, TemplateList};
+use maleficium_core::templates::{self, Created, TemplateInfo, TemplateList};
 
 #[tauri::command]
 pub fn templates_list() -> TemplateList {

@@ -122,7 +122,7 @@ mod tests {
         std::fs::write(dir.join("main.tex"), "x").unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("out-{}", name);
-        crate::core::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        crate::fs::grant_root(&id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "maleficium"
-version = "0.2.0"
+version.workspace = true
 license = "Apache-2.0"
 description = "Desktop-native LaTeX editor"
 authors = ["Ethan Wilson"]
@@ -10,7 +10,11 @@ default-run = "maleficium"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["structure", "events", "index"]
+members = ["core", "mcp", "structure", "events", "index"]
+
+# The app version; the MCP server reports it too.
+[workspace.package]
+version = "0.2.0"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -28,19 +32,16 @@ tauri-plugin-fs = { version = "2.5.2", features = ["watch"] }
 tauri-plugin-dialog = "2.7.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-rmcp = { version = "3.4.0", features = ["server", "transport-io"] }
-tokio = { version = "1.53.1", features = ["full"] }
-schemars = "1.2.2"
 anyhow = "1.0.104"
-dirs = "6.0.0"
 dunce = "1.0.5"
-sha2 = "0.10.9"
+maleficium-core = { path = "core" }
+maleficium-mcp = { path = "mcp" }
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 maleficium-index = { path = "index" }
 
 [dev-dependencies]
-libc = "0.2.189"
+maleficium-core = { path = "core", features = ["test-support"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
