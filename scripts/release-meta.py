@@ -11,7 +11,8 @@
                                 existing X.Y.Z or Unreleased section), else
                                 keep an existing X.Y.Z section, else rename
                                 "## Unreleased"; exit 1 when none of these
-                                yields notes
+                                yields notes. Leaves an empty "## Unreleased"
+                                on top for the next release's notes
   release-meta.py stale         exit 1, listing each hit, if any version in
                                 CHANGELOG.md is written into app source or
                                 user docs, where a bump would leave it behind
@@ -90,6 +91,12 @@ def changelog(ver, date, notes_file=None):
         first = re.search(r"^## ", text, re.M)
         at = first.start() if first else len(text)
         text = text[:at] + new + text[at:]
+    # Keep an Unreleased heading on top, so PRs add their notes under it
+    # instead of each adding the heading (which conflicts between PRs).
+    if not section(text, "Unreleased"):
+        first = re.search(r"^## ", text, re.M)
+        at = first.start() if first else len(text)
+        text = text[:at] + "## Unreleased\n\n" + text[at:]
     CHANGELOG.write_text(text)
     return 0
 

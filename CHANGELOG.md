@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### For contributors
+
+- **Commit hooks fix formatting instead of only reporting it.** `cargo fmt`, `prettier` and `eslint --fix` rewrite the staged files; re-stage them and commit again. The Rust format check now covers every workspace crate, not just the app crate, in the hooks, `npm run check` and CI.
+
 ## 0.2.0 - 2026-09-27
 
 Maleficium now builds for macOS and Windows as previews, and its MCP server ships inside the app so AI agents can write and compile LaTeX through it.
