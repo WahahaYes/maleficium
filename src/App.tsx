@@ -468,30 +468,48 @@ export default function App({
       });
       return;
     }
-    if (hasDir(fileName)) {
-      const cur = buffers.get(fileName);
-      const text = cur?.value ?? tex;
-      await saveTex(fileName, text, cur?.disk);
-      ownWrites.wrote(fileName, text);
-      setBuffers((b) => markSaved(b, fileName));
-      await recordRevision(fileName, text);
-      setLog('saved ' + fileName);
+    try {
+      if (hasDir(fileName)) {
+        const cur = buffers.get(fileName);
+        const text = cur?.value ?? tex;
+        await saveTex(fileName, text, cur?.disk);
+        ownWrites.wrote(fileName, text);
+        setBuffers((b) => markSaved(b, fileName));
+        await recordRevision(fileName, text);
+        setLog('saved ' + fileName);
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          actor: 'user',
+          message: 'saved ' + fileName,
+          event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
+        });
+      } else {
+        await saveTexToDisk(fileName, tex);
+        setLog('saved ' + fileName);
+        emit({
+          scope: 'fs',
+          kind: 'success',
+          actor: 'user',
+          message: 'saved ' + fileName,
+          event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
+        });
+      }
+    } catch (e) {
+      // Refused (held for a conflict, or the file changed on disk) or failed:
+      // the buffer stays dirty, and the user is told instead of nothing happening.
+      setLog('save failed: ' + fileName);
       emit({
         scope: 'fs',
-        kind: 'success',
+        kind: 'error',
         actor: 'user',
-        message: 'saved ' + fileName,
-        event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
-      });
-    } else {
-      await saveTexToDisk(fileName, tex);
-      setLog('saved ' + fileName);
-      emit({
-        scope: 'fs',
-        kind: 'success',
-        actor: 'user',
-        message: 'saved ' + fileName,
-        event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
+        message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
+        event: {
+          action: 'file.save-failed',
+          path: fileName,
+          trigger: 'manual',
+          error: String(e).slice(0, 200),
+        },
       });
     }
   }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
