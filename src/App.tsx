@@ -48,7 +48,7 @@ import {
 } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
-import { onPdf, type PreviewDoc } from './lib/preview-bus';
+import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
@@ -1313,6 +1313,8 @@ export default function App({
     </Box>
   );
 
+  const mainDoc =
+    mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
   const previewPane = (
     <Box
       sx={{
@@ -1326,6 +1328,7 @@ export default function App({
       <Preview
         pdfUrl={pdfUrl}
         stamp={previewDoc?.stamp ?? 0}
+        mainSource={mainDoc}
         pageNumber={pageNumber}
         onPage={setPageNumber}
         onSync={handleForwardSync}
