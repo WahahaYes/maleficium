@@ -155,4 +155,5 @@ Match on `event.action` rather than the message text. For a stills run, set `STI
 
 - Harnesses find the repo root from their own path. No hardcoded absolute paths, and no writes outside the OS temp dir.
 - Never commit large fixtures: reuse `e2e/fixtures/simple/` or generate into the temp dir at runtime. Harnesses copy it to a scratch dir and never write to it.
+- Real papers live in `e2e/fixtures/vendored/`, each with its source, license, and current build status; see its README before adding one.
 - Name tests for what they check, not for when they were written.

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Make a scratch playground of projects to open in the app by hand:
 #   <dir>/simple      a copy of the e2e/fixtures/simple test fixture
+#   <dir>/<paper>     a copy of each real paper in e2e/fixtures/vendored
 #   <dir>/<template>  one project per built-in template, made the way the
 #                     app makes one (the template's files minus template.json)
 # <dir> defaults to playground/ in the repo root, which git ignores.
@@ -26,6 +27,9 @@ add() { # <name> <source dir>
 }
 
 add simple "$ROOT/e2e/fixtures/simple"
+for p in "$ROOT"/e2e/fixtures/vendored/*/; do
+    add "$(basename "$p")" "$p"
+done
 for t in "$ROOT"/src-tauri/templates/*/; do
     [ -f "$t/template.json" ] || continue
     add "$(basename "$t")" "$t"
