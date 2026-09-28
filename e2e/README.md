@@ -94,7 +94,7 @@ python3 e2e/agent-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor
 python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-sonnet-5, source build
 ```
 
-- The opencode runner needs `opencode` (signed in to the model's provider) and `bwrap`. The claude runner needs the `claude` CLI (`claude auth login`, or `claude setup-token`) and `bwrap`; it defaults to `claude-sonnet-5` and finds `claude` on `PATH` (override with `--claude-bin`). Runs are manual only, never in CI or pre-commit.
+- The opencode runner needs `opencode` (signed in to the model's provider) and `bwrap`. The claude runner needs the `claude` CLI, a token from `claude setup-token` (in `CLAUDE_CODE_OAUTH_TOKEN`, or in `~/.config/maleficium/claude-oauth-token` with mode 0600), and `bwrap`; it defaults to `claude-sonnet-5` and finds `claude` on `PATH` (override with `--claude-bin`). Runs are manual only, never in CI or pre-commit.
 - Results go to `--out` (default `/var/tmp/maleficium-agent-runs/<time>`): a dir per run with `result.json` (oracles, metrics, the MCP call record), `events.jsonl` (the runner's own transcript, see below), and the project as the agent left it; plus `summary.md`. Opencode runs also keep a live `opencode.log`.
 - A run that hits its scenario's `timeout_s` is killed and reported as a timeout.
 - `--budget` (default $5) stops the whole `-n` sweep once the cost the runner reports adds up to it (free opencode models report $0). For the claude runner, `--max-turns` (default 40) and `--max-budget-usd` (default $2) are an additional hard per-run cap, passed straight to `claude -p`.
@@ -104,7 +104,7 @@ python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-son
 
 #### Claude runner isolation
 
-The CLI never sees the real `~/.claude`. Each run gets a scratch `HOME` holding only a copy of `~/.claude/.credentials.json` (subscription OAuth; `--bare` is not used because it accepts only API keys), plus:
+The CLI never sees the real `~/.claude`. Each run gets an empty scratch `HOME` and the `setup-token` token in its environment. No credentials file is copied, so run dirs hold no secret and the run cannot rotate your login's refresh token. `--bare` is not used because it accepts only API keys. Also:
 
 - `--setting-sources ""`: no settings files are loaded.
 - `--restricted`: file tools stay inside the project; shell and web tools are dropped.
