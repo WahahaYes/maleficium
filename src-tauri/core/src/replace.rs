@@ -3,7 +3,9 @@
 //! has changed since the preview. Before anything is written, every file's
 //! prior content goes into one history batch, so one undo restores them all.
 
-use std::sync::{Mutex, OnceLock};
+use crate::Core;
+
+use std::sync::Mutex;
 
 use maleficium_events::BatchFile;
 use maleficium_index::replace::{self, BufferEdit, Planned, ReplaceApplied, ReplacePreview};
@@ -18,20 +20,19 @@ struct Held {
     replacements: u32,
 }
 
-static PLANS: OnceLock<Mutex<Vec<(String, Held)>>> = OnceLock::new();
-
-fn plans() -> &'static Mutex<Vec<(String, Held)>> {
-    PLANS.get_or_init(Default::default)
-}
+/// Plans held for apply, keyed by token, oldest first.
+#[derive(Default)]
+pub(crate) struct Plans(Mutex<Vec<(String, Held)>>);
 
 /// Plan replacing every match of `q` with `replacement`.
 pub fn preview(
+    cx: &Core,
     root_id: &str,
     q: &Query,
     replacement: &str,
     main_rel: Option<&str>,
 ) -> Result<ReplacePreview, String> {
-    let (files, hunks_truncated) = super::index::with(root_id, |l| {
+    let (files, hunks_truncated) = super::index::with(cx, root_id, |l| {
         replace::plan(&l.index, q, replacement, main_rel)
     })??;
     let replacements = files.iter().map(|f| f.file.replacements).sum();
@@ -61,7 +62,9 @@ pub fn preview(
         replacements,
         hunks_truncated,
     };
-    let mut held = plans()
+    let mut held = cx
+        .plans()
+        .0
         .lock()
         .map_err(|_| "plan store poisoned".to_string())?;
     held.push((
@@ -81,9 +84,16 @@ pub fn preview(
 /// Apply a previewed plan. Files named in `keep_open` are not written: their
 /// new text comes back in `edits` for the caller's open buffers. Every file,
 /// written or not, is in the returned history batch.
-pub fn apply(root_id: &str, token: &str, keep_open: &[String]) -> Result<ReplaceApplied, String> {
+pub fn apply(
+    cx: &Core,
+    root_id: &str,
+    token: &str,
+    keep_open: &[String],
+) -> Result<ReplaceApplied, String> {
     let held = {
-        let mut plans = plans()
+        let mut plans = cx
+            .plans()
+            .0
             .lock()
             .map_err(|_| "plan store poisoned".to_string())?;
         let i = plans
@@ -92,7 +102,7 @@ pub fn apply(root_id: &str, token: &str, keep_open: &[String]) -> Result<Replace
             .ok_or_else(|| "unknown or expired replace plan: preview again".to_string())?;
         plans.remove(i).1
     };
-    let stale: Vec<String> = super::index::with(root_id, |l| {
+    let stale: Vec<String> = super::index::with(cx, root_id, |l| {
         held.files
             .iter()
             .filter(|f| {
@@ -112,7 +122,7 @@ pub fn apply(root_id: &str, token: &str, keep_open: &[String]) -> Result<Replace
         .iter()
         .map(|f| (f.file.rel.clone(), f.before.clone().into_bytes()))
         .collect();
-    let batch = super::history::record_batch(root_id, &prior)?;
+    let batch = super::history::record_batch(cx, root_id, &prior)?;
     let mut written = Vec::new();
     let mut edits = Vec::new();
     for f in &held.files {
@@ -123,12 +133,12 @@ pub fn apply(root_id: &str, token: &str, keep_open: &[String]) -> Result<Replace
             });
             continue;
         }
-        let abs = super::fs::resolve_in(root_id, &f.file.rel)?;
+        let abs = super::fs::resolve_in(cx, root_id, &f.file.rel)?;
         std::fs::write(&abs, &f.after)
             .map_err(|e| format!("write failed: {}: {}", f.file.rel, e))?;
         written.push(f.file.rel.clone());
     }
-    super::index::touch(root_id, &written)?;
+    super::index::touch(cx, root_id, &written)?;
     Ok(ReplaceApplied {
         batch,
         written,
@@ -138,10 +148,10 @@ pub fn apply(root_id: &str, token: &str, keep_open: &[String]) -> Result<Replace
 }
 
 /// Undo a replace: every file of the batch back on disk as it was before.
-pub fn undo(root_id: &str, batch: &str) -> Result<Vec<BatchFile>, String> {
-    let done = super::history::restore_batch(root_id, batch)?;
+pub fn undo(cx: &Core, root_id: &str, batch: &str) -> Result<Vec<BatchFile>, String> {
+    let done = super::history::restore_batch(cx, root_id, batch)?;
     let rels: Vec<String> = done.iter().map(|f| f.rel.clone()).collect();
-    super::index::touch(root_id, &rels)?;
+    super::index::touch(cx, root_id, &rels)?;
     Ok(done)
 }
 
@@ -150,7 +160,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
+    fn project(cx: &Core, name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("rp-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -161,12 +171,13 @@ mod tests {
         }
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("rp-{}", name);
-        super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        super::super::grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
-    fn held_count(root_id: &str) -> usize {
-        plans()
+    fn held_count(cx: &Core, root_id: &str) -> usize {
+        cx.plans()
+            .0
             .lock()
             .map(|p| p.iter().filter(|(_, h)| h.root_id == root_id).count())
             .unwrap_or(0)
@@ -185,7 +196,9 @@ mod tests {
 
     #[test]
     fn preview_apply_undo_round_trips_bytes() {
+        let cx = &Core::default();
         let (id, dir) = project(
+            cx,
             "roundtrip",
             &[
                 ("a.tex", "old old\r\n"),
@@ -193,18 +206,21 @@ mod tests {
                 ("c.tex", "keep"),
             ],
         );
-        let p = preview(&id, &q("old"), "new", None).unwrap();
+        let p = preview(cx, &id, &q("old"), "new", None).unwrap();
         assert_eq!((p.files.len(), p.replacements), (2, 3));
         assert_eq!(read(&dir, "a.tex"), "old old\r\n", "preview writes nothing");
-        let a = apply(&id, &p.token, &[]).unwrap();
+        let a = apply(cx, &id, &p.token, &[]).unwrap();
         assert_eq!(a.written, ["a.tex", "ch/b.tex"]);
         assert_eq!(read(&dir, "a.tex"), "new new\r\n");
         assert_eq!(read(&dir, "ch/b.tex"), "new\n");
-        assert!(apply(&id, &p.token, &[]).is_err(), "a plan applies once");
+        assert!(
+            apply(cx, &id, &p.token, &[]).is_err(),
+            "a plan applies once"
+        );
         // The index sees the write at once.
-        let again = preview(&id, &q("old"), "new", None).unwrap();
+        let again = preview(cx, &id, &q("old"), "new", None).unwrap();
         assert!(again.files.is_empty());
-        let restored = undo(&id, &a.batch).unwrap();
+        let restored = undo(cx, &id, &a.batch).unwrap();
         assert_eq!(restored.len(), 2);
         assert_eq!(read(&dir, "a.tex"), "old old\r\n");
         assert_eq!(read(&dir, "ch/b.tex"), "old\n");
@@ -213,21 +229,23 @@ mod tests {
 
     #[test]
     fn a_stale_plan_is_refused_whole() {
-        let (id, dir) = project("stale", &[("a.tex", "x"), ("b.tex", "x")]);
-        let p = preview(&id, &q("x"), "y", None).unwrap();
+        let cx = &Core::default();
+        let (id, dir) = project(cx, "stale", &[("a.tex", "x"), ("b.tex", "x")]);
+        let p = preview(cx, &id, &q("x"), "y", None).unwrap();
         std::fs::write(dir.join("b.tex"), "x changed").unwrap();
-        let e = apply(&id, &p.token, &[]).unwrap_err();
+        let e = apply(cx, &id, &p.token, &[]).unwrap_err();
         assert!(e.contains("b.tex"), "{e}");
         assert_eq!(read(&dir, "a.tex"), "x", "nothing replaced");
-        assert!(apply(&id, "r-unknown", &[]).is_err());
+        assert!(apply(cx, &id, "r-unknown", &[]).is_err());
     }
 
     #[test]
     fn open_buffers_come_back_as_edits_and_join_the_batch() {
-        let (id, dir) = project("open", &[("a.tex", "x on disk"), ("b.tex", "x")]);
-        super::super::index::overlay(&id, "a.tex", Some("x unsaved".into())).unwrap();
-        let p = preview(&id, &q("x"), "y", None).unwrap();
-        let a = apply(&id, &p.token, &["a.tex".to_string()]).unwrap();
+        let cx = &Core::default();
+        let (id, dir) = project(cx, "open", &[("a.tex", "x on disk"), ("b.tex", "x")]);
+        super::super::index::overlay(cx, &id, "a.tex", Some("x unsaved".into())).unwrap();
+        let p = preview(cx, &id, &q("x"), "y", None).unwrap();
+        let a = apply(cx, &id, &p.token, &["a.tex".to_string()]).unwrap();
         assert_eq!(a.written, ["b.tex"]);
         assert_eq!(
             a.edits,
@@ -237,20 +255,21 @@ mod tests {
             }]
         );
         assert_eq!(read(&dir, "a.tex"), "x on disk");
-        let members = super::super::history::batch_files(&id, &a.batch);
+        let members = super::super::history::batch_files(cx, &id, &a.batch);
         let a_rev = &members.iter().find(|f| f.rel == "a.tex").unwrap().rev;
         assert_eq!(
-            super::super::history::get(&id, "a.tex", a_rev).unwrap(),
+            super::super::history::get(cx, &id, "a.tex", a_rev).unwrap(),
             b"x unsaved"
         );
     }
 
     #[test]
     fn plans_are_bounded() {
-        let (id, _) = project("bounded", &[("a.tex", "x")]);
+        let cx = &Core::default();
+        let (id, _) = project(cx, "bounded", &[("a.tex", "x")]);
         for _ in 0..MAX_PLANS + 3 {
-            preview(&id, &q("x"), "y", None).unwrap();
+            preview(cx, &id, &q("x"), "y", None).unwrap();
         }
-        assert!(held_count(&id) <= MAX_PLANS);
+        assert!(held_count(cx, &id) <= MAX_PLANS);
     }
 }

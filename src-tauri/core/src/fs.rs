@@ -2,21 +2,21 @@
 //! its path against a granted root and rejects escapes before touching
 //! the fs.
 
+use crate::Core;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 use super::{hash_root, is_hidden_name, FileEntry};
 
-/// Granted roots, keyed by session id. Roots stay readable until quit.
-static ROOTS: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
-
-fn roots() -> &'static Mutex<HashMap<String, PathBuf>> {
-    ROOTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+/// Granted roots, keyed by session id. Roots stay readable until the
+/// `Core` is dropped.
+#[derive(Default)]
+pub(crate) struct Sessions(Mutex<HashMap<String, PathBuf>>);
 
 fn validate_root_id(id: &str) -> Result<&str, String> {
-    crate::commands::guard::reject_empty_nul(id)?;
+    crate::guard::reject_empty_nul(id)?;
     if id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
         return Err("forbidden root id (alphanumeric/dash, max 64)".to_string());
     }
@@ -24,10 +24,11 @@ fn validate_root_id(id: &str) -> Result<&str, String> {
 }
 
 /// Mint a session root: validate the directory, canonicalize it, store it.
-pub fn grant_root(id: &str, root: &str) -> Result<PathBuf, String> {
+pub fn grant_root(cx: &Core, id: &str, root: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;
-    let canon = crate::commands::guard::canonical_root(root)?;
-    roots()
+    let canon = crate::guard::canonical_root(root)?;
+    cx.sessions()
+        .0
         .lock()
         .map_err(|_| "roots lock poisoned".to_string())?
         .insert(id.to_string(), canon.clone());
@@ -36,24 +37,25 @@ pub fn grant_root(id: &str, root: &str) -> Result<PathBuf, String> {
 
 /// Register a project root under its own id (djb2 of the canonical path).
 /// Returns the canonical root and the id that names it across the seam.
-pub fn grant_project(root: &str) -> Result<(PathBuf, String), String> {
-    let canon = crate::commands::guard::canonical_root(root)?;
+pub fn grant_project(cx: &Core, root: &str) -> Result<(PathBuf, String), String> {
+    let canon = crate::guard::canonical_root(root)?;
     let id = hash_root(&canon.to_string_lossy());
-    grant_root(&id, &canon.to_string_lossy())?;
+    grant_root(cx, &id, &canon.to_string_lossy())?;
     Ok((canon, id))
 }
 
 /// Create the untitled scratch dir if needed and register it like a project.
-pub fn grant_untitled() -> Result<(PathBuf, String), String> {
+pub fn grant_untitled(cx: &Core) -> Result<(PathBuf, String), String> {
     let dir = super::untitled_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("scratch dir unavailable: {}", e))?;
-    grant_project(&dir.to_string_lossy())
+    grant_project(cx, &dir.to_string_lossy())
 }
 
 /// Look up a session root by id.
-pub fn session_root(id: &str) -> Result<PathBuf, String> {
+pub fn session_root(cx: &Core, id: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;
-    roots()
+    cx.sessions()
+        .0
         .lock()
         .map_err(|_| "roots lock poisoned".to_string())?
         .get(id)
@@ -63,9 +65,9 @@ pub fn session_root(id: &str) -> Result<PathBuf, String> {
 
 /// Resolve `candidate` inside the session root: rejects NUL, requires the
 /// canonicalized path to sit under the granted root.
-pub fn resolve_in(id: &str, candidate: &str) -> Result<PathBuf, String> {
-    crate::commands::guard::reject_empty_nul(candidate)?;
-    let root = session_root(id)?;
+pub fn resolve_in(cx: &Core, id: &str, candidate: &str) -> Result<PathBuf, String> {
+    crate::guard::reject_empty_nul(candidate)?;
+    let root = session_root(cx, id)?;
     let joined = if Path::new(candidate).is_absolute() {
         PathBuf::from(candidate)
     } else {
@@ -81,12 +83,12 @@ pub fn resolve_in(id: &str, candidate: &str) -> Result<PathBuf, String> {
 
 /// Resolve `candidate` for reading: an existing file must resolve inside the
 /// root; a missing path resolves lexically (no `..` escape past the root).
-pub fn resolve_read(id: &str, candidate: &str) -> Result<PathBuf, String> {
-    if let Ok(p) = resolve_in(id, candidate) {
+pub fn resolve_read(cx: &Core, id: &str, candidate: &str) -> Result<PathBuf, String> {
+    if let Ok(p) = resolve_in(cx, id, candidate) {
         return Ok(p);
     }
-    crate::commands::guard::reject_empty_nul(candidate)?;
-    let root = session_root(id)?;
+    crate::guard::reject_empty_nul(candidate)?;
+    let root = session_root(cx, id)?;
     if candidate.contains('\0') {
         return Err("forbidden path: NUL byte".to_string());
     }
@@ -178,7 +180,7 @@ fn split_trash_name(name: &str) -> Option<(String, String)> {
         return None;
     }
     let rel = comps.join("/");
-    if !crate::commands::guard::is_bare_filename(&base)
+    if !crate::guard::is_bare_filename(&base)
         || comps.iter().any(|c| c.is_empty())
         || rel.contains('\0')
     {
@@ -188,8 +190,8 @@ fn split_trash_name(name: &str) -> Option<(String, String)> {
 }
 
 /// Move a project file to the app-local trash home. Returns the trash path.
-pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> {
-    let abs = resolve_in(id, rel)?;
+pub fn trash_file(cx: &Core, id: &str, rel: &str, confirm: &str) -> Result<String, String> {
+    let abs = resolve_in(cx, id, rel)?;
     // Compared as paths, not strings: on Windows the caller may spell the
     // same file with `/`, mixed separators, or another letter case. Only an
     // absolute path confirms (a bare name would resolve against the CWD).
@@ -212,7 +214,7 @@ pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> 
     if !abs.is_file() {
         return Err(format!("not a file: {}", rel));
     }
-    let root = session_root(id)?;
+    let root = session_root(cx, id)?;
     let home = trash_home(&root);
     std::fs::create_dir_all(&home).map_err(|e| format!("trash home unreachable: {}", e))?;
     let dest = home.join(trash_name(&abs, rel));
@@ -228,9 +230,9 @@ pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> 
 }
 
 /// Restore a trashed file to its original path.
-pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
-    crate::commands::guard::reject_empty_nul(trash_path)?;
-    let root = session_root(id)?;
+pub fn undo_trash(cx: &Core, id: &str, trash_path: &str) -> Result<String, String> {
+    crate::guard::reject_empty_nul(trash_path)?;
+    let root = session_root(cx, id)?;
     let home = trash_home(&root);
     let src = PathBuf::from(trash_path);
     let canon_src = dunce::canonicalize(&src)
@@ -244,7 +246,7 @@ pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
         .to_string_lossy();
     let (_base, rel) =
         split_trash_name(&name).ok_or_else(|| "forbidden path (not a trash entry)".to_string())?;
-    let dest = resolve_read(id, &rel)?;
+    let dest = resolve_read(cx, id, &rel)?;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("restore failed: {}", e))?;
     }
@@ -260,11 +262,11 @@ pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
 }
 
 /// List one directory level, sorted dirs-first. Hidden/build names skipped.
-pub fn list_dir(id: &str, rel: &str) -> Result<Vec<FileEntry>, String> {
+pub fn list_dir(cx: &Core, id: &str, rel: &str) -> Result<Vec<FileEntry>, String> {
     let dir = if rel.is_empty() || rel == "." {
-        session_root(id)?
+        session_root(cx, id)?
     } else {
-        resolve_read(id, rel)?
+        resolve_read(cx, id, rel)?
     };
     if !dir.is_dir() {
         return Err(format!("not a directory: {}", rel));
@@ -302,8 +304,8 @@ pub fn list_dir(id: &str, rel: &str) -> Result<Vec<FileEntry>, String> {
 }
 
 /// Read a project file as UTF-8 text.
-pub fn read_text(id: &str, rel: &str) -> Result<String, String> {
-    let abs = resolve_in(id, rel)?;
+pub fn read_text(cx: &Core, id: &str, rel: &str) -> Result<String, String> {
+    let abs = resolve_in(cx, id, rel)?;
     std::fs::read_to_string(&abs).map_err(|e| format!("read failed: {}", e))
 }
 
@@ -311,100 +313,107 @@ pub fn read_text(id: &str, rel: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    fn grant_tmp(name: &str) -> (String, PathBuf) {
+    fn grant_tmp(cx: &Core, name: &str) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("fs-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("t-{}", name);
-        grant_root(&id, &canon.to_string_lossy()).unwrap();
+        grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
     #[test]
     fn grant_project_mints_byte_hash_id() {
+        let cx = &Core::default();
         let dir = crate::test_scratch::dir("fs-proj-ü");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (canon, id) = grant_project(&dir.to_string_lossy()).unwrap();
+        let (canon, id) = grant_project(cx, &dir.to_string_lossy()).unwrap();
         assert_eq!(id, hash_root(&canon.to_string_lossy()));
-        assert_eq!(session_root(&id).unwrap(), canon);
+        assert_eq!(session_root(cx, &id).unwrap(), canon);
         std::fs::write(canon.join("main.tex"), "x").unwrap();
-        assert!(resolve_in(&id, "main.tex").is_ok());
-        assert!(resolve_in(&id, "../x").is_err());
-        assert!(grant_project("relative/dir").is_err());
+        assert!(resolve_in(cx, &id, "main.tex").is_ok());
+        assert!(resolve_in(cx, &id, "../x").is_err());
+        assert!(grant_project(cx, "relative/dir").is_err());
     }
 
     #[test]
     fn grant_rejects_bad_ids_and_paths() {
-        assert!(grant_root("", "/tmp").is_err());
-        assert!(grant_root("a/b", "/tmp").is_err());
-        assert!(grant_root("ok-1", "relative/path").is_err());
-        assert!(grant_root("ok-2", "/tmp/a\0b").is_err());
+        let cx = &Core::default();
+        assert!(grant_root(cx, "", "/tmp").is_err());
+        assert!(grant_root(cx, "a/b", "/tmp").is_err());
+        assert!(grant_root(cx, "ok-1", "relative/path").is_err());
+        assert!(grant_root(cx, "ok-2", "/tmp/a\0b").is_err());
     }
 
     #[test]
     fn resolve_blocks_escape() {
-        let (id, _dir) = grant_tmp("escape");
+        let cx = &Core::default();
+        let (id, _dir) = grant_tmp(cx, "escape");
         for bad in crate::test_scratch::escapes() {
-            assert!(resolve_in(&id, bad).is_err(), "{bad}");
-            assert!(resolve_read(&id, bad).is_err(), "{bad}");
+            assert!(resolve_in(cx, &id, bad).is_err(), "{bad}");
+            assert!(resolve_read(cx, &id, bad).is_err(), "{bad}");
         }
-        assert!(resolve_in(&id, "").is_err());
-        assert!(resolve_in(&id, "a\0b").is_err());
+        assert!(resolve_in(cx, &id, "").is_err());
+        assert!(resolve_in(cx, &id, "a\0b").is_err());
     }
 
     #[test]
     fn trash_requires_matching_confirm() {
-        let (id, dir) = grant_tmp("confirm");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "confirm");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
-        let abs = resolve_in(&id, "a.tex")
+        let abs = resolve_in(cx, &id, "a.tex")
             .unwrap()
             .to_string_lossy()
             .into_owned();
         // The first call asks for the confirm, naming the value to pass.
-        let ask = trash_file(&id, "a.tex", "").unwrap_err();
+        let ask = trash_file(cx, &id, "a.tex", "").unwrap_err();
         assert!(
             ask.starts_with("confirm needed") && ask.ends_with(&abs),
             "{ask}"
         );
-        let wrong = trash_file(&id, "a.tex", "a.tex").unwrap_err();
+        let wrong = trash_file(cx, &id, "a.tex", "a.tex").unwrap_err();
         assert!(
             wrong.contains("absolute path") && wrong.ends_with(&abs),
             "{wrong}"
         );
-        assert!(trash_file(&id, "a.tex", "wrong").is_err());
+        assert!(trash_file(cx, &id, "a.tex", "wrong").is_err());
         assert!(dir.join("a.tex").exists());
     }
 
     #[test]
     fn trash_confirm_accepts_another_spelling_of_the_same_file() {
-        let (id, dir) = grant_tmp("confirm-spelling");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "confirm-spelling");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
         let spelled = format!("{}/./a.tex", dir.to_string_lossy());
-        assert!(trash_file(&id, "a.tex", &spelled).is_ok());
+        assert!(trash_file(cx, &id, "a.tex", &spelled).is_ok());
         assert!(!dir.join("a.tex").exists());
     }
 
     #[test]
     fn trash_round_trip_restores_bytes() {
-        let (id, dir) = grant_tmp("roundtrip");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "roundtrip");
         std::fs::write(dir.join("a.tex"), "hello").unwrap();
         let abs = dir.join("a.tex").to_string_lossy().to_string();
-        let trashed = trash_file(&id, "a.tex", &abs).unwrap();
+        let trashed = trash_file(cx, &id, "a.tex", &abs).unwrap();
         assert!(!dir.join("a.tex").exists());
-        let back = undo_trash(&id, &trashed).unwrap();
+        let back = undo_trash(cx, &id, &trashed).unwrap();
         assert_eq!(back, abs);
         assert_eq!(std::fs::read_to_string(dir.join("a.tex")).unwrap(), "hello");
     }
 
     #[test]
     fn mcp_delete_lands_in_app_trash_dir() {
-        let (id, dir) = grant_tmp("apptrash");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "apptrash");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("sub/a.tex"), "x").unwrap();
         let abs = dir.join("sub/a.tex").to_string_lossy().to_string();
-        let trashed = PathBuf::from(trash_file(&id, "sub/a.tex", &abs).unwrap());
+        let trashed = PathBuf::from(trash_file(cx, &id, "sub/a.tex", &abs).unwrap());
         let app_dir = super::super::data_base_dir()
             .join("maleficium-trash")
             .join(hash_root(&dir.to_string_lossy()));
@@ -412,7 +421,7 @@ mod tests {
         let name = trashed.file_name().unwrap().to_string_lossy().to_string();
         let stamp = name.strip_prefix("a.tex__sub__a.tex__").unwrap();
         assert!(!stamp.is_empty() && stamp.bytes().all(|b| b.is_ascii_digit()));
-        undo_trash(&id, &trashed.to_string_lossy()).unwrap();
+        undo_trash(cx, &id, &trashed.to_string_lossy()).unwrap();
         assert!(dir.join("sub/a.tex").exists());
     }
 
@@ -458,13 +467,14 @@ mod tests {
 
     #[test]
     fn mcp_undo_restores_underscored_path() {
-        let (id, dir) = grant_tmp("underscore");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "underscore");
         std::fs::create_dir_all(dir.join("a__b")).unwrap();
         std::fs::write(dir.join("a__b/my__notes.tex"), "u").unwrap();
         let abs = dir.join("a__b/my__notes.tex").to_string_lossy().to_string();
-        let trashed = trash_file(&id, "a__b/my__notes.tex", &abs).unwrap();
+        let trashed = trash_file(cx, &id, "a__b/my__notes.tex", &abs).unwrap();
         assert!(!dir.join("a__b/my__notes.tex").exists());
-        let back = undo_trash(&id, &trashed).unwrap();
+        let back = undo_trash(cx, &id, &trashed).unwrap();
         assert_eq!(back, abs);
         assert_eq!(
             std::fs::read_to_string(dir.join("a__b/my__notes.tex")).unwrap(),
@@ -474,9 +484,10 @@ mod tests {
 
     #[test]
     fn undo_rejects_outside_trash() {
-        let (id, dir) = grant_tmp("outside");
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "outside");
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
         let abs = dir.join("a.tex").to_string_lossy().to_string();
-        assert!(undo_trash(&id, &abs).is_err());
+        assert!(undo_trash(cx, &id, &abs).is_err());
     }
 }

@@ -12,7 +12,7 @@
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
-ENGINE_RS="$ROOT/src-tauri/src/core/engine.rs"
+ENGINE_RS="$ROOT/src-tauri/core/src/engine.rs"
 SIDECARS="$ROOT/scripts/fetch-sidecars.sh"
 RELAY=https://relay.fullyjustified.net
 RELAY_FORMAT=33
