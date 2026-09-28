@@ -1,0 +1,5 @@
+{
+  "main": "paper.tex",
+  "expect": "fail",
+  "why": "minted needs shell escape; the bundle also lacks eolang.sty"
+}
