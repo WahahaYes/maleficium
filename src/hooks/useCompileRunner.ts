@@ -189,15 +189,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     await runCompile(mainFile ?? (hasDir(fileName) ? fileName : null), { popup });
   }
 
-  // Shared compile runner: `target` is the main-file target, or an explicit
-  // one-off file. `skipPersist` is the warm-open path only: the target was
-  // just loaded from disk, so there is nothing to persist — warm never
-  // writes. All other callers persist through the ownership check.
-  // Reentrancy: a second call while `compiling` is a no-op returning false
-  // (warm-on-open and double-Ctrl+R collapse into one run — never two
-  // engine children). Returns true when this call owned the run. The gate
-  // reads a ref (not state) so a warm run racing a user Ctrl+R in the same
-  // tick still collapses.
+  // Every compile goes through here. Only warm-open sets `skipPersist` (the
+  // target was just read from disk). A call while one is running returns
+  // false, so warm-open and a double Ctrl+R never start two engines; the
+  // gate is a ref so two calls in the same tick still collapse.
   const phaseRef = useRef<CompilePhase>('idle');
   async function runCompile(
     target: string | null,
@@ -654,17 +649,11 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     await runCompile(mainFile ?? (hasDir(fileName) ? fileName : null), { networked: true });
   }
 
-  // Cache-warm on open: a background compile of a freshly opened project's
-  // main file, after the editor is populated. The write phase is skipped
-  // (skipPersist: disk is fresh, warm never writes). Two rules: (1) this
-  // runs only when the engine cache is usable — no cache entry means a full
-  // cold build, which is the user's explicit Ctrl+R to pay for, not open's;
-  // (2) a warm failure is quiet (debug line only) — open must never look
-  // broken because a background guess failed; the user's explicit Ctrl+R
-  // reports loudly through the normal path.
-  // `project` is passed explicitly: warm runs right after an open, before
-  // this closure has seen the new root. `cold` builds even without cached
-  // output: a project the user just created or asked to open by name.
+  // Background compile after an open. Without fresh cached output it skips
+  // (a cold build waits for the user's Ctrl+R) unless `cold` is set: a
+  // project just created or opened by name. It pops no pre-compile warnings
+  // and logs as the system, not the user. `project` is passed in because
+  // this closure has not seen the new root yet.
   async function warmCompile(mainAbsPath: string, project: SessionRoot, cold = false) {
     const src = sourceFor(mainAbsPath, [project]);
     const usable = src != null && (cold || (await outputsFresh(src.rootId, src.mainRel)));
