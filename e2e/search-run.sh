@@ -1,7 +1,7 @@
 #!/bin/bash
 # Search driver over the stdio sidecar: spawns `maleficium-mcp` and scripts
 # the project-index tools (search, find_files, the structure tools that read
-# the index) over JSON-RPC against a scratch copy of playground/simple/.
+# the index) over JSON-RPC against a scratch copy of e2e/fixtures/simple/.
 # No compile, no network. Writes nothing outside OS tmp.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 [ -x "$BIN" ] || { echo "FAIL: sidecar missing: build with cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp"; exit 1; }
 
-cp -r "$DEVROOT/playground/simple" "$SCRATCH/proj"
+cp -r "$DEVROOT/e2e/fixtures/simple" "$SCRATCH/proj"
 BEFORE="$(cd "$SCRATCH/proj" && find . -type f | sort)"
 export MCP_BIN="$BIN" MCP_ROOT="$SCRATCH/proj"
 # App data (history, readiness) is per run.

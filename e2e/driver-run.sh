@@ -1,7 +1,7 @@
 #!/bin/bash
 # Driver-driven run over the stdio sidecar. Spawns `maleficium-mcp`, scripts
 # grant -> compile -> poll -> synctex -> delete -> undo over JSON-RPC against
-# a scratch copy of playground/simple/, then asserts porcelain discipline +
+# a scratch copy of e2e/fixtures/simple/, then asserts porcelain discipline +
 # artifact homes.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Honor a shared target dir (e.g. worktree runs reuse the main checkout's
 # build cache via CARGO_TARGET_DIR): the binary lives where cargo put it.
 BIN="${CARGO_TARGET_DIR:-$DEVROOT/src-tauri/target}/debug/maleficium-mcp"
-FIXTURE="$DEVROOT/playground/simple"
+FIXTURE="$DEVROOT/e2e/fixtures/simple"
 SCRATCH="$(mktemp -d /tmp/maleficium-driver-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 

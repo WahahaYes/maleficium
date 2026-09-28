@@ -4,7 +4,7 @@
 #
 # The app's file operations cannot litter the project dir: every app-local
 # derivation resolves outside it. This replicates each derivation in bash
-# against a scratch copy of playground/simple/, then asserts
+# against a scratch copy of e2e/fixtures/simple/, then asserts
 # `git status --porcelain` stays clean and the computed homes land in
 # app-data/app-cache — never under the project root.
 #
@@ -26,12 +26,12 @@ DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH="$(mktemp -d /tmp/maleficium-footprint-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 APPSRC="$DEVROOT/src"
-FIXTURE="$DEVROOT/playground/simple"
+FIXTURE="$DEVROOT/e2e/fixtures/simple"
 
 fail() { echo "FAIL: $1"; exit 1; }
 pass() { echo "ok: $1"; }
 
-# --- fixture: scratch copy of playground/simple/ as a git repo ---------------
+# --- fixture: scratch copy of e2e/fixtures/simple/ as a git repo ---------------
 cp -r "$FIXTURE" "$SCRATCH/proj"
 cd "$SCRATCH/proj"
 git init -q
