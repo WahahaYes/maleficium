@@ -320,34 +320,13 @@ def run_agent_opencode(scenario, server, model, run_dir, warm):
 
 def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_turns, budget_usd, claude_bin):
     """Drive `claude -p` against the server under test, isolated from the
-    user's real Claude Code config.
+    user's Claude Code config (see e2e/README.md).
 
-    Isolation and auth (see e2e/README.md for the full writeup): the CLI
-    process gets its own scratch HOME (run_dir/claude-home) holding nothing
-    but a copy of the user's OAuth `.credentials.json` -- no CLAUDE.md,
-    settings, hooks, plugins, or history come along, and `--setting-sources
-    ""` refuses to load any user/project/local settings.json even if one
-    somehow existed there. `--restricted` confines the built-in file tools to
-    the working directory (the project) and drops Bash/PowerShell/WebFetch
-    entirely, so the only way out of the project is a maleficium MCP call --
-    and the server enforces its own root on those. `--strict-mcp-config`
-    with a config file outside the project (naming only the maleficium
-    server, with its own separate scratch HOME) means no other MCP server
-    (not even an org-wide one from managed settings) is reachable.
-    `--bare` was considered and rejected: it forces API-key-only auth and
-    this account only has a claude.ai OAuth login, so `--bare` would break
-    auth entirely. The bwrap sandbox around all of this needs no extra binds
-    beyond run_dir, since the claude client's whole HOME lives inside it.
-
-    `--allowedTools` names the server's own tools (queried live via
-    discover_tool_names, not hardcoded) plus a small built-in file-tool set,
-    so nothing else needs a permission prompt; anything not listed is
-    auto-denied rather than hanging (verified empirically: headless -p mode
-    with no TTY denies immediately). `--tools` additionally trims the
-    built-in tool set advertised in the system prompt, which matters for
-    cost: leaving the full default tool/skill list in (this environment has
-    an unusually large one from managed policy) inflated prompt-cache-creation
-    cost by ~30x in a canary probe.
+    The CLI gets a scratch HOME holding only a copy of the OAuth credentials,
+    loads no settings, and reaches no MCP server but maleficium. `--restricted`
+    keeps the file tools inside the project and drops shell and web tools.
+    `--bare` is not an option: it accepts only API-key auth. `--tools` trims
+    the advertised built-in tools, which otherwise dominate prompt cost.
     """
     project = os.path.join(run_dir, "project")
     mcp_home = os.path.join(run_dir, "mcp-home")
@@ -387,16 +366,9 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
                          stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True)
 
     def pump():
-        """Timestamp each stream-json line as it is received and append it to
-        events.jsonl, live, so a stalled run is visible before it times out
-        (same purpose as opencode's tee to opencode.log) and so a screen
-        recording of the run can later be synced to the transcript by wall
-        clock. Each line is parsed as JSON and gets one added top-level
-        field, `_ts_ms` (epoch milliseconds when the harness read it);
-        nothing else in the payload is touched. A line that fails to parse
-        (should not happen for stream-json) is kept, not dropped, as
-        {"_ts_ms": ..., "_raw": line}.
-        """
+        """Append each stream-json line to events.jsonl as it arrives, with an
+        added `_ts_ms` field (epoch ms) so a screen recording can be synced
+        to the transcript. Unparseable lines are kept as `_raw`."""
         with open(events_path, "w") as out:
             for line in iter(p.stdout.readline, ""):
                 ts_ms = round(time.time() * 1000, 1)
