@@ -93,7 +93,7 @@ cmp -s "$TARGET" "$ORIG" || fail "restore did not round-trip exact bytes"
 pass "restore round-trips exact bytes (CRLF, tab, UTF-8, trailing blank line)"
 
 # restore is undoable: the replaced state is itself a revision
-STORE="$DEVROOT/src-tauri/src/core/history.rs"
+STORE="$DEVROOT/src-tauri/core/src/history.rs"
 grep -q "snapshotting what is on disk first" "$STORE" ||
     fail "restore does not preserve the replaced state"
 grep -q "store.record(rel, &current);" "$STORE" ||

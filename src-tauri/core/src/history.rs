@@ -6,6 +6,8 @@
 //! One store serves the app and the MCP server; an advisory lock on the
 //! project's history dir serializes writers across processes.
 
+use crate::Core;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -406,52 +408,58 @@ pub fn restore_to(store: &Store, rel: &str, rev: &str, abs: &Path) -> Option<Vec
 // Session-root adapters: the project is named by its session root id, paths
 // are root-relative.
 
-fn store_of(root_id: &str) -> Result<Store, String> {
-    Ok(Store::for_root(&super::session_root(root_id)?))
+fn store_of(cx: &Core, root_id: &str) -> Result<Store, String> {
+    Ok(Store::for_root(&super::session_root(cx, root_id)?))
 }
 
-pub fn record(root_id: &str, rel: &str, bytes: &[u8]) -> RecordOutcome {
-    match store_of(root_id) {
+pub fn record(cx: &Core, root_id: &str, rel: &str, bytes: &[u8]) -> RecordOutcome {
+    match store_of(cx, root_id) {
         Ok(s) => s.record(rel, bytes),
         Err(_) => skipped(RevisionSkipReason::Unavailable),
     }
 }
 
-pub fn record_batch(root_id: &str, files: &[(String, Vec<u8>)]) -> Result<String, String> {
-    store_of(root_id)?.record_batch(files)
+pub fn record_batch(
+    cx: &Core,
+    root_id: &str,
+    files: &[(String, Vec<u8>)],
+) -> Result<String, String> {
+    store_of(cx, root_id)?.record_batch(files)
 }
 
-pub fn list(root_id: &str, rel: &str) -> Vec<Revision> {
-    store_of(root_id).map(|s| s.list(rel)).unwrap_or_default()
+pub fn list(cx: &Core, root_id: &str, rel: &str) -> Vec<Revision> {
+    store_of(cx, root_id)
+        .map(|s| s.list(rel))
+        .unwrap_or_default()
 }
 
-pub fn get(root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
-    store_of(root_id).ok()?.get(rel, rev)
+pub fn get(cx: &Core, root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
+    store_of(cx, root_id).ok()?.get(rel, rev)
 }
 
-pub fn restore(root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
-    let store = store_of(root_id).ok()?;
-    let abs = super::resolve_read(root_id, rel).ok()?;
+pub fn restore(cx: &Core, root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
+    let store = store_of(cx, root_id).ok()?;
+    let abs = super::resolve_read(cx, root_id, rel).ok()?;
     restore_to(&store, rel, rev, &abs)
 }
 
-pub fn batch_files(root_id: &str, batch: &str) -> Vec<BatchFile> {
-    store_of(root_id)
+pub fn batch_files(cx: &Core, root_id: &str, batch: &str) -> Vec<BatchFile> {
+    store_of(cx, root_id)
         .map(|s| s.batch_files(batch))
         .unwrap_or_default()
 }
 
 /// Put every file of a replace batch back on disk. Returns the files
 /// restored; a file whose revision was evicted is left as it is.
-pub fn restore_batch(root_id: &str, batch: &str) -> Result<Vec<BatchFile>, String> {
-    let store = store_of(root_id)?;
+pub fn restore_batch(cx: &Core, root_id: &str, batch: &str) -> Result<Vec<BatchFile>, String> {
+    let store = store_of(cx, root_id)?;
     let files = store.batch_files(batch);
     if files.is_empty() {
         return Err(format!("unknown replace batch: {}", batch));
     }
     let mut done = Vec::new();
     for f in files {
-        let abs = super::resolve_read(root_id, &f.rel)?;
+        let abs = super::resolve_read(cx, root_id, &f.rel)?;
         if restore_to(&store, &f.rel, &f.rev, &abs).is_some() {
             done.push(f);
         }
@@ -459,8 +467,8 @@ pub fn restore_batch(root_id: &str, batch: &str) -> Result<Vec<BatchFile>, Strin
     Ok(done)
 }
 
-pub fn retention(root_id: &str) -> RetentionInfo {
-    match store_of(root_id) {
+pub fn retention(cx: &Core, root_id: &str) -> RetentionInfo {
+    match store_of(cx, root_id) {
         Ok(s) => s.retention(),
         Err(_) => Store::at(PathBuf::new()).retention(),
     }

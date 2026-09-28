@@ -1,0 +1,21 @@
+[package]
+name = "maleficium-mcp"
+version.workspace = true
+license = "Apache-2.0"
+edition = "2021"
+description = "The stdio MCP server over maleficium-core: no Tauri"
+
+[dependencies]
+rmcp = { version = "3.4.0", features = ["server", "transport-io"] }
+tokio = { version = "1.53.1", features = ["full"] }
+schemars = "1.2.2"
+serde = { version = "1.0.229", features = ["derive"] }
+anyhow = "1.0.104"
+maleficium-core = { path = "../core" }
+maleficium-structure = { path = "../structure" }
+maleficium-events = { path = "../events" }
+maleficium-index = { path = "../index" }
+
+[dev-dependencies]
+dunce = "1.0.5"
+maleficium-core = { path = "../core", features = ["test-support"] }

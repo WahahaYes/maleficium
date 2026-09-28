@@ -13,10 +13,13 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::core;
+use maleficium_core as core;
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Maleficium;
+/// The MCP adapter: one `Core` for the life of the stdio session.
+#[derive(Clone, Default)]
+struct Maleficium {
+    cx: core::Core,
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct GrantParams {
@@ -281,19 +284,19 @@ fn path_string(p: std::path::PathBuf) -> String {
 impl Maleficium {
     #[tool(description = "Grant a session project root (absolute directory, canonicalized)")]
     fn grant(&self, Parameters(p): Parameters<GrantParams>) -> Result<Json<PathOut>, String> {
-        let path = path_string(core::grant_root(&p.root_id, &p.root)?);
+        let path = path_string(core::grant_root(&self.cx, &p.root_id, &p.root)?);
         Ok(Json(PathOut { path }))
     }
 
     #[tool(description = "Show a granted session root")]
     fn info(&self, Parameters(p): Parameters<RootParams>) -> Result<Json<PathOut>, String> {
-        let path = path_string(core::session_root(&p.root_id)?);
+        let path = path_string(core::session_root(&self.cx, &p.root_id)?);
         Ok(Json(PathOut { path }))
     }
 
     #[tool(description = "List one directory level inside a session root")]
     fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<Json<ListOut>, String> {
-        let entries = core::list_dir(&p.root_id, p.rel.as_deref().unwrap_or("."))?
+        let entries = core::list_dir(&self.cx, &p.root_id, p.rel.as_deref().unwrap_or("."))?
             .into_iter()
             .map(|e| EntryOut {
                 name: e.name,
@@ -305,7 +308,7 @@ impl Maleficium {
 
     #[tool(description = "Read a project file as UTF-8 text")]
     fn read(&self, Parameters(p): Parameters<FileParams>) -> Result<Json<TextOut>, String> {
-        let text = core::read_text(&p.root_id, &p.rel)?;
+        let text = core::read_text(&self.cx, &p.root_id, &p.rel)?;
         Ok(Json(TextOut { text }))
     }
 
@@ -316,7 +319,13 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<CompileRunParams>,
     ) -> Result<Json<CompileRunOut>, String> {
-        let job_id = core::run_job(&p.root_id, &p.rel, p.networked.unwrap_or(false), 120)?;
+        let job_id = core::run_job(
+            &self.cx,
+            &p.root_id,
+            &p.rel,
+            p.networked.unwrap_or(false),
+            120,
+        )?;
         Ok(Json(CompileRunOut { job_id }))
     }
 
@@ -330,10 +339,10 @@ impl Maleficium {
         let tail = p.tail_lines.unwrap_or(50);
         let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(0).min(MAX_POLL_WAIT_MS));
         let deadline = tokio::time::Instant::now() + wait;
-        let mut r = core::poll_job(&p.job_id, tail)?;
+        let mut r = core::poll_job(&self.cx, &p.job_id, tail)?;
         while r.status == core::JobStatus::Running && tokio::time::Instant::now() < deadline {
             tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + POLL_STEP)).await;
-            r = core::poll_job(&p.job_id, tail)?;
+            r = core::poll_job(&self.cx, &p.job_id, tail)?;
         }
         Ok(Json(CompilePollOut {
             status: r.status.as_str().to_string(),
@@ -351,7 +360,9 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<RootParams>,
     ) -> Result<Json<maleficium_events::OfflineReadiness>, String> {
-        Ok(Json(core::compile::offline_readiness(&p.root_id)?))
+        Ok(Json(core::compile::offline_readiness(
+            &self.cx, &p.root_id,
+        )?))
     }
 
     #[tool(
@@ -362,7 +373,7 @@ impl Maleficium {
         Parameters(p): Parameters<MainParams>,
     ) -> Result<Json<OutputStampOut>, String> {
         Ok(Json(OutputStampOut {
-            stamp: core::output_stamp(&p.root_id, &p.main_rel)?,
+            stamp: core::output_stamp(&self.cx, &p.root_id, &p.main_rel)?,
         }))
     }
 
@@ -374,6 +385,7 @@ impl Maleficium {
         Parameters(p): Parameters<ExportPdfParams>,
     ) -> Result<Json<core::export::Exported>, String> {
         Ok(Json(core::export::export_pdf(
+            &self.cx,
             &p.root_id,
             &p.main_rel,
             &p.dest,
@@ -387,7 +399,9 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<ExportZipParams>,
     ) -> Result<Json<core::export::Exported>, String> {
-        Ok(Json(core::export::export_zip(&p.root_id, &p.dest)?))
+        Ok(Json(core::export::export_zip(
+            &self.cx, &p.root_id, &p.dest,
+        )?))
     }
 
     #[tool(
@@ -416,7 +430,7 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<CancelParams>,
     ) -> Result<Json<CancelOut>, String> {
-        let status = core::cancel_job(&p.job_id)?;
+        let status = core::cancel_job(&self.cx, &p.job_id)?;
         Ok(Json(CancelOut { status }))
     }
 
@@ -428,6 +442,7 @@ impl Maleficium {
         Parameters(p): Parameters<ForwardParams>,
     ) -> Result<Json<core::ForwardHit>, String> {
         Ok(Json(core::forward(
+            &self.cx,
             &p.root_id,
             &p.main_rel,
             &p.tex_rel,
@@ -443,6 +458,7 @@ impl Maleficium {
         Parameters(p): Parameters<InverseParams>,
     ) -> Result<Json<core::InverseHit>, String> {
         Ok(Json(core::inverse(
+            &self.cx,
             &p.root_id,
             &p.main_rel,
             p.page,
@@ -456,19 +472,19 @@ impl Maleficium {
     )]
     fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<Json<DeleteOut>, String> {
         let confirm = p.confirm.as_deref().unwrap_or("");
-        let trash_path = core::trash_file(&p.root_id, &p.rel, confirm)?;
+        let trash_path = core::trash_file(&self.cx, &p.root_id, &p.rel, confirm)?;
         Ok(Json(DeleteOut { trash_path }))
     }
 
     #[tool(description = "Restore a trashed file to its original path")]
     fn undo(&self, Parameters(p): Parameters<UndoParams>) -> Result<Json<PathOut>, String> {
-        let path = core::undo_trash(&p.root_id, &p.trash_path)?;
+        let path = core::undo_trash(&self.cx, &p.root_id, &p.trash_path)?;
         Ok(Json(PathOut { path }))
     }
 
     #[tool(description = "Tail the engine log for one main-file dir shard")]
     fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<Json<TextOut>, String> {
-        let text = core::log_tail(&p.root_id, &p.rel, p.max_lines.unwrap_or(50))?;
+        let text = core::log_tail(&self.cx, &p.root_id, &p.rel, p.max_lines.unwrap_or(50))?;
         Ok(Json(TextOut { text }))
     }
 
@@ -479,7 +495,9 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<FileParams>,
     ) -> Result<Json<core::structure::OutlineDoc>, String> {
-        Ok(Json(core::structure::outline_of(&p.root_id, &p.rel)?))
+        Ok(Json(core::structure::outline_of(
+            &self.cx, &p.root_id, &p.rel,
+        )?))
     }
 
     #[tool(
@@ -489,7 +507,11 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<MainParams>,
     ) -> Result<Json<core::structure::FileGraph>, String> {
-        Ok(Json(core::structure::file_graph(&p.root_id, &p.main_rel)?))
+        Ok(Json(core::structure::file_graph(
+            &self.cx,
+            &p.root_id,
+            &p.main_rel,
+        )?))
     }
 
     #[tool(
@@ -499,7 +521,11 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<MainParams>,
     ) -> Result<Json<core::structure::LabelsRefs>, String> {
-        Ok(Json(core::structure::labels_refs(&p.root_id, &p.main_rel)?))
+        Ok(Json(core::structure::labels_refs(
+            &self.cx,
+            &p.root_id,
+            &p.main_rel,
+        )?))
     }
 
     #[tool(
@@ -509,7 +535,11 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<MainParams>,
     ) -> Result<Json<core::structure::Citations>, String> {
-        Ok(Json(core::structure::citations(&p.root_id, &p.main_rel)?))
+        Ok(Json(core::structure::citations(
+            &self.cx,
+            &p.root_id,
+            &p.main_rel,
+        )?))
     }
 
     #[tool(
@@ -520,6 +550,7 @@ impl Maleficium {
         Parameters(p): Parameters<MainParams>,
     ) -> Result<Json<core::structure::Precheck>, String> {
         Ok(Json(core::structure::precompile_checks(
+            &self.cx,
             &p.root_id,
             &p.main_rel,
         )?))
@@ -539,6 +570,7 @@ impl Maleficium {
             whole_word: p.whole_word.unwrap_or(false),
         };
         Ok(Json(core::search::search(
+            &self.cx,
             &p.root_id,
             &q,
             p.main_rel.as_deref(),
@@ -560,6 +592,7 @@ impl Maleficium {
             whole_word: p.whole_word.unwrap_or(false),
         };
         Ok(Json(core::replace::preview(
+            &self.cx,
             &p.root_id,
             &q,
             &p.replacement,
@@ -574,7 +607,12 @@ impl Maleficium {
         &self,
         Parameters(p): Parameters<ReplaceApplyParams>,
     ) -> Result<Json<maleficium_index::replace::ReplaceApplied>, String> {
-        Ok(Json(core::replace::apply(&p.root_id, &p.token, &[])?))
+        Ok(Json(core::replace::apply(
+            &self.cx,
+            &p.root_id,
+            &p.token,
+            &[],
+        )?))
     }
 
     #[tool(
@@ -585,7 +623,7 @@ impl Maleficium {
         Parameters(p): Parameters<ReplaceUndoParams>,
     ) -> Result<Json<ReplaceUndoOut>, String> {
         Ok(Json(ReplaceUndoOut {
-            restored: core::replace::undo(&p.root_id, &p.batch)?,
+            restored: core::replace::undo(&self.cx, &p.root_id, &p.batch)?,
         }))
     }
 
@@ -607,7 +645,7 @@ impl Maleficium {
             _ => return Err("pass kind and key, or rel, line and col".to_string()),
         };
         Ok(Json(DefinitionOut {
-            lookup: core::search::definition(&p.root_id, target, p.main_rel.as_deref())?,
+            lookup: core::search::definition(&self.cx, &p.root_id, target, p.main_rel.as_deref())?,
         }))
     }
 
@@ -620,6 +658,7 @@ impl Maleficium {
     ) -> Result<Json<FindFilesOut>, String> {
         Ok(Json(FindFilesOut {
             files: core::search::find_files(
+                &self.cx,
                 &p.root_id,
                 &p.query,
                 p.max.unwrap_or(core::search::MAX_FILE_MATCHES),
@@ -635,6 +674,7 @@ impl Maleficium {
         Parameters(p): Parameters<DiagnosticsParams>,
     ) -> Result<Json<core::structure::Diagnostics>, String> {
         Ok(Json(core::structure::diagnostics(
+            &self.cx,
             &p.root_id,
             &p.main_rel,
             p.max.unwrap_or(100),
@@ -648,7 +688,7 @@ impl Maleficium {
 impl rmcp::ServerHandler for Maleficium {}
 
 async fn run_stdio() -> anyhow::Result<()> {
-    let service = Maleficium.serve(stdio()).await?;
+    let service = Maleficium::default().serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
 }
@@ -665,21 +705,23 @@ pub fn serve_stdio() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::synctex::{forward_sync, inverse_sync};
 
     /// Clients show serverInfo; rmcp's default would name rmcp itself.
     #[test]
     fn server_names_itself_with_the_app_version() {
-        let info = rmcp::ServerHandler::get_info(&Maleficium).server_info;
+        let info = rmcp::ServerHandler::get_info(&Maleficium::default()).server_info;
         assert_eq!(info.name, "maleficium");
         assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     }
 
-    /// Both adapters sit on one implementation: every escape the desktop
-    /// command refuses, the MCP tool refuses with the same error.
+    /// The MCP tools add nothing to core's confinement: every escape core
+    /// refuses (and so the desktop command, a direct forward), the tool
+    /// refuses with the same error.
     #[test]
     fn synctex_adapters_reject_identically() {
-        let dir = crate::test_scratch::dir("sym");
+        let m = Maleficium::default();
+        let cx = &m.cx;
+        let dir = core::test_scratch::dir("sym");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tex"), "x").unwrap();
@@ -688,12 +730,11 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/hostname", dir.join("link.tex")).unwrap();
         let canon = dunce::canonicalize(&dir).unwrap();
-        core::grant_root("sym", &canon.to_string_lossy()).unwrap();
+        core::grant_root(cx, "sym", &canon.to_string_lossy()).unwrap();
         // A compiled output, so tex_rel validation is reached.
         let out = core::main_outputs(&canon.join("main.tex")).unwrap();
         std::fs::create_dir_all(&out.outdir).unwrap();
         std::fs::write(out.outdir.join(&out.pdf_name), "%PDF").unwrap();
-        let m = Maleficium;
         let cases: &[(&str, &str, &str)] = &[
             ("sym", "../x.tex", "main.tex"),
             ("sym", "/etc/hostname", "main.tex"),
@@ -708,12 +749,7 @@ mod tests {
         ];
         for (root_id, main_rel, tex_rel) in cases {
             let main_rel = main_rel.to_string();
-            let desktop = forward_sync(
-                root_id.to_string(),
-                main_rel.clone(),
-                tex_rel.to_string(),
-                1,
-            );
+            let desktop = core::forward(cx, root_id, &main_rel, tex_rel, 1);
             let mcp = m.synctex_forward(Parameters(ForwardParams {
                 root_id: root_id.to_string(),
                 main_rel: main_rel.clone(),
@@ -725,7 +761,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("accepted: {:?}", (root_id, &main_rel)));
             assert_eq!(mcp.err(), Some(err));
 
-            let desktop = inverse_sync(root_id.to_string(), main_rel.clone(), 1, 0.0, 0.0);
+            let desktop = core::inverse(cx, root_id, &main_rel, 1, 0.0, 0.0);
             let mcp = m.synctex_inverse(Parameters(InverseParams {
                 root_id: root_id.to_string(),
                 main_rel: main_rel.clone(),

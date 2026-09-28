@@ -1,0 +1,25 @@
+[package]
+name = "maleficium-core"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2021"
+description = "Application core shared by the desktop app and the MCP server: no Tauri"
+
+[features]
+# Scratch dirs for tests in dependent crates.
+test-support = ["dep:libc"]
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+schemars = "1.2.2"
+dirs = "6.0.0"
+dunce = "1.0.5"
+sha2 = "0.10.9"
+libc = { version = "0.2.189", optional = true }
+maleficium-structure = { path = "../structure" }
+maleficium-events = { path = "../events" }
+maleficium-index = { path = "../index" }
+
+[dev-dependencies]
+libc = "0.2.189"

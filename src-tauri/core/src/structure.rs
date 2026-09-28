@@ -7,6 +7,8 @@
 //! files, "buffer" when an unsaved editor buffer was read) plus a `revision`
 //! over the text it read.
 
+use crate::Core;
+
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -132,9 +134,9 @@ fn rel_of(root: &Path, abs: &Path) -> String {
 }
 
 /// The canonical root-relative path of an existing main file.
-fn main_of(root_id: &str, main_rel: &str) -> Result<String, String> {
-    let root = super::fs::session_root(root_id)?;
-    let abs = super::fs::resolve_in(root_id, main_rel)?;
+fn main_of(cx: &Core, root_id: &str, main_rel: &str) -> Result<String, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let abs = super::fs::resolve_in(cx, root_id, main_rel)?;
     if !abs.is_file() {
         return Err(format!("not a file: {}", main_rel));
     }
@@ -162,11 +164,11 @@ fn cap<T>(v: &mut Vec<T>) -> usize {
 }
 
 /// Outline of one file.
-pub fn outline_of(root_id: &str, rel: &str) -> Result<OutlineDoc, String> {
-    let root = super::fs::session_root(root_id)?;
-    let abs = super::fs::resolve_in(root_id, rel)?;
+pub fn outline_of(cx: &Core, root_id: &str, rel: &str) -> Result<OutlineDoc, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let abs = super::fs::resolve_in(cx, root_id, rel)?;
     let rel = rel_of(&root, &abs);
-    super::index::with(root_id, |l| {
+    super::index::with(cx, root_id, |l| {
         let f = l
             .index
             .get(&rel)
@@ -189,9 +191,9 @@ pub fn outline_of(root_id: &str, rel: &str) -> Result<OutlineDoc, String> {
 }
 
 /// Files and input edges reachable from a main file.
-pub fn file_graph(root_id: &str, main_rel: &str) -> Result<FileGraph, String> {
-    let main = main_of(root_id, main_rel)?;
-    super::index::with(root_id, |l| {
+pub fn file_graph(cx: &Core, root_id: &str, main_rel: &str) -> Result<FileGraph, String> {
+    let main = main_of(cx, root_id, main_rel)?;
+    super::index::with(cx, root_id, |l| {
         let ix = &l.index;
         let doc = Document::walk(ix, &main);
         let mut edges = doc.edges.clone();
@@ -216,9 +218,9 @@ pub fn file_graph(root_id: &str, main_rel: &str) -> Result<FileGraph, String> {
 }
 
 /// Label definitions and reference uses across the document.
-pub fn labels_refs(root_id: &str, main_rel: &str) -> Result<LabelsRefs, String> {
-    let main = main_of(root_id, main_rel)?;
-    super::index::with(root_id, |l| {
+pub fn labels_refs(cx: &Core, root_id: &str, main_rel: &str) -> Result<LabelsRefs, String> {
+    let main = main_of(cx, root_id, main_rel)?;
+    super::index::with(cx, root_id, |l| {
         let ix = &l.index;
         let doc = Document::walk(ix, &main);
         let mut labels = Vec::new();
@@ -267,9 +269,9 @@ pub fn labels_refs(root_id: &str, main_rel: &str) -> Result<LabelsRefs, String> 
 }
 
 /// Citation uses across the document, checked against its bibliographies.
-pub fn citations(root_id: &str, main_rel: &str) -> Result<Citations, String> {
-    let main = main_of(root_id, main_rel)?;
-    super::index::with(root_id, |l| {
+pub fn citations(cx: &Core, root_id: &str, main_rel: &str) -> Result<Citations, String> {
+    let main = main_of(cx, root_id, main_rel)?;
+    super::index::with(cx, root_id, |l| {
         let ix = &l.index;
         let doc = Document::walk(ix, &main);
         let mut cites = Vec::new();
@@ -362,10 +364,10 @@ fn font_families() -> Option<HashSet<String>> {
 /// Dependency checks over the whole document before compiling: every
 /// package or class neither the project nor the bundle provides, biblatex
 /// needing biber, shell escape, and fontspec fonts this machine lacks.
-pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, String> {
-    let main = main_of(root_id, main_rel)?;
+pub fn precompile_checks(cx: &Core, root_id: &str, main_rel: &str) -> Result<Precheck, String> {
+    let main = main_of(cx, root_id, main_rel)?;
     let bundle = super::engine::bundle_files(&super::engine::cache_dir());
-    super::index::with(root_id, |l| {
+    super::index::with(cx, root_id, |l| {
         let ix = &l.index;
         let doc = Document::walk(ix, &main);
         let files: Vec<(String, &ms::Symbols)> = doc_symbols(&doc, ix)
@@ -406,15 +408,20 @@ pub fn precompile_checks(root_id: &str, main_rel: &str) -> Result<Precheck, Stri
 /// Structured diagnostics from the last compile: its last engine run's
 /// console (an earlier run it retried is not the document's problem) and
 /// TeX's transcript.
-pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnostics, String> {
-    let root = super::fs::session_root(root_id)?;
-    let o = super::outputs_of(root_id, main_rel)?;
-    let log = super::engine_log(root_id, main_rel)?;
+pub fn diagnostics(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    max: usize,
+) -> Result<Diagnostics, String> {
+    let root = super::fs::session_root(cx, root_id)?;
+    let o = super::outputs_of(cx, root_id, main_rel)?;
+    let log = super::engine_log(cx, root_id, main_rel)?;
     let last = super::engine::last_attempt(&log);
     let main = rel_of(&root, &o.dir.join(&o.main_file));
-    let tex = super::tex_log(root_id, main_rel)?;
+    let tex = super::tex_log(cx, root_id, main_rel)?;
     let mut diagnostics = ms::diagnostics(last, &root.to_string_lossy(), &o.dir.to_string_lossy());
-    diagnostics.extend(tex_log_warnings(root_id, main_rel, &tex)?);
+    diagnostics.extend(tex_log_warnings(cx, root_id, main_rel, &tex)?);
     let over = diagnostics.len().saturating_sub(max);
     diagnostics.truncate(max);
     Ok(Diagnostics {
@@ -432,6 +439,7 @@ pub fn diagnostics(root_id: &str, main_rel: &str, max: usize) -> Result<Diagnost
 /// warned input line, else the key's first use; each definition of a
 /// duplicate label.
 fn tex_log_warnings(
+    cx: &Core,
     root_id: &str,
     main_rel: &str,
     tex: &str,
@@ -440,8 +448,8 @@ fn tex_log_warnings(
     if warnings.is_empty() {
         return Ok(Vec::new());
     }
-    let lr = labels_refs(root_id, main_rel)?;
-    let cites = citations(root_id, main_rel)?.cites;
+    let lr = labels_refs(cx, root_id, main_rel)?;
+    let cites = citations(cx, root_id, main_rel)?.cites;
     let at = |uses: &[KeyUse], key: &str, line: Option<u32>| {
         uses.iter()
             .filter(|u| u.key == key)
@@ -504,7 +512,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn project(name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
+    fn project(cx: &Core, name: &str, files: &[(&str, &str)]) -> (String, PathBuf) {
         let dir = crate::test_scratch::dir(&format!("st-{}", name));
         let _ = std::fs::remove_dir_all(&dir);
         for (rel, text) in files {
@@ -514,14 +522,15 @@ mod tests {
         }
         let canon = dunce::canonicalize(&dir).unwrap();
         let id = format!("st-{}", name);
-        super::super::grant_root(&id, &canon.to_string_lossy()).unwrap();
+        super::super::grant_root(cx, &id, &canon.to_string_lossy()).unwrap();
         (id, canon)
     }
 
     const MAIN: &str = "\\documentclass{article}\n\\begin{document}\n\\section{Intro}\\label{sec:intro}\n\\input{chapters/a}\n\\include{chapters/b}\n\\input{../escape}\n\\input{missing}\nSee \\ref{sec:a} \\ref{nope} \\cite{knuth, ghost}\n\\bibliography{refs}\n\\end{document}\n";
 
-    fn sample(name: &str) -> (String, PathBuf) {
+    fn sample(cx: &Core, name: &str) -> (String, PathBuf) {
         project(
+            cx,
             name,
             &[
                 ("paper/main.tex", MAIN),
@@ -537,8 +546,9 @@ mod tests {
 
     #[test]
     fn graph_walks_inputs_from_the_main_dir() {
-        let (id, _) = sample("graph");
-        let g = file_graph(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "graph");
+        let g = file_graph(cx, &id, "paper/main.tex").unwrap();
         assert_eq!(g.source, "disk");
         assert_eq!(g.main, "paper/main.tex");
         let files: Vec<(&str, bool)> = g.files.iter().map(|f| (f.rel.as_str(), f.exists)).collect();
@@ -569,8 +579,9 @@ mod tests {
 
     #[test]
     fn labels_refs_resolve_across_files() {
-        let (id, _) = sample("labels");
-        let lr = labels_refs(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "labels");
+        let lr = labels_refs(cx, &id, "paper/main.tex").unwrap();
         let dup: Vec<(&str, &str, bool)> = lr
             .labels
             .iter()
@@ -594,8 +605,9 @@ mod tests {
 
     #[test]
     fn citations_check_the_bibliography() {
-        let (id, _) = sample("cites");
-        let c = citations(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "cites");
+        let c = citations(cx, &id, "paper/main.tex").unwrap();
         assert_eq!(c.bib_files.len(), 1);
         assert_eq!(c.bib_files[0].rel.as_deref(), Some("paper/refs.bib"));
         assert_eq!(c.bib_files[0].entries, 2);
@@ -616,39 +628,51 @@ mod tests {
 
     #[test]
     fn revision_tracks_content() {
-        let (id, root) = sample("rev");
-        let a = labels_refs(&id, "paper/main.tex").unwrap().revision;
-        assert_eq!(a, labels_refs(&id, "paper/main.tex").unwrap().revision);
+        let cx = &Core::default();
+        let (id, root) = sample(cx, "rev");
+        let a = labels_refs(cx, &id, "paper/main.tex").unwrap().revision;
+        assert_eq!(a, labels_refs(cx, &id, "paper/main.tex").unwrap().revision);
         std::fs::write(root.join("paper/chapters/b.tex"), "changed\n").unwrap();
-        assert_ne!(a, labels_refs(&id, "paper/main.tex").unwrap().revision);
+        assert_ne!(a, labels_refs(cx, &id, "paper/main.tex").unwrap().revision);
     }
 
     #[test]
     fn buffers_laid_over_the_index_are_read_and_named() {
-        let (id, _) = sample("overlay");
-        assert_eq!(labels_refs(&id, "paper/main.tex").unwrap().source, "disk");
-        super::super::index::overlay(&id, "paper/chapters/b.tex", Some("\\label{fresh}".into()))
-            .unwrap();
-        let lr = labels_refs(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "overlay");
+        assert_eq!(
+            labels_refs(cx, &id, "paper/main.tex").unwrap().source,
+            "disk"
+        );
+        super::super::index::overlay(
+            cx,
+            &id,
+            "paper/chapters/b.tex",
+            Some("\\label{fresh}".into()),
+        )
+        .unwrap();
+        let lr = labels_refs(cx, &id, "paper/main.tex").unwrap();
         assert_eq!(lr.source, "buffer");
         assert!(lr.labels.iter().any(|l| l.key == "fresh"));
     }
 
     #[test]
     fn outline_and_escapes() {
-        let (id, _) = sample("outline");
-        let o = outline_of(&id, "paper/chapters/a.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "outline");
+        let o = outline_of(cx, &id, "paper/chapters/a.tex").unwrap();
         assert_eq!(o.rel, "paper/chapters/a.tex");
         assert_eq!(o.entries[0].title, "A");
-        assert!(outline_of(&id, "../x.tex").is_err());
-        assert!(file_graph(&id, "paper").is_err());
-        assert!(file_graph("nope", "paper/main.tex").is_err());
+        assert!(outline_of(cx, &id, "../x.tex").is_err());
+        assert!(file_graph(cx, &id, "paper").is_err());
+        assert!(file_graph(cx, "nope", "paper/main.tex").is_err());
     }
 
     #[test]
     fn diagnostics_place_tex_log_warnings_on_their_uses() {
-        let (id, _) = sample("texwarn");
-        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "texwarn");
+        let o = super::super::outputs_of(cx, &id, "paper/main.tex").unwrap();
         std::fs::create_dir_all(&o.outdir).unwrap();
         std::fs::write(
             super::super::log_file(&o.outdir, &o.main_file),
@@ -662,7 +686,7 @@ mod tests {
              LaTeX Warning: Label `sec:intro' multiply defined.\n",
         )
         .unwrap();
-        let d = diagnostics(&id, "paper/main.tex", 100).unwrap();
+        let d = diagnostics(cx, &id, "paper/main.tex", 100).unwrap();
         let _ = std::fs::remove_dir_all(&o.outdir);
         let got: Vec<(Option<&str>, u32, ms::Severity)> = d
             .diagnostics
@@ -684,8 +708,9 @@ mod tests {
 
     #[test]
     fn diagnostics_skip_a_run_the_compile_retried() {
-        let (id, _) = sample("retried");
-        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "retried");
+        let o = super::super::outputs_of(cx, &id, "paper/main.tex").unwrap();
         std::fs::create_dir_all(&o.outdir).unwrap();
         std::fs::write(
             super::super::log_file(&o.outdir, &o.main_file),
@@ -696,7 +721,7 @@ mod tests {
              note: Writing `main.pdf`",
         )
         .unwrap();
-        let d = diagnostics(&id, "paper/main.tex", 100).unwrap();
+        let d = diagnostics(cx, &id, "paper/main.tex", 100).unwrap();
         let _ = std::fs::remove_dir_all(&o.outdir);
         assert!(d.diagnostics.is_empty(), "{:?}", d.diagnostics);
         assert_eq!(d.missing, None);
@@ -704,15 +729,16 @@ mod tests {
 
     #[test]
     fn diagnostics_rebase_the_engine_log() {
-        let (id, root) = sample("diag");
-        let o = super::super::outputs_of(&id, "paper/main.tex").unwrap();
+        let cx = &Core::default();
+        let (id, root) = sample(cx, "diag");
+        let o = super::super::outputs_of(cx, &id, "paper/main.tex").unwrap();
         std::fs::create_dir_all(&o.outdir).unwrap();
         let log = format!(
             "error: main.tex:3: Undefined control sequence\n{}/paper/chapters/a.tex:1: x\n/usr/share/x.tex:2: y\n",
             root.to_string_lossy()
         );
         std::fs::write(super::super::log_file(&o.outdir, &o.main_file), log).unwrap();
-        let d = diagnostics(&id, "paper/main.tex", 2).unwrap();
+        let d = diagnostics(cx, &id, "paper/main.tex", 2).unwrap();
         let _ = std::fs::remove_dir_all(&o.outdir);
         let got: Vec<(Option<&str>, u32, bool)> = d
             .diagnostics

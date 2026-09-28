@@ -1,65 +1,12 @@
-//! Input validation for IPC commands + the runtime project-scope grant.
-//!
-//! Commands validate inputs themselves server-side and never trust the
-//! caller. There is no client-side mirror of these checks.
+//! The runtime project-scope grant. Input validation lives in
+//! `maleficium_core::guard`.
 
-use std::path::{Path, PathBuf};
+use maleficium_core::Core;
+use std::path::PathBuf;
+use tauri::State;
 
 use tauri::AppHandle;
 use tauri_plugin_fs::FsExt;
-
-/// Reject empty strings and anything containing a NUL byte. Every check
-/// below starts here — NUL would truncate at C boundaries downstream.
-pub fn reject_empty_nul(raw: &str) -> Result<&str, String> {
-    if raw.is_empty() {
-        return Err("forbidden path: empty".to_string());
-    }
-    if raw.contains('\0') {
-        return Err("forbidden path: NUL byte".to_string());
-    }
-    Ok(raw)
-}
-
-/// Require an absolute path (pure — no fs access). Relative strings
-/// would resolve against an attacker-influenced CWD, so they never validate.
-pub fn require_absolute(path: &Path, raw: &str) -> Result<(), String> {
-    if !path.is_absolute() {
-        return Err(format!("forbidden path (not absolute): {}", raw));
-    }
-    Ok(())
-}
-
-/// True when `name` is a bare filename: no `/`, `\`, or NUL, not
-/// empty, not `.`/`..`. Pure — no fs access. For strings interpolated
-/// into a tool argument rather than opened as a path.
-/// Path separators are rejected but interior dots are fine.
-pub fn is_bare_filename(name: &str) -> bool {
-    if name.is_empty() || name.contains('\0') {
-        return false;
-    }
-    if name == "." || name == ".." {
-        return false;
-    }
-    if name.contains('/') || name.contains('\\') {
-        return false;
-    }
-    true
-}
-
-/// Validate a candidate project root: non-empty, no NUL, absolute,
-/// canonicalizable (fails closed on missing paths — symlinks resolved), and
-/// a directory. Returns the canonical path.
-pub fn canonical_root(raw: &str) -> Result<PathBuf, String> {
-    reject_empty_nul(raw)?;
-    let path = Path::new(raw);
-    require_absolute(path, raw)?;
-    let canon = dunce::canonicalize(path)
-        .map_err(|e| format!("forbidden path (unresolvable): {}: {}", raw, e))?;
-    if !canon.is_dir() {
-        return Err(format!("forbidden path (not a directory): {}", raw));
-    }
-    Ok(canon)
-}
 
 /// Fetch the live fs scope, or fail closed when unavailable (never panic —
 /// `try_fs_scope` returns None outside a managed window context).
@@ -93,15 +40,19 @@ fn allow_granted(app: &AppHandle, canon: PathBuf, root_id: String) -> Result<Pro
 /// unconditional code path for every open route (dialog pick, recent,
 /// restore, preset).
 #[tauri::command]
-pub fn grant_project_access(app: AppHandle, root: String) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = crate::core::grant_project(&root)?;
+pub fn grant_project_access(
+    cx: State<'_, Core>,
+    app: AppHandle,
+    root: String,
+) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = maleficium_core::grant_project(&cx, &root)?;
     allow_granted(&app, canon, root_id)
 }
 
 /// Grant the backend-owned scratch root that untitled documents compile in.
 #[tauri::command]
-pub fn grant_untitled_access(app: AppHandle) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = crate::core::grant_untitled()?;
+pub fn grant_untitled_access(cx: State<'_, Core>, app: AppHandle) -> Result<ProjectGrant, String> {
+    let (canon, root_id) = maleficium_core::grant_untitled(&cx)?;
     allow_granted(&app, canon, root_id)
 }
 
@@ -109,73 +60,29 @@ pub fn grant_untitled_access(app: AppHandle) -> Result<ProjectGrant, String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::Path;
 
     /// Fresh canonical scratch dir per test (pid + name; cleaned first).
     fn scratch(name: &str) -> PathBuf {
-        let base = crate::test_scratch::dir(&format!("guard-{}", name));
+        let base = maleficium_core::test_scratch::dir(&format!("guard-{}", name));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         dunce::canonicalize(&base).unwrap()
     }
 
     #[test]
-    fn rejects_empty_and_nul() {
-        assert!(reject_empty_nul("").is_err());
-        assert!(reject_empty_nul("a\0b").is_err());
-        assert!(reject_empty_nul("/ok/path").is_ok());
-        assert!(canonical_root("").is_err());
-        assert!(canonical_root("/tmp/a\0b").is_err());
-    }
-
-    #[test]
-    fn requires_absolute_root() {
-        assert!(canonical_root("relative/path").is_err());
-        assert!(canonical_root("../up").is_err());
-    }
-
-    #[test]
-    fn fails_closed_on_missing_path() {
-        let missing = crate::test_scratch::dir("guard-missing");
-        let _ = fs::remove_dir_all(&missing);
-        assert!(canonical_root(&missing.to_string_lossy()).is_err());
-    }
-
-    #[test]
-    fn requires_directory_for_roots() {
-        let base = scratch("isdir");
-        let file = base.join("f.tex");
-        fs::write(&file, "x").unwrap();
-        assert!(canonical_root(&file.to_string_lossy()).is_err());
-        assert_eq!(
-            canonical_root(&base.to_string_lossy()).unwrap(),
-            dunce::canonicalize(&base).unwrap()
-        );
-    }
-
-    #[test]
-    fn bare_filename_rule() {
-        assert!(is_bare_filename("main.pdf"));
-        assert!(is_bare_filename("ch 1 (final).tex"));
-        assert!(!is_bare_filename(""));
-        assert!(!is_bare_filename("."));
-        assert!(!is_bare_filename(".."));
-        assert!(!is_bare_filename("a/b"));
-        assert!(!is_bare_filename("/abs"));
-        assert!(!is_bare_filename("a\\b"));
-        assert!(!is_bare_filename("../x"));
-        assert!(is_bare_filename("a..b"));
-        assert!(!is_bare_filename("a\0b"));
-    }
-
-    #[test]
     fn grant_root_id_is_the_utf8_hash_for_non_ascii_roots() {
         // The frontend keys main-file associations and trash by this id and
         // never rehashes; a UTF-16 hash gave 6ea6b60c here.
-        assert_eq!(crate::core::hash_root("/home/josé/thèse"), "53bf67b2");
+        assert_eq!(maleficium_core::hash_root("/home/josé/thèse"), "53bf67b2");
         let dir = scratch("non-ascii").join("josé").join("thèse");
         fs::create_dir_all(&dir).unwrap();
-        let (canon, root_id) = crate::core::grant_project(&dir.to_string_lossy()).unwrap();
-        assert_eq!(root_id, crate::core::hash_root(&canon.to_string_lossy()));
+        let cx = &Core::default();
+        let (canon, root_id) = maleficium_core::grant_project(cx, &dir.to_string_lossy()).unwrap();
+        assert_eq!(
+            root_id,
+            maleficium_core::hash_root(&canon.to_string_lossy())
+        );
         let grant = ProjectGrant {
             path: canon.to_string_lossy().to_string(),
             root_id: root_id.clone(),
