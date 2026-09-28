@@ -11,6 +11,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { hoverTooltip, keymap } from '@codemirror/view';
 import { Compartment, EditorState, EditorSelection, Prec } from '@codemirror/state';
 import { search } from '@codemirror/search';
+import { appOwnedEditorKeys } from '../lib/editorKeys';
 import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
 import type { AppearancePrefs } from '../lib/appearance';
@@ -118,17 +119,7 @@ function EditorViewport({
         EditorView.lineWrapping,
         // In-file find uses the MUI bar below, never the stock panel.
         search(),
-        Prec.highest(
-          keymap.of([
-            {
-              key: 'Mod-f',
-              run: () => {
-                openBarRef.current();
-                return true;
-              },
-            },
-          ]),
-        ),
+        Prec.highest(keymap.of(appOwnedEditorKeys(() => openBarRef.current()))),
         // Hover a reference, macro or input: where it is defined.
         hoverTooltip(async (view, pos) => {
           const hover = definitionRef?.current?.hover;
