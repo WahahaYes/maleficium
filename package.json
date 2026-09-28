@@ -22,11 +22,13 @@
     "clean": "sh scripts/clean.sh"
   },
   "dependencies": {
+    "@codemirror/language": "^6.12.4",
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@lezer/highlight": "^1.2.3",
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
     "@tauri-apps/api": "^2.11.1",
