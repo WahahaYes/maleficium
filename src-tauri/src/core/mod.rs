@@ -22,8 +22,8 @@ pub use fs::{
     session_root, trash_file, undo_trash,
 };
 pub use outputs::{
-    clean_outputs, engine_log, log_file, log_tail, output_stamp, outputs_fresh, outputs_of,
-    tex_log, tex_log_file, write_engine_log, OutputStamp,
+    clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp, outputs_fresh,
+    outputs_of, tex_log, tex_log_file, write_engine_log, OutputStamp,
 };
 pub use synctex::{forward, inverse, ForwardHit, InverseHit};
 

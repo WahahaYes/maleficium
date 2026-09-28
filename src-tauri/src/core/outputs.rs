@@ -86,6 +86,15 @@ pub fn output_stamp(root_id: &str, main_rel: &str) -> Result<Option<OutputStamp>
     }))
 }
 
+/// Where the main file's compiled pdf is, or `None` before any compile left
+/// one: what a viewer opens when someone else (an agent over MCP) compiled
+/// a document this app has not.
+pub fn output_pdf(root_id: &str, main_rel: &str) -> Result<Option<String>, String> {
+    let o = outputs_of(root_id, main_rel)?;
+    let pdf = o.outdir.join(&o.pdf_name);
+    Ok(pdf.is_file().then(|| pdf.to_string_lossy().to_string()))
+}
+
 /// Whether a previous compile left a pdf for this main file.
 pub fn outputs_fresh(root_id: &str, main_rel: &str) -> Result<bool, String> {
     let o = outputs_of(root_id, main_rel)?;
@@ -174,6 +183,19 @@ mod tests {
         let b = output_stamp(&id, "main.tex").unwrap().unwrap();
         assert_ne!(a, b);
         assert!(output_stamp(&id, "../escape.tex").is_err());
+        let _ = std::fs::remove_dir_all(&o.outdir);
+    }
+
+    #[test]
+    fn output_pdf_appears_with_the_first_compile() {
+        let (id, _dir) = project("pdfpath");
+        assert_eq!(output_pdf(&id, "main.tex").unwrap(), None);
+        let o = outputs_of(&id, "main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(o.outdir.join(&o.pdf_name), "%PDF-1").unwrap();
+        let want = o.outdir.join(&o.pdf_name).to_string_lossy().to_string();
+        assert_eq!(output_pdf(&id, "main.tex").unwrap(), Some(want));
+        assert!(output_pdf(&id, "../escape.tex").is_err());
         let _ = std::fs::remove_dir_all(&o.outdir);
     }
 }

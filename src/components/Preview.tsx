@@ -32,6 +32,7 @@ import { usePdfDocument } from '../hooks/usePdfDocument';
 import type { DocLike, TextLayerCtor } from '../hooks/usePdfDocument';
 import { useBitmapWindow } from '../hooks/useBitmapWindow';
 import { useExternalRefresh } from '../hooks/useExternalRefresh';
+import type { PreviewSource } from '../lib/preview-bus';
 import { useSyncLock } from '../hooks/useSyncLock';
 
 export interface PreviewProps {
@@ -47,6 +48,8 @@ export interface PreviewProps {
   zoomActionRef?: RefObject<((a: ZoomAction) => void) | null>;
   /** The zoom changed: the mode and the percent a page now shows at. */
   onZoom?: (mode: ZoomMode, percent: number) => void;
+  /** The open project's main file: watched for an outside compile while no pdf is shown. */
+  mainSource?: PreviewSource | null;
 }
 
 /** Page size (PDF points) assumed before a page is probed: A4. */
@@ -71,6 +74,7 @@ export default function Preview({
   syncDisabled,
   zoomActionRef,
   onZoom,
+  mainSource = null,
 }: PreviewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -109,7 +113,7 @@ export default function Preview({
 
   const bumpDims = useCallback(() => setDimsVersion((v) => v + 1), []);
   const pageFilterCss = useTheme().preview.pageFilter;
-  useExternalRefresh();
+  useExternalRefresh(mainSource);
 
   // Zoom: the mode is a device pref; the pane size drives the fit modes.
   const [zoom, setZoom] = useState<ZoomMode>(loadZoom);

@@ -11,6 +11,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
 | `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
+| `codrive-run.py` | Xvfb | An agent edits and compiles over MCP while the app is open: the preview follows, and no buffer or file is lost to the other side (manual; spends model credits) |
 
 ## Running in isolation
 
@@ -78,26 +79,65 @@ A first launch needs no recent projects, so on macOS and Windows run it as a fre
 
 ### agent-run.py
 
-A real model does a LaTeX task through the MCP server, and the result is judged only on what the run leaves behind. Each scenario in `e2e/agent-scenarios/` names a built-in template, the edits that make it a fixture, a prompt, and oracles. Per run the harness:
+A real model does a LaTeX task through the MCP server, and the result is judged only on what the run leaves behind. Each scenario in `e2e/agent-scenarios/` names a built-in template, the edits that make it a fixture, a prompt, and oracles. Two runners are supported (`--runner`, default `opencode`); the scenario format and oracles are the same for both. Per run the harness:
 
 1. generates the fixture from `src-tauri/templates` into a fresh run dir;
-2. runs `opencode run --standalone --auto` headless inside `bwrap`, with the whole host read-only except the run dir and opencode's own state, and a per-run MCP config (`OPENCODE_CONFIG`) that starts the server under test with `--mcp` and a scratch `HOME`;
+2. drives the agent headless inside `bwrap`, with the whole host read-only except the run dir (and, for opencode, its own state dirs), and a per-run MCP config that starts the server under test with `--mcp` and a scratch `HOME`;
 3. judges the result after the agent exits: it compiles, references and citations resolve, the outline and file contents meet the spec, bytes are restored after an undo, nothing outside the project changed, and the run's own record of MCP calls shows the required tools succeeding in order. The model's prose is never read.
 
 ```sh
 cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium
 python3 e2e/agent-run.py --self-test                    # oracles vs. solutions, no model
-python3 e2e/agent-run.py -n 3                           # free model, source build
+python3 e2e/agent-run.py -n 3                           # opencode, free model, source build
 python3 e2e/agent-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor \
-    --bin ../out/Maleficium_0.1.1_amd64.AppImage         # recorded model, packaged build
+    --bin ../out/Maleficium_0.1.1_amd64.AppImage         # opencode, recorded model, packaged build
+python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-sonnet-5, source build
 ```
 
-- It needs `opencode` (signed in to the model's provider) and `bwrap`. Runs are manual only, never in CI or pre-commit.
-- Results go to `--out` (default `/var/tmp/maleficium-agent-runs/<time>`): a dir per run with `result.json` (oracles, metrics, the MCP call record), opencode's `events.jsonl` and live `opencode.log`, and the project as the agent left it; plus `summary.md`.
-- A run that hits its scenario's `timeout_s` is killed and reported as a timeout. opencode prints its JSON only at exit, so watch `opencode.log` to tell a stalled run from a slow one.
-- `--budget` (default $5) stops once the cost opencode reports adds up to it. Free models report $0.
+- The opencode runner needs `opencode` (signed in to the model's provider) and `bwrap`. The claude runner needs the `claude` CLI, a token from `claude setup-token` (in `CLAUDE_CODE_OAUTH_TOKEN`, or in `~/.config/maleficium/claude-oauth-token` with mode 0600), and `bwrap`; it defaults to `claude-sonnet-5` and finds `claude` on `PATH` (override with `--claude-bin`). Runs are manual only, never in CI or pre-commit.
+- Results go to `--out` (default `/var/tmp/maleficium-agent-runs/<time>`): a dir per run with `result.json` (oracles, metrics, the MCP call record), `events.jsonl` (the runner's own transcript, see below), and the project as the agent left it; plus `summary.md`. Opencode runs also keep a live `opencode.log`.
+- A run that hits its scenario's `timeout_s` is killed and reported as a timeout.
+- Two sweeps can run at once if the second sets `AGENT_MIRROR_PORT` (default 18790) to a free port for its bundle mirror.
+- `--budget` (default $5) stops the whole `-n` sweep once the cost the runner reports adds up to it (free opencode models report $0). For the claude runner, `--max-turns` (default 40) and `--max-budget-usd` (default $2) are an additional hard per-run cap, passed straight to `claude -p`.
 - Each scenario's engine cache is warmed once, cold, by compiling its solution (through `bundle-mirror.py` for the source build; online for a packaged build), and kept in `/var/tmp/maleficium-agent-cache`. Each run gets a copy.
+- Both runners write their transcript to `events.jsonl`, one event per line, as it streams, so a stalled run is visible before it times out. Claude runner lines carry an added `_ts_ms` (epoch ms at read time) for syncing a screen recording to the transcript.
+- Another harness can run one scenario with `run_scenario_once(...)` and get the same `result.json` and `events.jsonl`.
+
+#### Claude runner isolation
+
+The CLI never sees the real `~/.claude`. Each run gets an empty scratch `HOME` and the `setup-token` token in its environment. No credentials file is copied, so run dirs hold no secret and the run cannot rotate your login's refresh token. `--bare` is not used because it accepts only API keys. Also:
+
+- `--setting-sources ""`: no settings files are loaded.
+- `--restricted`: file tools stay inside the project; shell and web tools are dropped.
+- `--strict-mcp-config` with a config naming only `maleficium`, so no other MCP server, including managed ones, is reachable.
+- `--allowedTools`: the server's tools, read from its `tools/list`, plus the file tools. Anything else is denied, not prompted.
+- `--tools`: trims the advertised built-in tools, which otherwise dominate prompt cost.
+- `bwrap`: the host is read-only except the run dir.
+
 - A failure caused by a confusing tool description or error message is a finding about the MCP server, not the model.
+
+### codrive-run.py
+
+The app and an agent on one project at once. The agent's MCP server and the app are separate processes that share only the filesystem: the project, and the engine outputs under one scratch `HOME` both use. Per run the harness generates `agent-scenarios/codrive/codrive.json`'s fixture, launches the real app on it under Xvfb, compiles it once from the app, then runs the agent through an `agent-run.py` runner with the app open. In `contested` mode (the default) it first types into `conclusion.tex`, a file the agent is asked to rewrite, a key every 0.5 s so the buffer stays unsaved; after the agent exits it compiles from the app with the conflict still open, then reloads from disk.
+
+Oracles from the app's event log: the preview reloaded on the agent's compiles and shows the last one; every file the agent changed was seen as an outside change; clean open buffers took the agent's text; the app wrote nothing into the project while the agent worked; the unsaved buffer raised a conflict and held its autosave rather than being reloaded over or saved over the agent's file. `agent-run.py`'s artifact oracles then judge the project.
+
+```sh
+python3 e2e/codrive-run.py --runner script              # the solution, no model: checks the harness
+python3 e2e/codrive-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor
+python3 e2e/codrive-run.py --runner claude --mode showcase --fresh
+python3 e2e/codrive-run.py --mode race                  # no agent: outside writes timed against autosave
+```
+
+- `--mode showcase` is hands off, for recordings; `--fresh` opens the project never compiled, so the agent's first compile is the first pdf the preview shows. `--mode race` writes the open file from outside at 0.9 to 1.4 s after the user's last key, around the 1.2 s autosave, and checks both the outside edit and the key survive.
+- It builds the app into `CARGO_TARGET_DIR` (default `/var/tmp/maleficium-codrive-target`) and serves vite on `CODRIVE_PORT` (1423), with Xvfb on `CODRIVE_DISPLAY` (`:97`) at `CODRIVE_SCREEN` (1920x1080) and the bundle mirror on `CODRIVE_MIRROR_PORT` (18791), so it runs beside a stills run or a dev app. It takes the stills display lock.
+- Results go to `--out` (default `/var/tmp/maleficium-codrive-runs/<time>`): per run `result.json`, `timeline.jsonl`, `capture.json`, the app's `app-events.jsonl`, stills (`01-before.png`, `02-conflict.png`, `03-after.png`), and the agent's run dir under `agent/`.
+- Screen recording: the window is pinned at 0,0 at the full screen size with no window manager, so the display is the app. `capture.json` names the display and geometry; `timeline.jsonl` holds epoch-ms marks (window placed, project open, agent start and exit, conflict, resolution) on the same clock as the app log and the agent's transcript. `CODRIVE_CAPTURE_CMD`, if set, starts through `sh` just before the agent with `DISPLAY`, `CODRIVE_SCREEN` and `CODRIVE_RUN_DIR` set, and gets SIGINT when the run ends:
+
+```sh
+CODRIVE_CAPTURE_CMD='exec ffmpeg -loglevel error -f x11grab -video_size $CODRIVE_SCREEN -framerate 30 \
+    -i $DISPLAY -pix_fmt yuv420p $CODRIVE_RUN_DIR/screen.mp4' python3 e2e/codrive-run.py --mode showcase
+```
 
 ## Reading the app's event log
 
