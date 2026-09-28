@@ -166,9 +166,22 @@ export async function loadTex(path: string): Promise<string> {
   return await fs().readText(path);
 }
 
-/** Write a buffer; refused while the file has an unresolved disk change. */
-export async function saveTex(path: string, content: string): Promise<void> {
+/**
+ * Write a buffer; refused while the file has an unresolved disk change. With
+ * `expected` (what the buffer last synced from disk), also refused when the
+ * disk holds something else: an outside edit the watcher has yet to report
+ * is never written over.
+ */
+export async function saveTex(path: string, content: string, expected?: string): Promise<void> {
   if (writesHeld(path)) throw new Error('changed on disk: reload or keep your edits first');
+  if (expected !== undefined) {
+    const now = await fs()
+      .readText(path)
+      .catch(() => null);
+    if (now !== null && now !== expected && now !== content) {
+      throw new Error('changed on disk: reload or keep your edits first');
+    }
+  }
   await fs().writeText(path, content);
 }
 

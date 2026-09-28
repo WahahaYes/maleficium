@@ -159,6 +159,11 @@ export async function outputStamp(rootId: string, mainRel: string): Promise<Outp
   return await invoke<OutputStamp | null>('output_stamp', { rootId, mainRel });
 }
 
+/** Where main_rel's compiled pdf is, or null before any compile left one. */
+export async function outputPdf(rootId: string, mainRel: string): Promise<string | null> {
+  return await invoke<string | null>('output_pdf', { rootId, mainRel });
+}
+
 /** What an export wrote. */
 export type Exported = { path: string; bytes: number; files: string[] };
 
