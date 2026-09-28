@@ -5,7 +5,7 @@ use maleficium_events::{
     CompileFailure, CompileLine, CompileReport, CompileStream, OfflineReadiness,
 };
 
-use crate::core::{self, engine, structure::Precheck};
+use maleficium_core::{self as core, engine, structure::Precheck};
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
 

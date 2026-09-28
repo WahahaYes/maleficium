@@ -1,11 +1,13 @@
-//! Shared core behind the desktop commands and the MCP server: session
+//! Shared core behind every adapter (desktop commands, MCP server): session
 //! roots and fs ops, compile and engine outputs, SyncTeX, the project index,
-//! search and replace, structure, history, templates, and export.
+//! search and replace, structure, history, templates, and export. No Tauri
+//! dependency.
 
 pub mod compile;
 pub mod engine;
 pub mod export;
 pub mod fs;
+pub mod guard;
 pub mod history;
 pub mod index;
 pub mod outputs;
@@ -15,6 +17,8 @@ pub mod search;
 pub mod structure;
 pub mod synctex;
 pub mod templates;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_scratch;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
@@ -145,7 +149,7 @@ pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
         )
     })?;
     let exe = std::env::current_exe().ok();
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../binaries");
     find_sidecar(exe.as_deref().and_then(Path::parent), &dev, name, triple).ok_or_else(|| {
         format!(
             "bundled {} sidecar missing ({}-{}): run scripts/fetch-sidecars.sh",

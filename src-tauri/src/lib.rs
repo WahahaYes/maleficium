@@ -1,10 +1,6 @@
 use tauri::Manager;
 
 mod commands;
-pub mod core;
-pub mod mcp;
-#[cfg(test)]
-mod test_scratch;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

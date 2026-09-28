@@ -271,7 +271,7 @@ pub fn touch(root_id: &str, paths: &[String]) -> Result<(), String> {
 
 /// Lay an unsaved buffer over `rel`, or lift it (`None`).
 pub fn overlay(root_id: &str, rel: &str, text: Option<String>) -> Result<(), String> {
-    crate::commands::guard::reject_empty_nul(rel)?;
+    crate::guard::reject_empty_nul(rel)?;
     // Components, not a `/` split: on Windows `a\..\..` climbs too.
     let escapes = Path::new(rel)
         .components()
@@ -434,7 +434,7 @@ mod tests {
         assert!(rewalk < 2_000, "re-walk {rewalk} ms over the 2 s cap");
         let _ = std::fs::remove_dir_all(&dir);
 
-        let tvcg = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../refs/TVCG_Paper_Ref");
+        let tvcg = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../refs/TVCG_Paper_Ref");
         if let Ok(canon) = dunce::canonicalize(&tvcg) {
             super::super::grant_root("ix-tvcg", &canon.to_string_lossy()).unwrap();
             let t = Instant::now();

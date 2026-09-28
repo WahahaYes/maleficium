@@ -1851,22 +1851,34 @@ name = "maleficium"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "dunce",
+ "maleficium-core",
+ "maleficium-events",
+ "maleficium-index",
+ "maleficium-mcp",
+ "maleficium-structure",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+]
+
+[[package]]
+name = "maleficium-core"
+version = "0.1.0"
+dependencies = [
  "dirs",
  "dunce",
  "libc",
  "maleficium-events",
  "maleficium-index",
  "maleficium-structure",
- "rmcp",
  "schemars 1.2.2",
  "serde",
  "serde_json",
  "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tokio",
 ]
 
 [[package]]
@@ -1890,6 +1902,22 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+]
+
+[[package]]
+name = "maleficium-mcp"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "dunce",
+ "maleficium-core",
+ "maleficium-events",
+ "maleficium-index",
+ "maleficium-structure",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "tokio",
 ]
 
 [[package]]

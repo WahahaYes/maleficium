@@ -13,7 +13,7 @@ describe('trashName', () => {
   });
 
   it('matches the core format the MCP delete writes', () => {
-    // Same literal as src-tauri/src/core/fs.rs `mcp_delete_lands_in_app_trash_dir`,
+    // Same literal as src-tauri/core/src/fs.rs `mcp_delete_lands_in_app_trash_dir`,
     // so core `undo_trash` can read rel back out of an app-trashed entry.
     const name = trashName('/home/u/paper', '/home/u/paper/sub/a.tex', 1700000000000);
     expect(name.startsWith('a.tex__sub__a.tex__')).toBe(true);
@@ -28,7 +28,7 @@ describe('trashName', () => {
     );
     expect(trashName('/p', '/p/100%.tex', 1)).toBe('100%25.tex__100%25.tex__1');
     expect(trashName('/p', '/p/%5F.tex', 1)).toBe('%255F.tex__%255F.tex__1');
-    // Same literal as src-tauri/src/core/fs.rs
+    // Same literal as src-tauri/core/src/fs.rs
     // `trash_name_round_trips_underscores_and_percent`, which decodes it.
     expect(trashName('/p', '/p/a__b/my__notes.tex', 1234)).toBe(
       'my%5F%5Fnotes.tex__a%5F%5Fb__my%5F%5Fnotes.tex__1234',

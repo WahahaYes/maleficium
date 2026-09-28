@@ -16,7 +16,7 @@ fn roots() -> &'static Mutex<HashMap<String, PathBuf>> {
 }
 
 fn validate_root_id(id: &str) -> Result<&str, String> {
-    crate::commands::guard::reject_empty_nul(id)?;
+    crate::guard::reject_empty_nul(id)?;
     if id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
         return Err("forbidden root id (alphanumeric/dash, max 64)".to_string());
     }
@@ -26,7 +26,7 @@ fn validate_root_id(id: &str) -> Result<&str, String> {
 /// Mint a session root: validate the directory, canonicalize it, store it.
 pub fn grant_root(id: &str, root: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;
-    let canon = crate::commands::guard::canonical_root(root)?;
+    let canon = crate::guard::canonical_root(root)?;
     roots()
         .lock()
         .map_err(|_| "roots lock poisoned".to_string())?
@@ -37,7 +37,7 @@ pub fn grant_root(id: &str, root: &str) -> Result<PathBuf, String> {
 /// Register a project root under its own id (djb2 of the canonical path).
 /// Returns the canonical root and the id that names it across the seam.
 pub fn grant_project(root: &str) -> Result<(PathBuf, String), String> {
-    let canon = crate::commands::guard::canonical_root(root)?;
+    let canon = crate::guard::canonical_root(root)?;
     let id = hash_root(&canon.to_string_lossy());
     grant_root(&id, &canon.to_string_lossy())?;
     Ok((canon, id))
@@ -64,7 +64,7 @@ pub fn session_root(id: &str) -> Result<PathBuf, String> {
 /// Resolve `candidate` inside the session root: rejects NUL, requires the
 /// canonicalized path to sit under the granted root.
 pub fn resolve_in(id: &str, candidate: &str) -> Result<PathBuf, String> {
-    crate::commands::guard::reject_empty_nul(candidate)?;
+    crate::guard::reject_empty_nul(candidate)?;
     let root = session_root(id)?;
     let joined = if Path::new(candidate).is_absolute() {
         PathBuf::from(candidate)
@@ -85,7 +85,7 @@ pub fn resolve_read(id: &str, candidate: &str) -> Result<PathBuf, String> {
     if let Ok(p) = resolve_in(id, candidate) {
         return Ok(p);
     }
-    crate::commands::guard::reject_empty_nul(candidate)?;
+    crate::guard::reject_empty_nul(candidate)?;
     let root = session_root(id)?;
     if candidate.contains('\0') {
         return Err("forbidden path: NUL byte".to_string());
@@ -178,7 +178,7 @@ fn split_trash_name(name: &str) -> Option<(String, String)> {
         return None;
     }
     let rel = comps.join("/");
-    if !crate::commands::guard::is_bare_filename(&base)
+    if !crate::guard::is_bare_filename(&base)
         || comps.iter().any(|c| c.is_empty())
         || rel.contains('\0')
     {
@@ -229,7 +229,7 @@ pub fn trash_file(id: &str, rel: &str, confirm: &str) -> Result<String, String> 
 
 /// Restore a trashed file to its original path.
 pub fn undo_trash(id: &str, trash_path: &str) -> Result<String, String> {
-    crate::commands::guard::reject_empty_nul(trash_path)?;
+    crate::guard::reject_empty_nul(trash_path)?;
     let root = session_root(id)?;
     let home = trash_home(&root);
     let src = PathBuf::from(trash_path);
