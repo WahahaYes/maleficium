@@ -81,6 +81,38 @@ fn parse_forward(text: &str) -> ForwardHit {
     }
 }
 
+/// A box SyncTeX placed a source line in: pdf points from the page's top
+/// left, `y` the top edge (the tool reports the baseline and the height).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LineBox {
+    pub page: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Every box of a forward result, in the tool's order.
+fn parse_boxes(text: &str) -> Vec<LineBox> {
+    let mut boxes = Vec::new();
+    for record in text.split("Output:").skip(1) {
+        let num = |k: &str| field(record, k).and_then(|v| v.parse::<f32>().ok());
+        let page = field(record, "Page").and_then(|v| v.parse::<u32>().ok());
+        if let (Some(page), Some(h), Some(v), Some(w), Some(hh)) =
+            (page, num("h"), num("v"), num("W"), num("H"))
+        {
+            boxes.push(LineBox {
+                page: page.max(1),
+                x: h,
+                y: v - hh,
+                width: w,
+                height: hh,
+            });
+        }
+    }
+    boxes
+}
+
 /// Map an `Input:` path to a root-relative one. Relative inputs resolve
 /// against the main file's directory, where the engine ran.
 fn rel_in_root(root: &Path, main_dir: &Path, input: &str) -> Option<String> {
@@ -107,19 +139,19 @@ fn parse_inverse(text: &str, root: &Path, main_dir: &Path) -> InverseHit {
     }
 }
 
-/// Forward (editor → PDF): the page showing `line` of `tex_rel`.
-pub fn forward(
+/// The sidecar's raw answer to a forward query.
+fn forward_text(
     cx: &Core,
     root_id: &str,
     main_rel: &str,
     tex_rel: &str,
     line: u32,
-) -> Result<ForwardHit, String> {
+) -> Result<String, String> {
     let q = query_for(cx, root_id, main_rel)?;
     let tex = super::fs::resolve_in(cx, root_id, tex_rel)?;
     // CWD=outdir with the bare pdf name: an absolute `-o` resolves the `-i`
     // tag against the wrong file table. The gz stores absolute Input paths.
-    let text = run_sidecar(
+    run_sidecar(
         &q.outdir,
         &[
             "view".to_string(),
@@ -128,8 +160,37 @@ pub fn forward(
             "-o".to_string(),
             q.pdf_name,
         ],
-    )?;
+    )
+}
+
+/// Forward (editor → PDF): the page showing `line` of `tex_rel`.
+pub fn forward(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    tex_rel: &str,
+    line: u32,
+) -> Result<ForwardHit, String> {
+    let text = forward_text(cx, root_id, main_rel, tex_rel, line)?;
     Ok(parse_forward(&text))
+}
+
+/// Forward with geometry: the boxes showing `line`, empty on no match.
+pub(crate) fn forward_boxes(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    tex_rel: &str,
+    line: u32,
+) -> Result<Vec<LineBox>, String> {
+    let text = forward_text(cx, root_id, main_rel, tex_rel, line)?;
+    if parse_forward(&text).page.is_none() {
+        return Ok(Vec::new());
+    }
+    // run_sidecar keeps the tool's last lines newest first; records read in
+    // the tool's own order.
+    let text = text.lines().rev().collect::<Vec<_>>().join("\n");
+    Ok(parse_boxes(&text))
 }
 
 /// Inverse (PDF → editor): the source line at a position on `page`.
@@ -194,6 +255,18 @@ mod tests {
         );
         assert_eq!(parse_forward("{}"), ForwardHit { page: None });
         assert_eq!(parse_forward("Page:abc"), ForwardHit { page: None });
+    }
+
+    #[test]
+    fn forward_boxes_are_read_from_every_record() {
+        let text = "SyncTeX result begin\nOutput:main.pdf\nPage:1\nx:225.8\ny:492.1\nh:225.8\nv:496.2\nW:160.4\nH:13.5\nbefore:\nOutput:main.pdf\nPage:2\nx:1\ny:1\nh:72\nv:100\nW:20\nH:10\nSyncTeX result end";
+        let b = parse_boxes(text);
+        assert_eq!(b.len(), 2);
+        assert_eq!((b[0].page, b[0].x, b[0].width), (1, 225.8, 160.4));
+        assert!((b[0].y - 482.7).abs() < 0.01, "{}", b[0].y);
+        assert_eq!((b[1].page, b[1].y), (2, 90.0));
+        assert!(parse_boxes("synctex_no_match").is_empty());
+        assert!(parse_boxes("Output:main.pdf\nPage:1\nh:abc").is_empty());
     }
 
     #[test]
