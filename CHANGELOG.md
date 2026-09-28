@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Go to Line works from the editor.** Ctrl+G also opened a stray search panel that took the keyboard, so the line number you typed went nowhere. Now only Go to Line opens, and it centers the line. F3 and Shift+F3 open the app's find bar.
+
 ## 0.2.1 - 2026-09-27
 
 ### Fixes
