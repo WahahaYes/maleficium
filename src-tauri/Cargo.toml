@@ -14,7 +14,7 @@ members = ["core", "mcp", "structure", "events", "index"]
 
 # The app version; the MCP server reports it too.
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary

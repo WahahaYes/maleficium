@@ -37,6 +37,30 @@ version() {
 version_at() { git -C "$ROOT" show "$1:package.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'; }
 tag_exists() { git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$1" >/dev/null 2>&1; }
 
+# Stop on a failed run, saying what failed and what to do: each failed
+# job and step with its last error lines. No automatic retry: a real
+# failure fails again, and a runner flake is for a person to call.
+# $1 is the run id, $2 how to fix a real failure.
+explain_failed() {
+    run=$1
+    printf 'release: run %s failed: %s\n' "$run" "$(gh run view "$run" --json url --jq .url)" >&2
+    gh run view "$run" --json jobs \
+        --jq '.jobs[] | select(.conclusion == "failure") | [.databaseId, .name, ([.steps[] | select(.conclusion == "failure") | .name] | join(", "))] | @tsv' |
+        while IFS="$(printf '\t')" read -r job name steps; do
+            printf '  %s, step "%s":\n' "$name" "$steps" >&2
+            # The job's own log: gh run view --log-failed waits for the whole
+            # run, and --fail-fast stops while other jobs still build.
+            # Its color codes are stripped, never printed.
+            gh api --allow-escape-sequences "repos/{owner}/{repo}/actions/jobs/$job/logs" 2>/dev/null |
+                sed -e "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" -e 's/^[0-9T:.-]*Z //' | tr -d '\033' |
+                grep -E '^ *(error|Error|ERROR)[:[ ]|failed to |FAIL|panicked|##\[error\]' |
+                grep -v 'Process completed with exit code' | tail -n 3 | sed 's/^/      /' >&2
+        done
+    printf 'release: if that is unrelated to this release (a runner flake), rerun it: gh run rerun %s --failed\n' "$run" >&2
+    printf 'release: otherwise %s. Either way, then rerun: sh scripts/release.sh %s (it resumes)\n' "$2" "$VER" >&2
+    exit 1
+}
+
 # Step 1: the release branch and PR. Sets PR and HEAD_SHA.
 open_pr() {
     # The commit hooks run prettier from ./node_modules; the scratch worktree
@@ -114,8 +138,12 @@ merge_pr() {
         i=$((i + 1)); [ $i -le 60 ] || die "no required checks started on $PR after 10 minutes"
         sleep 10
     done
-    gh pr checks "$PR" --required --watch --fail-fast --interval 60 >/dev/null \
-        || die "a required build failed on $PR; fix it on the branch and rerun"
+    if ! gh pr checks "$PR" --required --watch --fail-fast --interval 60 >/dev/null; then
+        run=$(gh pr checks "$PR" --required --json bucket,link \
+            --jq '[.[] | select(.bucket == "fail")][0].link // empty' | sed -n 's|.*/runs/\([0-9]*\)/.*|\1|p')
+        [ -n "$run" ] || die "a required build failed on $PR"
+        explain_failed "$run" "fix it on branch release-$VER"
+    fi
     gh pr merge "$PR" --merge --match-head-commit "$HEAD_SHA"
     say "merged $PR"
 }
@@ -143,7 +171,7 @@ watch_publish() {
     done
     say "building and publishing in run $RUN"
     gh run watch "$RUN" --exit-status --interval 60 >/dev/null \
-        || die "release run $RUN failed: gh run view $RUN --log-failed (rerun it from the Actions tab)"
+        || explain_failed "$RUN" "fix it on main and release a new version: v$VER is tagged and tags cannot move"
     say "published $(gh release view "v$VER" --json url --jq .url)"
 }
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-09-27
+
 ### Fixes
 
 - **LaTeX commands are readable in dark themes.** The editor drew commands like `\documentclass` and `\begin` in a dim purple that was hard to read on dark backgrounds. Syntax colors now come from the active theme, and each is adjusted until it meets WCAG AA contrast against the editor background, in every bundled theme.
