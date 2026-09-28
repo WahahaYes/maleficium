@@ -773,6 +773,8 @@ def main():
     for tool in ["Xvfb", "xdotool", "import", "bwrap", "curl"] + ([a.runner] if agent else []):
         if not shutil.which(tool):
             die("needs %s on PATH" % tool)
+    if agent and a.runner == "claude":
+        ar.claude_token()
     with open(SCENARIO) as f:
         s = json.load(f)
     out = a.out or os.path.join("/var/tmp/maleficium-codrive-runs", time.strftime("%Y%m%d-%H%M%S"))

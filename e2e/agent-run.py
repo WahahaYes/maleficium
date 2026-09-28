@@ -318,11 +318,30 @@ def run_agent_opencode(scenario, server, model, run_dir, warm):
             "project": project, "home": home, "prompt": prompt}
 
 
+CLAUDE_TOKEN_FILE = os.path.expanduser("~/.config/maleficium/claude-oauth-token")
+
+
+def claude_token():
+    """The claude runner's auth: CLAUDE_CODE_OAUTH_TOKEN from the environment,
+    else the token file. Both come from `claude setup-token`. Copying
+    ~/.claude/.credentials.json instead would leave a secret in every run dir
+    and let the child CLI rotate the user's refresh token."""
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+    if not token and os.path.isfile(CLAUDE_TOKEN_FILE):
+        with open(CLAUDE_TOKEN_FILE) as f:
+            token = f.read().strip()
+    if not token:
+        die("no token for the claude runner: run `claude setup-token` and put the token in "
+            "CLAUDE_CODE_OAUTH_TOKEN or %s (mode 0600)" % CLAUDE_TOKEN_FILE)
+    return token
+
+
 def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_turns, budget_usd, claude_bin):
     """Drive `claude -p` against the server under test, isolated from the
     user's Claude Code config (see e2e/README.md).
 
-    The CLI gets a scratch HOME holding only a copy of the OAuth credentials,
+    The CLI gets an empty scratch HOME and a long-lived token in its
+    environment (see claude_token), never a copy of ~/.claude's credentials,
     loads no settings, and reaches no MCP server but maleficium. `--restricted`
     keeps the file tools inside the project and drops shell and web tools.
     `--bare` is not an option: it accepts only API-key auth. `--tools` trims
@@ -337,13 +356,7 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
         with open(os.path.join(run_dir, rel), "w") as f:
             f.write(text)
     os.makedirs(os.path.join(claude_home, ".claude"), exist_ok=True, mode=0o700)
-    creds = os.path.expanduser("~/.claude/.credentials.json")
-    if not os.path.isfile(creds):
-        die("no ~/.claude/.credentials.json to isolate for the claude runner; `claude auth login` first")
-    creds_copy = os.path.join(claude_home, ".claude", ".credentials.json")
-    shutil.copy(creds, creds_copy)
-    os.chmod(os.path.join(claude_home, ".claude"), 0o700)
-    os.chmod(creds_copy, 0o600)
+    env = dict(os.environ, HOME=claude_home, CLAUDE_CODE_OAUTH_TOKEN=claude_token())
     config = os.path.join(run_dir, "claude-mcp.json")
     with open(config, "w") as f:
         json.dump({"mcpServers": {"maleficium": {"type": "stdio", "command": server.cmd[0],
@@ -352,7 +365,7 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
     before = snapshot(run_dir, skip=("mcp-home", "claude-home"))
     prompt = scenario["prompt"].replace("{project}", project)
     allowed = CLAUDE_BUILTIN_TOOLS + ["mcp__maleficium__" + t for t in tool_names]
-    argv = ["env", "HOME=" + claude_home, claude_bin, "-p",
+    argv = [claude_bin, "-p",
             "--output-format", "stream-json", "--verbose",
             "--max-turns", str(max_turns), "--max-budget-usd", str(budget_usd),
             "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence", "--restricted",
@@ -363,7 +376,7 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
     t0 = time.time()
     p = subprocess.Popen(sandbox(run_dir, project, argv), stdout=subprocess.PIPE,
                          stderr=open(os.path.join(run_dir, "claude.stderr.log"), "w"),
-                         stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True)
+                         stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True, env=env)
 
     def pump():
         """Append each stream-json line to events.jsonl as it arrives, with an
@@ -845,6 +858,7 @@ def main():
         claude_bin = a.claude_bin or shutil.which("claude") or "/usr/bin/claude"
         if not os.access(claude_bin, os.X_OK):
             die("not executable: %s" % claude_bin)
+        claude_token()
     scenarios = load_scenarios(a.scenario)
     out = a.out or os.path.join("/var/tmp/maleficium-agent-runs", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out, exist_ok=True)
