@@ -14,6 +14,8 @@ npm run dev:desktop            # the app, with hot reload
 
 `npm run dev` serves the frontend alone in a browser. Both dev commands pick a free port, so several checkouts can run side by side.
 
+`sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, plus a copy of the `e2e/fixtures/simple` test fixture. It keeps any project folder that already exists; delete one to get a fresh copy.
+
 Recommended: `pre-commit install` runs the format, lint, and type checks on each commit, and checks each commit message.
 
 ## Before you commit

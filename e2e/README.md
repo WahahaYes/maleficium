@@ -32,7 +32,7 @@ GUI harnesses serve on port 1420. Set `STILLS_PORT` to move a stills run while a
 
 ### project-footprint.sh
 
-A static audit. Copies `playground/simple/` into a scratch git repo, replays each of the app's path derivations (trash, history, outputs, event log, main-file association) in bash, and asserts `git status` stays clean. It also pins the security config: no `$HOME` in capabilities, CSP enforced, and the opener plugin absent (lockfiles included).
+A static audit. Copies `e2e/fixtures/simple/` into a scratch git repo, replays each of the app's path derivations (trash, history, outputs, event log, main-file association) in bash, and asserts `git status` stays clean. It also pins the security config: no `$HOME` in capabilities, CSP enforced, and the opener plugin absent (lockfiles included).
 
 ### history-surface.sh
 
@@ -40,7 +40,7 @@ A static audit of the revision history: both entry points reach one command, the
 
 ### search-run.sh
 
-Drives the `maleficium-mcp` sidecar over JSON-RPC against a scratch copy of `playground/simple/`, with no compile and no network. Covers search (literal, regex, invalid regex, result cap), main-document ranking, a file written mid-run, `find_files`, the structure tools, go to definition, and replace (preview writes nothing, apply once by token, undo restores exact bytes, a stale plan is refused). Build the sidecar first:
+Drives the `maleficium-mcp` sidecar over JSON-RPC against a scratch copy of `e2e/fixtures/simple/`, with no compile and no network. Covers search (literal, regex, invalid regex, result cap), main-document ranking, a file written mid-run, `find_files`, the structure tools, go to definition, and replace (preview writes nothing, apply once by token, undo restores exact bytes, a stale plan is refused). Build the sidecar first:
 
 ```sh
 cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp
@@ -154,5 +154,5 @@ Match on `event.action` rather than the message text. For a stills run, set `STI
 ## Conventions
 
 - Harnesses find the repo root from their own path. No hardcoded absolute paths, and no writes outside the OS temp dir.
-- Never commit large fixtures: reuse `playground/simple/` or generate into the temp dir at runtime.
+- Never commit large fixtures: reuse `e2e/fixtures/simple/` or generate into the temp dir at runtime. Harnesses copy it to a scratch dir and never write to it.
 - Name tests for what they check, not for when they were written.
