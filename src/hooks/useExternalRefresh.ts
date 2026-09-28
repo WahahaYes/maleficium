@@ -3,20 +3,25 @@
 //
 // Polls the pdf stamp every 1.5 s while the window is visible; the decision
 // is the pure fold in externalRefresh.ts, fed the app's own compile events.
+// With nothing shown yet it watches the open project's main file, so an
+// agent's first compile of a project this app never built opens the preview.
 
-import { useEffect } from 'react';
-import { outputStamp } from '../lib/compile';
+import { useEffect, useRef } from 'react';
+import { outputPdf, outputStamp } from '../lib/compile';
 import { emit } from '../lib/events';
 import { transport } from '../lib/event-transport';
-import { INITIAL_REFRESH, onAppEvent, onPoll } from '../lib/externalRefresh';
-import { emitPdf, onPdf, type PreviewDoc } from '../lib/preview-bus';
+import { INITIAL_REFRESH, onAppEvent, onPoll, watchTarget } from '../lib/externalRefresh';
+import { emitPdf, onPdf, type PreviewDoc, type PreviewSource } from '../lib/preview-bus';
 
 export const REFRESH_POLL_MS = 1500;
 
-export function useExternalRefresh() {
+export function useExternalRefresh(main: PreviewSource | null = null) {
+  const mainRef = useRef(main);
+  mainRef.current = main;
   useEffect(() => {
     let doc: PreviewDoc | null = null;
     let state = INITIAL_REFRESH;
+    let watched: string | null = null;
     let reported: string | null = null;
     const offPdf = onPdf((d) => {
       if (d.docKey !== doc?.docKey) state = INITIAL_REFRESH;
@@ -27,28 +32,35 @@ export function useExternalRefresh() {
     });
     let busy = false;
     const timer = setInterval(() => {
-      const d = doc;
-      if (busy || document.hidden || !d?.source || !d.url) return;
+      const t = watchTarget(doc, mainRef.current);
+      if (busy || document.hidden || !t) return;
+      if (t.key !== watched) {
+        watched = t.key;
+        state = INITIAL_REFRESH;
+      }
+      const shown = doc;
       busy = true;
-      outputStamp(d.source.rootId, d.source.mainRel)
-        .then((now) => {
-          if (d !== doc) return;
+      outputStamp(t.source.rootId, t.source.mainRel)
+        .then(async (now) => {
+          if (doc !== shown || watched !== t.key) return;
           const r = onPoll(state, now);
           state = r.state;
-          if (!r.reload || !d.url) return;
-          emitPdf({ url: d.url, source: d.source, revision: null });
+          if (!r.reload) return;
+          const url = t.url ?? (await outputPdf(t.source.rootId, t.source.mainRel));
+          if (!url || doc !== shown) return;
+          emitPdf({ url, source: t.source, revision: null });
           emit({
             scope: 'preview',
             kind: 'info',
             actor: 'system',
             message: 'pdf rewritten outside the app: preview reloaded',
-            event: { action: 'preview.external-update', pdfUrl: d.url },
+            event: { action: 'preview.external-update', pdfUrl: url },
           });
         })
         .catch((e: unknown) => {
           // Reported once per document: the next document may poll fine.
-          if (reported === d.docKey) return;
-          reported = d.docKey;
+          if (reported === t.key) return;
+          reported = t.key;
           emit({
             scope: 'preview',
             kind: 'warn',

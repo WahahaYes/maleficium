@@ -22,6 +22,7 @@ pub fn run() {
             commands::compile::precompile_checks,
             commands::compile::outputs_fresh,
             commands::compile::output_stamp,
+            commands::compile::output_pdf,
             commands::compile::export_pdf,
             commands::compile::export_zip,
             commands::templates::templates_list,
