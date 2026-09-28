@@ -231,6 +231,22 @@ ivh = iv
 check("inverse query", iv["ok"] and (ivh.get("line") or 0) >= 1, str(iv)[:120])
 check("inverse hit is root-relative", bool(ivh.get("relPath")) and not ivh["relPath"].startswith("/"), str(ivh))
 
+sn = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+check("snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
+check("snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
+import base64 as _b64
+raw = mcp.request("tools/call", {"name": "snippet", "arguments": {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
+blocks = raw.get("content") or []
+img = next((b for b in blocks if b.get("type") == "image"), None)
+png = _b64.b64decode(img["data"]) if img else b""
+meta = (raw.get("structuredContent") or {}).get("image") or {}
+check("snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
+check("snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
+pg = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "with_image": True})
+check("snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
+two = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
+check("snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
+
 st = call("file_graph", {"root_id": "drv", "main_rel": "main.tex"})
 st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}
 check("file graph walks inputs", st["ok"] and st_files.get("chapters/method.tex") is True and st_files.get("chapters/background.tex") is True, str(st)[:200])
