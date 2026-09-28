@@ -63,7 +63,15 @@ xattr -dr com.apple.quarantine /Applications/Maleficium.app
 
 Download `Maleficium_*_x64-setup.exe` and run it. The installer is not code-signed yet, so SmartScreen warns about an unrecognized app: click **More info**, then **Run anyway**.
 
-To build Maleficium yourself, see [docs/BUILDING.md](docs/BUILDING.md).
+### From source
+
+On Linux, Docker builds the `.deb` and AppImage with no toolchain on the host:
+
+```sh
+docker build --output type=local,dest=../maleficium-release .
+```
+
+To build on the host instead (Linux, macOS, or Windows), install the Node and Rust versions the repo pins, then run `npm ci`, `sh scripts/fetch-sidecars.sh`, and `sh scripts/package.sh`; packages land in `out/`. [docs/BUILDING.md](docs/BUILDING.md) lists the system packages each OS needs.
 
 ## Getting started
 
@@ -140,11 +148,11 @@ The server edits your files only through replace; agents write text with their o
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 
-## Known limits in 0.1.x
+## Known limits
 
 - macOS and Windows builds are previews: unsigned, and less tested than Linux.
 - No automatic updates. Check the releases page for new versions.
-- 0.1.x makes no promise that settings or history carry over between versions.
+- Until 1.0, settings and history may not carry over between versions.
 - The engine is Tectonic only. Documents that need `biber` or shell escape depend on tools outside the app, and the pre-compile check flags them.
 
 ## Documentation
