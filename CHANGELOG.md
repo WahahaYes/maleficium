@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### For contributors
+
+- **The playground is generated, not tracked.** `sh scripts/playground.sh` fills an ignored `playground/` with one project per built-in template, the `simple` test fixture (now at `e2e/fixtures/simple`), and the vendored papers.
+- **Real papers as fixtures, and a smoke that scores them.** `e2e/fixtures/vendored/` holds real, permissively licensed papers with their provenance. `python3 e2e/papers-run.py` compiles each over the MCP server, lists every diagnostic, and fails only when a paper that should compile error-free stops doing so, or when one that should not starts to.
+- **One MCP test client.** The e2e harnesses share `e2e/mcp_client.py` instead of five copies.
+- **Building from source has its own section in the README.**
+
 ## 0.2.1 - 2026-09-27
 
 ### Fixes
