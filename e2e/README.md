@@ -9,6 +9,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
 | `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
+| `papers-run.py` | no | How many vendored real papers compile error-free, and what blocks the rest |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
 | `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
 | `codrive-run.py` | Xvfb | An agent edits and compiles over MCP while the app is open: the preview follows, and no buffer or file is lost to the other side (manual; spends model credits) |
@@ -76,6 +77,14 @@ python3 e2e/package-smoke.py <package-dir> [--shots DIR]
 ```
 
 A first launch needs no recent projects, so on macOS and Windows run it as a fresh user (CI runners are).
+
+### papers-run.py
+
+Compiles each real paper in `fixtures/vendored/` over the sidecar and prints a scoreboard: result, error and warning counts, pre-compile findings, and the first blocker. A paper passes when the compile succeeds with no error diagnostics; warnings are counted, not judged. Each paper's `fixture.json` names its main file and whether it is expected to pass today, so the run is a ratchet: it fails when an expected pass breaks, and when an expected failure starts passing, so the expectation gets flipped to lock the gain in. The engine cache persists in `/var/tmp/maleficium-papers-cache-<uid>` (`PAPERS_CACHE`), so only the first run needs the network.
+
+```sh
+python3 e2e/papers-run.py [--paper NAME ...] [--json OUT] [--bin PATH]
+```
 
 ### agent-run.py
 

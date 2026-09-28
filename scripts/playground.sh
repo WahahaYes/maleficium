@@ -22,7 +22,7 @@ add() { # <name> <source dir>
     fi
     mkdir "$DEST/$1"
     cp -R "$2/." "$DEST/$1/"
-    rm -f "$DEST/$1/template.json"
+    rm -f "$DEST/$1/template.json" "$DEST/$1/fixture.json"
     echo "playground: made $DEST/$1"
 }
 
