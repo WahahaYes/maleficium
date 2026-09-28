@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **LaTeX commands are readable in dark themes.** The editor drew commands like `\documentclass` and `\begin` in a dim purple that was hard to read on dark backgrounds. Syntax colors now come from the active theme, and each is adjusted until it meets WCAG AA contrast against the editor background, in every bundled theme.
+- **A missing `biber` is named when a compile fails.** A document using biblatex's default biber backend failed with "bundled tectonic failed: No such file or directory", which read as if the app's own engine were missing. It now says biber is not installed and how to switch to `backend=bibtex`, which needs nothing outside the app.
+
 ## 0.2.0 - 2026-09-27
 
 Maleficium now builds for macOS and Windows as previews, and its MCP server ships inside the app so AI agents can write and compile LaTeX through it.
