@@ -101,22 +101,39 @@ def run_paper(mcp, paper, scratch):
         rec["status"] = "timeout"
     ok, diags = mcp.tool("diagnostics", {"root_id": paper["name"], "main_rel": paper["main"]})
     diags = diags if ok else {}
-    sev = [d.get("severity") for d in diags.get("diagnostics", [])]
+    found = diags.get("diagnostics", [])
+    sev = [d.get("severity") for d in found]
     return {
         "status": rec.get("status"),
         "seconds": round(time.time() - t0, 1),
         "errors": sev.count("error"),
         "warnings": sev.count("warning"),
         "precheck": ["%s %s" % (f.get("kind"), f.get("name")) for f in findings],
+        "diagnostics": [{k: d.get(k) for k in ("severity", "path", "line", "message")} for d in found],
+        "truncated": diags.get("truncated", 0),
         "blocker": blocker(rec, diags),
     }
+
+
+def print_diagnostics(r):
+    """Each distinct diagnostic once, in the order the app reports them."""
+    counts = {}
+    for d in r.get("diagnostics", []):
+        where = "%s:%s" % (d["path"], d["line"]) if d.get("path") else "-"
+        key = (d["severity"], where, d["message"] or "(empty)")
+        counts[key] = counts.get(key, 0) + 1
+    for (sev, where, msg), n in counts.items():
+        print("%-28s %-7s %-14s %s%s" % ("", sev, where, msg[:100], " (%dx)" % n if n > 1 else ""))
+    if r.get("truncated"):
+        print("%-28s the app truncated %s more" % ("", r["truncated"]))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--bin", help="MCP server to drive (default: build maleficium-mcp)")
     ap.add_argument("--paper", action="append", default=[], help="only this paper (repeatable)")
-    ap.add_argument("--json", help="also write the results here")
+    ap.add_argument("--json", help="also write the results, every diagnostic included, here")
+    ap.add_argument("--brief", action="store_true", help="scoreboard only, without each paper's diagnostics")
     a = ap.parse_args()
 
     papers = load_papers(a.paper)
@@ -153,6 +170,8 @@ def main():
                                                r.get("errors", "-"), r.get("warnings", "-"), r.get("blocker") or ""))
         for f in r.get("precheck", []):
             print("%-28s precheck: %s" % ("", f))
+        if not a.brief:
+            print_diagnostics(r)
     print("")
     say("%d of %d papers compile error-free" % (sum(r["passed"] for r in results), len(results)))
     if a.json:
