@@ -77,7 +77,7 @@ python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 
 `main` is protected: changes land only by pull request, every build job must pass, and `v*` tags can't be moved or deleted once created. Only repository admins can create them.
 
-Collect the notes under `## Unreleased` at the top of `CHANGELOG.md` as changes land. They become the GitHub release notes, so write them for users. Then, from any clean checkout with `npm ci` done:
+Collect the notes under `## Unreleased` at the top of `CHANGELOG.md` as changes land: each PR adds its bullets under that heading, which a release leaves in place, empty, for the next one. They become the GitHub release notes, so write them for users. Then, from any clean checkout with `npm ci` done:
 
 ```sh
 sh scripts/release.sh X.Y.Z

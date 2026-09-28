@@ -131,13 +131,20 @@ pub fn tex_warnings(log: &str) -> Vec<TexWarning> {
         .filter_map(|l| {
             let m = TEX_WARNING_RE.captures(l)?;
             let (kind, key, line) = match (m.get(1).map(|k| k.as_str()), m.get(4)) {
-                (Some("Reference"), _) => (TexWarningKind::UndefinedReference, &m[2], m[3].parse().ok()),
+                (Some("Reference"), _) => {
+                    (TexWarningKind::UndefinedReference, &m[2], m[3].parse().ok())
+                }
                 (Some(_), _) => (TexWarningKind::UndefinedCitation, &m[2], m[3].parse().ok()),
                 (None, Some(label)) => (TexWarningKind::DuplicateLabel, label.as_str(), None),
                 (None, None) => return None,
             };
             let message = m[0].trim_start_matches("LaTeX Warning: ").to_string();
-            Some(TexWarning { kind, key: key.to_string(), line, message })
+            Some(TexWarning {
+                kind,
+                key: key.to_string(),
+                line,
+                message,
+            })
         })
         .filter(|w| seen.insert((w.kind, w.key.clone(), w.line)))
         .collect()
@@ -163,8 +170,16 @@ Package hyperref Warning: Rerun to get /PageLabels entry.";
         assert_eq!(
             got,
             vec![
-                (TexWarningKind::UndefinedCitation, "knuth1985".into(), Some(27)),
-                (TexWarningKind::UndefinedReference, "sec:methods".into(), Some(27)),
+                (
+                    TexWarningKind::UndefinedCitation,
+                    "knuth1985".into(),
+                    Some(27)
+                ),
+                (
+                    TexWarningKind::UndefinedReference,
+                    "sec:methods".into(),
+                    Some(27)
+                ),
                 (TexWarningKind::DuplicateLabel, "sec:intro".into(), None),
             ]
         );

@@ -1,6 +1,6 @@
 [package]
 name = "maleficium"
-version = "0.2.0"
+version = "0.2.1"
 license = "Apache-2.0"
 description = "Desktop-native LaTeX editor"
 authors = ["Ethan Wilson"]
