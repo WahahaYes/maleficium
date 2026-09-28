@@ -98,21 +98,19 @@ python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-son
 - A run that hits its scenario's `timeout_s` is killed and reported as a timeout.
 - `--budget` (default $5) stops the whole `-n` sweep once the cost the runner reports adds up to it (free opencode models report $0). For the claude runner, `--max-turns` (default 40) and `--max-budget-usd` (default $2) are an additional hard per-run cap, passed straight to `claude -p`.
 - Each scenario's engine cache is warmed once, cold, by compiling its solution (through `bundle-mirror.py` for the source build; online for a packaged build), and kept in `/var/tmp/maleficium-agent-cache`. Each run gets a copy.
-- Both runners' events are newline-JSON transcripts, one line per event, in `events.jsonl`. For the claude runner every line has an added top-level `_ts_ms` field (wall-clock epoch milliseconds when the harness read that line from the subprocess) so a screen recording of the run can be synced to the transcript later; nothing else in the payload is touched, and a line that fails to parse is kept as `{"_ts_ms": ..., "_raw": "<line>"}` rather than dropped. Watching the file grow tells a stalled run from a slow one, the same purpose opencode's `opencode.log` serves.
-- `run_scenario_once(scenario, server, runner, model, run_dir, warm, ...)` in `agent-run.py` is the one-run building block the CLI's loop calls; another harness that drives one scenario at a time (for example one that also has the app open and is screen-recording while the agent runs) can import and call it directly to get the same `result.json`/`events.jsonl` artifacts.
+- Both runners write their transcript to `events.jsonl`, one event per line, as it streams, so a stalled run is visible before it times out. Claude runner lines carry an added `_ts_ms` (epoch ms at read time) for syncing a screen recording to the transcript.
+- Another harness can run one scenario with `run_scenario_once(...)` and get the same `result.json` and `events.jsonl`.
 
-#### The claude runner's isolation and auth
+#### Claude runner isolation
 
-`claude -p` must not see the real `~/.claude` config (CLAUDE.md discovery, hooks, plugins, history), so it gets its own scratch `HOME` (separate from the MCP server's own scratch `HOME`) holding nothing but a copy of `~/.claude/.credentials.json` -- the OAuth token this account already has from `claude.ai` (subscription auth, not an API key). `--bare` was considered and rejected: its help text says it forces API-key-only auth (`ANTHROPIC_API_KEY` or `apiKeyHelper`) and never reads OAuth or keychain credentials, which would break auth entirely for an account with no API key. Isolation instead comes from, all together:
+The CLI never sees the real `~/.claude`. Each run gets a scratch `HOME` holding only a copy of `~/.claude/.credentials.json` (subscription OAuth; `--bare` is not used because it accepts only API keys), plus:
 
-- `--setting-sources ""` -- no user, project, or local `settings.json` is loaded (belt-and-suspenders on top of the scratch `HOME`, which has none anyway).
-- `--restricted` -- confines the built-in file tools (`Read`/`Edit`/`Write`/`Glob`/`Grep`) to the working directory, and drops `Bash`, `PowerShell`, the REPL tools, and `WebFetch` entirely. Verified with a canary: a `Read` of a file one level outside the project root came back `is_error: true` with the tool's own message naming `--restricted` as the reason.
-- `--strict-mcp-config` with a `--mcp-config` file outside the project, naming only the `maleficium` server. This account's org-level settings add an MCP connector by default; a canary without `--strict-mcp-config` showed it present (`status: pending`) even under an isolated `HOME`, and it disappeared once `--strict-mcp-config` was added.
-- `--allowedTools` lists exactly the server's own tools (`mcp__maleficium__<tool>`, queried live from the running server with `tools/list` rather than hardcoded, so the list can't drift from the real surface) plus the small built-in file-tool set above. Anything not listed is auto-denied rather than hanging (checked empirically: headless `-p` mode with no TTY denies immediately, it does not wait for a prompt nobody can answer).
-- `--tools` additionally trims the built-in tool set the system prompt advertises. This matters for cost, not just isolation: leaving the full default tool/skill list in (this account's environment has an unusually large one) inflated prompt-cache-creation cost roughly 30x in a canary probe (a trivial one-line reply went from about $0.14 to about $0.004).
-- `bwrap` wraps all of this the same way the opencode runner is wrapped (host read-only except the run dir), but the claude runner needs no extra real-`HOME` binds at all, since the client's entire `HOME` lives inside the run dir.
-
-`--max-turns`, `--output-format stream-json --verbose`, and the model flag are undocumented-but-functional in `claude --help` for 2.1.280's plain-CLI mode (they're documented for the Agent SDK, which shells out to the same CLI with the same flags); all were confirmed against the installed `/usr/bin/claude` before use.
+- `--setting-sources ""`: no settings files are loaded.
+- `--restricted`: file tools stay inside the project; shell and web tools are dropped.
+- `--strict-mcp-config` with a config naming only `maleficium`, so no other MCP server, including managed ones, is reachable.
+- `--allowedTools`: the server's tools, read from its `tools/list`, plus the file tools. Anything else is denied, not prompted.
+- `--tools`: trims the advertised built-in tools, which otherwise dominate prompt cost.
+- `bwrap`: the host is read-only except the run dir.
 
 - A failure caused by a confusing tool description or error message is a finding about the MCP server, not the model.
 
