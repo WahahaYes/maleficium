@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::process::Child;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use maleficium_structure::MissingDependency;
+use maleficium_structure::{MissingDependency, MissingReason};
 
 use maleficium_events::OfflineReadiness;
 
@@ -69,8 +69,25 @@ fn next_id() -> String {
 }
 
 /// The failure message: the first 500 bytes of the last run's stderr, or
-/// the flow's own account when it stopped before spawning.
+/// the flow's own account when it stopped before spawning. A missing
+/// external tool is named instead: the engine's own "No such file or
+/// directory" reads as if the engine itself were missing.
 pub fn failure_text(c: &engine::Compiled) -> String {
+    if let Some(MissingDependency {
+        file: Some(tool),
+        reason: MissingReason::ExternalTool,
+    }) = &c.missing
+    {
+        return if tool == "biber" {
+            String::from(
+                "biber is not installed: this document's biblatex uses the biber backend. \
+                 Install biber, or load biblatex with \\usepackage[backend=bibtex]{biblatex}, \
+                 which compiles from the bundle alone",
+            )
+        } else {
+            format!("{tool} is not installed: the engine runs it to finish this document. Install {tool} and compile again")
+        };
+    }
     if c.lines.is_empty() {
         return String::from("no TeX support files are cached yet and there is no network");
     }
@@ -272,6 +289,52 @@ pub fn clear_jobs() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn failed(missing: Option<MissingDependency>) -> engine::Compiled {
+        engine::Compiled {
+            status: JobStatus::Failed,
+            lines: vec![maleficium_events::CompileLine {
+                stream: maleficium_events::CompileStream::Stderr,
+                text: String::from("error: No such file or directory (os error 2)"),
+                signal: None,
+            }],
+            missing,
+            cached_only: false,
+        }
+    }
+
+    fn tool(name: &str) -> Option<MissingDependency> {
+        Some(MissingDependency {
+            file: Some(name.into()),
+            reason: MissingReason::ExternalTool,
+        })
+    }
+
+    #[test]
+    fn a_missing_biber_is_named_with_the_bibtex_workaround() {
+        let text = failure_text(&failed(tool("biber")));
+        assert!(text.starts_with("biber is not installed"), "{text}");
+        assert!(
+            text.contains("\\usepackage[backend=bibtex]{biblatex}"),
+            "{text}"
+        );
+        assert!(!text.contains("bundled tectonic failed"), "{text}");
+    }
+
+    #[test]
+    fn another_missing_tool_is_named() {
+        let text = failure_text(&failed(tool("xindy")));
+        assert!(text.starts_with("xindy is not installed"), "{text}");
+    }
+
+    #[test]
+    fn other_failures_keep_the_engine_stderr() {
+        let text = failure_text(&failed(None));
+        assert_eq!(
+            text,
+            "bundled tectonic failed: error: No such file or directory (os error 2)"
+        );
+    }
 
     #[test]
     fn poll_unknown_job_fails() {
