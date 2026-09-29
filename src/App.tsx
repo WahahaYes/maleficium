@@ -337,6 +337,9 @@ export default function App({
     },
     [buffers, setBuffers, fileName, ownWrites, recordRevision, resolveMain],
   );
+  // Callers defined before handleSelect (tab cycling, go to definition,
+  // search hits) switch files through this ref.
+  handleSelectRef.current = handleSelect;
 
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
   // for main-file scan + watcher baseline, never on the open path.
