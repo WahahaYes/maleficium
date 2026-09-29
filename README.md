@@ -153,9 +153,9 @@ The server edits your files only through replace; agents write text with their o
 
 Claude Sonnet 5, via Claude Code over the MCP server, writing a toy note on coffee cooling in an open Maleficium window — five prompts, cut to 44 seconds, no manual edits:
 
-<video src="https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling.mp4" width="100%" controls></video>
+<video src="docs/captures/coffee-cooling.mp4" width="100%" controls></video>
 
-If your reader shows no player, [download the video](https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling.mp4). The final [sources](docs/captures/coffee-cooling-main.tex) and [references](docs/captures/coffee-cooling-refs.bib) rebuild the PDF in the app, and the [unedited agent transcript](https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling-transcript.jsonl.gz) is JSONL, gzipped. Both files ride with every release from the one that first carries them.
+If your reader shows no player, [download the video](docs/captures/coffee-cooling.mp4). The final [sources](docs/captures/coffee-cooling-main.tex) and [references](docs/captures/coffee-cooling-refs.bib) rebuild the PDF in the app, and the [unedited agent transcript](docs/captures/coffee-cooling-transcript.jsonl.gz) is JSONL, gzipped.
 
 Published as recorded: a rehearsal take, four of five scripted checks green. The fifth failed on a scoring bug in the harness, fixed since — the agent's extra table column and second plot curve were correct. The note is a toy, not research; its two references are real. The prompts, verbatim:
 
