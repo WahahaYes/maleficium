@@ -8,7 +8,7 @@
 // (also UNC `\\server\share`). A path's own prefix picks its rules, so these
 // helpers behave the same on every host and tests cover both forms anywhere.
 // Project-relative paths (from the core, or `relUnder`) always use `/`.
-// Path semantics are due to move into the Rust core (latex-project-cf).
+// Path semantics are due to move into the Rust core.
 
 const WIN_PREFIX = /^(?:[A-Za-z]:[\\/]|\\\\)/;
 

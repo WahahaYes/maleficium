@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "files",
-  "description": "Capability for file system and dialog operations",
+  "description": "The main window: file system and dialog access",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -44,15 +44,6 @@
     },
     {
       "identifier": "fs:allow-read-dir",
-      "allow": [
-        { "path": "$TEMP/**" },
-        { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$APPCACHE/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-exists",
       "allow": [
         { "path": "$TEMP/**" },
         { "path": "$APPDATA/**" },

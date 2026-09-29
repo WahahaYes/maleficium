@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Regenerate playground/simple/figs/*.png (valid 64x64 RGB, zlib-crafted, no assets).
+"""Regenerate e2e/fixtures/simple/figs/*.png (valid 64x64 RGB, zlib-crafted, no assets).
 
-Run with: python3 maleficium/playground/simple/gen-figs.py (from latex-project/).
+Run with: python3 e2e/fixtures/simple/gen-figs.py (from the repo root).
 IMPORTANT: never write these PNGs through a text tool or editor — binary
 bytes mangled as UTF-8 corrupt the signature (this broke a compile once:
 `Unable to load picture or PDF file 'figs/diagram.png'`). If `file figs/*.png`

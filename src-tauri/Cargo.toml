@@ -7,8 +7,6 @@ authors = ["Ethan Wilson"]
 edition = "2021"
 default-run = "maleficium"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [workspace]
 members = ["core", "mcp", "structure", "events", "index"]
 
@@ -17,17 +15,15 @@ members = ["core", "mcp", "structure", "events", "index"]
 version = "0.2.1"
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+# Distinct from the bin name: on Windows a shared name collides
+# (https://github.com/rust-lang/cargo/issues/8519).
 name = "maleficium_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = "2.6.3"
 
 [dependencies]
-tauri = { version = "2.11.5", features = [] }
+tauri = "2.11.5"
 tauri-plugin-fs = { version = "2.5.2", features = ["watch"] }
 tauri-plugin-dialog = "2.7.3"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -43,8 +39,6 @@ maleficium-index = { path = "index" }
 [dev-dependencies]
 maleficium-core = { path = "core", features = ["test-support"] }
 
-
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
 lto = true

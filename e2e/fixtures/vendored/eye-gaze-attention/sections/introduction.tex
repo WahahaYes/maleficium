@@ -1,0 +1,17 @@
+\section{Introduction}
+
+Artificial intelligence (AI) agents have become more connected with users in daily life~\cite{wienrich_extended_2021}, especially by observing context about the user's prior actions or current world state~\cite{zhang_vision_survey_2024}.  New innovations, such as vision-language models (VLMs)~\cite{li_foundation_2024} and machine perception devices~\cite{engel_aria_2023}, pave the way towards contextual AI agents: agents which ``\textit{see}" the nearby physical world and collect / compile contextual cues to better assist users.  Yet, current models interpret information differently than humans, so often misinterpret context, conflicting with user intent.  If implicit information about the user's state could be reliably supplied to the agent, the user and agent's intent could be better aligned.
+
+Eye gaze has been hypothesized as a valuable signal for conveying intent to agents~\cite{ajanki_contextual_2010, buschel_here_2018, burlingham_scanpaths_2024, zhang_agi_2024}.  Gaze conveys information about objects users are interested in, cognitive load, the current action, etc.~\cite{mahanama2022eye}, all of which could improve models' understanding.  While eye tracking (ET) is a common input in extended reality (XR) systems~\cite{plopski_survey_2022}, the use of ET in human-agent interactions has only been lightly explored~\cite{sendhilnathan2024implicitgazeresearchxr}.  ET signals could convey to an agent what the user is or has been interested in.  Yet, wearable eye trackers are limited in accuracy due to multiple factors (system error, slippage, individual user differences, etc.)~\cite{ehinger2019new}, constraining whether objects could be reliably identified.  If an object's visual size relative to the ET signal accuracy is too small, it could be unreliable to detect.  
+
+We present an analysis of the requirements and benefits of ET in wearable contextual AI.  Using a dataset of egocentric recordings taken during daily household tasks~\cite{pan_adt_2023}, we estimate the expected ET accuracy thresholds for detecting physical objects in different contexts.  We then conduct a number of experiments where contextual information from ET is appended to VLM queries.  These experiments reinforce ET's value in this space, and show improvements in the model's ability to perceive user attention and current actions.
+
+\subsection{Contributions}
+
+\begin{enumerate}[topsep=0pt]
+    \item We estimate ET accuracy requirements needed for accurate gaze placement on physical objects, to determine ET accuracy requirements for wearable contextual AI and future systems.
+    \item We explore how ET information can be conveyed to AI agents, both as point-in-time and as scanpath information with temporal dependencies.  By augmenting VLM queries by supplying ET context, we augment agentic ability to understand user attention and current actions.
+\end{enumerate}
+
+\subsection{Privacy and Ethics Statement}  Our findings convey ET's usefulness in human-agent interactions.  Eye movements are known to convey personal information and user preferences~\cite{bozkir2023eyetrackedvirtualrealitycomprehensive}, so any contextual AI system incorporating ET must be secure and privacy-preserving to avoid revealing user characteristics to others.
+
