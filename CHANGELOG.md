@@ -8,6 +8,7 @@
 - **An agent's first compile shows in the preview.** The preview only picked up outside compiles after the app had shown a PDF itself, so a project an agent compiled before you ever did stayed blank. It now shows the PDF as soon as one appears.
 - **Ctrl+S says when it can't save.** A manual save refused because the file changed on disk, or one that failed, did nothing visible. It now says so in the status bar and the log.
 - **Jumps into another file open that file.** Go to definition, a search or replace hit, and Ctrl+Tab stayed in the file you were in when the target was in a different one, and jumped to a line there instead. They open the target file again.
+- **Go to Line works from the editor.** Ctrl+G also opened a stray search panel that took the keyboard, so the line number you typed went nowhere. Now only Go to Line opens, and it centers the line. F3 and Shift+F3 open the app's find bar.
 
 ### For AI agents
 
