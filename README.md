@@ -4,7 +4,7 @@
 
 Maleficium is a LaTeX editor that runs entirely on your machine. Write on one side, read the PDF on the other, and click between them. It ships its own TeX engine, so there is nothing else to install.
 
-![Maleficium with a LaTeX project open: file tree and outline, the editor, and the compiled PDF side by side](docs/screenshots/editor.png)
+![Maleficium with a LaTeX project open: file tree and outline, the editor, and the compiled PDF side by side](https://raw.githubusercontent.com/WahahaYes/maleficium/refs/heads/showcase-video/docs/screenshots/editor.png)
 
 ## Why Maleficium
 
@@ -24,8 +24,8 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 - **Templates and themes.** Nine built-in starter templates, from articles and books to beamer slides and a CV, plus 18 bundled VS Code themes, dark and light.
 
 <p>
-  <img src="docs/screenshots/search.png" width="49%" alt="Project-wide search in the dark theme, with matches grouped by file">
-  <img src="docs/screenshots/replace-light.png" width="49%" alt="A replace preview in a light theme, each match shown struck through beside its replacement">
+  <img src="https://raw.githubusercontent.com/WahahaYes/maleficium/refs/heads/showcase-video/docs/screenshots/search.png" width="49%" alt="Project-wide search in the dark theme, with matches grouped by file">
+  <img src="https://raw.githubusercontent.com/WahahaYes/maleficium/refs/heads/showcase-video/docs/screenshots/replace-light.png" width="49%" alt="A replace preview in a light theme, each match shown struck through beside its replacement">
 </p>
 
 ## Install
@@ -140,9 +140,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 
-<!-- Inline playback needs a user-attachments URL: drag docs/captures/coffee-cooling.mp4 into any GitHub comment box and paste the resulting URL into the src below. -->
-
-<video src="docs/captures/coffee-cooling.mp4" width="100%" controls></video>
+<video src="https://raw.githubusercontent.com/WahahaYes/maleficium/refs/heads/showcase-video/docs/captures/coffee-cooling.mp4" width="100%" controls></video>
 
 ## Known limits
 
