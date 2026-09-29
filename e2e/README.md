@@ -13,6 +13,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
 | `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
 | `codrive-run.py` | Xvfb | An agent edits and compiles over MCP while the app is open: the preview follows, and no buffer or file is lost to the other side (manual; spends model credits) |
+| `showreel/` | Xvfb | An agent writes a document live in the open app while a director follows it for the camera, judged beat by beat (manual; spends model credits) |
 
 ## Running in isolation
 
@@ -147,6 +148,24 @@ python3 e2e/codrive-run.py --mode race                  # no agent: outside writ
 CODRIVE_CAPTURE_CMD='exec ffmpeg -loglevel error -f x11grab -video_size $CODRIVE_SCREEN -framerate 30 \
     -i $DISPLAY -pix_fmt yuv420p $CODRIVE_RUN_DIR/screen.mp4' python3 e2e/codrive-run.py --mode showcase
 ```
+
+### showreel/
+
+A live agent-driving take in the open app: one agent session resumed for each beat of `scenarios/coffee.json` while a director follows the transcript in the app for the camera, then each beat's snapshot is judged on `agent-run.py` oracles. Shared setup (app build, vite, bundle mirror, display handling) lives in `e2e/harness.py` with codrive.
+
+```sh
+python3 e2e/showreel/run.py --camera-test <project>   # no agent: the camera's moves on a finished paper
+python3 e2e/showreel/run.py --agent print -n 3        # claude -p, off camera
+python3 e2e/showreel/run.py --agent opencode -n 3     # headless opencode, one session across beats
+python3 e2e/showreel/run.py                           # interactive Claude Code in tmux, on camera (default)
+```
+
+- Three agents behind one interface (`agents.py`): `print` (`claude -p`), `tmux` (interactive Claude Code in an xterm on its own display, recorded beside the app), and `opencode` (headless `opencode run`, resumed with `--session`). Every turn streams its transcript to `events.jsonl` and hands the director Claude-shaped tool_use/tool_result envelopes, whatever runner produced them — adding a runner means a new class, no director changes. The tmux runner tails Claude Code's own session log: `print` is the supported path, tmux is best-effort, and a breaking Claude Code change gets resolved if one lands.
+- Runs are manual only, never in CI or pre-commit. Takes spend model credits: `--budget` (default $10) stops the sweep, `--beat-budget` caps each `claude -p` beat. `--agent opencode` defaults to the free variant where the login allows it; otherwise pass `--model` (e.g. `openrouter/meta/muse-spark-1.3`).
+- It builds the app into `CARGO_TARGET_DIR` (default `/var/tmp/maleficium-showreel-target`) and serves vite on `SHOWREEL_PORT` (1424), with Xvfb on `SHOWREEL_DISPLAY` (`:96`) at `SHOWREEL_SCREEN` (1536x864), the agent's terminal on `:95`, and the bundle mirror on `SHOWREEL_MIRROR_PORT` (18792). The project lives at `SHOWREEL_HOME` (default `/tmp/barista`), wiped only if it holds the `.showreel-home` marker. It takes the stills display lock.
+- Beats are judged per snapshot with `agent-run.py`'s `Judge`; two sequential forms (`more_addplots_than_before`, `table_columns_grew`) translate to absolute thresholds against the previous beat. A take passes only if every beat does, so a video can state an honest pass rate over its takes.
+- Per take (`take-N/`): `screen.mp4` (and `claude.mp4` for tmux), `captions.srt`, `events.jsonl`, `camera.jsonl`, `timeline.jsonl`, the app's `app-events.jsonl`, per-beat snapshots, and `result.json`. `--preview` stitches a tmux take's two recordings side by side, sped up; `--suggest-shots` prints candidate edit shots from the shared-clock logs. Per-take edit scripts stay out of the repo: only these generic transforms belong here.
+- The camera moves through the app's dev channel (`src/lib/devCamera.ts`, tested): the harness appends numbered moves to `SHOWREEL_CAMERA_FILE`, the dev server serves them at `/__camera`, and the app runs open/line/page and four allowlisted view commands through its own handlers. No keystrokes, so no move can change a document; release builds carry no camera path. `SHOWREEL_DEBUG=1` screenshots every move.
 
 ## Reading the app's event log
 

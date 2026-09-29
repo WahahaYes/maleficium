@@ -1,0 +1,122 @@
+{
+  "id": "coffee",
+  "about": "Video production (e2e/showreel/run.py): a toy note on how a cup of coffee cools, written and revised over five scripted requests in one agent session while the app is open. Not research; the two references are real and were checked against their publishers' records.",
+  "project": "papers/coffee-cooling",
+  "main": "main.tex",
+  "files": {
+    "main.tex": "\\documentclass[11pt]{article}\n\n\\begin{document}\n\n\\end{document}\n",
+    "refs.bib": "@article{newton1701,\n  author  = {Isaac Newton},\n  title   = {Scala graduum caloris},\n  journal = {Philosophical Transactions of the Royal Society of London},\n  volume  = {22},\n  number  = {270},\n  pages   = {824--829},\n  year    = {1701},\n  doi     = {10.1098/rstl.1700.0082},\n  note    = {Published anonymously}\n}\n\n@article{vollmer2009,\n  author  = {Michael Vollmer},\n  title   = {Newton's law of cooling revisited},\n  journal = {European Journal of Physics},\n  volume  = {30},\n  number  = {5},\n  pages   = {1063--1084},\n  year    = {2009},\n  doi     = {10.1088/0143-0807/30/5/014}\n}\n"
+  },
+  "preamble": "The LaTeX project is at {project}, open in Maleficium. Use the maleficium MCP tools to compile and check it, and your file tools to write.",
+  "beats": [
+    {
+      "id": "write",
+      "prompt": "Write me a note of about 3 pages on how a cup of coffee cools: derive Newton's law of cooling, plot temperature over time for three starting temperatures, add a table of minutes until it's drinkable, and cite the sources in refs.bib.",
+      "oracles": [
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "pages_at_least": {
+            "main": "main.tex",
+            "n": 3
+          }
+        },
+        {
+          "cites_keys": {
+            "keys": ["newton1701", "vollmer2009"]
+          }
+        },
+        {
+          "project_matches": {
+            "patterns": [
+              "\\\\begin\\{(equation|align)",
+              "\\\\begin\\{axis\\}",
+              "\\\\begin\\{tabular"
+            ]
+          }
+        },
+        {
+          "count_at_least": {
+            "pattern": "\\\\addplot",
+            "n": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "plot-page-2",
+      "prompt": "Make the cooling plot full width at the top of page 2.",
+      "oracles": [
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "plot_full_width": {}
+        },
+        {
+          "plot_at_top_of_page": {
+            "main": "main.tex",
+            "page": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "diagram",
+      "prompt": "Add a diagram of heat leaving the cup: conduction through the mug, and convection and evaporation from the surface.",
+      "oracles": [
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "tikz_beyond_axis": {}
+        },
+        {
+          "project_matches": {
+            "patterns": ["(?i)conduction", "(?i)convection", "(?i)evaporation"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "milk",
+      "prompt": "Compare black coffee with coffee with milk: add a column to the table and a second curve to the plot.",
+      "oracles": [
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "more_addplots_than_before": true
+        },
+        {
+          "project_matches": {
+            "patterns": ["(?i)milk"]
+          }
+        },
+        {
+          "table_columns_grew": true
+        }
+      ]
+    },
+    {
+      "id": "front",
+      "prompt": "Give it a proper front: a title, the author A. Barista, and a short abstract.",
+      "oracles": [
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "project_matches": {
+            "patterns": [
+              "\\\\author\\{[^}]*A\\. Barista",
+              "\\\\begin\\{abstract\\}",
+              "\\\\maketitle"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "timeout_s": 900
+}

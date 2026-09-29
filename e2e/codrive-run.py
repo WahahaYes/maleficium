@@ -45,6 +45,7 @@ Needs: Xvfb, xdotool, ImageMagick import, bwrap, curl, and the runner's CLI.
 Manual only: it spends model credits. See e2e/README.md.
 """
 import argparse, importlib.util, inspect, json, os, shutil, signal, subprocess, sys, threading, time
+import harness
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -60,12 +61,9 @@ PORT = int(os.environ.get("CODRIVE_PORT", "1423"))
 MIRROR_PORT = int(os.environ.get("CODRIVE_MIRROR_PORT", "18791"))
 TARGET = os.environ.get("CARGO_TARGET_DIR") or "/var/tmp/maleficium-codrive-target"
 APPBIN = os.path.join(TARGET, "debug", "maleficium")
-LOG_REL = os.path.join(".local", "share", ar.IDENT, "maleficium-log", "events.jsonl")
 # Race mode: outside writes this long after the user's last key, around the
 # 1.2 s autosave.
 RACE_OFFSETS = [0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
-# The file tree's rows, top-left anchored (stills State 9): name-sorted.
-TREE_X, TREE_Y0, TREE_DY = 70, 104, 26
 
 
 def say(msg):
@@ -84,309 +82,6 @@ def utf16_len(text):
     return len(text.encode("utf-16-le")) // 2
 
 
-class Timeline:
-    """Epoch-ms marks for the run, on the clock the app log and the agent's
-    events use, so a recording and a transcript can be lined up with them."""
-
-    def __init__(self, path):
-        self.path = path
-        self.marks = []
-        open(path, "w").close()
-
-    def mark(self, what, **fields):
-        m = dict(at=now_ms(), what=what, **fields)
-        self.marks.append(m)
-        with open(self.path, "a") as f:
-            f.write(json.dumps(m) + "\n")
-        return m["at"]
-
-    def at(self, what):
-        return next((m["at"] for m in self.marks if m["what"] == what), None)
-
-
-# ---- processes -------------------------------------------------------------------
-
-
-class Procs:
-    """Every long-lived process this harness starts, killed by group at exit."""
-
-    def __init__(self):
-        self.groups = []
-
-    def start(self, argv, **kw):
-        p = subprocess.Popen(argv, start_new_session=True, **kw)
-        self.groups.append(p)
-        return p
-
-    def stop(self, p, sig=signal.SIGTERM, grace=5):
-        if p.poll() is None:
-            try:
-                os.killpg(p.pid, sig)
-            except ProcessLookupError:
-                pass
-            try:
-                p.wait(timeout=grace)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(p.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                p.wait()
-        # the leader may be gone while its group lives on (webkit children)
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        if p in self.groups:
-            self.groups.remove(p)
-
-    def stop_all(self):
-        for p in reversed(list(self.groups)):
-            self.stop(p, grace=3)
-
-
-def take_display_lock():
-    """The stills harness's per-display lock, so the two never share one."""
-    lock = "/tmp/maleficium-stills-display-%s.lock" % DISP.lstrip(":")
-    try:
-        os.mkdir(lock)
-    except FileExistsError:
-        try:
-            holder = int(open(os.path.join(lock, "pid")).read().strip())
-            os.kill(holder, 0)
-            die("display %s is in use by pid %d (set CODRIVE_DISPLAY)" % (DISP, holder))
-        except (ValueError, OSError):
-            shutil.rmtree(lock, ignore_errors=True)
-            os.mkdir(lock)
-    with open(os.path.join(lock, "pid"), "w") as f:
-        f.write(str(os.getpid()))
-    return lock
-
-
-def xenv():
-    return dict(os.environ, DISPLAY=DISP)
-
-
-def xdo(*args, timeout=15):
-    try:
-        r = subprocess.run(["xdotool", *args], env=xenv(), capture_output=True, text=True, timeout=timeout)
-        return r.stdout
-    except subprocess.TimeoutExpired:
-        return ""
-
-
-def start_xvfb(procs):
-    if os.path.exists("/tmp/.X%s-lock" % DISP.lstrip(":")):
-        die("an X server already holds %s (set CODRIVE_DISPLAY)" % DISP)
-    w, h = SCREEN.split("x")
-    p = procs.start(["Xvfb", DISP, "-screen", "0", "%sx%sx24" % (w, h), "-nolisten", "tcp"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    end = time.time() + 20
-    while time.time() < end:
-        if subprocess.run(["xdotool", "getdisplaygeometry"], env=xenv(), capture_output=True).returncode == 0:
-            return p
-        if p.poll() is not None:
-            die("Xvfb exited on %s" % DISP)
-        time.sleep(0.3)
-    die("Xvfb never answered on %s" % DISP)
-
-
-def build_app(out):
-    env = dict(os.environ, CARGO_TARGET_DIR=TARGET,
-               PATH=os.path.expanduser("~/.cargo/bin") + os.pathsep + os.environ.get("PATH", ""),
-               TAURI_CONFIG=json.dumps({"build": {"devUrl": "http://localhost:%d/" % PORT}}, separators=(",", ":")))
-    t0 = time.time()
-    with open(os.path.join(out, "build.log"), "w") as log:
-        r = subprocess.run(["cargo", "build", "--bins"], cwd=os.path.join(ROOT, "src-tauri"), env=env,
-                           stdout=log, stderr=subprocess.STDOUT, timeout=1800)
-    if r.returncode != 0:
-        die("app build failed (see %s/build.log)" % out)
-    say("app built in %.0fs (%s)" % (time.time() - t0, APPBIN))
-
-
-def start_vite(procs, out, preset):
-    env = dict(os.environ, DEV_PORT=str(PORT), STILLS_PRESET_FILE=preset,
-               VITE_CACHE_DIR=os.environ.get("VITE_CACHE_DIR", "/var/tmp/maleficium-codrive-vite-cache"))
-    log = open(os.path.join(out, "vite.log"), "w")
-    p = procs.start([os.path.join(ROOT, "node_modules", ".bin", "vite")], cwd=ROOT, env=env,
-                    stdout=log, stderr=subprocess.STDOUT)
-    end = time.time() + 60
-    while time.time() < end:
-        if subprocess.run(["curl", "-s", "-o", "/dev/null", "http://localhost:%d/" % PORT]).returncode == 0:
-            return p
-        if p.poll() is not None:
-            die("vite exited (port %d held? see %s/vite.log)" % (PORT, out))
-        time.sleep(0.5)
-    die("vite never answered on :%d" % PORT)
-
-
-def start_mirror(procs, out):
-    err = open(os.path.join(out, "mirror.log"), "w")
-    p = procs.start([sys.executable, os.path.join(HERE, "bundle-mirror.py"), str(MIRROR_PORT), ar.MIRROR_CACHE],
-                    stdout=subprocess.PIPE, stderr=err, text=True)
-    if "listening" not in (p.stdout.readline() or ""):
-        die("bundle mirror did not start (port %d held? see %s/mirror.log)" % (MIRROR_PORT, out))
-    return p
-
-
-def make_server(bundle_url):
-    """agent-run's Server for the harness's own build: the same binary the
-    app runs, with --mcp, reading the bundle through this run's mirror."""
-    s = ar.Server.__new__(ar.Server)
-    s.kind = "codrive"
-    s.cmd = [APPBIN, "--mcp"]
-    s.env = {"MALEFICIUM_DEV_BUNDLE_URL": bundle_url}
-    return s
-
-
-# ---- the app ----------------------------------------------------------------------
-
-
-class AppLog:
-    def __init__(self, home):
-        self.path = os.path.join(home, LOG_REL)
-
-    def events(self):
-        out = []
-        try:
-            with open(self.path) as f:
-                for line in f:
-                    try:
-                        out.append(json.loads(line))
-                    except ValueError:
-                        pass
-        except OSError:
-            pass
-        return out
-
-    def find(self, action, since, pred=None):
-        for e in self.events():
-            ev = e.get("event") if isinstance(e.get("event"), dict) else {}
-            if e.get("at", 0) > since and ev.get("action") == action and (pred is None or pred(ev)):
-                return e
-        return None
-
-    def wait(self, action, since, timeout, pred=None):
-        end = time.time() + timeout
-        while time.time() < end:
-            e = self.find(action, since, pred)
-            if e:
-                return e
-            time.sleep(0.3)
-        return None
-
-
-class App:
-    def __init__(self, procs, out, home, preset_file, bundle_url, tl):
-        self.procs, self.out, self.home, self.tl = procs, out, home, tl
-        self.preset_file, self.bundle_url = preset_file, bundle_url
-        self.log = AppLog(home)
-        self.p = None
-        self.win = None
-
-    def launch(self, project):
-        with open(self.preset_file, "w") as f:
-            f.write(project)
-        env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
-        env.update(HOME=self.home, RUSTUP_HOME=os.path.expanduser("~/.rustup"),
-                   CARGO_HOME=os.path.expanduser("~/.cargo"), DISPLAY=DISP, GDK_BACKEND="x11",
-                   WEBKIT_DISABLE_COMPOSITING_MODE="1", MALEFICIUM_DEV_BUNDLE_URL=self.bundle_url)
-        env.pop("WAYLAND_DISPLAY", None)
-        self.launched = self.tl.mark("app.launch", project=project)
-        self.p = self.procs.start([APPBIN], cwd=os.path.join(ROOT, "src-tauri"), env=env,
-                                  stdout=open(os.path.join(self.out, "app.log"), "w"), stderr=subprocess.STDOUT)
-
-    def place(self, timeout=300):
-        """Find the main window (the largest 'Maleficium'), map it, and pin it
-        to 0,0 at the full screen size: with no window manager nothing else
-        maximizes it, and a stable geometry is what a recording needs."""
-        w, h = (int(x) for x in SCREEN.split("x"))
-        end = time.time() + timeout
-        while time.time() < end:
-            if self.p.poll() is not None:
-                die("the app exited (see %s/app.log)" % self.out)
-            best, win = 0, None
-            for cand in xdo("search", "--name", "^Maleficium$").split():
-                geo = xdo("getwindowgeometry", cand)
-                size = [ln.split()[-1] for ln in geo.splitlines() if "Geometry:" in ln]
-                if size:
-                    cw, ch = (int(x) for x in size[0].split("x"))
-                    if cw * ch > best:
-                        best, win = cw * ch, cand
-            if win:
-                xdo("windowmap", win)
-                xdo("windowmove", win, "0", "0")
-                xdo("windowsize", win, str(w), str(h))
-                vend = time.time() + 30
-                while time.time() < vend:
-                    geo = xdo("getwindowgeometry", win)
-                    if win in xdo("search", "--onlyvisible", "--name", "^Maleficium$").split() \
-                            and "Geometry: %dx%d" % (w, h) in geo:
-                        self.win = win
-                        pos = [ln.split()[1] for ln in geo.splitlines() if "Position:" in ln]
-                        self.tl.mark("app.window", window=win, geometry="%dx%d+%s" % (w, h, (pos or ["?"])[0]))
-                        return win
-                    xdo("windowsize", win, str(w), str(h))
-                    time.sleep(0.5)
-                die("window %s never mapped at %dx%d: %s" % (win, w, h, geo.strip()))
-            time.sleep(1)
-        die("no app window appeared (see %s/app.log)" % self.out)
-
-    def focus(self):
-        xdo("windowraise", self.win)
-        xdo("windowfocus", "--sync", self.win)
-
-    def key(self, *keys, to_window=True):
-        """Menu accelerators need --window; webview keys go to the focus."""
-        self.focus()
-        if to_window:
-            xdo("key", "--window", self.win, *keys)
-        else:
-            xdo("key", *keys)
-        time.sleep(0.5)
-
-    def click(self, x, y, repeat=1):
-        xdo("mousemove", "--window", self.win, str(x), str(y), "click", "--repeat", str(repeat), "1")
-        time.sleep(0.8)
-
-    def shot(self, name):
-        path = os.path.join(self.out, name + ".png")
-        r = subprocess.run(["import", "-display", DISP, "-window", self.win, path], capture_output=True, timeout=60)
-        if r.returncode != 0:
-            die("capture failed: %s" % name)
-        self.tl.mark("shot", file=path)
-        return path
-
-    def open_project(self):
-        if not self.log.wait("log.open", self.launched - 1, 90):
-            die("the app never opened its event log (%s)" % self.log.path)
-        m = now_ms()
-        for attempt in range(3):
-            self.key("ctrl+o")
-            e = self.log.wait("file.open", m, 12)
-            if e:
-                self.tl.mark("project.open", file=e["event"]["path"])
-                return e["event"]["path"]
-            say("no file.open after Ctrl+O (try %d)" % (attempt + 1))
-        die("Ctrl+O never opened the preset project")
-
-    def open_tree_row(self, project, rows, name):
-        m = now_ms()
-        self.click(TREE_X, TREE_Y0 + TREE_DY * rows.index(name))
-        want = os.path.join(project, name)
-        e = self.log.wait("file.open", m, 15, lambda ev: ev.get("path") == want) or \
-            self.log.wait("file.switch", m, 1, lambda ev: ev.get("path") == want)
-        if not e:
-            die("clicking the tree row for %s did not open it" % name)
-        return want
-
-    def stop(self):
-        if self.p:
-            self.procs.stop(self.p, grace=5)
-            self.tl.mark("app.stop")
-            self.p = None
-
-
 class Typist(threading.Thread):
     """The user, typing into the active buffer: a key every 0.5 s keeps it
     dirty (autosave waits for 1.2 s of quiet), until the app reports a
@@ -399,14 +94,14 @@ class Typist(threading.Thread):
         self.keys = 0
 
     def run(self):
-        xdo("type", "--delay", "30", self.marker)
+        harness.xdo(DISP, "type", "--delay", "30", self.marker)
         self.tl.mark("typing.start", path=self.path)
         started = now_ms()
         while not self.halt.is_set():
             if self.app.log.find("file.external-conflict", started, lambda ev: ev.get("path") == self.path):
                 self.tl.mark("typing.stop", reason="conflict", keys=self.keys)
                 return
-            xdo("type", "--delay", "0", ".")
+            harness.xdo(DISP, "type", "--delay", "0", ".")
             self.keys += 1
             self.halt.wait(0.5)
         self.tl.mark("typing.stop", reason="halted", keys=self.keys)
@@ -578,25 +273,13 @@ def read_texts(project, names):
     return out
 
 
-def pdf_stamp(server, home, project, main):
-    mcp = ar.Mcp(server, home)
-    try:
-        ok, _ = mcp.call("grant", {"root_id": "stamp", "root": project})
-        if not ok:
-            return None
-        ok, r = mcp.call("output_stamp", {"root_id": "stamp", "main_rel": main})
-        return (r or {}).get("stamp") if ok else None
-    finally:
-        mcp.close()
-
-
 def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, bundle_url, fresh=False):
     cd = s["codrive"]
     agent_dir = os.path.join(run_base, "agent")
     project = os.path.join(agent_dir, "project")
     home = agent_home(runner, agent_dir)
     os.makedirs(agent_dir)
-    tl = Timeline(os.path.join(run_base, "timeline.jsonl"))
+    tl = harness.Timeline(os.path.join(run_base, "timeline.jsonl"))
     tl.mark("run.start", scenario=s["id"], mode=mode, runner=runner, model=model)
     ar.make_fixture(s, project)
     ar.seed_home(warm, home)
@@ -607,7 +290,7 @@ def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, 
     fixture_text = read_texts(project, names)
     fixture = ar.snapshot(project)
 
-    app = App(procs, run_base, home, preset_file, bundle_url, tl)
+    app = harness.App(procs, run_base, home, preset_file, bundle_url, tl, APPBIN, ROOT, DISP, SCREEN, ar.IDENT)
     typist = None
     capture = None
     try:
@@ -652,7 +335,7 @@ def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, 
             typist.halt.set()
             typist.join(10)
         # Let the preview catch up with the last compile (it polls every 1.5 s).
-        stamp = pdf_stamp(server, home, project, cd["main"])
+        stamp = ar.pdf_stamp(server, home, project, cd["main"])
         if stamp:
             app.log.wait("preview.external-update", stamp["mtimeMs"] - 1, 20)
             app.log.wait("preview.page-render", stamp["mtimeMs"] - 1, 20)
@@ -672,7 +355,7 @@ def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, 
                 # The dialog's buttons: Keep my edits, then Reload from disk.
                 tl.mark("resolve")
                 app.focus()
-                xdo("key", "Tab", "Tab", "Return")
+                harness.xdo(DISP, "key", "Tab", "Tab", "Return")
                 app.log.wait("file.reload", tl.at("resolve"), 10)
                 time.sleep(1)
         app.shot("03-after")
@@ -707,8 +390,8 @@ def race_trial(s, warm, offset, base, procs, preset_file, bundle_url):
     os.makedirs(base)
     ar.make_fixture(s, project)
     ar.seed_home(warm, home)
-    tl = Timeline(os.path.join(base, "timeline.jsonl"))
-    app = App(procs, base, home, preset_file, bundle_url, tl)
+    tl = harness.Timeline(os.path.join(base, "timeline.jsonl"))
+    app = harness.App(procs, base, home, preset_file, bundle_url, tl, APPBIN, ROOT, DISP, SCREEN, ar.IDENT)
     main = os.path.join(project, s["codrive"]["main"])
     try:
         app.launch(project)
@@ -717,11 +400,11 @@ def race_trial(s, warm, offset, base, procs, preset_file, bundle_url):
         app.click(450, 200)
         app.key("ctrl+End", to_window=False)
         m = now_ms()
-        xdo("type", "--delay", "20", "% typed earlier")
+        harness.xdo(DISP, "type", "--delay", "20", "% typed earlier")
         if not app.log.wait("file.save", m, 20, lambda ev: ev.get("path") == main):
             die("the typed burst was never autosaved (%s)" % app.log.path)
         time.sleep(1)
-        xdo("type", "--delay", "0", "Q")
+        harness.xdo(DISP, "type", "--delay", "0", "Q")
         t_key = tl.mark("user.key")
         time.sleep(offset)
         with open(main) as f:
@@ -779,8 +462,8 @@ def main():
         s = json.load(f)
     out = a.out or os.path.join("/var/tmp/maleficium-codrive-runs", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out, exist_ok=True)
-    procs = Procs()
-    lock = take_display_lock()
+    procs = harness.Procs()
+    lock = harness.take_display_lock(DISP)
 
     def on_signal(sig, _):
         raise SystemExit("codrive: stopped by signal %d" % sig)
@@ -788,17 +471,18 @@ def main():
     results, spent = [], 0.0
     try:
         if not a.no_build:
-            build_app(out)
+            harness.build_app(out, ROOT, TARGET, PORT, say)
         if not os.access(APPBIN, os.X_OK):
             die("no app build at %s" % APPBIN)
-        mirror = start_mirror(procs, out)
+        mirror = harness.start_mirror(procs, out, HERE, MIRROR_PORT, ar.MIRROR_CACHE)
         bundle_url = "http://127.0.0.1:%d/tlextras-2022.0r0.tar" % MIRROR_PORT
-        server = make_server(bundle_url)
+        server = harness.make_server(APPBIN, bundle_url, "codrive", ar)
         warm = ar.warm_cache(server, s)
         preset = os.path.join(out, ".preset")
         open(preset, "w").close()
-        start_vite(procs, out, preset)
-        start_xvfb(procs)
+        harness.start_vite(procs, out, ROOT, preset, PORT,
+                         os.environ.get("VITE_CACHE_DIR", "/var/tmp/maleficium-codrive-vite-cache"), say)
+        harness.start_xvfb(procs, DISP, SCREEN)
         say("display %s (%s), vite :%d, mirror :%d, out %s" % (DISP, SCREEN, PORT, MIRROR_PORT, out))
         if a.mode == "race":
             trials = [race_trial(s, warm, off, os.path.join(out, "race-%.2f" % off), procs, preset, bundle_url)

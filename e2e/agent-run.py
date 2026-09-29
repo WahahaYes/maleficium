@@ -115,6 +115,20 @@ class Mcp(McpClient):
             self.p.kill()
 
 
+def pdf_stamp(server, home, project, main):
+    """The output pdf's stamp after a run, so the app log can be checked for
+    the reload and repaint of that exact build."""
+    mcp = Mcp(server, home)
+    try:
+        ok, _ = mcp.call("grant", {"root_id": "stamp", "root": project})
+        if not ok:
+            return None
+        ok, r = mcp.call("output_stamp", {"root_id": "stamp", "main_rel": main})
+        return (r or {}).get("stamp") if ok else None
+    finally:
+        mcp.close()
+
+
 # ---- fixtures ------------------------------------------------------------------
 
 
@@ -525,6 +539,45 @@ def escapes(path):
                                       or ".." in re.split(r"[\\/]", path) or re.match(r"^[A-Za-z]:", path))
 
 
+def project_texts(project):
+    """rel -> text for every .tex file under the project, sorted."""
+    out = {}
+    for d, _, files in os.walk(project):
+        for n in sorted(files):
+            if n.endswith(".tex"):
+                p = os.path.join(d, n)
+                out[os.path.relpath(p, project)] = open(p, errors="replace").read()
+    return out
+
+
+def latex_envs(text, name):
+    return re.findall(r"\\begin\{%s\}.*?\\end\{%s\}" % (name, name), text or "", re.S)
+
+
+def max_tabular_width(text):
+    """The widest tabular colspec, in columns: @{} gutters and [] options
+    hold none, *{n}{spec} repeats its spec n times."""
+    best = 0
+    for m in re.finditer(r"\\begin\{tabular\}\s*(?:\[[^\]]*\])?\s*\{", text or ""):
+        i, depth, buf = m.end(), 1, []
+        while i < len(text) and depth:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if not depth:
+                    break
+            buf.append(ch)
+            i += 1
+        spec = "".join(buf)
+        spec = re.sub(r"@\{[^{}]*\}", "", spec)
+        spec = re.sub(r"\[[^\]]*\]", "", spec)
+        spec = re.sub(r"\*\{(\d+)\}\{([^{}]*)\}", lambda m: m.group(2) * int(m.group(1)), spec)
+        best = max(best, len(re.findall(r"[lcrpXS]", spec)))
+    return best
+
+
 class Judge:
     """Evaluates one scenario's oracles against a finished run."""
 
@@ -700,6 +753,82 @@ class Judge:
                         return False, "token in %s" % os.path.relpath(os.path.join(d, name), self.project)
         return True, "token in no project file"
 
+    def o_pages_at_least(self, spec):
+        rec = self.compiled(spec["main"])
+        if rec.get("status") != "success":
+            return False, "did not compile"
+        ok, s = self.mcp().call("snippet", {"root_id": "judge", "main_rel": spec["main"], "page": 1})
+        pages = s.get("pages") if ok else None
+        return bool(pages and pages >= spec["n"]), "pages %s" % pages
+
+    def o_cites_keys(self, spec):
+        alltext = "\n".join(project_texts(self.project).values())
+        miss = [k for k in spec["keys"]
+                if not re.search(r"\\\w*cite\w*\*?(\[[^\]]*\])*\{[^}]*\b%s\b" % re.escape(k), alltext)]
+        return not miss, "missing %s" % miss if miss else "all cited"
+
+    def o_project_matches(self, spec):
+        alltext = "\n".join(project_texts(self.project).values())
+        for pat in spec["patterns"]:
+            if not re.search(pat, alltext):
+                return False, "no /%s/" % pat
+        return True, "all %d patterns" % len(spec["patterns"])
+
+    def o_count_at_least(self, spec):
+        if "file" in spec:
+            text = read_file(self.project, spec["file"]) or ""
+        else:
+            text = "\n".join(project_texts(self.project).values())
+        n = len(re.findall(spec["pattern"], text))
+        return n >= spec["n"], "found %d" % n
+
+    def o_tikz_beyond_axis(self, spec):
+        if "file" in spec:
+            texts = [read_file(self.project, spec["file"]) or ""]
+        else:
+            texts = project_texts(self.project).values()
+        n = sum(1 for t in texts for pic in latex_envs(t, "tikzpicture") if "\\begin{axis}" not in pic)
+        return n >= 1, "%d non-plot tikz diagrams" % n
+
+    def o_plot_full_width(self, spec):
+        if "file" in spec:
+            texts = [read_file(self.project, spec["file"]) or ""]
+        else:
+            texts = project_texts(self.project).values()
+        figs = [f for t in texts for f in latex_envs(t, "figure\\*?") if "\\begin{axis}" in f]
+        wide = any(re.search(r"width\s*=\s*(1(\.0+)?|0?\.9\d*)?\s*\\(text|line)width", f) for f in figs)
+        return wide, "%d plot figures" % len(figs)
+
+    def o_plot_at_top_of_page(self, spec):
+        texts = project_texts(self.project)
+        scope = {spec["file"]: texts.get(spec["file"], "")} if "file" in spec else texts
+        where = None
+        for rel, t in scope.items():
+            for fig in re.finditer(r"\\begin\{figure\*?\}.*?\\end\{figure\*?\}", t, re.S):
+                body, cap = fig.group(0), fig.group(0).find("\\caption")
+                if "\\begin{axis}" in body and cap >= 0:
+                    where = (rel, t[:fig.start() + cap].count("\n") + 1)
+                    break
+            if where:
+                break
+        if not where:
+            return False, "no captioned plot figure"
+        # SyncTeX places a caption where it is typeset, not tikz lines.
+        ok, s = self.mcp().call("snippet", {"root_id": "judge", "main_rel": spec["main"],
+                                            "tex_rel": where[0], "line": where[1]})
+        if not ok:
+            return False, "snippet refused: %s" % s
+        good = s.get("page") == spec["page"] and (s.get("region") or {}).get("y", 999) < 450
+        return good, "page %s y %s" % (s.get("page"), (s.get("region") or {}).get("y"))
+
+    def o_table_columns_at_least(self, spec):
+        if "file" in spec:
+            texts = [read_file(self.project, spec["file"]) or ""]
+        else:
+            texts = project_texts(self.project).values()
+        w = max([max_tabular_width(t) for t in texts] + [0])
+        return w >= spec["n"], "widest %d columns" % w
+
     def run(self):
         out = []
         for o in self.s["oracles"]:
@@ -716,9 +845,86 @@ class Judge:
 # ---- driver ------------------------------------------------------------------------
 
 
+def self_test_oracles():
+    """The ported showreel oracles, both directions, on a synthetic project.
+    Text oracles run for real; compile-backed ones run against a stub MCP."""
+    bad = 0
+
+    def check(name, res, want):
+        nonlocal bad
+        ok, detail = res
+        good = bool(ok) == want
+        bad += not good
+        say("self-test oracle %s: %s %s (%s)" % (name, "pass" if ok else "fail", "ok" if good else "WRONG", detail))
+
+    main = (
+        "\\documentclass{article}\n\\usepackage{tikz,pgfplots,booktabs}\n"
+        "\\begin{document}\n\\section{Results}\\label{sec:res}\n"
+        "As shown in \\cite{newton1701} and \\cite{vollmer2009}.\n"
+        "\\begin{equation}\\label{eq:x}x=1\\end{equation}\n"
+        "\\begin{figure}\n\\begin{tikzpicture}\\begin{axis}[width=\\textwidth]\n"
+        "\\addplot{x};\\addplot{x*x};\n\\end{axis}\\end{tikzpicture}\n"
+        "\\caption{Cooling curves.}\\label{fig:plot}\n\\end{figure}\n"
+        "\\begin{tikzpicture}\n\\draw[->] (0,0) -- (1,0);\n\\end{tikzpicture}\n"
+        "\\begin{tabular}{@{}l*{2}{c}@{}}\n\\toprule a&b&c\\\\\n\\bottomrule\n\\end{tabular}\n"
+        "\\end{document}\n")
+    only_axis = ("\\documentclass{article}\n\\begin{document}\n"
+                 "\\begin{tikzpicture}\\begin{axis}\\addplot{x};\\end{axis}\\end{tikzpicture}\n"
+                 "\\end{document}\n")
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as t:
+        with open(os.path.join(t, "main.tex"), "w") as f:
+            f.write(main)
+        with open(os.path.join(t, "only.tex"), "w") as f:
+            f.write(only_axis)
+        j = Judge({"id": "oracle-test", "oracles": []}, None, t, t, {}, [])
+        check("cites_keys", j.o_cites_keys({"keys": ["newton1701", "vollmer2009"]}), True)
+        check("cites_keys_miss", j.o_cites_keys({"keys": ["nope1701"]}), False)
+        check("project_matches", j.o_project_matches({"patterns": ["\\\\begin\\{axis\\}", "(?i)cooling"]}), True)
+        check("project_matches_miss", j.o_project_matches({"patterns": ["\\\\begin\\{lstlisting\\}"]}), False)
+        check("count_at_least", j.o_count_at_least({"pattern": "\\\\addplot", "n": 3}), True)
+        check("count_at_least_short", j.o_count_at_least({"pattern": "\\\\addplot", "n": 4}), False)
+        check("count_at_least_file",
+              j.o_count_at_least({"file": "main.tex", "pattern": "\\\\addplot", "n": 2}), True)
+        check("count_at_least_file_caption",
+              j.o_count_at_least({"file": "main.tex", "pattern": "\\\\caption", "n": 1}), True)
+        check("tikz_beyond_axis", j.o_tikz_beyond_axis({}), True)
+        check("tikz_beyond_axis_file", j.o_tikz_beyond_axis({"file": "only.tex"}), False)
+        check("plot_full_width", j.o_plot_full_width({}), True)
+        check("plot_full_width_file", j.o_plot_full_width({"file": "only.tex"}), False)
+        check("table_columns", j.o_table_columns_at_least({"n": 3}), True)
+        check("table_columns_short", j.o_table_columns_at_least({"n": 4}), False)
+
+        class StubMcp:
+            def __init__(self, status, pages, snippet):
+                self.status, self.pages, self.snippet = status, pages, snippet
+
+            def compile(self, root_id, rel, timeout=600):
+                return {"status": self.status}
+
+            def call(self, name, args):
+                if name == "snippet" and "tex_rel" in args:
+                    return True, self.snippet
+                if name == "snippet":
+                    return True, {"pages": self.pages}
+                return False, "unexpected"
+
+        j2 = Judge({"id": "oracle-test", "oracles": []}, None, t, t, {}, [])
+        j2._mcp = StubMcp("success", 4, {"page": 2, "region": {"y": 100}})
+        check("pages_at_least", j2.o_pages_at_least({"main": "main.tex", "n": 3}), True)
+        check("pages_at_least_short", j2.o_pages_at_least({"main": "main.tex", "n": 5}), False)
+        check("plot_at_top", j2.o_plot_at_top_of_page({"main": "main.tex", "page": 2}), True)
+        check("plot_at_top_wrong_page", j2.o_plot_at_top_of_page({"main": "main.tex", "page": 3}), False)
+        j2._mcp = StubMcp("success", 4, {"page": 2, "region": {"y": 700}})
+        check("plot_at_top_low", j2.o_plot_at_top_of_page({"main": "main.tex", "page": 2}), False)
+        j2._mcp = StubMcp("error", 4, {"page": 2, "region": {"y": 100}})
+        j2._compiled = {}
+        check("pages_at_least_nocompile", j2.o_pages_at_least({"main": "main.tex", "n": 3}), False)
+    return bad
+
+
 def self_test(scenarios, server, warm):
     """Solved fixtures must pass every file oracle; raw fixtures must fail one."""
-    bad = 0
+    bad = self_test_oracles()
     run_oracles = {"compiles", "clean_log", "outline_has", "file_matches", "file_lacks", "count_equal",
                    "section_matches", "unchanged", "secret_not_leaked"}
     with tempfile.TemporaryDirectory(dir="/var/tmp") as t:
