@@ -23,7 +23,6 @@ import signal
 import subprocess
 import threading
 import time
-import uuid
 
 from harness import now_ms, xdo
 
@@ -318,8 +317,10 @@ class OpencodePrint(AgentSession):
     def __init__(self, *args):
         super().__init__(*args)
         self.opencode = shutil.which("opencode") or "opencode"
-        # opencode v2 session ids start with "ses".
-        self.session = "ses" + uuid.uuid4().hex
+        # The free tier rejects fabricated session ids, so the first turn
+        # runs without --session and later turns resume the id the server
+        # assigned (see turn()).
+        self.session = None
         self.write_mcp_config()
         h = os.path.expanduser("~")
         self.extra_rw = [os.path.join(h, d) for d in (".local/share/opencode", ".cache/opencode",
@@ -333,7 +334,10 @@ class OpencodePrint(AgentSession):
 
     def turn(self, beat, prompt, project, timeout):
         argv = ["env", "OPENCODE_CONFIG=" + self.mcp_config, self.opencode, "run", "--standalone", "--auto",
-                "--print-logs", "--format", "json", "-m", self.model, "--session", self.session, prompt]
+                "--print-logs", "--format", "json", "-m", self.model]
+        if self.session:
+            argv += ["--session", self.session]
+        argv.append(prompt)
         # No env override: opencode reads its provider auth and config from
         # the real HOME (as in agent-run.py); only its server side is
         # redirected, through the per-run MCP config. bwrap still confines
@@ -358,6 +362,7 @@ class OpencodePrint(AgentSession):
                     e = {"_raw": line}
                 if e.get("type") == "step_finish":
                     cost += (e.get("part", {}) or {}).get("cost") or 0
+                self.session = self.session or e.get("sessionID") or None
                 self.emit(e, beat)
                 for env_e in normalize_opencode(e):
                     try:
