@@ -41,10 +41,13 @@ class AgentSession:
                                                       "env": dict(self.server.env, HOME=self.home)}}},
                       f, indent=2)
 
-    def emit(self, e, beat):
+    def record(self, e, beat):
         e["_ts_ms"], e["_beat"] = now_ms(), beat
         with open(self.events_path, "a") as out:
             out.write(json.dumps(e) + "\n")
+
+    def emit(self, e, beat):
+        self.record(e, beat)
         try:
             self.on_event(e)
         except Exception as ex:  # the camera must never stall the agent's pipe
@@ -61,8 +64,8 @@ class AgentSession:
 
 
 class ClaudePrint(AgentSession):
-    """The fallback agent: `claude -p`, resumed for each beat, streaming to one
-    file. Nothing on screen but the app."""
+    """Headless `claude -p`, resumed for each beat. Nothing on screen but
+    the app."""
 
     def __init__(self, *args, budget_usd=3.0):
         super().__init__(*args)
@@ -363,7 +366,7 @@ class OpencodePrint(AgentSession):
                 if e.get("type") == "step_finish":
                     cost += (e.get("part", {}) or {}).get("cost") or 0
                 self.session = self.session or e.get("sessionID") or None
-                self.emit(e, beat)
+                self.record(e, beat)
                 for env_e in normalize_opencode(e):
                     try:
                         self.on_event(env_e)
