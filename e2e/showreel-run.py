@@ -37,18 +37,22 @@ move), CARGO_TARGET_DIR (default
 Manual only: it spends model credits.
 """
 import argparse, difflib, importlib.util, json, os, queue, re, shutil, signal, subprocess, sys, threading, time
-
-os.environ.setdefault("CODRIVE_DISPLAY", os.environ.get("SHOWREEL_DISPLAY", ":96"))
-os.environ.setdefault("CODRIVE_SCREEN", os.environ.get("SHOWREEL_SCREEN", "1536x864"))
-os.environ.setdefault("CODRIVE_PORT", os.environ.get("SHOWREEL_PORT", "1424"))
-os.environ.setdefault("CODRIVE_MIRROR_PORT", os.environ.get("SHOWREEL_MIRROR_PORT", "18792"))
-os.environ.setdefault("CARGO_TARGET_DIR", "/var/tmp/maleficium-showreel-target")
+import harness
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_spec = importlib.util.spec_from_file_location("codrive_run", os.path.join(HERE, "codrive-run.py"))
-cr = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(cr)
-ar = cr.ar
+ROOT = os.path.dirname(HERE)
+
+_spec = importlib.util.spec_from_file_location("agent_run", os.path.join(HERE, "agent-run.py"))
+ar = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ar)
+
+DISP = os.environ.get("SHOWREEL_DISPLAY", ":96")
+SCREEN = os.environ.get("SHOWREEL_SCREEN", "1536x864")
+PORT = int(os.environ.get("SHOWREEL_PORT", "1424"))
+MIRROR_PORT = int(os.environ.get("SHOWREEL_MIRROR_PORT", "18792"))
+TARGET = os.environ.get("CARGO_TARGET_DIR") or "/var/tmp/maleficium-showreel-target"
+APPBIN = os.path.join(TARGET, "debug", "maleficium")
+VITE_CACHE = os.environ.get("VITE_CACHE_DIR", "/var/tmp/maleficium-showreel-vite-cache")
 
 HOME = os.environ.get("SHOWREEL_HOME", "/tmp/barista")
 # Only a HOME holding this marker is ever wiped.
@@ -547,10 +551,10 @@ class Director(threading.Thread):
         self.send("command", id="view.zoom-fit-width")
         self.send("page", page=1)
         self.log("walk", pages=pages)
-        w, h = (int(x) for x in cr.SCREEN.split("x"))
-        cr.xdo("mousemove", "--window", self.app.win, str(int(w * 0.83)), str(h // 2))
+        w, h = (int(x) for x in SCREEN.split("x"))
+        harness.xdo(DISP, "mousemove", "--window", self.app.win, str(int(w * 0.83)), str(h // 2))
         for _ in range(max(1, pages) * 12):
-            cr.xdo("click", "5")
+            harness.xdo(DISP, "click", "5")
             time.sleep(0.15)
         time.sleep(2)
 
@@ -709,9 +713,9 @@ def one_take(s, server, warm_home, model, take_dir, procs, preset, bundle_url, t
         with open(os.path.join(project, rel), "w") as f:
             f.write(text)
     ar.seed_home(warm_home, HOME)
-    tl = cr.Timeline(os.path.join(take_dir, "timeline.jsonl"))
+    tl = harness.Timeline(os.path.join(take_dir, "timeline.jsonl"))
     tl.mark("take.start", scenario=s["id"], model=model, project=project)
-    app = cr.App(procs, take_dir, HOME, preset, bundle_url, tl)
+    app = harness.App(procs, take_dir, HOME, preset, bundle_url, tl, APPBIN, ROOT, DISP, SCREEN, ar.IDENT)
     director = Director(app, project, os.path.join(take_dir, "camera.jsonl"), s["main"])
     events_path = os.path.join(take_dir, "events.jsonl")
     if agent == "tmux":
@@ -730,7 +734,7 @@ def one_take(s, server, warm_home, model, take_dir, procs, preset, bundle_url, t
             session.start(project)
         director.start()
         capture = procs.start(["ffmpeg", "-loglevel", "error", "-f", "x11grab", "-draw_mouse", "0",
-                               "-video_size", cr.SCREEN, "-framerate", "30", "-i", cr.DISP,
+                               "-video_size", SCREEN, "-framerate", "30", "-i", DISP,
                                "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+frag_keyframe+empty_moov",
                                os.path.join(take_dir, "screen.mp4")],
                               stdout=subprocess.DEVNULL, stderr=open(os.path.join(take_dir, "capture.log"), "w"))
@@ -755,7 +759,7 @@ def one_take(s, server, warm_home, model, take_dir, procs, preset, bundle_url, t
             if r["timed_out"] or r["exit"] != 0:
                 break
         final_pages = None
-        ok_stamp = cr.pdf_stamp(server, HOME, project, s["main"])
+        ok_stamp = ar.pdf_stamp(server, HOME, project, s["main"])
         if ok_stamp:
             m = tl.mark("walk.start")
             mcp = ar.Mcp(server, HOME)
@@ -818,8 +822,8 @@ def camera_test(s, server, warm_home, out, procs, preset, bundle_url, fixture):
     shutil.copytree(fixture, project)
     open(os.path.join(HOME, MARKER), "w").close()
     ar.seed_home(warm_home, HOME)
-    tl = cr.Timeline(os.path.join(out, "timeline.jsonl"))
-    app = cr.App(procs, out, HOME, preset, bundle_url, tl)
+    tl = harness.Timeline(os.path.join(out, "timeline.jsonl"))
+    app = harness.App(procs, out, HOME, preset, bundle_url, tl, APPBIN, ROOT, DISP, SCREEN, ar.IDENT)
     d = Director(app, project, os.path.join(out, "camera.jsonl"), s["main"])
     try:
         app.launch(project)
@@ -976,8 +980,8 @@ def main():
         s = json.load(f)
     out = a.out or os.path.join("/var/tmp/maleficium-showreel", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out, exist_ok=True)
-    procs = cr.Procs()
-    lock = cr.take_display_lock()
+    procs = harness.Procs()
+    lock = harness.take_display_lock(DISP)
 
     def on_signal(sig, _):
         raise SystemExit("showreel: stopped by signal %d" % sig)
@@ -985,21 +989,21 @@ def main():
     results, spent = [], 0.0
     try:
         if not a.no_build:
-            cr.build_app(out)
-        if not os.access(cr.APPBIN, os.X_OK):
-            die("no app build at %s" % cr.APPBIN)
-        cr.start_mirror(procs, out)
-        bundle_url = "http://127.0.0.1:%d/tlextras-2022.0r0.tar" % cr.MIRROR_PORT
-        server = cr.make_server(bundle_url)
+            harness.build_app(out, ROOT, TARGET, PORT, say)
+        if not os.access(APPBIN, os.X_OK):
+            die("no app build at %s" % APPBIN)
+        harness.start_mirror(procs, out, HERE, MIRROR_PORT, ar.MIRROR_CACHE)
+        bundle_url = "http://127.0.0.1:%d/tlextras-2022.0r0.tar" % MIRROR_PORT
+        server = harness.make_server(APPBIN, bundle_url, "showreel", ar)
         warm_home = warm(server)
         tool_names = ar.discover_tool_names(server)
         preset = os.path.join(out, ".preset")
         open(preset, "w").close()
-        cr.start_vite(procs, out, preset)
-        cr.start_xvfb(procs)
+        harness.start_vite(procs, out, ROOT, preset, PORT, VITE_CACHE, say)
+        harness.start_xvfb(procs, DISP, SCREEN)
         if a.agent == "tmux" and not a.camera_test:
             start_term_display(procs)
-        say("display %s (%s), out %s" % (cr.DISP, cr.SCREEN, out))
+        say("display %s (%s), out %s" % (DISP, SCREEN, out))
         if a.camera_test:
             camera_test(s, server, warm_home, out, procs, preset, bundle_url, a.camera_test)
             return
