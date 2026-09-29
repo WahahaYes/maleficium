@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- **Font-tracing noise no longer buries real warnings.** Compiling under XeTeX with font tracing on (for example through libertine.sty) reported dozens of fragment warnings such as `Requested font "nxlmi7" at 7.3pt` and `-> nxlmi7`, one per trace line. Those lines are now recognized as tracing noise and dropped, so the diagnostics list shows the warnings that matter.
+- **A flaky macOS package step retries once.** The Intel dmg bundle intermittently failed inside the bundler after a clean compile, stalling the release. `package.sh` now retries the bundle step once on macOS, verbose with its output captured, and prints the last errors if the retry also fails.
 - **Saving never overwrites an agent's edit.** When another program (such as an AI agent) wrote a file you had open, the app could save your copy over it in the moment before it noticed the change: on autosave, switching or closing a file, or compiling. Every save now checks the file on disk first, and if it changed, you get the usual choice to reload or keep your edits instead.
 - **An agent's first compile shows in the preview.** The preview only picked up outside compiles after the app had shown a PDF itself, so a project an agent compiled before you ever did stayed blank. It now shows the PDF as soon as one appears.
 - **Ctrl+S says when it can't save.** A manual save refused because the file changed on disk, or one that failed, did nothing visible. It now says so in the status bar and the log.

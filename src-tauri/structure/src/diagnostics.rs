@@ -59,27 +59,63 @@ fn root_relative(file: &str, root: &Utf8TypedPathBuf, base: &Utf8TypedPathBuf) -
     )
 }
 
+/// XeTeX font tracing (`\XeTeXtracingfonts=1`, which libertine.sty sets
+/// under XeTeX): Tectonic reports every trace line as its own warning, which
+/// buries the real diagnostics. A request names the font and size, the next
+/// line resolves it; neither is actionable, so both shapes are dropped.
+static FONT_TRACE_REQUEST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^Requested font ".+" at [0-9.]+pt$"#).unwrap());
+static FONT_TRACE_TARGET_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-> \S+$").unwrap());
+
+fn is_font_trace(message: &str) -> bool {
+    FONT_TRACE_REQUEST_RE.is_match(message) || FONT_TRACE_TARGET_RE.is_match(message)
+}
+
 pub fn diagnostics(log: &str, root: &str, base: &str) -> Vec<Diagnostic> {
     let root = Utf8TypedPath::derive(root).normalize();
     let base = Utf8TypedPath::derive(base).normalize();
+    let mut all: Vec<Diagnostic> = Vec::new();
+    for line in log.lines() {
+        match LINE_RE.captures(line) {
+            Some(m) => {
+                let message = m[3].to_string();
+                if is_font_trace(&message) {
+                    continue;
+                }
+                let path = root_relative(&m[1], &root, &base);
+                let severity = if line.trim_start().starts_with("warning:") {
+                    Severity::Warning
+                } else {
+                    Severity::Error
+                };
+                let Some(nr): Option<u32> = m[2].parse().ok() else {
+                    continue;
+                };
+                all.push(Diagnostic {
+                    external: path.is_none(),
+                    path,
+                    line: nr,
+                    message,
+                    severity,
+                });
+            }
+            // A `file:line:` line with no message carries its text below
+            // (a disabled shell-escape note, a wrapped miss). Fold those
+            // continuations in; anything else (a transcript tail, a blank)
+            // stays out so it cannot stick to a finished diagnostic.
+            None => {
+                if let Some(last) = all.last_mut() {
+                    let rest = line.trim();
+                    if last.message.is_empty() && !rest.is_empty() {
+                        last.message.push_str(rest);
+                    }
+                }
+            }
+        }
+    }
     let mut seen = HashSet::new();
-    log.lines()
-        .filter_map(|line| {
-            let m = LINE_RE.captures(line)?;
-            let path = root_relative(&m[1], &root, &base);
-            let severity = if line.trim_start().starts_with("warning:") {
-                Severity::Warning
-            } else {
-                Severity::Error
-            };
-            Some(Diagnostic {
-                external: path.is_none(),
-                path,
-                line: m[2].parse().ok()?,
-                message: m[3].to_string(),
-                severity,
-            })
-        })
+    all.into_iter()
+        .filter(|d| !d.message.trim().is_empty())
         .filter(|d| seen.insert((d.path.clone(), d.line, d.message.clone(), d.severity)))
         .collect()
 }
@@ -307,6 +343,41 @@ Package hyperref Warning: Rerun to get /PageLabels entry.";
     fn warnings_are_classified() {
         let got = diagnostics("warning: main.tex:9: Reference `x' undefined", "/p", "/p");
         assert_eq!(got[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn xetex_font_trace_lines_are_dropped() {
+        let log = "warning: main.tex:47: Requested font \"nxlmi7\" at 7.3pt\n\
+             warning: main.tex:47: -> nxlmi7\n\
+             warning: main.tex:47: Requested font \"[LinLibertine_R.otf]/OT:script=latn;language=dflt;+tnum;+lnum;mapping=tex-text;\" at 7.0pt\n\
+             warning: main.tex:47: -> MinLibReg-ot1\n\
+             warning: main.tex:47: \n\
+             warning: main.tex:159: Overfull \\hbox (3.27449pt too wide) in paragraph at lines 159--159";
+        let got = diagnostics(log, "/p", "/p");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].path.as_deref(), Some("main.tex"));
+        assert_eq!(got[0].line, 159);
+        assert!(got[0].message.contains("Overfull"), "{}", got[0].message);
+    }
+
+    #[test]
+    fn a_file_line_with_no_message_folds_its_continuation() {
+        let log = "warning: main.tex:3:\nrunsystem(mkdir -p _minted-main)...disabled.\n\
+             error: main.tex:3: Package minted Error: You must invoke LaTeX with the -shell-escape flag.";
+        let got = diagnostics(log, "/p", "/p");
+        assert_eq!(got.len(), 2);
+        assert_eq!(
+            got[0].message,
+            "runsystem(mkdir -p _minted-main)...disabled."
+        );
+    }
+
+    #[test]
+    fn trailer_lines_stay_out_of_finished_diagnostics() {
+        let log = "error: hello.tex:3: Undefined control sequence\nNo pages of output.";
+        let got = diagnostics(log, "/tmp/x", "/tmp/x");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].message, "Undefined control sequence");
     }
 
     #[test]
