@@ -39,7 +39,26 @@ rm -rf "$BUNDLE"
 # linuxdeploy and appimagetool are AppImages; hosts and containers without
 # FUSE (CI runners, Docker) must extract and run them instead of mounting.
 export APPIMAGE_EXTRACT_AND_RUN=1
-(cd "$ROOT" && npm run tauri build -- --bundles "$BUNDLES")
+# macOS Intel runners flake inside Tauri's bundle_dmg.sh (hdiutil) after a
+# clean compile, stalling the release: retry the bundle once before failing.
+# The retry runs verbose with its output captured, so the underlying error
+# lands in the CI log either way. The compile is cached, so the retry only
+# re-bundles. Other hosts fail fast as before.
+BUILD_LOG="${TMPDIR:-/tmp}/maleficium-package-build.log"
+if (cd "$ROOT" && npm run tauri build -- --bundles "$BUNDLES"); then
+    :
+elif [ "$BUNDLES" = dmg ]; then
+    echo "package: dmg bundle failed once; retrying verbose, log in $BUILD_LOG" >&2
+    if (cd "$ROOT" && npm run tauri build -- --verbose --bundles "$BUNDLES") >"$BUILD_LOG" 2>&1; then
+        echo "package: dmg retry passed" >&2
+    else
+        echo "package: dmg bundle failed twice; last errors:" >&2
+        tail -n 30 "$BUILD_LOG" >&2
+        exit 1
+    fi
+else
+    exit 1
+fi
 
 mkdir -p "$OUT"
 case "$BUNDLES" in
