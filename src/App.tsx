@@ -19,6 +19,7 @@ import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
 import { baseName, dirName, hasDir, joinPath, relUnder } from './lib/paths';
+import { newMoves, type CameraMove } from './lib/devCamera';
 import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
@@ -1206,6 +1207,38 @@ export default function App({
     showAbout: () => setAboutOpen(true),
   };
   const menuSections = buildMenus(menuCtx, menuActions);
+  // Dev builds: the video harness's camera moves (src/lib/devCamera.ts).
+  const cameraRef = useRef<(m: CameraMove) => void>(() => {});
+  cameraRef.current = (m: CameraMove) => {
+    if (m.op === 'open') {
+      if (root) void handleSelectRef.current(joinPath(root, m.rel));
+    } else if (m.op === 'line') viewportRef.current?.goToLine(m.line);
+    else if (m.op === 'page') setPageNumber(m.page);
+    else menuActionRef.current(m.id);
+  };
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let last = 0;
+    let busy = false;
+    const t = setInterval(() => {
+      if (busy) return;
+      busy = true;
+      fetch('/__camera', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.text() : ''))
+        .then((text) => {
+          for (const m of newMoves(text, last)) {
+            last = m.seq;
+            cameraRef.current(m);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    }, 250);
+    return () => clearInterval(t);
+  }, []);
+
   menuActionRef.current = (id: string) => {
     for (const sec of menuSections) {
       const cmd = sec.commands.find((c) => c.id === id);

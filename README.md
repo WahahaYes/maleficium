@@ -136,18 +136,11 @@ claude mcp add maleficium -- /usr/bin/maleficium --mcp
 
 ### What the agent can do
 
-An agent first calls `grant` with a project folder and a name for it; every other tool takes that name and refuses any path outside the folder. Then it can:
-
-- **Compile** with the bundled engine (`compile_run`, then `compile_poll` for the result), and read structured `diagnostics`, the log, and the `precompile_checks` for missing packages and tools.
-- **Read the project:** `list`, `read`, `find_files`, `search`, the `outline`, the `file_graph` of `\input`s, `labels_refs`, `citations`, and `definition` for any label, citation, or macro.
-- **Replace across the project:** `replace_preview` shows every change and writes nothing, `replace_apply` applies that exact plan, and `replace_undo` restores the whole batch.
-- **Jump through SyncTeX** both ways, **export** the PDF or a zip, and start a **new project from a template**.
-- **See the output:** `snippet` shows where a line, label, or page landed in the PDF, with the source around it, and optionally the region as an image for layout questions.
-- **Delete** a file in two calls: the first is refused with the file's absolute path, and the second passes that path back as `confirm`. `undo` restores it.
-
-The server edits your files only through replace; agents write text with their own file tools. Build files, history, and logs stay outside the project, as with the app.
+The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
+
+[![Claude writing a coffee-cooling note in Maleficium: the milk column and second plot curve landing](docs/captures/coffee-cooling-excerpt.gif)](https://raw.githubusercontent.com/WahahaYes/maleficium/refs/heads/main/docs/captures/coffee-cooling.mp4)
 
 ## Known limits
 
