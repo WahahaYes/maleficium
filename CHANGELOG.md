@@ -4,7 +4,21 @@
 
 ### Fixes
 
+- **Saving never overwrites an agent's edit.** When another program (such as an AI agent) wrote a file you had open, the app could save your copy over it in the moment before it noticed the change: on autosave, switching or closing a file, or compiling. Every save now checks the file on disk first, and if it changed, you get the usual choice to reload or keep your edits instead.
+- **An agent's first compile shows in the preview.** The preview only picked up outside compiles after the app had shown a PDF itself, so a project an agent compiled before you ever did stayed blank. It now shows the PDF as soon as one appears.
+- **Ctrl+S says when it can't save.** A manual save refused because the file changed on disk, or one that failed, did nothing visible. It now says so in the status bar and the log.
 - **Go to Line works from the editor.** Ctrl+G also opened a stray search panel that took the keyboard, so the line number you typed went nowhere. Now only Go to Line opens, and it centers the line. F3 and Shift+F3 open the app's find bar.
+
+### For AI agents
+
+- **Agents can see how the PDF looks.** The new `snippet` tool finds where a source line, a label, or a page landed in the compiled PDF and returns that page, the region, and the source lines around it. With `with_image: true` it also returns the region as a PNG, so an agent can check a figure's size and placement or a table that overflows. Images are off by default because they cost model context.
+
+### For contributors
+
+- **The playground is generated, not tracked.** `sh scripts/playground.sh` fills an ignored `playground/` with one project per built-in template, the `simple` test fixture (now at `e2e/fixtures/simple`), and the vendored papers.
+- **Real papers as fixtures, and a smoke that scores them.** `e2e/fixtures/vendored/` holds real, permissively licensed papers with their provenance. `python3 e2e/papers-run.py` compiles each over the MCP server, lists every diagnostic, and fails only when a paper that should compile error-free stops doing so, or when one that should not starts to.
+- **One MCP test client.** The e2e harnesses share `e2e/mcp_client.py` instead of five copies.
+- **Building from source has its own section in the README.**
 
 ## 0.2.1 - 2026-09-27
 

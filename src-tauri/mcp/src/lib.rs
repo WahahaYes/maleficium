@@ -143,6 +143,38 @@ struct CancelOut {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SnippetParams {
+    root_id: String,
+    main_rel: String,
+    /// Target a source line: tex_rel and line together.
+    tex_rel: Option<String>,
+    line: Option<u32>,
+    /// Or target a label's definition.
+    label: Option<String>,
+    /// Or a whole page (1-based).
+    page: Option<u32>,
+    /// Also return the region as a PNG image (default false: images cost context).
+    with_image: Option<bool>,
+}
+
+impl SnippetParams {
+    fn target(&self) -> Result<core::snippet::Target, String> {
+        use core::snippet::Target;
+        match (&self.tex_rel, self.line, &self.label, self.page) {
+            (Some(tex_rel), Some(line), None, None) => Ok(Target::Line {
+                tex_rel: tex_rel.clone(),
+                line,
+            }),
+            (None, None, Some(label), None) => Ok(Target::Label {
+                label: label.clone(),
+            }),
+            (None, None, None, Some(page)) => Ok(Target::Page { page }),
+            _ => Err("give exactly one target: tex_rel with line, or label, or page".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ForwardParams {
     root_id: String,
     main_rel: String,
@@ -451,6 +483,34 @@ impl Maleficium {
     }
 
     #[tool(
+        description = "See how part of main_rel's compiled PDF looks: the page and region where a source line (tex_rel + line), a label, or a page landed, with the source lines around it. with_image: true also returns that region rendered as a PNG; use it for layout questions (placement, width, overflow, how a figure or table looks), not to read text. stale is true when the source changed after the last compile.",
+        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Snippet>()
+    )]
+    fn snippet(
+        &self,
+        Parameters(p): Parameters<SnippetParams>,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        use base64::Engine as _;
+        let target = p.target()?;
+        let s = core::snippet::snippet(
+            &self.cx,
+            &p.root_id,
+            &p.main_rel,
+            &target,
+            p.with_image.unwrap_or(false),
+        )?;
+        let value = serde_json::to_value(&s).map_err(|e| e.to_string())?;
+        let mut result = rmcp::model::CallToolResult::structured(value);
+        if let Some(png) = &s.png {
+            let data = base64::engine::general_purpose::STANDARD.encode(png);
+            result
+                .content
+                .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
+        }
+        Ok(result)
+    }
+
+    #[tool(
         description = "Inverse SyncTeX query: the root-relative source file and line at a position in the output of main_rel"
     )]
     fn synctex_inverse(
@@ -717,6 +777,31 @@ mod tests {
     /// The MCP tools add nothing to core's confinement: every escape core
     /// refuses (and so the desktop command, a direct forward), the tool
     /// refuses with the same error.
+    #[test]
+    fn snippet_takes_exactly_one_target() {
+        let p = |tex_rel: Option<&str>, line, label: Option<&str>, page| SnippetParams {
+            root_id: "r".into(),
+            main_rel: "main.tex".into(),
+            tex_rel: tex_rel.map(Into::into),
+            line,
+            label: label.map(Into::into),
+            page,
+            with_image: None,
+        };
+        assert!(p(Some("a.tex"), Some(3), None, None).target().is_ok());
+        assert!(p(None, None, Some("fig:x"), None).target().is_ok());
+        assert!(p(None, None, None, Some(2)).target().is_ok());
+        for bad in [
+            p(None, None, None, None),
+            p(Some("a.tex"), None, None, None),
+            p(None, Some(3), None, None),
+            p(Some("a.tex"), Some(3), Some("fig:x"), None),
+            p(None, None, Some("fig:x"), Some(1)),
+        ] {
+            assert!(bad.target().is_err(), "{bad:?}");
+        }
+    }
+
     #[test]
     fn synctex_adapters_reject_identically() {
         let m = Maleficium::default();

@@ -9,6 +9,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
 | `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
+| `papers-run.py` | no | How many vendored real papers compile error-free, and what blocks the rest |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
 | `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
 | `codrive-run.py` | Xvfb | An agent edits and compiles over MCP while the app is open: the preview follows, and no buffer or file is lost to the other side (manual; spends model credits) |
@@ -32,7 +33,7 @@ GUI harnesses serve on port 1420. Set `STILLS_PORT` to move a stills run while a
 
 ### project-footprint.sh
 
-A static audit. Copies `playground/simple/` into a scratch git repo, replays each of the app's path derivations (trash, history, outputs, event log, main-file association) in bash, and asserts `git status` stays clean. It also pins the security config: no `$HOME` in capabilities, CSP enforced, and the opener plugin absent (lockfiles included).
+A static audit. Copies `e2e/fixtures/simple/` into a scratch git repo, replays each of the app's path derivations (trash, history, outputs, event log, main-file association) in bash, and asserts `git status` stays clean. It also pins the security config: no `$HOME` in capabilities, CSP enforced, and the opener plugin absent (lockfiles included).
 
 ### history-surface.sh
 
@@ -40,7 +41,7 @@ A static audit of the revision history: both entry points reach one command, the
 
 ### search-run.sh
 
-Drives the `maleficium-mcp` sidecar over JSON-RPC against a scratch copy of `playground/simple/`, with no compile and no network. Covers search (literal, regex, invalid regex, result cap), main-document ranking, a file written mid-run, `find_files`, the structure tools, go to definition, and replace (preview writes nothing, apply once by token, undo restores exact bytes, a stale plan is refused). Build the sidecar first:
+Drives the `maleficium-mcp` sidecar over JSON-RPC against a scratch copy of `e2e/fixtures/simple/`, with no compile and no network. Covers search (literal, regex, invalid regex, result cap), main-document ranking, a file written mid-run, `find_files`, the structure tools, go to definition, and replace (preview writes nothing, apply once by token, undo restores exact bytes, a stale plan is refused). Build the sidecar first:
 
 ```sh
 cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp
@@ -76,6 +77,14 @@ python3 e2e/package-smoke.py <package-dir> [--shots DIR]
 ```
 
 A first launch needs no recent projects, so on macOS and Windows run it as a fresh user (CI runners are).
+
+### papers-run.py
+
+Compiles each real paper in `fixtures/vendored/` over the sidecar and prints a scoreboard: result, error and warning counts, pre-compile findings, and the first blocker. Under each paper it lists every diagnostic the app reported, as the app reported it, with its location (`--brief` hides them); `--json` records them all, so two runs can be diffed. A paper passes when the compile succeeds with no error diagnostics; warnings are counted, not judged. Each paper's `fixture.json` names its main file and whether it is expected to pass today, so the run is a ratchet: it fails when an expected pass breaks, and when an expected failure starts passing, so the expectation gets flipped to lock the gain in. The engine cache persists in `/var/tmp/maleficium-papers-cache-<uid>` (`PAPERS_CACHE`), so only the first run needs the network.
+
+```sh
+python3 e2e/papers-run.py [--paper NAME ...] [--json OUT] [--brief] [--bin PATH]
+```
 
 ### agent-run.py
 
@@ -154,5 +163,6 @@ Match on `event.action` rather than the message text. For a stills run, set `STI
 ## Conventions
 
 - Harnesses find the repo root from their own path. No hardcoded absolute paths, and no writes outside the OS temp dir.
-- Never commit large fixtures: reuse `playground/simple/` or generate into the temp dir at runtime.
+- Never commit large fixtures: reuse `e2e/fixtures/simple/` or generate into the temp dir at runtime. Harnesses copy it to a scratch dir and never write to it.
+- Real papers live in `e2e/fixtures/vendored/`, each with its source, license, and current build status; see its README before adding one.
 - Name tests for what they check, not for when they were written.
