@@ -11,7 +11,9 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=2048']
-        exclude: ^src-tauri/binaries/
+        # Showcase captures are committed media: the agent-writing video,
+        # its transcript, and not the per-take editing around them.
+        exclude: ^(src-tauri/binaries/|docs/captures/)
       - id: mixed-line-ending
         args: ['--fix=lf']
         exclude: ^src-tauri/binaries/
