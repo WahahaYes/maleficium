@@ -136,41 +136,13 @@ claude mcp add maleficium -- /usr/bin/maleficium --mcp
 
 ### What the agent can do
 
-An agent first calls `grant` with a project folder and a name for it; every other tool takes that name and refuses any path outside the folder. Then it can:
-
-- **Compile** with the bundled engine (`compile_run`, then `compile_poll` for the result), and read structured `diagnostics`, the log, and the `precompile_checks` for missing packages and tools.
-- **Read the project:** `list`, `read`, `find_files`, `search`, the `outline`, the `file_graph` of `\input`s, `labels_refs`, `citations`, and `definition` for any label, citation, or macro.
-- **Replace across the project:** `replace_preview` shows every change and writes nothing, `replace_apply` applies that exact plan, and `replace_undo` restores the whole batch.
-- **Jump through SyncTeX** both ways, **export** the PDF or a zip, and start a **new project from a template**.
-- **See the output:** `snippet` shows where a line, label, or page landed in the PDF, with the source around it, and optionally the region as an image for layout questions.
-- **Delete** a file in two calls: the first is refused with the file's absolute path, and the second passes that path back as `confirm`. `undo` restores it.
-
-The server edits your files only through replace; agents write text with their own file tools. Build files, history, and logs stay outside the project, as with the app.
+The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 
-### Watch it work
-
-Claude Sonnet 5, via Claude Code over the MCP server, writing a toy note on coffee cooling in an open Maleficium window — five prompts, cut to 44 seconds, no manual edits:
+<!-- Inline playback needs a user-attachments URL: drag docs/captures/coffee-cooling.mp4 into any GitHub comment box and paste the resulting URL into the src below. -->
 
 <video src="docs/captures/coffee-cooling.mp4" width="100%" controls></video>
-
-If your reader shows no player, [download the video](docs/captures/coffee-cooling.mp4).
-
-The prompts, verbatim:
-
-<details>
-<summary>The five prompts</summary>
-
-Setup line before the first prompt: "The LaTeX project is at {project}, open in Maleficium. Use the maleficium MCP tools to compile and check it, and your file tools to write."
-
-1. "Write me a note of about 3 pages on how a cup of coffee cools: derive Newton's law of cooling, plot temperature over time for three starting temperatures, add a table of minutes until it's drinkable, and cite the sources in refs.bib."
-2. "Make the cooling plot full width at the top of page 2."
-3. "Add a diagram of heat leaving the cup: conduction through the mug, and convection and evaporation from the surface."
-4. "Compare black coffee with coffee with milk: add a column to the table and a second curve to the plot."
-5. "Give it a proper front: a title, the author A. Barista, and a short abstract."
-
-</details>
 
 ## Known limits
 
