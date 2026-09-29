@@ -37,9 +37,38 @@ function stillsPreset(file: string | undefined): Plugin {
   };
 }
 
+// Video harness (e2e/showreel-run.py): camera moves the app polls in dev
+// builds (src/lib/devCamera.ts), read from SHOWREEL_CAMERA_FILE. Dev server
+// only; unset, inert.
+function showreelCamera(file: string | undefined): Plugin {
+  return {
+    name: 'showreel-camera',
+    apply: 'serve',
+    configureServer(server) {
+      if (!file) return;
+      server.middlewares.use((req, res, next) => {
+        if (req.method !== 'GET' || req.url !== '/__camera') return next();
+        let text = '';
+        try {
+          text = readFileSync(file, 'utf8');
+        } catch {
+          /* no moves yet */
+        }
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(text);
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react(), stillsPreset(process.env.STILLS_PRESET_FILE)],
+  plugins: [
+    react(),
+    stillsPreset(process.env.STILLS_PRESET_FILE),
+    showreelCamera(process.env.SHOWREEL_CAMERA_FILE),
+  ],
   define: { __APP_VERSION__: JSON.stringify(version) },
   // A scratch worktree shares node_modules by symlink: its dep optimizer writes
   // to VITE_CACHE_DIR, never the node_modules/.vite a live dev server serves.
