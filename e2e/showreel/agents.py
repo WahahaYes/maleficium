@@ -334,11 +334,14 @@ class OpencodePrint(AgentSession):
     def turn(self, beat, prompt, project, timeout):
         argv = ["env", "OPENCODE_CONFIG=" + self.mcp_config, self.opencode, "run", "--standalone", "--auto",
                 "--print-logs", "--format", "json", "-m", self.model, "--session", self.session, prompt]
-        env = dict(os.environ, HOME=self.agent_home)
+        # No env override: opencode reads its provider auth and config from
+        # the real HOME (as in agent-run.py); only its server side is
+        # redirected, through the per-run MCP config. bwrap still confines
+        # writes to the run dir and opencode's own state dirs.
         p = subprocess.Popen(self.ar.sandbox(self.home, project, argv, extra_rw=self.extra_rw),
                              stdout=subprocess.PIPE,
                              stderr=open(os.path.join(os.path.dirname(self.events_path), "opencode.stderr.log"), "a"),
-                             stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True, env=env)
+                             stdin=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True)
         cost, errors = 0.0, False
 
         def pump():
