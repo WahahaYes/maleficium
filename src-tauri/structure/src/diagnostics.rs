@@ -59,10 +59,9 @@ fn root_relative(file: &str, root: &Utf8TypedPathBuf, base: &Utf8TypedPathBuf) -
     )
 }
 
-/// XeTeX font tracing (`\XeTeXtracingfonts=1`, which libertine.sty sets
-/// under XeTeX): Tectonic reports every trace line as its own warning, which
-/// buries the real diagnostics. A request names the font and size, the next
-/// line resolves it; neither is actionable, so both shapes are dropped.
+/// XeTeX font tracing (`\XeTeXtracingfonts=1`, set by libertine.sty under
+/// XeTeX): each trace line arrives as its own warning. Neither the request
+/// nor its resolution is actionable, so both shapes are dropped.
 static FONT_TRACE_REQUEST_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^Requested font ".+" at [0-9.]+pt$"#).unwrap());
 static FONT_TRACE_TARGET_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-> \S+$").unwrap());
@@ -99,10 +98,8 @@ pub fn diagnostics(log: &str, root: &str, base: &str) -> Vec<Diagnostic> {
                     severity,
                 });
             }
-            // A `file:line:` line with no message carries its text below
-            // (a disabled shell-escape note, a wrapped miss). Fold those
-            // continuations in; anything else (a transcript tail, a blank)
-            // stays out so it cannot stick to a finished diagnostic.
+            // A `file:line:` with no message continues below: fold it in.
+            // Anything else stays out, so it cannot stick to the previous one.
             None => {
                 if let Some(last) = all.last_mut() {
                     let rest = line.trim();
