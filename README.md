@@ -149,6 +149,29 @@ The server edits your files only through replace; agents write text with their o
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 
+### Watch it work
+
+Claude Sonnet 5, via Claude Code over the MCP server, writing a toy note on coffee cooling in an open Maleficium window — five prompts, cut to 44 seconds, no manual edits:
+
+<video src="https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling.mp4" width="100%" controls></video>
+
+If your reader shows no player, [download the video](https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling.mp4). The final [sources](docs/captures/coffee-cooling-main.tex) and [references](docs/captures/coffee-cooling-refs.bib) rebuild the PDF in the app, and the [unedited agent transcript](https://github.com/wahahayes/maleficium/releases/latest/download/coffee-cooling-transcript.jsonl.gz) is JSONL, gzipped. Both files ride with every release from the one that first carries them.
+
+Published as recorded: a rehearsal take, four of five scripted checks green. The fifth failed on a scoring bug in the harness, fixed since — the agent's extra table column and second plot curve were correct. The note is a toy, not research; its two references are real. The prompts, verbatim:
+
+<details>
+<summary>The five prompts</summary>
+
+Setup line before the first prompt: "The LaTeX project is at {project}, open in Maleficium. Use the maleficium MCP tools to compile and check it, and your file tools to write."
+
+1. "Write me a note of about 3 pages on how a cup of coffee cools: derive Newton's law of cooling, plot temperature over time for three starting temperatures, add a table of minutes until it's drinkable, and cite the sources in refs.bib."
+2. "Make the cooling plot full width at the top of page 2."
+3. "Add a diagram of heat leaving the cup: conduction through the mug, and convection and evaporation from the surface."
+4. "Compare black coffee with coffee with milk: add a column to the table and a second curve to the plot."
+5. "Give it a proper front: a title, the author A. Barista, and a short abstract."
+
+</details>
+
 ## Known limits
 
 - macOS and Windows builds are previews: unsigned, and less tested than Linux.
