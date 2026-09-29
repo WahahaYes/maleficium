@@ -13,58 +13,107 @@
       "id": "write",
       "prompt": "Write me a note of about 3 pages on how a cup of coffee cools: derive Newton's law of cooling, plot temperature over time for three starting temperatures, add a table of minutes until it's drinkable, and cite the sources in refs.bib.",
       "oracles": [
-        { "compiles": "main.tex" },
-        { "pages_at_least": { "main": "main.tex", "n": 3 } },
-        { "cites_keys": ["newton1701", "vollmer2009"] },
         {
-          "project_matches": [
-            "\\\\begin\\{(equation|align)",
-            "\\\\begin\\{axis\\}",
-            "\\\\begin\\{tabular"
-          ]
+          "compiles": "main.tex"
         },
-        { "count_at_least": { "pattern": "\\\\addplot", "n": 3 } }
+        {
+          "pages_at_least": {
+            "main": "main.tex",
+            "n": 3
+          }
+        },
+        {
+          "cites_keys": {
+            "keys": ["newton1701", "vollmer2009"]
+          }
+        },
+        {
+          "project_matches": {
+            "patterns": [
+              "\\\\begin\\{(equation|align)",
+              "\\\\begin\\{axis\\}",
+              "\\\\begin\\{tabular"
+            ]
+          }
+        },
+        {
+          "count_at_least": {
+            "pattern": "\\\\addplot",
+            "n": 3
+          }
+        }
       ]
     },
     {
       "id": "plot-page-2",
       "prompt": "Make the cooling plot full width at the top of page 2.",
       "oracles": [
-        { "compiles": "main.tex" },
-        { "plot_full_width": {} },
-        { "plot_at_top_of_page": { "main": "main.tex", "page": 2 } }
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "plot_full_width": {}
+        },
+        {
+          "plot_at_top_of_page": {
+            "main": "main.tex",
+            "page": 2
+          }
+        }
       ]
     },
     {
       "id": "diagram",
       "prompt": "Add a diagram of heat leaving the cup: conduction through the mug, and convection and evaporation from the surface.",
       "oracles": [
-        { "compiles": "main.tex" },
-        { "tikz_beyond_axis": {} },
-        { "project_matches": ["(?i)conduction", "(?i)convection", "(?i)evaporation"] }
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "tikz_beyond_axis": {}
+        },
+        {
+          "project_matches": {
+            "patterns": ["(?i)conduction", "(?i)convection", "(?i)evaporation"]
+          }
+        }
       ]
     },
     {
       "id": "milk",
       "prompt": "Compare black coffee with coffee with milk: add a column to the table and a second curve to the plot.",
       "oracles": [
-        { "compiles": "main.tex" },
-        { "more_addplots_than_before": true },
-        { "project_matches": ["(?i)milk"] },
-        { "table_columns_grew": true }
+        {
+          "compiles": "main.tex"
+        },
+        {
+          "more_addplots_than_before": true
+        },
+        {
+          "project_matches": {
+            "patterns": ["(?i)milk"]
+          }
+        },
+        {
+          "table_columns_grew": true
+        }
       ]
     },
     {
       "id": "front",
       "prompt": "Give it a proper front: a title, the author A. Barista, and a short abstract.",
       "oracles": [
-        { "compiles": "main.tex" },
         {
-          "project_matches": [
-            "\\\\author\\{[^}]*A\\. Barista",
-            "\\\\begin\\{abstract\\}",
-            "\\\\maketitle"
-          ]
+          "compiles": "main.tex"
+        },
+        {
+          "project_matches": {
+            "patterns": [
+              "\\\\author\\{[^}]*A\\. Barista",
+              "\\\\begin\\{abstract\\}",
+              "\\\\maketitle"
+            ]
+          }
         }
       ]
     }
