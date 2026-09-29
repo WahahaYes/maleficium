@@ -14,6 +14,7 @@ pub mod outputs;
 pub mod readiness;
 pub mod replace;
 pub mod search;
+pub mod snippet;
 pub mod structure;
 pub mod synctex;
 pub mod templates;

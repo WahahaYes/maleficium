@@ -6,7 +6,7 @@
 # restore through the content-addressed layout returns the exact bytes.
 #
 # The byte round-trip replicates the store's blob layout in bash against a
-# scratch copy of playground/simple/, so the restore contract is proved
+# scratch copy of e2e/fixtures/simple/, so the restore contract is proved
 # without a webview.
 #
 # What it does not cover (needs the live app): that clicking the counter and
@@ -70,7 +70,7 @@ pass "no git module, registration, or reference remains"
 # --- restore round-trips exact bytes ------------------------------------------
 # Replicate the store layout: blobs/<first two hex>/<sha256>, restore over the
 # working file, compare byte for byte.
-cp -r "$DEVROOT/playground/simple" "$SCRATCH/proj"
+cp -r "$DEVROOT/e2e/fixtures/simple" "$SCRATCH/proj"
 HIST="$SCRATCH/history"
 TARGET="$SCRATCH/proj/main.tex"
 # Content chosen to catch any re-encoding: CRLF, a trailing blank line, UTF-8,

@@ -1,0 +1,134 @@
+% SPDX-FileCopyrightText: Copyright (c) 2024-2026 Yegor Bugayenko
+% SPDX-License-Identifier: MIT
+
+\documentclass[acmsmall,nonacm,11pt]{acmart}
+\settopmatter{printfolios=false,printccs=false,printacmref=false}
+\makeatletter\let\@authorsaddresses\@empty\makeatother
+\usepackage[noframes,nonumbers]{ffcode}
+% listings emits \vspace around each display, which acmart warns about;
+% restore the original \vspace while a listing is typeset
+\makeatletter
+\lst@AddToHook{DisplayStyle}{\let\@vspace\@vspace@orig\let\@vspacer\@vspacer@orig}
+\makeatother
+\usepackage{natbib}
+\usepackage{doi}
+\usepackage{eolang}
+\usepackage{href-ul}
+\normalem
+\usepackage[capitalize]{cleveref}
+\usepackage{to-be-determined}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A,T1]{fontenc}
+\usepackage[russian,english]{babel}
+  \DeclareFontFamilySubstitution{T2A}{LinuxBiolinumT-TLF}{LibertinusSans-TLF}
+  \renewcommand\ttdefault{cmtt}
+\usepackage{CJKutf8}
+% stmaryrd (loaded by eolang) lacks a 5.5pt design size for scriptscript math
+\DeclareFontFamily{U}{stmry}{}
+\DeclareFontShape{U}{stmry}{m}{n}{%
+  <5><6><7><8><9><10>gen*stmary%
+  <5.5>stmary5%
+  <10.95><12><14.4><17.28><20.74><24.88>stmary10%
+}{}
+\usepackage{csquotes}
+% see https://tex.stackexchange.com/a/256190/1449
+\usepackage{url}
+  \def\UrlBreaks{\do\/\do-}
+
+\setlength{\footskip}{13.0pt}
+
+\title{On the Origin of Objects}
+\subtitle{By Means of Careful Selection}
+
+\author{Yegor Bugayenko}
+\orcid{0000-0001-6370-0678}
+\email{yegor256@gmail.com}
+\affiliation{
+  \institution{Huawei}
+  \country{Russia}
+  \city{Moscow}
+  }
+
+\author{Maxim Trunnikov}
+\orcid{0000-0001-8545-4797}
+\email{mtrunnikov@gmail.com}
+\affiliation{
+  \institution{Huawei}
+  \country{Russia}
+  \city{Moscow}
+  }
+
+\ccsdesc[100]{Object-Oriented Programming}
+\keywords{Object-Oriented Programming}
+
+\newcommand\deff[1]{\ff{\textcolor{blue!50!black}{#1}}}
+\newcommand\adeff[1]{\ff{\textcolor{orange}{#1}}}
+\newcommand\eohex[1]{\ff{#1}}
+\newcommand\zh[1]{\begin{CJK*}{UTF8}{gbsn}#1\end{CJK*}}
+\newcommand\ru[1]{\foreignlanguage{russian}{#1}}
+
+\tolerance=1500
+\hbadness=1500% dont report underfull boxes within the accepted tolerance
+\exhyphenpenalty=10000% to avoid line breaks before and after mdash
+\widowpenalty=5000% to have less widows
+\clubpenalty=5000% to have less orphans
+\interfootnotelinepenalty=10000% to format footnotes better
+\raggedbottom
+\setlength\footskip{13.0pt}
+\setlength\headheight{21pt}
+
+\begin{document}
+
+\begin{abstract}
+We introduce a taxonomy of objects for the \eolang{} programming language.
+This taxonomy is designed with a few principles in mind:
+  non-redundancy and simplicity.
+The taxonomy is supposed to be used
+  as a navigation map by \eolang{} programmers.
+It may also be helpful as a guideline for designers
+  of other object-oriented languages or libraries for them.
+\end{abstract}
+
+\maketitle
+
+\input{sections/introduction}
+
+\input{sections/principles}
+
+\input{sections/bytes}
+
+\input{sections/boolean}
+
+\input{sections/number}
+
+\input{sections/string}
+
+\input{sections/tuple}
+
+\input{sections/flow}
+
+\input{sections/digits}
+
+\input{sections/memory}
+
+\input{sections/math}
+
+\input{sections/texts}
+
+\input{sections/structs}
+
+\input{sections/streams}
+
+\input{sections/fs}
+
+\input{sections/net}
+
+\input{sections/system}
+
+\input{sections/conclusion}
+
+\raggedright
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{bibliography/main}
+
+\end{document}

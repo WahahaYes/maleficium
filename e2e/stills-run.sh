@@ -102,7 +102,7 @@ fi
 # Scratch fixtures (never the repo originals): simple compiles clean,
 # bad fails fast with `\badcommand` on l.3.
 FIX=$(mktemp -d /tmp/maleficium-stills-fix-XXXXXX)
-cp -r "$ROOT/playground/simple/." "$FIX/simple/"
+cp -r "$ROOT/e2e/fixtures/simple/." "$FIX/simple/"
 mkdir -p "$FIX/bad"
 printf '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{document}\n' >"$FIX/bad/bad.tex"
 
