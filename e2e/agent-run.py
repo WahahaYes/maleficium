@@ -115,6 +115,20 @@ class Mcp(McpClient):
             self.p.kill()
 
 
+def pdf_stamp(server, home, project, main):
+    """The output pdf's stamp after a run, so the app log can be checked for
+    the reload and repaint of that exact build."""
+    mcp = Mcp(server, home)
+    try:
+        ok, _ = mcp.call("grant", {"root_id": "stamp", "root": project})
+        if not ok:
+            return None
+        ok, r = mcp.call("output_stamp", {"root_id": "stamp", "main_rel": main})
+        return (r or {}).get("stamp") if ok else None
+    finally:
+        mcp.close()
+
+
 # ---- fixtures ------------------------------------------------------------------
 
 
