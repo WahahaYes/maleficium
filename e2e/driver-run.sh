@@ -1,7 +1,7 @@
 #!/bin/bash
 # Driver-driven run over the stdio sidecar. Spawns `maleficium-mcp`, scripts
 # grant -> compile -> poll -> synctex -> delete -> undo over JSON-RPC against
-# a scratch copy of playground/simple/, then asserts porcelain discipline +
+# a scratch copy of e2e/fixtures/simple/, then asserts porcelain discipline +
 # artifact homes.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Honor a shared target dir (e.g. worktree runs reuse the main checkout's
 # build cache via CARGO_TARGET_DIR): the binary lives where cargo put it.
 BIN="${CARGO_TARGET_DIR:-$DEVROOT/src-tauri/target}/debug/maleficium-mcp"
-FIXTURE="$DEVROOT/playground/simple"
+FIXTURE="$DEVROOT/e2e/fixtures/simple"
 SCRATCH="$(mktemp -d /tmp/maleficium-driver-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
@@ -165,27 +165,19 @@ def check(name, cond, detail="", ms=None):
     if not cond:
         fails.append(name)
 
-p = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-mid = [0]
-def send(method, params=None):
-    mid[0] += 1
-    msg = {"jsonrpc": "2.0", "id": mid[0], "method": method}
-    if params is not None:
-        msg["params"] = params
-    p.stdin.write(json.dumps(msg) + "\n"); p.stdin.flush()
-    return json.loads(p.stdout.readline())
-def notify(m):
-    p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": m}) + "\n"); p.stdin.flush()
-def call(name, args):
+sys.path.insert(0, os.path.join(os.environ["DEVROOT"], "e2e"))
+from mcp_client import McpClient
+
+def flat(result):
     # Tool failures are isError results with the reason as text; successes
     # carry the record as structuredContent. Flatten both into one dict.
-    r = send("tools/call", {"name": name, "arguments": args})["result"]
-    if r.get("isError"):
-        return {"ok": False, "error": "".join(c.get("text", "") for c in r.get("content") or [])}
-    return {"ok": True, **r["structuredContent"]}
+    ok, r = result
+    return {"ok": True, **r} if ok else {"ok": False, "error": r}
 
-send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "driver", "version": "0"}})
-notify("notifications/initialized")
+mcp = McpClient([BIN], "driver")
+p = mcp.p
+def call(name, args):
+    return flat(mcp.tool(name, args))
 
 g = call("grant", {"root_id": "drv", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
@@ -243,7 +235,7 @@ sn = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main
 check("snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
 check("snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
 import base64 as _b64
-raw = send("tools/call", {"name": "snippet", "arguments": {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
+raw = mcp.request("tools/call", {"name": "snippet", "arguments": {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
 blocks = raw.get("content") or []
 img = next((b for b in blocks if b.get("type") == "image"), None)
 png = _b64.b64decode(img["data"]) if img else b""
@@ -375,24 +367,10 @@ def session(env, offline):
     # A second sidecar with its own cache home; offline ones run in a fresh
     # network namespace (no routes, so the engine cannot fetch).
     argv = (["unshare", "-rn"] if offline else []) + [BIN]
-    q = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
-    n = [0]
-    def rpc(method, params=None, notify_only=False):
-        msg = {"jsonrpc": "2.0", "method": method}
-        if not notify_only:
-            n[0] += 1
-            msg["id"] = n[0]
-        if params is not None:
-            msg["params"] = params
-        q.stdin.write(json.dumps(msg) + "\n"); q.stdin.flush()
-        return None if notify_only else json.loads(q.stdout.readline())
-    rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "driver", "version": "0"}})
-    rpc("notifications/initialized", notify_only=True)
+    client = McpClient(argv, "driver", env=env)
+    q = client.p
     def tool(name, args):
-        r = rpc("tools/call", {"name": name, "arguments": args})["result"]
-        if r.get("isError"):
-            return {"ok": False, "error": "".join(c.get("text", "") for c in r.get("content") or [])}
-        return {"ok": True, **r["structuredContent"]}
+        return flat(client.tool(name, args))
     def compile_doc(rel):
         j = tool("compile_run", {"root_id": "off", "rel": rel}).get("job_id") or ""
         rec = {"status": "running"}

@@ -29,3 +29,6 @@ __pycache__/
 
 # scripts/package.sh output
 /out
+
+# scripts/playground.sh output
+/playground

@@ -2,7 +2,7 @@
 # worktree-run.sh — run a harness command from a pinned-commit scratch worktree.
 #
 # Isolates repeatable runs from live-checkout churn: another writer saving
-# src/ mid-run kills vite and wedges captures, and playground fixtures drift
+# src/ mid-run kills vite and wedges captures, and fixtures drift
 # underfoot. The worktree holds a frozen commit plus only the carrier patch
 # (default: uncommitted e2e/ edits under test); untracked files stay behind
 # by design. Heavy state is reused, never rebuilt: node_modules is symlinked

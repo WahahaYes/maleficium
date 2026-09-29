@@ -26,6 +26,8 @@ projects, so macOS and Windows expect a fresh user (CI runners are).
 """
 import argparse, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
 
+from mcp_client import McpClient
+
 IDENT = "io.github.wahahayes.maleficium"
 REQUIRED = ["log.open", "template.welcome", "project.open", "index.open", "file.open"]
 EVENTS_WAIT = 60  # seconds for the first launch to log REQUIRED
@@ -61,27 +63,17 @@ def compile_probe(cmd, scratch, env=None):
     os.makedirs(scratch, exist_ok=True)
     with open(os.path.join(scratch, "main.tex"), "w") as f:
         f.write("\\documentclass{article}\n\\begin{document}\nSmoke.\n\\end{document}\n")
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
-    n = [0]
-
-    def send(method, params):
-        n[0] += 1
-        p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": n[0], "method": method, "params": params}) + "\n")
-        p.stdin.flush()
-        return json.loads(p.stdout.readline())
+    mcp = McpClient(cmd, "smoke", env=env)
 
     def call(name, args):
-        r = send("tools/call", {"name": name, "arguments": args})["result"]
-        if r.get("isError"):
-            fail("%s: %s" % (name, "".join(c.get("text", "") for c in r["content"])))
-        return r["structuredContent"]
+        ok, r = mcp.tool(name, args)
+        if not ok:
+            fail("%s: %s" % (name, r))
+        return r
 
-    who = send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                              "clientInfo": {"name": "smoke", "version": "0"}})["result"]["serverInfo"]
+    who = mcp.server_info
     if who["name"] != "maleficium":
         fail("%s: serverInfo is %s" % (" ".join(cmd), who))
-    p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
-    p.stdin.flush()
     call("grant", {"root_id": "smoke", "root": scratch})
     job = call("compile_run", {"root_id": "smoke", "rel": "main.tex"})["job_id"]
     deadline = time.time() + 300
@@ -91,8 +83,7 @@ def compile_probe(cmd, scratch, env=None):
     if rec["status"] != "success":
         fail("compile %s: %s" % (rec["status"], str(rec)[:300]))
     hit = call("synctex_forward", {"root_id": "smoke", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
-    p.stdin.close()
-    p.wait(timeout=10)
+    mcp.close()
     if hit.get("page") != 1:
         fail("synctex_forward: %s" % hit)
     say("%s: %s %s, compile + synctex ok" % (" ".join([os.path.basename(cmd[0])] + cmd[1:]), who["name"], who["version"]))

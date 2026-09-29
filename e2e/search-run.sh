@@ -1,7 +1,7 @@
 #!/bin/bash
 # Search driver over the stdio sidecar: spawns `maleficium-mcp` and scripts
 # the project-index tools (search, find_files, the structure tools that read
-# the index) over JSON-RPC against a scratch copy of playground/simple/.
+# the index) over JSON-RPC against a scratch copy of e2e/fixtures/simple/.
 # No compile, no network. Writes nothing outside OS tmp.
 set -euo pipefail
 
@@ -12,9 +12,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 [ -x "$BIN" ] || { echo "FAIL: sidecar missing: build with cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium-mcp"; exit 1; }
 
-cp -r "$DEVROOT/playground/simple" "$SCRATCH/proj"
+cp -r "$DEVROOT/e2e/fixtures/simple" "$SCRATCH/proj"
 BEFORE="$(cd "$SCRATCH/proj" && find . -type f | sort)"
-export MCP_BIN="$BIN" MCP_ROOT="$SCRATCH/proj"
+export MCP_BIN="$BIN" MCP_ROOT="$SCRATCH/proj" E2E_DIR="$DEVROOT/e2e"
 # App data (history, readiness) is per run.
 export XDG_DATA_HOME="$SCRATCH/data" XDG_CACHE_HOME="$SCRATCH/cache"
 
@@ -27,23 +27,13 @@ def check(name, cond, detail=""):
     if not cond:
         fails.append(name)
 
-p = subprocess.Popen([BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-mid = [0]
-def send(method, params=None):
-    mid[0] += 1
-    msg = {"jsonrpc": "2.0", "id": mid[0], "method": method}
-    if params is not None:
-        msg["params"] = params
-    p.stdin.write(json.dumps(msg) + "\n"); p.stdin.flush()
-    return json.loads(p.stdout.readline())
-def call(name, args):
-    r = send("tools/call", {"name": name, "arguments": args})["result"]
-    if r.get("isError"):
-        return {"ok": False, "error": "".join(c.get("text", "") for c in r.get("content") or [])}
-    return {"ok": True, **r["structuredContent"]}
+sys.path.insert(0, os.environ["E2E_DIR"])
+from mcp_client import McpClient
 
-send("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "search-driver", "version": "0"}})
-p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"); p.stdin.flush()
+mcp = McpClient([BIN], "search-driver")
+def call(name, args):
+    ok, r = mcp.tool(name, args)
+    return {"ok": True, **r} if ok else {"ok": False, "error": r}
 
 check("grant", call("grant", {"root_id": "s", "root": ROOT})["ok"])
 
@@ -118,7 +108,7 @@ before_apply = snap()
 ap = call("replace_apply", {"root_id": "s", "token": pv["token"]})
 check("a stale plan is refused whole", not ap["ok"] and "changed since the preview" in ap["error"] and snap() == before_apply, ap)
 
-p.stdin.close(); p.wait(timeout=10)
+mcp.close()
 if fails:
     print(f"SEARCH DRIVER: {len(fails)} failed"); sys.exit(1)
 print("SEARCH DRIVER: all checks green")
