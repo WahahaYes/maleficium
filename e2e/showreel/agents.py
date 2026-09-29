@@ -318,7 +318,8 @@ class OpencodePrint(AgentSession):
     def __init__(self, *args):
         super().__init__(*args)
         self.opencode = shutil.which("opencode") or "opencode"
-        self.session = uuid.uuid4().hex
+        # opencode v2 session ids start with "ses".
+        self.session = "ses" + uuid.uuid4().hex
         self.write_mcp_config()
         h = os.path.expanduser("~")
         self.extra_rw = [os.path.join(h, d) for d in (".local/share/opencode", ".cache/opencode",
