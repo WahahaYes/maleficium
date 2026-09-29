@@ -140,9 +140,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 
-<!-- Inline playback needs a user-attachments URL: drag docs/captures/coffee-cooling.mp4 into any GitHub comment box and paste the resulting URL into the src below. -->
-
-<video src="docs/captures/coffee-cooling.mp4" width="100%" controls></video>
+[![Claude writing a coffee-cooling note in Maleficium: the milk column and second plot curve landing](docs/captures/coffee-cooling-excerpt.gif)](docs/captures/coffee-cooling.mp4)
 
 ## Known limits
 
