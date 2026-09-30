@@ -65,13 +65,13 @@ import {
 import type { ZoomAction } from './lib/zoom';
 import { useExport } from './hooks/useExport';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
-import { buildMenus, presetOf, type CommandActions, type MenuContext } from './lib/commands';
+import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
 import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { pruneRecentProjects } from './lib/recentProjects';
-import { DEVICE_PREF_KEYS, store } from './lib/app-store';
 import { fs } from './lib/fs-provider';
 import { grantUntitledAccess } from './lib/projectAccess';
+import { useShellLayout } from './hooks/useShellLayout';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
 import { useProjectTree } from './hooks/useProjectTree';
@@ -97,6 +97,8 @@ export default function App({
   prefs: AppearancePrefs;
   onPrefs?: (p: AppearancePrefs) => void;
 }) {
+  const shell = useShellLayout();
+  const { toggleTree } = shell;
   const [tex, setTex] = useState(HELLO);
   const [root, setRoot] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -421,7 +423,7 @@ export default function App({
         setShortcutsOpen(true);
       } else if (mod && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setTreeVisible((v) => !v);
+        toggleTree();
       } else if (mod && e.key === 'Tab') {
         // Tab cycling when the tab strip is not focused; global fallback:
         const keys = [...buffersRef.current.keys()];
@@ -435,7 +437,7 @@ export default function App({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [buffersRef]);
+  }, [buffersRef, toggleTree]);
 
   // Untitled documents resolve against the backend-owned scratch root.
   const [scratch, setScratch] = useState<{ rootId: string; path: string } | null>(null);
@@ -589,37 +591,7 @@ export default function App({
   // never closes over render state: assign every render and call only
   // `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
   // listener would never resubscribe.
-  // ---- Shell state: view is explicit booleans (View menu presets own them) ----
-  const [treeVisible, setTreeVisible] = useState(true);
-  const [editorVisible, setEditorVisible] = useState(true);
-  const [previewOpen, setPreviewOpen] = useState(true);
-  const [layout, setLayout] = useState(() => {
-    try {
-      const raw = store().get(DEVICE_PREF_KEYS.layout);
-      if (raw) {
-        const j = JSON.parse(raw) as Partial<{
-          editorRatio: number;
-          previewRatio: number;
-          logHeight: number;
-        }>;
-        return {
-          editorRatio:
-            typeof j.editorRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.editorRatio)) : 0.6,
-          previewRatio:
-            typeof j.previewRatio === 'number' ? Math.min(0.8, Math.max(0.2, j.previewRatio)) : 0.4,
-          logHeight:
-            typeof j.logHeight === 'number' ? Math.max(80, Math.min(600, j.logHeight)) : 160,
-        };
-      }
-    } catch {
-      /* corrupted prefs — defaults win */
-    }
-    return { editorRatio: 0.6, previewRatio: 0.4, logHeight: 160 };
-  });
-  useEffect(() => {
-    store().set(DEVICE_PREF_KEYS.layout, JSON.stringify(layout));
-  }, [layout]);
-  const [logCollapsed, setLogCollapsed] = useState(false);
+  const { logCollapsed, setLogCollapsed, layout, previewVisible } = shell;
   const {
     compilePhase,
     compileTimer,
@@ -689,11 +661,8 @@ export default function App({
     reloadTree,
     handleSelect,
   });
-  const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const fileTreeVisible = treeVisible;
-  const [outlineVisible, setOutlineVisible] = useState(true);
   // Project search replaces the tree + outline in the side column while open.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchFocus, setSearchFocus] = useState(0);
@@ -1016,10 +985,10 @@ export default function App({
     precheckCount: precheck?.findings.length ?? 0,
     pdfOpen: pdfUrl != null,
     editorReady: viewportRef.current != null && largeFile == null,
-    view: { tree: treeVisible, editor: editorVisible, preview: previewOpen },
-    preset: presetOf({ tree: treeVisible, editor: editorVisible, preview: previewOpen }),
+    view: shell.view,
+    preset: shell.preset,
     logCollapsed,
-    outlineVisible,
+    outlineVisible: shell.outlineVisible,
     // Selection submenus navigate sections only.
     outlineLines: outline
       .filter((o) => o.kind === 'section')
@@ -1049,7 +1018,7 @@ export default function App({
     quickOpen: () => setPaletteOpen(''),
     commandPalette: () => setPaletteOpen('>'),
     findInProject: () => {
-      setTreeVisible(true);
+      shell.setTreeVisible(true);
       setSearchOpen(true);
       setSearchFocus((k) => k + 1);
     },
@@ -1132,30 +1101,11 @@ export default function App({
       setOutlinePicks((prev) =>
         prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line],
       ),
-    setPreset: (preset) => {
-      if (preset === 'both') {
-        setTreeVisible(true);
-        setEditorVisible(true);
-        setPreviewOpen(true);
-        setPreviewCollapsed(false);
-      } else if (preset === 'editor') {
-        setTreeVisible(false);
-        setEditorVisible(true);
-        setPreviewOpen(false);
-      } else {
-        setTreeVisible(false);
-        setEditorVisible(false);
-        setPreviewOpen(true);
-        setPreviewCollapsed(false);
-      }
-    },
-    toggleTree: () => setTreeVisible((v) => !v),
-    togglePreview: () => {
-      setPreviewOpen((v) => !v);
-      setPreviewCollapsed(false);
-    },
-    toggleLog: () => setLogCollapsed((c) => !c),
-    toggleOutline: () => setOutlineVisible((v) => !v),
+    setPreset: shell.setPreset,
+    toggleTree: shell.toggleTree,
+    togglePreview: shell.togglePreview,
+    toggleLog: shell.toggleLog,
+    toggleOutline: shell.toggleOutline,
     setTheme: (m) => onThemeMode(m),
     setDensity: (d) => onDensityMode(d),
     zoomPreview: (a) => zoomActionRef.current?.(a),
@@ -1391,8 +1341,6 @@ export default function App({
     </Box>
   );
 
-  const previewVisible = previewOpen && !previewCollapsed;
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <MenuBar
@@ -1412,7 +1360,7 @@ export default function App({
         }
       />
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
-        {fileTreeVisible && (
+        {shell.treeVisible && (
           <Box
             sx={{
               width: 260,
@@ -1463,7 +1411,7 @@ export default function App({
                     filterHidden
                   />
                 </Box>
-                {outlineVisible ? (
+                {shell.outlineVisible ? (
                   <OutlineView entries={outline} onJump={(line) => setCurrentLine(line)} />
                 ) : null}
               </>
@@ -1474,31 +1422,20 @@ export default function App({
             )}
           </Box>
         )}
-        {editorVisible ? (
+        {shell.editorVisible ? (
           <Pane
             label="editor"
             ratio={previewVisible ? layout.editorRatio : 1}
-            onRatio={(r) => setLayout((l) => ({ ...l, editorRatio: r, previewRatio: 1 - r }))}
+            onRatio={shell.setEditorRatio}
           >
             {editorPane}
           </Pane>
         ) : null}
-        {editorVisible && previewVisible ? (
+        {shell.editorVisible && previewVisible ? (
           <PaneSplitter
             label="Resize editor and preview"
-            onDrag={(dx) =>
-              setLayout((l) => {
-                const w = window.innerWidth || 1000;
-                const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dx / w));
-                return { ...l, editorRatio: r, previewRatio: 1 - r };
-              })
-            }
-            onKeyResize={(dir) =>
-              setLayout((l) => {
-                const r = Math.min(0.8, Math.max(0.2, l.editorRatio + dir * 0.05));
-                return { ...l, editorRatio: r, previewRatio: 1 - r };
-              })
-            }
+            onDrag={shell.dragSplitter}
+            onKeyResize={shell.nudgeSplitter}
           />
         ) : null}
         {!previewVisible ? (
@@ -1512,29 +1449,18 @@ export default function App({
               pt: 1,
             }}
           >
-            <Button
-              size="small"
-              aria-label="Show preview"
-              onClick={() => {
-                setPreviewOpen(true);
-                setPreviewCollapsed(false);
-              }}
-            >
+            <Button size="small" aria-label="Show preview" onClick={shell.showPreview}>
               show
             </Button>
           </Box>
         ) : (
           <Pane
             label="preview"
-            ratio={editorVisible ? layout.previewRatio : 1}
-            onRatio={(r) => setLayout((l) => ({ ...l, previewRatio: r, editorRatio: 1 - r }))}
+            ratio={shell.editorVisible ? layout.previewRatio : 1}
+            onRatio={shell.setPreviewRatio}
           >
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                size="small"
-                aria-label="Hide preview"
-                onClick={() => setPreviewCollapsed(true)}
-              >
+              <Button size="small" aria-label="Hide preview" onClick={shell.collapsePreview}>
                 hide
               </Button>
             </Box>
@@ -1544,9 +1470,9 @@ export default function App({
       </Box>
       <LogStream
         height={layout.logHeight}
-        onHeight={(h) => setLayout((l) => ({ ...l, logHeight: h }))}
+        onHeight={shell.setLogHeight}
         collapsed={logCollapsed}
-        onToggleCollapse={() => setLogCollapsed((c) => !c)}
+        onToggleCollapse={shell.toggleLog}
         onJump={handleProblemJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
