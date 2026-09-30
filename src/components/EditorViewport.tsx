@@ -4,6 +4,7 @@
 // length. Memoized: callers pass stable props (useCallback).
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { useLatest } from '../hooks/useLatest';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import { useTheme } from '@mui/material/styles';
@@ -72,17 +73,13 @@ function EditorViewport({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const prefsRef = useRef(prefs ?? DEFAULT_PREFS);
-  prefsRef.current = prefs ?? DEFAULT_PREFS;
-  const filePathRef = useRef(filePath);
-  filePathRef.current = filePath;
+  const prefsRef = useLatest(prefs ?? DEFAULT_PREFS);
+  const filePathRef = useLatest(filePath);
   // Last value sent downstream. Keystrokes update it synchronously in the
   // updateListener so an echo-back never triggers a full-doc replace.
   const lastSentRef = useRef(value);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
+  const onChangeRef = useLatest(onChange);
+  const onSaveRef = useLatest(onSave);
   const muiTheme = useTheme();
   // Theme compartment: prefs + tokens restyle the live view on mode flip.
   const themeCompartment = useRef(new Compartment()).current;
@@ -207,7 +204,7 @@ function EditorViewport({
     viewRef.current?.dispatch({
       effects: themeCompartment.reconfigure(editorTheme(prefsRef.current, muiTheme)),
     });
-  }, [muiTheme, prefs, themeCompartment]);
+  }, [muiTheme, prefs, prefsRef, themeCompartment]);
 
   // External value sync (file switch / reload / jump): replace doc, keep viewport.
   // Guarded by ref-equality with last-sent value so typing never resets cursor.
