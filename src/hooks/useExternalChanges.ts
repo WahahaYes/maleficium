@@ -10,18 +10,16 @@ import { acknowledgeDisk, reloadBuffer, type BufferState } from '../lib/buffers'
 import { emit } from '../lib/events';
 import { decideExternal, holdWrites } from '../lib/externalChange';
 import { loadTex } from '../lib/files';
-import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseExternalChangesDeps {
   buffers: Map<string, BufferState>;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   fileName: string;
   setTex: (v: string) => void;
-  ownWrites: OwnWrites;
 }
 
 export function useExternalChanges(deps: UseExternalChangesDeps) {
-  const { buffers, setBuffers, fileName, setTex, ownWrites } = deps;
+  const { buffers, setBuffers, fileName, setTex } = deps;
   const [conflicts, setConflicts] = useState<string[]>([]);
   const live = useRef({ buffers, fileName });
   live.current = { buffers, fileName };
@@ -31,7 +29,6 @@ export function useExternalChanges(deps: UseExternalChangesDeps) {
       for (const path of paths) {
         const buf = live.current.buffers.get(path);
         if (!buf) continue;
-        if (await ownWrites.isEcho(path)) continue;
         let onDisk: string;
         try {
           onDisk = await loadTex(path);
@@ -67,7 +64,7 @@ export function useExternalChanges(deps: UseExternalChangesDeps) {
         }
       }
     },
-    [ownWrites, setBuffers, setTex],
+    [setBuffers, setTex],
   );
 
   // Missed or unavailable watch events: re-check everything open on focus.

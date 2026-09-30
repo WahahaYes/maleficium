@@ -2,9 +2,7 @@
 //
 // Project files go to the core file service (one confinement implementation
 // for every adapter); only paths outside any granted root (app data, temp,
-// dialog destinations) reach plugin-fs. The runtime fs-scope grant for
-// project roots stays until the core watcher lands: it is the watcher's
-// only path to project dirs. File IO no longer needs it.
+// dialog destinations) reach plugin-fs.
 
 import { homeDir } from '@tauri-apps/api/path';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';

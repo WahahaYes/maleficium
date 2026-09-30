@@ -26,6 +26,8 @@ maleficium-index = { path = "../index" }
 base64 = "0.22.1"
 # Renders pdf pages for snippets. No embedded fonts: Tectonic embeds every font.
 hayro = { version = "0.7", default-features = false }
+# The core-owned file watcher (notify thread per session root). No Tauri.
+notify = "8"
 
 [dev-dependencies]
 libc = "0.2.189"

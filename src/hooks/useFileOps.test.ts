@@ -68,7 +68,6 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     previewFile: null as string | null,
     buffers: new Map<string, BufferState>(),
     selected: [] as string[],
-    ownWrites: [] as string[],
     reloads: 0,
   };
   const trash = new FileHistory();
@@ -83,14 +82,6 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     setPreviewFile: (v) => (state.previewFile = v),
     setBuffers: (u) => (state.buffers = typeof u === 'function' ? u(state.buffers) : u),
     trash,
-    ownWrites: {
-      wrote: (p, content) =>
-        state.ownWrites.push(
-          content === null ? `removed ${p}` : `wrote ${p} ${JSON.stringify(content)}`,
-        ),
-      settled: (p) => state.ownWrites.push(`settled ${p}`),
-      isEcho: async () => false,
-    },
     reloadTree: async () => {
       state.reloads++;
     },
@@ -185,13 +176,12 @@ describe('useFileOps delete → undo', () => {
 });
 
 describe('useFileOps create and rename', () => {
-  it('creates an empty file, marks the own-write and opens it', async () => {
+  it('creates an empty file and opens it', async () => {
     const { state, ops } = harness();
 
     await ops().handleCreate('/p', 'intro.tex');
 
     expect(files.get('/p/intro.tex')).toBe('');
-    expect(state.ownWrites).toEqual(['wrote /p/intro.tex ""']);
     expect(state.selected).toEqual(['/p/intro.tex']);
     expect(actions()).toEqual(['file.create']);
   });
@@ -208,15 +198,13 @@ describe('useFileOps create and rename', () => {
     expect(state.buffers.get('/p/paper.tex')).toBe(buf);
     expect(state.buffers.has('/p/main.tex')).toBe(false);
     expect(state.fileName).toBe('/p/paper.tex');
-    expect(state.ownWrites).toEqual(['removed /p/main.tex', 'settled /p/paper.tex']);
     expect(actions()).toEqual(['file.rename']);
   });
 
   it('rejects an empty rename without touching disk', async () => {
-    const { state, ops } = harness();
+    const { ops } = harness();
     await ops().handleRename('/p/fig.tex', '   ');
     expect(files.get('/p/fig.tex')).toBe('fig body');
-    expect(state.ownWrites).toEqual([]);
     expect(actions()).toEqual(['file.rename-failed']);
   });
 });

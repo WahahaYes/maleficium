@@ -23,6 +23,7 @@ pub mod synctex;
 pub mod templates;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_scratch;
+pub mod watch;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
@@ -48,6 +49,9 @@ struct State {
     jobs: compile::Jobs,
     indexes: index::Indexes,
     plans: replace::Plans,
+    watchers: watch::Watchers,
+    queues: watch::Queues,
+    owns: watch::OwnWrites,
 }
 
 impl Core {
@@ -62,6 +66,15 @@ impl Core {
     }
     pub(crate) fn plans(&self) -> &replace::Plans {
         &self.0.plans
+    }
+    pub(crate) fn watchers(&self) -> &watch::Watchers {
+        &self.0.watchers
+    }
+    pub(crate) fn queues(&self) -> &watch::Queues {
+        &self.0.queues
+    }
+    pub(crate) fn owns(&self) -> &watch::OwnWrites {
+        &self.0.owns
     }
 }
 
@@ -269,6 +282,9 @@ mod tests {
         let h = hash_root("/home/u/paper");
         assert_eq!(h.len(), 8);
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        // The frontend keys main-file associations and trash by this id and
+        // never rehashes (UTF-8 bytes: a UTF-16 hash gave 6ea6b60c here).
+        assert_eq!(hash_root("/home/josé/thèse"), "53bf67b2");
     }
 
     #[test]

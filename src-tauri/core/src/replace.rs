@@ -136,6 +136,7 @@ pub fn apply(
         let abs = super::fs::resolve_in(cx, root_id, &f.file.rel)?;
         std::fs::write(&abs, &f.after)
             .map_err(|e| format!("write failed: {}: {}", f.file.rel, e))?;
+        super::watch::mark_written(cx, &abs, f.after.as_bytes());
         written.push(f.file.rel.clone());
     }
     super::index::touch(cx, root_id, &written)?;

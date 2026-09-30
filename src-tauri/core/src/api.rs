@@ -30,6 +30,7 @@ use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
 use crate::synctex::{ForwardHit, InverseHit};
 use crate::templates::{Created, TemplateInfo, TemplateList};
+use crate::watch::WatchEvent;
 
 /// A granted project: its canonical path and the session-root id the other
 /// operations take. The Tauri adapter mints the fs-scope grant beside this.
@@ -78,6 +79,9 @@ params! {
     IndexOpenParams { root_id: String },
     IndexWatchedParams { root_id: String, watched: bool },
     IndexTouchParams { root_id: String, paths: Vec<String> },
+    WatchStartParams { root_id: String },
+    WatchPollParams { root_id: String },
+    WatchStopParams { root_id: String },
     IndexOverlayParams { root_id: String, rel: String, text: Option<String> },
     IndexSearchParams { root_id: String, query: Query, main_rel: Option<String>, max: Option<usize> },
     IndexFindFilesParams { root_id: String, query: String, max: Option<usize> },
@@ -157,6 +161,9 @@ operations! {
     IndexOpen via index_open(IndexOpenParams) -> usize,
     IndexWatched via index_watched(IndexWatchedParams) -> (),
     IndexTouch via index_touch(IndexTouchParams) -> (),
+    WatchStart via watch_start(WatchStartParams) -> (),
+    WatchPoll via watch_poll(WatchPollParams) -> Vec<WatchEvent>,
+    WatchStop via watch_stop(WatchStopParams) -> (),
     IndexOverlay via index_overlay(IndexOverlayParams) -> (),
     IndexSearch via index_search(IndexSearchParams) -> SearchResult,
     IndexFindFiles via index_find_files(IndexFindFilesParams) -> Vec<FileMatch>,
@@ -306,6 +313,18 @@ fn index_watched(cx: &Core, p: IndexWatchedParams) -> Result<(), String> {
 
 fn index_touch(cx: &Core, p: IndexTouchParams) -> Result<(), String> {
     crate::index::touch(cx, &p.root_id, &p.paths)
+}
+
+fn watch_start(cx: &Core, p: WatchStartParams) -> Result<(), String> {
+    crate::watch::start(cx, &p.root_id)
+}
+
+fn watch_poll(cx: &Core, p: WatchPollParams) -> Result<Vec<WatchEvent>, String> {
+    crate::watch::poll(cx, &p.root_id)
+}
+
+fn watch_stop(cx: &Core, p: WatchStopParams) -> Result<(), String> {
+    crate::watch::stop(cx, &p.root_id)
 }
 
 fn index_overlay(cx: &Core, p: IndexOverlayParams) -> Result<(), String> {
@@ -475,6 +494,10 @@ pub fn typescript() -> String {
         IndexOpenParams::decl(&cfg),
         IndexWatchedParams::decl(&cfg),
         IndexTouchParams::decl(&cfg),
+        WatchStartParams::decl(&cfg),
+        WatchPollParams::decl(&cfg),
+        WatchStopParams::decl(&cfg),
+        WatchEvent::decl(&cfg),
         IndexOverlayParams::decl(&cfg),
         IndexSearchParams::decl(&cfg),
         IndexFindFilesParams::decl(&cfg),
@@ -505,7 +528,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision } from './events';\n\
+         import type { BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );
