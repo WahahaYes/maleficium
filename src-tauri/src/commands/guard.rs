@@ -1,6 +1,8 @@
 //! The runtime project-scope grant: validation lives in
 //! `maleficium_core::guard`, session roots in core, and the fs-scope grant
-//! beside each project grant here (see `commands::api`).
+//! beside each project grant here (see `commands::api`). The grant stays
+//! until the core watcher lands — plugin-fs `watch` is its last project
+//! consumer — but no file read or write resolves through it anymore.
 
 use std::path::PathBuf;
 use tauri::AppHandle;

@@ -25,8 +25,9 @@ pub mod test_scratch;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
-    grant_project, grant_root, grant_untitled, list_dir, read_text, resolve_in, resolve_read,
-    session_root, trash_file, undo_trash,
+    grant_project, grant_root, grant_untitled, list_dir, make_dir, read_bytes, read_text,
+    remove_path, rename_path, resolve_in, resolve_read, resolve_write, save, session_root,
+    stat_path, trash_file, undo_trash, write_bytes, FileStat,
 };
 pub use outputs::{
     clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp, outputs_fresh,
@@ -67,6 +68,9 @@ use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// How a waited child resolved: exited (with status), killed after the
 /// hang-guard timeout, or taken by cancel before the wait.
@@ -204,7 +208,8 @@ fn find_sidecar(
 }
 
 /// Entry kind for directory listings.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
     pub entry_type: String,

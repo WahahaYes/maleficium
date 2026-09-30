@@ -1,7 +1,9 @@
 // useProjectTree.ts — the open project: its file tree, watcher, and recents.
 //
-// Opening is grant-first: the runtime scope grant precedes any read, so an
-// unreachable root fails before the tree is touched. The watcher coalesces
+// Opening is grant-first: the backend validates and registers the root
+// before the tree is touched, so an unreachable root fails first. Reads go
+// through the core file service; the runtime scope grant beside the grant
+// serves the watcher until it moves into core. The watcher coalesces
 // bursts and suppresses echoes of our own writes.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -177,10 +179,10 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
   async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean; main?: string }) {
-    // The runtime scope grant comes first: every fs call below resolves
-    // through it. The backend fails closed on invalid roots
-    // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
-    // current project untouched.
+    // The backend grant comes first: validation fails closed on invalid
+    // roots (empty/NUL/relative/missing/non-dir), and the grant binds the
+    // root for the core file service. A failed grant leaves the current
+    // project untouched.
     const grant = await grantProjectAccess(r);
     if (!grant.ok || !grant.path || !grant.rootId) {
       const reason = (grant.error ?? 'grant failed').slice(0, 200);
@@ -324,8 +326,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       const stale: string[] = [];
       for (const r of recents) {
         try {
-          // Grant first: the validation stat below resolves only through the
-          // runtime grant. Unreachable entries land in `stale` here.
+          // Grant first: the validation stat below resolves through the
+          // core file service once the grant binds the root. Unreachable
+          // entries land in `stale` here.
           const grant = await grantProjectAccess(r);
           if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
           if ((await fs().stat(grant.path)) === null) throw new Error('root unreachable');

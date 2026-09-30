@@ -1,7 +1,9 @@
-import { dialog, fs } from './fs-provider';
+import { dialog, fs, lookupProjectRoot } from './fs-provider';
 import { baseName, dirName, joinPath, safeName } from './paths';
 import { TEXT_EXTENSIONS } from './generated/structure';
 import { writesHeld } from './externalChange';
+import { request } from './core-request.tauri';
+import type { RecordOutcome } from './history';
 
 export type TreeEntry = {
   name: string;
@@ -167,22 +169,27 @@ export async function loadTex(path: string): Promise<string> {
 }
 
 /**
- * Write a buffer; refused while the file has an unresolved disk change. With
- * `expected` (what the buffer last synced from disk), also refused when the
- * disk holds something else: an outside edit the watcher has yet to report
- * is never written over.
+ * Save a buffer through the core file service: conflict check + write +
+ * history revision in one call. `expected` is what the buffer last synced
+ * from disk; refused when the disk holds something else the caller has not
+ * seen. Returns the revision outcome for the caller's event log. Paths
+ * outside any open project are refused: dialog destinations go through
+ * `saveTexToDisk` instead.
  */
-export async function saveTex(path: string, content: string, expected?: string): Promise<void> {
+export async function saveTex(
+  path: string,
+  content: string,
+  expected?: string,
+): Promise<RecordOutcome> {
   if (writesHeld(path)) throw new Error('changed on disk: reload or keep your edits first');
-  if (expected !== undefined) {
-    const now = await fs()
-      .readText(path)
-      .catch(() => null);
-    if (now !== null && now !== expected && now !== content) {
-      throw new Error('changed on disk: reload or keep your edits first');
-    }
-  }
-  await fs().writeText(path, content);
+  const proj = lookupProjectRoot(path);
+  if (!proj) throw new Error('outside any open project: ' + path);
+  return request('fileSave', {
+    rootId: proj.rootId,
+    rel: proj.rel,
+    text: content,
+    base: expected ?? null,
+  });
 }
 
 export async function saveTexToDisk(name: string, content: string): Promise<void> {

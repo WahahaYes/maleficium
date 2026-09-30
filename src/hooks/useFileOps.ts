@@ -166,8 +166,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
   }
 
   async function handleUndo() {
+    if (!projectId) return;
     const entry = trash.list().at(-1);
-    const r = await undoTrash(trash);
+    const r = await undoTrash(trash, projectId);
     if (r.ok) {
       emit({
         scope: 'fs',

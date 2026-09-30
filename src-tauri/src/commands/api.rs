@@ -1,7 +1,10 @@
 //! One generic command over the core operation contract. Every JSON
 //! operation runs through `dispatch`; the adapter only adds what core cannot
-//! own: the fs-scope grant beside a project grant. Streaming compiles and
-//! raw history bytes stay dedicated until their services move into core.
+//! own: the fs-scope grant beside a project grant. That grant stays until
+//! the core watcher lands: plugin-fs `watch` resolves its root through the
+//! scope, so dropping the grant now would silently lose external changes.
+//! All file IO already goes through core. Streaming compiles and raw
+//! history bytes stay dedicated until their services move into core.
 
 use std::path::PathBuf;
 

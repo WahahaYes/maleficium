@@ -5,26 +5,6 @@ import { historyStore, setHistoryStore } from './history';
 import { desktopHistory } from './history.tauri';
 
 describe('history seam', () => {
-  it('desktop impl forwards (projectId, relPath) to the Rust store', async () => {
-    setHistoryStore(desktopHistory);
-    vi.mocked(invoke).mockResolvedValueOnce({
-      op: 'historyRecord',
-      result: { stored: true, rev: '1', deduped: false },
-    });
-    const out = await historyStore().recordRevision('1a2b3c4d', 'main.tex', 'x');
-    expect(out.stored).toBe(true);
-    expect(invoke).toHaveBeenLastCalledWith('core_request', {
-      req: {
-        op: 'historyRecord',
-        params: {
-          rootId: '1a2b3c4d',
-          rel: 'main.tex',
-          text: 'x',
-        },
-      },
-    });
-  });
-
   it('returns raw revision bytes, and null when the store refuses', async () => {
     setHistoryStore(desktopHistory);
     vi.mocked(invoke).mockResolvedValueOnce(new Uint8Array([0xff, 0x00]).buffer);

@@ -179,7 +179,7 @@ export default function App({
     historySummary,
     historyNotice,
     restoringRev,
-    recordRevision,
+    noteSavedRevision,
     openHistory,
     restoreRevision,
   } = useRevisionHistory({
@@ -221,10 +221,10 @@ export default function App({
         const cur = buffers.get(fileName);
         if (cur?.dirty) {
           try {
-            await saveTex(fileName, cur.value, cur.disk);
+            const outcome = await saveTex(fileName, cur.value, cur.disk);
             ownWrites.wrote(fileName, cur.value);
             setBuffers((b) => markSaved(b, fileName));
-            await recordRevision(fileName, cur.value);
+            await noteSavedRevision(fileName, outcome);
           } catch (e) {
             // The buffer stays dirty; say the save did not happen.
             emit({
@@ -336,7 +336,7 @@ export default function App({
         });
       }
     },
-    [buffers, setBuffers, fileName, ownWrites, recordRevision, resolveMain],
+    [buffers, setBuffers, fileName, ownWrites, noteSavedRevision, resolveMain],
   );
   // Callers defined before handleSelect (tab cycling, go to definition,
   // search hits) switch files through this ref.
@@ -476,10 +476,10 @@ export default function App({
       if (hasDir(fileName)) {
         const cur = buffers.get(fileName);
         const text = cur?.value ?? tex;
-        await saveTex(fileName, text, cur?.disk);
+        const outcome = await saveTex(fileName, text, cur?.disk);
         ownWrites.wrote(fileName, text);
         setBuffers((b) => markSaved(b, fileName));
-        await recordRevision(fileName, text);
+        await noteSavedRevision(fileName, outcome);
         setLog('saved ' + fileName);
         emit({
           scope: 'fs',
@@ -516,7 +516,7 @@ export default function App({
         },
       });
     }
-  }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
+  }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, noteSavedRevision]);
 
   useEffect(() => {
     if (!hasDir(fileName)) return;
@@ -525,9 +525,9 @@ export default function App({
       if (cur?.dirty) {
         ownWrites.wrote(fileName, cur.value);
         saveTex(fileName, cur.value, cur.disk)
-          .then(async () => {
+          .then(async (outcome) => {
             setBuffers((b) => markSaved(b, fileName));
-            await recordRevision(fileName, cur.value);
+            await noteSavedRevision(fileName, outcome);
             emit({
               scope: 'fs',
               kind: 'info',
@@ -555,7 +555,7 @@ export default function App({
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers, setBuffers, ownWrites, recordRevision]);
+  }, [tex, fileName, buffers, setBuffers, ownWrites, noteSavedRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   /** One tree level on expand; an unreadable folder says so and lists empty. */

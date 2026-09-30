@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { emit } from '../lib/events';
 import { revisionRecordData, revisionRestoreData } from '../lib/eventlog';
-import { historyStore } from '../lib/history';
+import { historyStore, type RecordOutcome } from '../lib/history';
 import {
   buildRevisionRows,
   historyAvailability,
@@ -55,13 +55,12 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
     },
     [history, projectId, relInProject],
   );
-  /** Snapshot a saved file. Ineligible files and an unreachable store are quiet. */
-  const recordRevision = useCallback(
-    async (path: string, text: string) => {
+  /** Note a core-recorded save: refresh the count and log the revision event. */
+  const noteSavedRevision = useCallback(
+    async (path: string, outcome: RecordOutcome) => {
       const rel = relInProject(path);
-      if (!projectId || !rel) return;
-      const outcome = await history.recordRevision(projectId, rel, text);
       const revisions = await refreshRevisionCount(path);
+      if (!rel) return;
       emit({
         scope: 'fs',
         kind: 'info',
@@ -72,7 +71,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
         event: revisionRecordData(rel, outcome, revisions),
       });
     },
-    [history, projectId, relInProject, refreshRevisionCount],
+    [relInProject, refreshRevisionCount],
   );
   // The counter follows the active file; a file outside the project reads 0.
   useEffect(() => {
@@ -166,7 +165,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
     setHistoryNotice,
     restoringRev,
     refreshRevisionCount,
-    recordRevision,
+    noteSavedRevision,
     openHistory,
     restoreRevision,
   };

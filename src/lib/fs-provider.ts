@@ -5,6 +5,15 @@
 // interface currency. No `watch` member — live tracking crosses
 // EventTransport, not this seam.
 
+import { isWindowsPath, relUnder } from './paths';
+
+function pathsEqual(a: string, b: string): boolean {
+  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const [na, nb] = [norm(a), norm(b)];
+  if (isWindowsPath(a) || isWindowsPath(b)) return na.toLowerCase() === nb.toLowerCase();
+  return na === nb;
+}
+
 export interface FileStat {
   size: number;
   isDirectory: boolean;
@@ -66,4 +75,41 @@ export function fs(): FsProvider {
 export function dialog(): DialogProvider {
   if (!dialogImpl) throw new Error('dialog provider not configured');
   return dialogImpl;
+}
+
+// Bound project roots: canonical root path → grant root id. The desktop
+// implementation routes paths under a bound root to the core file service;
+// everything else (app data, temp, dialog destinations) stays on the
+// platform filesystem. Bound at grant time (`projectAccess`); grants live
+// for the session, so roots are never unbound.
+const projectRoots = new Map<string, string>();
+
+/** Register a granted root after `grantProjectAccess` / `grantUntitledAccess`. */
+export function bindProjectRoot(rootId: string, root: string): void {
+  projectRoots.set(root, rootId);
+}
+
+/** Forget bound roots (tests only). */
+export function clearProjectRoots(): void {
+  projectRoots.clear();
+}
+
+export interface ProjectPath {
+  rootId: string;
+  /** `/`-rel under the root; `''` for the root itself. */
+  rel: string;
+}
+
+/**
+ * The bound project holding `abs`, or null. Equality is separator- and
+ * (Windows) case-insensitive; a root never claims its siblings (`/p` never
+ * matches `/px/a`).
+ */
+export function lookupProjectRoot(abs: string): ProjectPath | null {
+  for (const [root, rootId] of projectRoots) {
+    if (pathsEqual(root, abs)) return { rootId, rel: '' };
+    const rel = relUnder(root, abs);
+    if (rel !== null) return { rootId, rel };
+  }
+  return null;
 }
