@@ -12,7 +12,9 @@
 
 use crate::Core;
 
-use maleficium_events::{BatchFile, OfflineReadiness, RecordOutcome, RetentionInfo, Revision};
+use maleficium_events::{
+    BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
+};
 use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
@@ -20,6 +22,7 @@ use maleficium_structure::{Diagnostic, Outline};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::eventlog::RotateReport;
 use crate::export::Exported;
 use crate::fs::FileStat;
 use crate::mainfile::{MainResolution, MainSource};
@@ -95,6 +98,8 @@ params! {
     FileStatParams { root_id: String, rel: String },
     FileTrashParams { root_id: String, rel: String, confirm: String },
     FileUndoTrashParams { root_id: String, trash_path: String },
+    EventAppendParams { events: Vec<BusEvent> },
+    EventRotateParams {},
 }
 
 macro_rules! operations {
@@ -172,6 +177,8 @@ operations! {
     FileStat via file_stat(FileStatParams) -> Option<FileStat>,
     FileTrash via file_trash(FileTrashParams) -> String,
     FileUndoTrash via file_undo_trash(FileUndoTrashParams) -> String,
+    EventAppend via event_append(EventAppendParams) -> (),
+    EventRotate via event_rotate(EventRotateParams) -> RotateReport,
 }
 
 fn grant_project_access(cx: &Core, p: GrantProjectParams) -> Result<ProjectGrant, String> {
@@ -413,6 +420,14 @@ fn file_undo_trash(cx: &Core, p: FileUndoTrashParams) -> Result<String, String> 
     crate::fs::undo_trash(cx, &p.root_id, &p.trash_path)
 }
 
+fn event_append(_cx: &Core, p: EventAppendParams) -> Result<(), String> {
+    crate::eventlog::append(&p.events)
+}
+
+fn event_rotate(_cx: &Core, _p: EventRotateParams) -> Result<RotateReport, String> {
+    crate::eventlog::rotate()
+}
+
 /// The generated TypeScript module for the operation contract
 /// (`src/lib/generated/api.ts`). Payload types owned elsewhere are imported
 /// from their own modules; only core-owned types are declared here.
@@ -480,6 +495,9 @@ pub fn typescript() -> String {
         FileStatParams::decl(&cfg),
         FileTrashParams::decl(&cfg),
         FileUndoTrashParams::decl(&cfg),
+        EventAppendParams::decl(&cfg),
+        EventRotateParams::decl(&cfg),
+        RotateReport::decl(&cfg),
         Request::decl(&cfg),
         Response::decl(&cfg),
     ];
@@ -487,7 +505,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, OfflineReadiness, RecordOutcome, RetentionInfo, Revision } from './events';\n\
+         import type { BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );

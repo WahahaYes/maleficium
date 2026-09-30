@@ -632,6 +632,16 @@ pub enum AppEvent {
         max_events: u32,
         max_line_bytes: u32,
     },
+    /// An automation-surface tool call and its outcome, logged with actor
+    /// `agent` through the same writer as the app's events.
+    #[serde(rename = "mcp.call")]
+    McpCall {
+        tool: String,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        error: Option<String>,
+    },
 }
 
 /// One event on the app bus.

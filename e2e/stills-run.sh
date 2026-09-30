@@ -250,9 +250,10 @@ stop_app() {
 }
 
 check_log() {
-  # $1 = space-separated event.action names this run's log must hold.
-  # The app truncates the log at launch, so exactly one log.open proves
-  # the file is this run's and nothing else's.
+  # $1 = space-separated event.action names this launch's log must hold.
+  # The log accumulates across launches (rotation, never truncation), so the
+  # launch's segment starts at its last log.open; every line in the file
+  # must still be valid JSON with an actor.
   APPLOG="$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl"
   [ -f "$APPLOG" ] || die "no app event log at $APPLOG"
   # shellcheck disable=SC2086
@@ -272,10 +273,12 @@ for i, l in enumerate(lines):
 actions = [e["event"].get("action") if isinstance(e.get("event"), dict) else e.get("dropped") for e in events]
 bad = [i + 1 for i, e in enumerate(events) if e.get("actor") not in ("user", "agent", "system")]
 assert not bad, "lines without an actor: %s" % bad[:10]
-assert actions.count("log.open") == 1, "expected exactly one log.open (truncation proof), got %d" % actions.count("log.open")
-missing = [a for a in req if a not in actions]
-assert not missing, "missing actions: %s (have %s)" % (missing, sorted(set(actions)))
-print("stills: app log ok: %d lines, actions %s" % (len(lines), ",".join(sorted(set(actions)))))
+opens = [i for i, a in enumerate(actions) if a == "log.open"]
+assert opens, "no log.open"
+seg = actions[opens[-1]:]
+missing = [a for a in req if a not in seg]
+assert not missing, "missing actions: %s (have %s)" % (missing, sorted(set(seg)))
+print("stills: app log ok: %d lines, launch actions %s" % (len(lines), ",".join(sorted(set(seg)))))
 EOF
   log "checked $APPLOG ($1 present)"
 }
@@ -331,17 +334,19 @@ open_project() {
 
 saved_external() {
   # Echo: the file the last Ctrl+S saved, and how many fs.external events
-  # the log holds for it. Own-write suppression is content-matched, so the
-  # save alone must leave that count at 0; an edit behind the app's back
-  # must raise it.
+  # this launch's log segment holds for it. Own-write suppression is
+  # content-matched, so the save alone must leave that count at 0; an edit
+  # behind the app's back must raise it.
   python3 - "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" <<'EOF'
 import json, sys
 evs = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
 acts = [e.get("event") or {} for e in evs]
-saves = [a["path"] for a in acts if a.get("action") == "file.save"]
+opens = [i for i, a in enumerate(acts) if a.get("action") == "log.open"]
+seg = acts[opens[-1]:] if opens else acts
+saves = [a["path"] for a in seg if a.get("action") == "file.save"]
 assert saves, "no file.save in the log"
 p = saves[-1]
-print(p, sum(1 for a in acts if a.get("action") == "fs.external" and a.get("path") == p))
+print(p, sum(1 for a in seg if a.get("action") == "fs.external" and a.get("path") == p))
 EOF
 }
 
@@ -471,6 +476,7 @@ if [ -z "${STILLS_COLD_ONLINE:-}" ]; then
   log "bundle mirror on :$MPORT ($MCACHE)"
 fi
 APP_BUNDLE_URL="$COLD_URL" APP_CACHE="$FIX/cold-cache" start_app "$FIX/simple"; wait_window 300
+mcold=$(now_ms)
 open_project
 click_editor
 key ctrl+r
@@ -480,15 +486,28 @@ while [ "$i" -lt 60 ]; do
   i=$((i + 1))
   sleep 8
   timeout 60 import -display "$DISP" -window "$WIN" "$OUT/04-cold-$i.png" 2>/dev/null || true
-  grep -q '"action":"compile.finish"' "$APPLOG" 2>/dev/null && break
+  python3 - "$APPLOG" "$mcold" <<'EOF' >/dev/null 2>&1 && break
+import json, sys
+since = int(sys.argv[2])
+for l in open(sys.argv[1]).read().splitlines():
+    try:
+        e = json.loads(l)
+    except ValueError:
+        continue
+    if e.get("at", 0) > since and (e.get("event") or {}).get("action") == "compile.finish":
+        sys.exit(0)
+sys.exit(1)
+EOF
 done
 log "captured 04-cold-{1..$i}.png"
 shot 04-cold-done
 stop_app
 check_log "log.open compile.phase compile.fetch compile.finish"
-python3 - "$APPLOG" <<'EOF' || die "cold compile did not report its phases and downloads"
+python3 - "$APPLOG" "$mcold" <<'EOF' || die "cold compile did not report its phases and downloads"
 import json, sys
-evs = [json.loads(l).get("event") or {} for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+since = int(sys.argv[2])
+lines = [json.loads(l) for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+evs = [e.get("event") or {} for e in lines if e.get("at", 0) > since]
 acts = [e.get("action") for e in evs]
 end = acts.index("compile.finish")
 phases = [e.get("phase") for e in evs[:end] if e.get("action") == "compile.phase"]
@@ -755,7 +774,10 @@ wheel() {
 }
 open_compiled() {
   # $1 = project dir: open it at fit width, save to compile, wait for paint.
+  # The paint wait is anchored at launch: the log accumulates across runs,
+  # so an unanchored grep would pass on a stale render.
   start_app "$1"; wait_window 300
+  mlaunch=$(now_ms)
   # shellcheck disable=SC2086
   $XDO windowsize "$WIN" 1600 900 >/dev/null 2>&1 || true
   sleep 2
@@ -764,11 +786,7 @@ open_compiled() {
   key ctrl+0
   mark "$2-open"
   key ctrl+s
-  end=$(( $(date +%s) + 600 ))
-  until grep -q '"preview.page-render"' "$APPLOG" 2>/dev/null; do
-    [ "$(date +%s)" -lt "$end" ] || die "the preview never painted a page ($1)"
-    sleep 2
-  done
+  wait_event preview.page-render "$mlaunch" 600
   sleep 5
 }
 open_compiled "$FIX/simple" portrait
@@ -1002,8 +1020,23 @@ wait_event file.save-failed "$m_dirty" 20
 m_manual=$(now_ms)
 key ctrl+s
 wait_event file.save-failed "$m_manual" 10
-grep -q '"trigger":"manual"' "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" ||
-  die "Ctrl+S during a held conflict failed silently"
+python3 - "$FAKEHOME/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl" "$m_manual" <<'EOF' || die "Ctrl+S during a held conflict failed silently"
+import json, sys
+since = int(sys.argv[2])
+fails = []
+for l in open(sys.argv[1]).read().splitlines():
+    if not l.strip():
+        continue
+    try:
+        e = json.loads(l)
+    except ValueError:
+        continue
+    if e.get("at", 0) > since:
+        fails.append(e.get("event") or {})
+assert any(
+    e.get("action") == "file.save-failed" and e.get("trigger") == "manual" for e in fails
+), "no manual-triggered save failure since %d" % since
+EOF
 sleep 1
 shot 09-conflict
 grep -q 'edited outside' "$EXT/main.tex" || die "a held write reached disk during the conflict"
