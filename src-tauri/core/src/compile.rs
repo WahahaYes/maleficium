@@ -10,9 +10,27 @@ use std::sync::{Arc, Mutex};
 
 use maleficium_structure::{MissingDependency, MissingReason};
 
-use maleficium_events::OfflineReadiness;
+use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
 
 use super::{engine, readiness};
+
+/// One compile timeout for every adapter: the desktop streaming run and the
+/// MCP job service both give the engine this long before killing it.
+pub const COMPILE_TIMEOUT_SECS: u64 = 120;
+
+/// Where a compile's lines go while it runs. The desktop adapter forwards
+/// them to the window's `compile-line` event, the MCP job service buffers
+/// them for `compile_poll`, the web adapter will push them over WebSocket.
+/// Closures qualify through the blanket impl below.
+pub trait EventSink {
+    fn push(&mut self, line: &CompileLine);
+}
+
+impl<F: FnMut(&CompileLine)> EventSink for F {
+    fn push(&mut self, line: &CompileLine) {
+        self(line);
+    }
+}
 
 /// How a compile job resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,10 +75,11 @@ struct LiveJob {
     done_rx: Option<std::sync::mpsc::Receiver<JobRecord>>,
 }
 
-/// Compile jobs by id.
+/// Compile jobs by id, plus the foreground run an adapter streams itself.
 #[derive(Default)]
 pub(crate) struct Jobs {
     live: Mutex<HashMap<String, LiveJob>>,
+    current: Mutex<Option<String>>,
     next: AtomicU64,
 }
 
@@ -136,6 +155,123 @@ pub fn settle(
     if let Some(r) = readiness::next(readiness::load(&root), outcome) {
         let _ = readiness::store(&root, &r);
     }
+}
+
+/// The app-facing report for a finished engine run: the mapping the Tauri
+/// command layer owned before. A run cancelled (or still going when its
+/// child was reaped) reads as an error, as before.
+pub fn report(
+    out: &super::MainOutputs,
+    c: &engine::Compiled,
+    timeout_secs: u64,
+) -> Result<CompileReport, String> {
+    let failed = |failure, message| CompileReport {
+        pdf_url: None,
+        failure: Some(failure),
+        missing: c.missing.clone(),
+        message,
+    };
+    Ok(match c.status {
+        JobStatus::Success => CompileReport {
+            pdf_url: Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+            failure: None,
+            missing: c.missing.clone(),
+            message: String::new(),
+        },
+        JobStatus::Failed if c.missing.is_some() => {
+            failed(CompileFailure::MissingDependency, failure_text(c))
+        }
+        JobStatus::Failed => failed(CompileFailure::EngineError, failure_text(c)),
+        JobStatus::TimedOut => failed(
+            CompileFailure::EngineError,
+            format!(
+                "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
+                timeout_secs
+            ),
+        ),
+        JobStatus::Cancelled | JobStatus::Running => {
+            return Err(String::from("compile cancelled"))
+        }
+    })
+}
+
+/// A foreground compile for adapters that stream lines themselves: resolves
+/// the main file, registers the run in the job registry (so
+/// `cancel_current` and `shutdown` reach its child), forwards every line to
+/// `sink`, settles the engine log and readiness, and reports. Callers await
+/// this off the UI thread; a compile can take minutes on a cold cache.
+pub fn run_blocking(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    networked: bool,
+    sink: &mut dyn EventSink,
+) -> Result<CompileReport, String> {
+    // The main file resolves inside the session root; the engine runs in its
+    // directory and writes to the app-cache outdir derived from it.
+    let out = super::outputs_of(cx, root_id, main_rel)?;
+    sink.push(&CompileLine {
+        stream: maleficium_events::CompileStream::Status,
+        text: format!(
+            "sidecar compile {} in {}",
+            out.main_file,
+            out.dir.to_string_lossy()
+        ),
+        signal: None,
+    });
+
+    let id = cx.jobs().next_id();
+    let child = Arc::new(Mutex::new(None));
+    cx.jobs().live.lock().unwrap().insert(
+        id.clone(),
+        LiveJob {
+            child: child.clone(),
+            lines: Vec::new(),
+            done_tx: None,
+            done_rx: None,
+        },
+    );
+    *cx.jobs().current.lock().unwrap() = Some(id.clone());
+    let c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
+        sink.push(l);
+    });
+    if cx.jobs().current.lock().unwrap().as_deref() == Some(id.as_str()) {
+        *cx.jobs().current.lock().unwrap() = None;
+    }
+    cx.jobs().live.lock().unwrap().remove(&id);
+    let c = match c {
+        Ok(c) => c,
+        Err(message) => {
+            return Ok(CompileReport {
+                pdf_url: None,
+                failure: Some(CompileFailure::SpawnFailed),
+                missing: None,
+                message,
+            })
+        }
+    };
+    settle(cx, root_id, main_rel, &out, &c);
+    report(&out, &c, COMPILE_TIMEOUT_SECS)
+}
+
+/// Cancel the foreground compile, if one is running: the adapter's Cancel
+/// button names no job id.
+pub fn cancel_current(cx: &Core) -> Result<String, String> {
+    let id = cx.jobs().current.lock().unwrap().take();
+    match id {
+        Some(job_id) => cancel(cx, &job_id),
+        None => Err(String::from("nothing to cancel")),
+    }
+}
+
+/// Kill every live compile child, reaping each: the process exit hook calls
+/// this with the registry instead of holding its own child slot.
+pub fn shutdown(cx: &Core) {
+    let ids: Vec<String> = cx.jobs().live.lock().unwrap().keys().cloned().collect();
+    for id in ids {
+        let _ = cancel(cx, &id);
+    }
+    *cx.jobs().current.lock().unwrap() = None;
 }
 
 /// A project's offline readiness from its record, the engine cache, and
@@ -371,5 +507,78 @@ mod tests {
         for bad in crate::test_scratch::escapes() {
             assert!(run(cx, "job-escape", bad, false, 5).is_err(), "{bad}");
         }
+    }
+
+    fn outputs_at(dir: &std::path::Path) -> super::super::MainOutputs {
+        super::super::MainOutputs {
+            dir: dir.to_path_buf(),
+            main_file: String::from("main.tex"),
+            outdir: dir.join("out"),
+            pdf_name: String::from("main.pdf"),
+        }
+    }
+
+    fn compiled(status: JobStatus) -> engine::Compiled {
+        engine::Compiled {
+            status,
+            lines: Vec::new(),
+            missing: None,
+            cached_only: false,
+        }
+    }
+
+    #[test]
+    fn report_success_carries_the_pdf_path() {
+        let dir = std::path::Path::new("/tmp/paper");
+        let r = report(&outputs_at(dir), &compiled(JobStatus::Success), 120).unwrap();
+        assert_eq!(r.pdf_url, Some(String::from("/tmp/paper/out/main.pdf")));
+        assert!(r.failure.is_none());
+    }
+
+    #[test]
+    fn report_timeout_names_the_wait() {
+        let dir = std::path::Path::new("/tmp/paper");
+        let r = report(&outputs_at(dir), &compiled(JobStatus::TimedOut), 120).unwrap();
+        assert!(r.pdf_url.is_none());
+        assert!(r.message.contains("120s"));
+    }
+
+    #[test]
+    fn report_cancelled_is_an_error() {
+        let dir = std::path::Path::new("/tmp/paper");
+        assert!(report(&outputs_at(dir), &compiled(JobStatus::Cancelled), 120).is_err());
+    }
+
+    #[test]
+    fn closures_serve_as_event_sinks() {
+        let mut seen = Vec::new();
+        let mut sink = |l: &maleficium_events::CompileLine| seen.push(l.text.clone());
+        let sink: &mut dyn EventSink = &mut sink;
+        sink.push(&maleficium_events::CompileLine {
+            stream: maleficium_events::CompileStream::Status,
+            text: String::from("hello"),
+            signal: None,
+        });
+        assert_eq!(seen, ["hello"]);
+    }
+
+    #[test]
+    fn blocking_run_rejects_unknown_roots_before_touching_a_sink() {
+        let cx = &Core::default();
+        let mut lines = 0;
+        let mut sink = |_: &maleficium_events::CompileLine| lines += 1;
+        assert!(run_blocking(cx, "nope", "main.tex", false, &mut sink).is_err());
+        assert_eq!(lines, 0);
+    }
+
+    #[test]
+    fn cancel_current_without_a_run_fails() {
+        let cx = &Core::default();
+        assert!(cancel_current(cx).is_err());
+    }
+
+    #[test]
+    fn shutdown_without_jobs_is_a_no_op() {
+        shutdown(&Core::default());
     }
 }

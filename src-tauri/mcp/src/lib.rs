@@ -356,7 +356,7 @@ impl Maleficium {
             &p.root_id,
             &p.rel,
             p.networked.unwrap_or(false),
-            120,
+            core::compile::COMPILE_TIMEOUT_SECS,
         )?;
         Ok(Json(CompileRunOut { job_id }))
     }
