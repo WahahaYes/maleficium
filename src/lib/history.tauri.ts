@@ -14,7 +14,6 @@ async function bytesOrNull(p: Promise<ArrayBuffer>): Promise<Uint8Array | null> 
 }
 
 export const desktopHistory: HistoryStore = {
-  recordRevision: (rootId, rel, text) => request('historyRecord', { rootId, rel, text }),
   listRevisions: (rootId, rel) => request('historyList', { rootId, rel }),
   getRevision: (rootId, rel, rev) => bytesOrNull(invoke('history_get', { rootId, rel, rev })),
   restoreRevision: (rootId, rel, rev) =>

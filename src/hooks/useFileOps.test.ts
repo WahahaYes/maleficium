@@ -122,7 +122,10 @@ beforeEach(() => {
 });
 
 describe('useFileOps delete → undo', () => {
-  it('moves the file to the app-local trash, then restores it', async () => {
+  it('deletes through core, then restores it', async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ op: 'fileTrash', result: '/data/trash/fig.tex__fig.tex__7' })
+      .mockResolvedValueOnce({ op: 'fileUndoTrash', result: '/p/fig.tex' });
     const { state, trash, ops } = harness();
     state.buffers.set('/p/fig.tex', {
       value: 'fig body',
@@ -134,19 +137,28 @@ describe('useFileOps delete → undo', () => {
 
     await ops().handleDelete('/p/fig.tex');
 
-    expect(files.has('/p/fig.tex')).toBe(false);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileTrash',
+        params: { rootId: 'p1', rel: 'fig.tex', confirm: '/p/fig.tex' },
+      },
+    });
     const [entry] = trash.list();
-    expect(entry.originalPath).toBe('/p/fig.tex');
-    // Sharded by the grant's root id (projectId), never a frontend path hash.
-    expect(entry.trashPath.startsWith('/app/data/maleficium-trash/p1/')).toBe(true);
-    expect(files.get(entry.trashPath)).toBe('fig body');
+    expect(entry).toMatchObject({
+      originalPath: '/p/fig.tex',
+      trashPath: '/data/trash/fig.tex__fig.tex__7',
+    });
     expect(state.buffers.has('/p/fig.tex')).toBe(false);
     expect(state.previewFile).toBeNull();
 
     await ops().handleUndo();
 
-    expect(files.get('/p/fig.tex')).toBe('fig body');
-    expect(files.has(entry.trashPath)).toBe(false);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileUndoTrash',
+        params: { rootId: 'p1', trashPath: '/data/trash/fig.tex__fig.tex__7' },
+      },
+    });
     expect(trash.size).toBe(0);
     expect(state.reloads).toBe(2);
     expect(actions()).toEqual(['file.delete', 'file.undo-delete']);
@@ -154,6 +166,7 @@ describe('useFileOps delete → undo', () => {
   });
 
   it('reports a failed delete and leaves the file and buffer alone', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce('forbidden path (outside project): gone.tex');
     const { state, trash, ops } = harness();
     state.buffers.set('/p/gone.tex', { value: 'x', dirty: true, disk: '', version: 1 });
 

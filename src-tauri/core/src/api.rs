@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::export::Exported;
+use crate::fs::FileStat;
 use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
@@ -83,6 +84,17 @@ params! {
     IndexDefinitionAtParams { root_id: String, line: String, col: u32, main_rel: Option<String> },
     MainResolveParams { root_id: String, opened_abs: Option<String> },
     MainSetAssociationParams { root_id: String, rel: String },
+    FileReadParams { root_id: String, rel: String },
+    FileReadBytesParams { root_id: String, rel: String },
+    FileWriteParams { root_id: String, rel: String, text: String },
+    FileSaveParams { root_id: String, rel: String, text: String, base: Option<String> },
+    FileListParams { root_id: String, rel: String },
+    FileRenameParams { root_id: String, old_rel: String, new_rel: String },
+    FileMkdirParams { root_id: String, rel: String },
+    FileRemoveParams { root_id: String, rel: String, recursive: bool },
+    FileStatParams { root_id: String, rel: String },
+    FileTrashParams { root_id: String, rel: String, confirm: String },
+    FileUndoTrashParams { root_id: String, trash_path: String },
 }
 
 macro_rules! operations {
@@ -149,6 +161,17 @@ operations! {
     IndexDefinitionAt via index_definition_at(IndexDefinitionAtParams) -> Option<Lookup>,
     MainResolve via main_resolve(MainResolveParams) -> MainResolution,
     MainSetAssociation via main_set_association(MainSetAssociationParams) -> (),
+    FileRead via file_read(FileReadParams) -> String,
+    FileReadBytes via file_read_bytes(FileReadBytesParams) -> String,
+    FileWrite via file_write(FileWriteParams) -> (),
+    FileSave via file_save(FileSaveParams) -> RecordOutcome,
+    FileList via file_list(FileListParams) -> Vec<crate::FileEntry>,
+    FileRename via file_rename(FileRenameParams) -> (),
+    FileMkdir via file_mkdir(FileMkdirParams) -> (),
+    FileRemove via file_remove(FileRemoveParams) -> (),
+    FileStat via file_stat(FileStatParams) -> Option<FileStat>,
+    FileTrash via file_trash(FileTrashParams) -> String,
+    FileUndoTrash via file_undo_trash(FileUndoTrashParams) -> String,
 }
 
 fn grant_project_access(cx: &Core, p: GrantProjectParams) -> Result<ProjectGrant, String> {
@@ -338,6 +361,58 @@ fn main_set_association(cx: &Core, p: MainSetAssociationParams) -> Result<(), St
     crate::mainfile::set_association(cx, &p.root_id, &p.rel)
 }
 
+fn file_read(cx: &Core, p: FileReadParams) -> Result<String, String> {
+    crate::fs::read_text(cx, &p.root_id, &p.rel)
+}
+
+fn file_read_bytes(cx: &Core, p: FileReadBytesParams) -> Result<String, String> {
+    use base64::Engine as _;
+    let bytes = crate::fs::read_bytes(cx, &p.root_id, &p.rel)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+fn file_write(cx: &Core, p: FileWriteParams) -> Result<(), String> {
+    crate::fs::write_bytes(cx, &p.root_id, &p.rel, p.text.as_bytes())
+}
+
+fn file_save(cx: &Core, p: FileSaveParams) -> Result<RecordOutcome, String> {
+    crate::fs::save(
+        cx,
+        &p.root_id,
+        &p.rel,
+        p.text.as_bytes(),
+        p.base.as_deref().map(str::as_bytes),
+    )
+}
+
+fn file_list(cx: &Core, p: FileListParams) -> Result<Vec<crate::FileEntry>, String> {
+    crate::fs::list_dir(cx, &p.root_id, &p.rel)
+}
+
+fn file_rename(cx: &Core, p: FileRenameParams) -> Result<(), String> {
+    crate::fs::rename_path(cx, &p.root_id, &p.old_rel, &p.new_rel)
+}
+
+fn file_mkdir(cx: &Core, p: FileMkdirParams) -> Result<(), String> {
+    crate::fs::make_dir(cx, &p.root_id, &p.rel)
+}
+
+fn file_remove(cx: &Core, p: FileRemoveParams) -> Result<(), String> {
+    crate::fs::remove_path(cx, &p.root_id, &p.rel, p.recursive)
+}
+
+fn file_stat(cx: &Core, p: FileStatParams) -> Result<Option<FileStat>, String> {
+    crate::fs::stat_path(cx, &p.root_id, &p.rel)
+}
+
+fn file_trash(cx: &Core, p: FileTrashParams) -> Result<String, String> {
+    crate::fs::trash_file(cx, &p.root_id, &p.rel, &p.confirm)
+}
+
+fn file_undo_trash(cx: &Core, p: FileUndoTrashParams) -> Result<String, String> {
+    crate::fs::undo_trash(cx, &p.root_id, &p.trash_path)
+}
+
 /// The generated TypeScript module for the operation contract
 /// (`src/lib/generated/api.ts`). Payload types owned elsewhere are imported
 /// from their own modules; only core-owned types are declared here.
@@ -348,6 +423,8 @@ pub fn typescript() -> String {
         ProjectGrant::decl(&cfg),
         Exported::decl(&cfg),
         OutputStamp::decl(&cfg),
+        crate::FileEntry::decl(&cfg),
+        FileStat::decl(&cfg),
         TemplateInfo::decl(&cfg),
         TemplateList::decl(&cfg),
         Created::decl(&cfg),
@@ -392,6 +469,17 @@ pub fn typescript() -> String {
         IndexDefinitionAtParams::decl(&cfg),
         MainResolveParams::decl(&cfg),
         MainSetAssociationParams::decl(&cfg),
+        FileReadParams::decl(&cfg),
+        FileReadBytesParams::decl(&cfg),
+        FileWriteParams::decl(&cfg),
+        FileSaveParams::decl(&cfg),
+        FileListParams::decl(&cfg),
+        FileRenameParams::decl(&cfg),
+        FileMkdirParams::decl(&cfg),
+        FileRemoveParams::decl(&cfg),
+        FileStatParams::decl(&cfg),
+        FileTrashParams::decl(&cfg),
+        FileUndoTrashParams::decl(&cfg),
         Request::decl(&cfg),
         Response::decl(&cfg),
     ];
