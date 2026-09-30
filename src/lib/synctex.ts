@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { request } from './core-request.tauri';
 import { hasDir, joinPath, relUnder } from './paths';
 
 /**
@@ -23,7 +23,7 @@ export async function forward_sync(
   line: number,
 ): Promise<ForwardResult> {
   try {
-    const hit = await invoke<{ page: number | null }>('forward_sync', {
+    const hit = await request('forwardSync', {
       rootId,
       mainRel,
       texRel,
@@ -44,7 +44,7 @@ export async function inverse_sync(
   y = 0,
 ): Promise<InverseResult> {
   try {
-    const hit = await invoke<{ relPath: string | null; line: number | null }>('inverse_sync', {
+    const hit = await request('inverseSync', {
       rootId,
       mainRel,
       page,

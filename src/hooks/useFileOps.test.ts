@@ -210,18 +210,20 @@ describe('useFileOps create and rename', () => {
 
 describe('useFileOps clean', () => {
   it('asks the backend to clean the main file by root id, never naming the outdir', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(3);
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'cleanOutputs', result: 3 });
     const { ops } = harness();
 
     await ops().handleClean();
 
-    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', { rootId: 'p1', mainRel: 'main.tex' });
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'cleanOutputs', params: { rootId: 'p1', mainRel: 'main.tex' } },
+    });
     expect(actions()).toEqual(['compile.clean']);
     expect(data(0)).toEqual({ action: 'compile.clean', target: 'main.tex', removed: 3 });
   });
 
   it('cleans an untitled document through the scratch root', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(0);
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'cleanOutputs', result: 0 });
     const { ops } = harness({
       root: null,
       projectId: null,
@@ -231,9 +233,8 @@ describe('useFileOps clean', () => {
 
     await ops().handleClean();
 
-    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', {
-      rootId: 's1',
-      mainRel: 'untitled.tex',
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'cleanOutputs', params: { rootId: 's1', mainRel: 'untitled.tex' } },
     });
     expect(transport().snapshot()[0].message).toBe('Clean: already clean');
   });

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { request } from './core-request.tauri';
 
 /**
  * Runtime project-scope grant.
@@ -16,20 +16,21 @@ export type GrantResult = {
   error: string | null;
 };
 
-async function grant(cmd: string, args?: Record<string, unknown>): Promise<GrantResult> {
+export async function grantProjectAccess(root: string): Promise<GrantResult> {
   try {
-    const g = await invoke<{ path: string; rootId: string }>(cmd, args);
+    const g = await request('grantProjectAccess', { root });
     return { ok: true, path: g.path, rootId: g.rootId, error: null };
   } catch (e) {
     return { ok: false, path: null, rootId: null, error: String(e) };
   }
 }
 
-export function grantProjectAccess(root: string): Promise<GrantResult> {
-  return grant('grant_project_access', { root });
-}
-
 /** The backend-owned scratch root untitled documents compile in. */
-export function grantUntitledAccess(): Promise<GrantResult> {
-  return grant('grant_untitled_access');
+export async function grantUntitledAccess(): Promise<GrantResult> {
+  try {
+    const g = await request('grantUntitledAccess', {});
+    return { ok: true, path: g.path, rootId: g.rootId, error: null };
+  } catch (e) {
+    return { ok: false, path: null, rootId: null, error: String(e) };
+  }
 }

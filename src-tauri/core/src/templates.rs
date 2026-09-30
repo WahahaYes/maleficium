@@ -7,6 +7,7 @@ use crate::Core;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 include!(concat!(env!("OUT_DIR"), "/templates.rs"));
 
@@ -15,7 +16,7 @@ const MANIFEST: &str = "template.json";
 pub const WELCOME: &str = "welcome";
 
 /// A template as the gallery shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateInfo {
     pub id: String,
@@ -29,7 +30,7 @@ pub struct TemplateInfo {
     pub user: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateList {
     pub templates: Vec<TemplateInfo>,
@@ -38,7 +39,7 @@ pub struct TemplateList {
 }
 
 /// A project made from a template.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Created {
     /// Absolute path of the new project folder.

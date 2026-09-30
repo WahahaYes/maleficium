@@ -7,14 +7,19 @@ import { grantProjectAccess, grantUntitledAccess } from './projectAccess';
 
 describe('grantProjectAccess', () => {
   it('carries the backend-minted root id with the canonical path', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ path: '/home/u/paper', rootId: '1a2b3c4d' });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      op: 'grantProjectAccess',
+      result: { path: '/home/u/paper', rootId: '1a2b3c4d' },
+    });
     expect(await grantProjectAccess('/home/u/paper/')).toEqual({
       ok: true,
       path: '/home/u/paper',
       rootId: '1a2b3c4d',
       error: null,
     });
-    expect(invoke).toHaveBeenCalledWith('grant_project_access', { root: '/home/u/paper/' });
+    expect(invoke).toHaveBeenCalledWith('core_request', {
+      req: { op: 'grantProjectAccess', params: { root: '/home/u/paper/' } },
+    });
   });
 
   it('maps a refusal to ok:false without throwing', async () => {
@@ -30,8 +35,13 @@ describe('grantProjectAccess', () => {
 
 describe('grantUntitledAccess', () => {
   it('asks the backend for its scratch root, never naming a path', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ path: '/data/untitled', rootId: 'aa11bb22' });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      op: 'grantUntitledAccess',
+      result: { path: '/data/untitled', rootId: 'aa11bb22' },
+    });
     expect(await grantUntitledAccess()).toMatchObject({ ok: true, rootId: 'aa11bb22' });
-    expect(invoke).toHaveBeenLastCalledWith('grant_untitled_access', undefined);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'grantUntitledAccess', params: {} },
+    });
   });
 });

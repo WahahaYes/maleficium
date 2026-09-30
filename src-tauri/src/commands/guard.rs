@@ -1,11 +1,11 @@
-//! The runtime project-scope grant. Input validation lives in
-//! `maleficium_core::guard`.
+//! The runtime project-scope grant: validation lives in
+//! `maleficium_core::guard`, session roots in core, and the fs-scope grant
+//! beside each project grant here (see `commands::api`).
 
-use maleficium_core::Core;
 use std::path::PathBuf;
-use tauri::State;
-
 use tauri::AppHandle;
+
+use maleficium_core::api::ProjectGrant;
 use tauri_plugin_fs::FsExt;
 
 /// Fetch the live fs scope, or fail closed when unavailable (never panic —
@@ -15,17 +15,12 @@ pub fn live_scope(app: &AppHandle) -> Result<tauri::fs::Scope, String> {
         .ok_or_else(|| "forbidden path: fs scope unavailable".to_string())
 }
 
-/// A granted project: its canonical path and the session-root id that the
-/// compile and SyncTeX commands take.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectGrant {
-    pub path: String,
-    pub root_id: String,
-}
-
 /// Open a registered root in the live fs scope, recursively.
-fn allow_granted(app: &AppHandle, canon: PathBuf, root_id: String) -> Result<ProjectGrant, String> {
+pub(crate) fn allow_granted(
+    app: &AppHandle,
+    canon: PathBuf,
+    root_id: String,
+) -> Result<ProjectGrant, String> {
     live_scope(app)?
         .allow_directory(&canon, true)
         .map_err(|e| format!("grant failed for {}: {}", canon.display(), e))?;
@@ -35,30 +30,10 @@ fn allow_granted(app: &AppHandle, canon: PathBuf, root_id: String) -> Result<Pro
     })
 }
 
-/// Mint a recursive runtime fs-scope grant for one validated project root and
-/// register it as a session root. Granted roots stay readable until quit. One
-/// unconditional code path for every open route (dialog pick, recent,
-/// restore, preset).
-#[tauri::command]
-pub fn grant_project_access(
-    cx: State<'_, Core>,
-    app: AppHandle,
-    root: String,
-) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = maleficium_core::grant_project(&cx, &root)?;
-    allow_granted(&app, canon, root_id)
-}
-
-/// Grant the backend-owned scratch root that untitled documents compile in.
-#[tauri::command]
-pub fn grant_untitled_access(cx: State<'_, Core>, app: AppHandle) -> Result<ProjectGrant, String> {
-    let (canon, root_id) = maleficium_core::grant_untitled(&cx)?;
-    allow_granted(&app, canon, root_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use maleficium_core::Core;
     use std::fs;
     use std::path::Path;
 

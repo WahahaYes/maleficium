@@ -7,15 +7,25 @@ import { desktopStructure } from './structure.tauri';
 describe('structure seam', () => {
   it('desktop impl forwards text to the Rust commands', async () => {
     setStructure(desktopStructure);
-    vi.mocked(invoke).mockResolvedValueOnce({ entries: [], truncated: 0 });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      op: 'structureOutline',
+      result: { entries: [], truncated: 0 },
+    });
     await structure().outline('\\section{A}');
-    expect(invoke).toHaveBeenLastCalledWith('structure_outline', { text: '\\section{A}' });
-    vi.mocked(invoke).mockResolvedValueOnce([]);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'structureOutline', params: { text: '\\section{A}' } },
+    });
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'structureDiagnostics', result: [] });
     await structure().diagnostics('log', '/r', '/r/sub');
-    expect(invoke).toHaveBeenLastCalledWith('structure_diagnostics', {
-      log: 'log',
-      root: '/r',
-      base: '/r/sub',
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'structureDiagnostics',
+        params: {
+          log: 'log',
+          root: '/r',
+          base: '/r/sub',
+        },
+      },
     });
   });
 });
