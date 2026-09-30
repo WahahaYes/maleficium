@@ -2,13 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import EditorViewport, { type EditorViewportHandle } from './components/EditorViewport';
 import BufferTabs from './components/BufferTabs';
@@ -19,9 +14,10 @@ import BinaryPreview from './components/BinaryPreview';
 import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
 import { baseName, dirName, hasDir, joinPath, relUnder } from './lib/paths';
-import { newMoves, type CameraMove } from './lib/devCamera';
+import { useDevCamera } from './hooks/useDevCamera';
 import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
+import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDialogs';
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
@@ -867,12 +863,10 @@ export default function App({
   }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
-  const [goToDraft, setGoToDraft] = useState('');
   // Anchor for the main-file tie-break menu.
   const [mainAnchor, setMainAnchor] = useState<HTMLElement | null>(null);
   // Rename dialog for the active file.
   const [renameOpen, setRenameOpen] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
   // Viewport bridge assigned via viewportRef prop. Without it
   // selectAll/expand/shrink/goToLine no-op.
   const viewportRef = useRef<EditorViewportHandle | null>(null);
@@ -1082,7 +1076,6 @@ export default function App({
         });
         return;
       }
-      setRenameDraft(baseName(fileName));
       setRenameOpen(true);
     },
     deleteActive: () => {
@@ -1093,7 +1086,6 @@ export default function App({
     shrinkSelection: () => viewportRef.current?.shrinkSelection(),
     goToDefinition: () => goToDefinitionRef.current(),
     goToLine: () => {
-      setGoToDraft(String(currentLine));
       setGoToOpen(true);
     },
     pickOutlineSection: (line: number) => setCurrentLine(line),
@@ -1144,38 +1136,13 @@ export default function App({
     showAbout: () => setAboutOpen(true),
   };
   const menuSections = buildMenus(menuCtx, menuActions);
-  // Dev builds: the video harness's camera moves (src/lib/devCamera.ts).
-  const cameraRef = useRef<(m: CameraMove) => void>(() => {});
-  cameraRef.current = (m: CameraMove) => {
+  useDevCamera((m) => {
     if (m.op === 'open') {
       if (root) void handleSelectRef.current(joinPath(root, m.rel));
     } else if (m.op === 'line') viewportRef.current?.goToLine(m.line);
     else if (m.op === 'page') setPageNumber(m.page);
     else menuActionRef.current(m.id);
-  };
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    let last = 0;
-    let busy = false;
-    const t = setInterval(() => {
-      if (busy) return;
-      busy = true;
-      fetch('/__camera', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.text() : ''))
-        .then((text) => {
-          for (const m of newMoves(text, last)) {
-            last = m.seq;
-            cameraRef.current(m);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          busy = false;
-        });
-    }, 250);
-    return () => clearInterval(t);
-  }, []);
-
+  });
   menuActionRef.current = (id: string) => {
     for (const sec of menuSections) {
       const cmd = sec.commands.find((c) => c.id === id);
@@ -1484,93 +1451,20 @@ export default function App({
         precheckPopup={precheckPopup}
         onPrecheckPopup={setPrecheckPopup}
       />
-      <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Rename {baseName(fileName) || fileName}</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            size="small"
-            variant="outlined"
-            aria-label="New file name"
-            value={renameDraft}
-            onChange={(e) => setRenameDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && renameDraft.trim()) {
-                setRenameOpen(false);
-                void handleRename(fileName, renameDraft.trim());
-              }
-            }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={!renameDraft.trim()}
-            onClick={() => {
-              setRenameOpen(false);
-              if (renameDraft.trim()) void handleRename(fileName, renameDraft.trim());
-            }}
-          >
-            Rename
-          </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={goToOpen} onClose={() => setGoToOpen(false)} maxWidth="xs">
-        <DialogTitle>Go to Line</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            size="small"
-            variant="outlined"
-            aria-label="Line number"
-            value={goToDraft}
-            onChange={(e) => setGoToDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const n = parseInt(goToDraft, 10);
-                if (Number.isFinite(n)) viewportRef.current?.goToLine(n);
-                setGoToOpen(false);
-              }
-            }}
-            slotProps={{ htmlInput: { inputMode: 'numeric' } }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setGoToOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              const n = parseInt(goToDraft, 10);
-              if (Number.isFinite(n)) viewportRef.current?.goToLine(n);
-              setGoToOpen(false);
-            }}
-          >
-            Go
-          </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={aboutOpen} onClose={() => setAboutOpen(false)} maxWidth="xs">
-        <DialogTitle>About Maleficium</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            Maleficium — desktop-native LaTeX editor (Tauri 2 + React + Tectonic sidecar).
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            Version {__APP_VERSION__} · offline-first.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            SyncTeX navigation by Jérôme Laurens (MIT) — bundled sidecar.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button variant="contained" onClick={() => setAboutOpen(false)}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <RenameDialog
+        open={renameOpen}
+        title={baseName(fileName) || fileName}
+        initial={baseName(fileName)}
+        onClose={() => setRenameOpen(false)}
+        onRename={(name) => void handleRename(fileName, name)}
+      />
+      <GoToLineDialog
+        open={goToOpen}
+        initial={String(currentLine)}
+        onClose={() => setGoToOpen(false)}
+        onGo={(n) => viewportRef.current?.goToLine(n)}
+      />
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <PaletteDialog
         open={paletteOpen != null}
         initial={paletteOpen ?? ''}
