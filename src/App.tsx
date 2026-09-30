@@ -35,14 +35,6 @@ import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
 import type { OutlineEntry } from './lib/generated/structure';
-import {
-  matchesCompile,
-  matchesForwardSync,
-  matchesGoToDefinition,
-  matchesMenuChord,
-  menuChordId,
-  zoomChord,
-} from './lib/keymap';
 import type { ZoomAction } from './lib/zoom';
 import { useExport } from './hooks/useExport';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
@@ -53,6 +45,7 @@ import { grantUntitledAccess } from './lib/projectAccess';
 import { useProjectReplace } from './hooks/useProjectReplace';
 import { useFileSelection } from './hooks/useFileSelection';
 import { useMainFile } from './hooks/useMainFile';
+import { useGlobalKeymap } from './hooks/useGlobalKeymap';
 import { useShellLayout } from './hooks/useShellLayout';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
@@ -219,52 +212,24 @@ export default function App({
   // engine error is the honest answer, surfaced through the normal failure
   // path (phase + stream + click-to-jump rows).
 
-  // Keymap listener subscribes once and reads via refs. Menu chords
-  // dispatch through the same command registry refs — one path, no
-  // duplicates. Double-click in the editor = forward SyncTeX from the
-  // caret line (complements single-click inverse on the PDF canvas).
   const menuActionRef = useRef<(id: string) => void>(() => {});
   const zoomActionRef = useRef<((a: ZoomAction) => void) | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (matchesCompile(e as unknown as KeyboardEvent)) {
-        e.preventDefault();
-        void compileRef.current();
-      } else if (matchesGoToDefinition(e as unknown as KeyboardEvent)) {
-        e.preventDefault();
-        goToDefinitionRef.current();
-      } else if (matchesForwardSync(e as unknown as KeyboardEvent)) {
-        e.preventDefault();
-        void forwardSyncRef.current();
-      } else if (zoomChord(e as unknown as KeyboardEvent)) {
-        e.preventDefault();
-        zoomActionRef.current?.(zoomChord(e as unknown as KeyboardEvent)!);
-      } else if (matchesMenuChord(e as unknown as KeyboardEvent)) {
-        const id = menuChordId(e as unknown as KeyboardEvent);
-        if (id) {
-          e.preventDefault();
-          menuActionRef.current(id);
-        }
-      } else if (!mod && e.key === '?') {
-        setShortcutsOpen(true);
-      } else if (mod && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        toggleTree();
-      } else if (mod && e.key === 'Tab') {
-        // Tab cycling when the tab strip is not focused; global fallback:
-        const keys = [...buffersRef.current.keys()];
-        if (keys.length > 1) {
-          e.preventDefault();
-          const i = keys.indexOf(fileNameRef.current);
-          const n = e.shiftKey ? (i - 1 + keys.length) % keys.length : (i + 1) % keys.length;
-          void handleSelectRef.current(keys[n]);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [buffersRef, toggleTree]);
+  // Double-click in the editor = forward SyncTeX from the caret line
+  // (complements single-click inverse on the PDF canvas).
+  useGlobalKeymap(
+    {
+      compile: () => void compileRef.current(),
+      goToDefinition: () => goToDefinitionRef.current(),
+      forwardSync: () => void forwardSyncRef.current(),
+      zoom: (z) => zoomActionRef.current?.(z),
+      menuAction: (id) => menuActionRef.current(id),
+      showShortcuts: () => setShortcutsOpen(true),
+      toggleTree,
+      select: (path) => void handleSelectRef.current(path),
+    },
+    buffersRef,
+    fileNameRef,
+  );
 
   // Untitled documents resolve against the backend-owned scratch root.
   const [scratch, setScratch] = useState<{ rootId: string; path: string } | null>(null);
