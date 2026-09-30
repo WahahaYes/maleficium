@@ -1,27 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getMainFileFor, setMainFileFor } from './mainFile.store';
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+import { invoke } from '@tauri-apps/api/core';
 import { resolveMainFileTauri, setMainFile } from './mainFile.tauri';
 import { matchesCompile, matchesForwardSync, menuChordId, zoomChord, KEYMAP } from './keymap';
-
-import { setAppStore } from './app-store';
-import { localAppStore } from './app-store.web';
-
-setAppStore(localAppStore);
-
-const store: Record<string, string> = {};
-vi.stubGlobal('localStorage', {
-  getItem: (k: string) => store[k] ?? null,
-  setItem: (k: string, v: string) => {
-    store[k] = v;
-  },
-  removeItem: (k: string) => {
-    delete store[k];
-  },
-});
-
-beforeEach(() => {
-  for (const k of Object.keys(store)) delete store[k];
-});
 
 function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
   return {
@@ -34,30 +15,32 @@ function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent
   } as KeyboardEvent;
 }
 
-describe('main-file store round-trip', () => {
-  it('persists the explicit association per project root', () => {
-    const id = '1a2b3c4d';
-    expect(getMainFileFor(id)).toBeNull();
-    setMainFileFor(id, 'main.tex');
-    expect(getMainFileFor(id)).toBe('main.tex');
-    setMainFileFor(id, 'ch/main.tex');
-    expect(getMainFileFor(id)).toBe('ch/main.tex');
+describe('main-file adapter', () => {
+  it('resolves through the core contract', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      op: 'mainResolve',
+      result: { main: '/r/main.tex', source: 'scan', candidates: [] },
+    });
+    const res = await resolveMainFileTauri('1a2b3c4d', '/r/ch.tex');
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'mainResolve',
+        params: { rootId: '1a2b3c4d', openedAbs: '/r/ch.tex' },
+      },
+    });
+    expect(res).toMatchObject({ mainFile: '/r/main.tex', source: 'scan' });
   });
-  it('survives corrupt storage', () => {
-    store['maleficium.mainFile.v1'] = '{nope';
-    expect(getMainFileFor('1a2b3c4d')).toBeNull();
-  });
-  it('keys the association by the grant root id, even for non-ASCII roots', async () => {
-    // hash_root('/home/josé/thèse') in the backend (UTF-8 bytes). A UTF-16
-    // frontend hash gave 6ea6b60c, so the frontend never hashes: it passes
-    // the id the grant returned.
-    const root = '/home/josé/thèse';
-    const rootId = '53bf67b2';
-    await setMainFile(rootId, root, root + '/chapitres/thèse.tex');
-    expect(getMainFileFor(rootId)).toBe('chapitres/thèse.tex');
-    expect(getMainFileFor('6ea6b60c')).toBeNull();
-    const res = await resolveMainFileTauri(root, rootId, null);
-    expect(res).toMatchObject({ mainFile: root + '/chapitres/thèse.tex', source: 'config' });
+  it('stores the association as a rel under the grant root id', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'mainSetAssociation', result: null });
+    // The frontend never hashes: it passes the id the grant returned, even
+    // for non-ASCII roots (UTF-8 backend hash of '/home/josé/thèse').
+    await setMainFile('53bf67b2', '/home/josé/thèse', '/home/josé/thèse/chapitres/thèse.tex');
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'mainSetAssociation',
+        params: { rootId: '53bf67b2', rel: 'chapitres/thèse.tex' },
+      },
+    });
   });
 });
 

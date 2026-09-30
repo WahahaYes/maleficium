@@ -1,7 +1,8 @@
 // history.tauri.ts — desktop implementation of the history seam: the Rust
-// store over IPC. Revision bytes come back raw.
+// store over the operation contract, with raw revision bytes.
 
 import { invoke } from '@tauri-apps/api/core';
+import { request } from './core-request.tauri';
 import type { HistoryStore } from './history';
 
 async function bytesOrNull(p: Promise<ArrayBuffer>): Promise<Uint8Array | null> {
@@ -13,11 +14,10 @@ async function bytesOrNull(p: Promise<ArrayBuffer>): Promise<Uint8Array | null> 
 }
 
 export const desktopHistory: HistoryStore = {
-  recordRevision: (rootId, rel, text) => invoke('history_record', { rootId, rel, text }),
-  listRevisions: (rootId, rel) => invoke('history_list', { rootId, rel }),
+  listRevisions: (rootId, rel) => request('historyList', { rootId, rel }),
   getRevision: (rootId, rel, rev) => bytesOrNull(invoke('history_get', { rootId, rel, rev })),
   restoreRevision: (rootId, rel, rev) =>
     bytesOrNull(invoke('history_restore', { rootId, rel, rev })),
-  retentionInfo: (rootId) => invoke('history_retention', { rootId }),
-  batchFiles: (rootId, batch) => invoke('history_batch_files', { rootId, batch }),
+  retentionInfo: (rootId) => request('historyRetention', { rootId }),
+  batchFiles: (rootId, batch) => request('historyBatchFiles', { rootId, batch }),
 };

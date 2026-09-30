@@ -7,15 +7,22 @@ import { desktopProjectIndex } from './project-index.tauri';
 describe('project index seam', () => {
   it('desktop impl forwards to the Rust commands', async () => {
     setProjectIndex(desktopProjectIndex);
-    vi.mocked(invoke).mockResolvedValueOnce(3);
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'indexOpen', result: 3 });
     expect(await projectIndex().open('1a2b')).toBe(3);
-    expect(invoke).toHaveBeenLastCalledWith('index_open', { rootId: '1a2b' });
-    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'indexOpen', params: { rootId: '1a2b' } },
+    });
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'indexOverlay', result: null });
     await projectIndex().overlay('1a2b', 'main.tex', null);
-    expect(invoke).toHaveBeenLastCalledWith('index_overlay', {
-      rootId: '1a2b',
-      rel: 'main.tex',
-      text: null,
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'indexOverlay',
+        params: {
+          rootId: '1a2b',
+          rel: 'main.tex',
+          text: null,
+        },
+      },
     });
   });
 });

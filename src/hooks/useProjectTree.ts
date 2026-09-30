@@ -1,8 +1,10 @@
 // useProjectTree.ts — the open project: its file tree, watcher, and recents.
 //
-// Opening is grant-first: the runtime scope grant precedes any read, so an
-// unreachable root fails before the tree is touched. The watcher coalesces
-// bursts and suppresses echoes of our own writes.
+// Opening is grant-first: the backend validates and registers the root
+// before the tree is touched, so an unreachable root fails first. Reads go
+// through the core file service; the core watcher tracks the tree while it
+// is open, feeding the index and queueing external changes this effect
+// drains.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
@@ -10,15 +12,13 @@ import { emit } from '../lib/events';
 import { listDir1Level, listTreeDeep, openProject, type TreeEntry } from '../lib/files';
 import { grantProjectAccess } from '../lib/projectAccess';
 import { getRecentProjects, pruneRecentProjects, touchRecentProject } from '../lib/recentProjects';
-import { coalesceEvents, debounce } from '../lib/watcher';
 import { watchBackend, type WatchChangeEvent } from '../lib/watch-backend';
 import { projectIndex } from '../lib/project-index';
-import type { OwnWrites } from '../lib/own-writes';
 import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
 import { welcomeProject } from '../lib/templates';
-import { setMainFileFor } from '../lib/mainFile.store';
+import { setMainFile } from '../lib/mainFile.tauri';
 
 export interface UseProjectTreeDeps {
   root: string | null;
@@ -27,7 +27,6 @@ export interface UseProjectTreeDeps {
   setProjectId: (v: string | null) => void;
   setTree: (v: TreeEntry[]) => void;
   fileNameRef: RefObject<string>;
-  ownWrites: OwnWrites;
   /** Re-check open buffers whose files changed on disk. */
   checkExternal: (paths: readonly string[]) => Promise<void>;
   setLog: (v: string) => void;
@@ -46,7 +45,6 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     setProjectId,
     setTree,
     fileNameRef,
-    ownWrites,
     checkExternal,
     setLog,
     trash,
@@ -86,37 +84,19 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     [setTree],
   );
 
-  // Watcher: notify + debounce/coalesce. Tree refreshes on create/rename;
-  // open buffers re-check their files; on-disk deletes mark the buffer.
+  // Watcher: the core thread feeds the index and filters our own writes,
+  // so each poll batch is someone else's change. The tree refreshes, open
+  // buffers re-check their files, and on-disk deletes mark the buffer.
+  // Stopping ends the poll and the core watch alongside it.
   useEffect(() => {
     if (!root || !projectId) return;
-    const rootId = projectId;
     let unwatch: (() => void) | null = null;
     let cancelled = false;
-    const pending: WatchChangeEvent[] = [];
-    const indexFailed = (e: unknown) =>
-      emit({
-        scope: 'fs',
-        kind: 'warn',
-        actor: 'system',
-        message: 'project index not updated: ' + String(e).slice(0, 120),
-        event: { action: 'index.failed', root, error: String(e).slice(0, 200) },
-      });
-    const flush = debounce(async () => {
-      if (cancelled || pending.length === 0) return;
-      const batch = coalesceEvents(pending.splice(0));
+    const flush = (batch: WatchChangeEvent[]) => {
+      if (cancelled || batch.length === 0) return;
       void reloadTree(root);
-      // Every change, own writes included, is what the disk now holds.
-      projectIndex()
-        .touch(
-          rootId,
-          batch.map((ev) => ev.path),
-        )
-        .catch(indexFailed);
       void checkExternal(batch.filter((ev) => ev.kind !== 'delete').map((ev) => ev.path));
       for (const ev of batch) {
-        // Echoes of our own writes: the disk still holds what we wrote.
-        if (await ownWrites.isEcho(ev.path)) continue;
         if (cancelled) return;
         if (ev.path === fileNameRef.current && ev.kind === 'delete') {
           setLog('deleted on disk: ' + ev.path);
@@ -136,18 +116,15 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           event: { action: 'fs.external', change: ev.kind, path: ev.path },
         });
       }
-    }, 250);
+    };
     watchBackend()
       .watch(root, (changes) => {
-        pending.push(...changes);
-        flush();
+        flush(changes);
       })
       .then(
         (u) => {
-          if (!cancelled) {
-            unwatch = u;
-            projectIndex().watched(rootId, true).catch(indexFailed);
-          } else u();
+          if (!cancelled) unwatch = u;
+          else u();
         },
         (e: unknown) => {
           // The tree still refreshes on reload; say so rather than silently
@@ -165,10 +142,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       );
     return () => {
       cancelled = true;
-      if (unwatch) {
-        unwatch();
-        projectIndex().watched(rootId, false).catch(indexFailed);
-      }
+      if (unwatch) unwatch();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, projectId]);
@@ -177,10 +151,10 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
   async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean; main?: string }) {
-    // The runtime scope grant comes first: every fs call below resolves
-    // through it. The backend fails closed on invalid roots
-    // (empty/NUL/relative/missing/non-dir); a failed grant leaves the
-    // current project untouched.
+    // The backend grant comes first: validation fails closed on invalid
+    // roots (empty/NUL/relative/missing/non-dir), and the grant binds the
+    // root for the core file service. A failed grant leaves the current
+    // project untouched.
     const grant = await grantProjectAccess(r);
     if (!grant.ok || !grant.path || !grant.rootId) {
       const reason = (grant.error ?? 'grant failed').slice(0, 200);
@@ -203,7 +177,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     clearMainFile();
     // A freshly created project names its main file; record it under the
     // backend's root id before resolving.
-    if (opts?.main) setMainFileFor(grant.rootId, opts.main);
+    if (opts?.main) void setMainFile(grant.rootId, grant.path, opts.main);
     setRecentProjects(touchRecentProject(canon));
     const t0 = performance.now();
     projectIndex()
@@ -324,8 +298,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       const stale: string[] = [];
       for (const r of recents) {
         try {
-          // Grant first: the validation stat below resolves only through the
-          // runtime grant. Unreachable entries land in `stale` here.
+          // Grant first: the validation stat below resolves through the
+          // core file service once the grant binds the root. Unreachable
+          // entries land in `stale` here.
           const grant = await grantProjectAccess(r);
           if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
           if ((await fs().stat(grant.path)) === null) throw new Error('root unreachable');

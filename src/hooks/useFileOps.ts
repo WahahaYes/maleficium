@@ -1,8 +1,8 @@
 // useFileOps.ts — create, rename, reload, delete, clean, and undo-delete.
 //
-// Every mutation marks an own-write first so the project watcher does not
-// echo it back as an external change. Deletes go to the app-local trash and
-// stay undoable; nothing is removed in place.
+// Deletes go to the app-local trash and stay undoable; nothing is removed
+// in place. Core marks every mutation as an own write, so the project
+// watcher never echoes one back as an external change.
 
 import { emit } from '../lib/events';
 import { createFile, renamePath } from '../lib/files';
@@ -11,7 +11,6 @@ import { dropBuffer, renameBuffer, type BufferState } from '../lib/buffers';
 import { cleanOutputs } from '../lib/compile';
 import { sourceFor, type SessionRoot } from '../lib/preview-bus';
 import type { FileHistory } from '../lib/file-history';
-import type { OwnWrites } from '../lib/own-writes';
 import { hasDir } from '../lib/paths';
 
 export interface UseFileOpsDeps {
@@ -25,7 +24,6 @@ export interface UseFileOpsDeps {
   setPreviewFile: (v: string | null) => void;
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   trash: FileHistory;
-  ownWrites: OwnWrites;
   reloadTree: (r: string, deep?: boolean) => Promise<void>;
   handleSelect: (path: string) => Promise<void>;
 }
@@ -42,7 +40,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
     setPreviewFile,
     setBuffers,
     trash,
-    ownWrites,
     reloadTree,
     handleSelect,
   } = deps;
@@ -50,7 +47,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
   async function handleCreate(dirPath: string, name: string) {
     try {
       const full = await createFile(dirPath, name);
-      ownWrites.wrote(full, '');
       emit({
         scope: 'fs',
         kind: 'success',
@@ -74,8 +70,6 @@ export function useFileOps(deps: UseFileOpsDeps) {
   async function handleRename(oldPath: string, newName: string) {
     try {
       const full = await renamePath(oldPath, newName);
-      ownWrites.wrote(oldPath, null);
-      ownWrites.settled(full);
       setBuffers((b) => renameBuffer(b, oldPath, full));
       if (fileName === oldPath) {
         setFileName(full);
@@ -166,8 +160,9 @@ export function useFileOps(deps: UseFileOpsDeps) {
   }
 
   async function handleUndo() {
+    if (!projectId) return;
     const entry = trash.list().at(-1);
-    const r = await undoTrash(trash);
+    const r = await undoTrash(trash, projectId);
     if (r.ok) {
       emit({
         scope: 'fs',

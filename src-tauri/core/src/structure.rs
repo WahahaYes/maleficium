@@ -17,6 +17,7 @@ use maleficium_index::graph::{join_rel, Document};
 use maleficium_index::ProjectIndex;
 use maleficium_structure as ms;
 use serde::Serialize;
+use ts_rs::TS;
 
 /// Rows per list; the rest are counted in `truncated`.
 const MAX_ROWS: usize = 1000;
@@ -329,7 +330,7 @@ pub fn citations(cx: &Core, root_id: &str, main_rel: &str) -> Result<Citations, 
     })
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Precheck {
     pub source: String,

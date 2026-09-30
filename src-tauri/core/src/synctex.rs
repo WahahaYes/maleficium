@@ -8,9 +8,10 @@ use crate::Core;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use ts_rs::TS;
 
 /// Forward result: the pdf page for a source line, `None` on no match.
-#[derive(Debug, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardHit {
     pub page: Option<u32>,
@@ -18,7 +19,7 @@ pub struct ForwardHit {
 
 /// Inverse result: the source line for a pdf position. `rel_path` is `None`
 /// when the hit lies outside the root; `line` is `None` on no match.
-#[derive(Debug, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InverseHit {
     pub rel_path: Option<String>,

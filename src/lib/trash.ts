@@ -1,11 +1,12 @@
-// trash.ts — Tauri-backed trash moves + undo via FileHistory references.
+// trash.ts — project file deletes to the core trash + undo.
 //
-// Trash lives app-local, never inside the project. No in-project fallback.
+// The trash home, entry naming, and the copy fallback all live in core
+// (shared with the MCP server); this module keeps the app-local undo stack
+// of path references.
 
-import { fs } from './fs-provider';
-import { appDataDir } from '@tauri-apps/api/path';
-import { FileHistory, trashName } from './file-history';
-import { appTrashDir, joinPath } from './paths';
+import { request } from './core-request.tauri';
+import type { FileHistory } from './file-history';
+import { relUnder } from './paths';
 
 /**
  * `rootId` is the project's grant id (`ProjectGrant.rootId`); `root` is the
@@ -17,56 +18,32 @@ export async function moveToTrash(
   root: string,
   absPath: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  let dir: string;
-  let name: string;
+  const rel = relUnder(root, absPath);
+  if (rel === null) return { ok: false, error: `not in project: ${absPath}` };
   try {
-    dir = appTrashDir(await appDataDir(), rootId);
-    name = trashName(root, absPath);
+    const trashPath = await request('fileTrash', { rootId, rel, confirm: absPath });
+    history.record({ originalPath: absPath, trashPath });
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
-  try {
-    await fs().mkdir(dir, { recursive: true });
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-  const dest = joinPath(dir, name);
-  try {
-    await fs().rename(absPath, dest);
-  } catch {
-    // Cross-device fallback: copy bytes then delete.
-    try {
-      const bytes = await fs().readBytes(absPath);
-      await fs().writeBytes(dest, bytes);
-      await fs().remove(absPath);
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  }
-  history.record({ originalPath: absPath, trashPath: dest });
-  return { ok: true };
 }
 
-export async function undoTrash(history: FileHistory): Promise<{ ok: boolean; error?: string }> {
+export async function undoTrash(
+  history: FileHistory,
+  rootId: string,
+): Promise<{ ok: boolean; error?: string }> {
   const entry = history.pop();
   if (!entry) return { ok: false, error: 'nothing to undo' };
   try {
-    await fs().rename(entry.trashPath, entry.originalPath);
+    await request('fileUndoTrash', { rootId, trashPath: entry.trashPath });
     return { ok: true };
-  } catch {
-    // Rename across filesystems fails; copy the bytes back instead.
-    try {
-      const bytes = await fs().readBytes(entry.trashPath);
-      await fs().writeBytes(entry.originalPath, bytes);
-      await fs().remove(entry.trashPath);
-      return { ok: true };
-    } catch (e) {
-      history.record({
-        originalPath: entry.originalPath,
-        trashPath: entry.trashPath,
-        at: entry.at,
-      });
-      return { ok: false, error: String(e) };
-    }
+  } catch (e) {
+    history.record({
+      originalPath: entry.originalPath,
+      trashPath: entry.trashPath,
+      at: entry.at,
+    });
+    return { ok: false, error: String(e) };
   }
 }
