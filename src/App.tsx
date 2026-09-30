@@ -1,22 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import Typography from '@mui/material/Typography';
-import EditorViewport, { type EditorViewportHandle } from './components/EditorViewport';
-import BufferTabs from './components/BufferTabs';
 import CompileButton from './components/CompileButton';
 import MenuBar from './components/MenuBar';
-import Preview from './components/Preview';
-import BinaryPreview from './components/BinaryPreview';
-import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
 import { baseName, dirName, hasDir, joinPath, relUnder } from './lib/paths';
 import { useDevCamera } from './hooks/useDevCamera';
-import OutlineView from './components/OutlineView';
-import SearchPanel from './components/SearchPanel';
+import { type EditorViewportHandle } from './components/EditorViewport';
+import EditorPane from './components/EditorPane';
+import PreviewPane from './components/PreviewPane';
+import SideColumn from './components/SideColumn';
+import WorkArea from './components/WorkArea';
+import { mainFileTip } from './lib/mainFileTip';
 import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDialogs';
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
@@ -31,7 +26,6 @@ import StatusBar from './components/StatusBar';
 import PrecheckPanel from './components/PrecheckPanel';
 import ExternalChangeDialog from './components/ExternalChangeDialog';
 import { useExternalChanges } from './hooks/useExternalChanges';
-import Pane, { PaneSplitter } from './components/Pane';
 import {
   listDir1Level,
   loadTex,
@@ -357,7 +351,6 @@ export default function App({
     if (!root || !projectId) return;
     await setMainFile(projectId, root, path);
     await resolveMain(root, projectId, path);
-    setMainAnchor(null);
     emit({
       scope: 'fs',
       kind: 'success',
@@ -587,7 +580,7 @@ export default function App({
   // never closes over render state: assign every render and call only
   // `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
   // listener would never resubscribe.
-  const { logCollapsed, setLogCollapsed, layout, previewVisible } = shell;
+  const { logCollapsed, setLogCollapsed, layout } = shell;
   const {
     compilePhase,
     compileTimer,
@@ -766,8 +759,6 @@ export default function App({
   }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [goToOpen, setGoToOpen] = useState(false);
-  // Anchor for the main-file tie-break menu.
-  const [mainAnchor, setMainAnchor] = useState<HTMLElement | null>(null);
   // Rename dialog for the active file.
   const [renameOpen, setRenameOpen] = useState(false);
   // Viewport bridge assigned via viewportRef prop. Without it
@@ -1056,160 +1047,8 @@ export default function App({
     }
   };
 
-  // Quiet caption: the editor header names the file + its main file and
-  // nothing else.
-  const mainLabel = relOf(mainFile) ?? '(none)';
-  const mainTip =
-    mainFile == null
-      ? 'No main file detected'
-      : mainSource === 'config'
-        ? `Main file (your choice): ${mainFile}`
-        : mainSource === 'magic'
-          ? `Main file (from %!TEX root): ${mainFile}`
-          : mainSource === 'scan'
-            ? `Main file (auto-detected): ${mainFile}`
-            : mainSource === 'single'
-              ? `Main file (only .tex file): ${mainFile}`
-              : `Main file: ${mainFile}`;
-  const editorPane = (
-    <Box
-      sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, minWidth: 0 }}>
-        <Typography
-          variant="caption"
-          noWrap
-          sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-          title={fileName}
-        >
-          {relOf(fileName) ?? fileName}
-          {buffers.get(fileName)?.dirty ? ' ●' : ''}
-        </Typography>
-        <Chip
-          size="small"
-          label={`main: ${mainLabel}`}
-          title={mainTip}
-          onClick={mainCandidates.length > 1 ? (e) => setMainAnchor(e.currentTarget) : undefined}
-          sx={{ height: 18, maxWidth: 220 }}
-        />
-        {mainCandidates.length > 1 ? (
-          <Menu
-            open={mainAnchor != null}
-            anchorEl={mainAnchor}
-            onClose={() => setMainAnchor(null)}
-            slotProps={{ list: { 'aria-label': 'Choose main file' } }}
-          >
-            {mainCandidates.map((c) => (
-              <MenuItem
-                key={c}
-                selected={c === mainFile}
-                onClick={() => {
-                  void handlePickMain(c);
-                }}
-              >
-                <Typography variant="body2" noWrap>
-                  {relOf(c) ?? c}
-                </Typography>
-              </MenuItem>
-            ))}
-          </Menu>
-        ) : null}
-      </Box>
-      <BufferTabs
-        buffers={buffers}
-        active={fileName}
-        onSelect={(p) => {
-          void handleSelect(p);
-        }}
-        onClose={(p) => {
-          void handleCloseBuffer(p);
-        }}
-        onCloseOthers={(k) => {
-          void handleCloseOthers(k);
-        }}
-        onCloseAll={() => {
-          void handleCloseAll();
-        }}
-      />
-      {largeFile ? (
-        <Typography variant="body2" sx={{ mt: 1 }}>
-          Large file — not loaded into the editor ({largeFile}). Open externally to edit.
-        </Typography>
-      ) : previewFile ? (
-        <Box
-          sx={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          <BinaryPreview key={previewFile} path={previewFile} />
-        </Box>
-      ) : (
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
-          <EditorViewport
-            value={tex}
-            onChange={handleTexChange}
-            onSave={save}
-            line={currentLine}
-            flashKey={synctexFlash}
-            select={hitSelect && hitSelect.path === fileName ? hitSelect : undefined}
-            viewportRef={viewportRef}
-            onDoubleClickRef={forwardSyncLineRef}
-            filePath={fileName}
-            prefs={prefs}
-            definitionRef={definitionRef}
-          />
-        </Box>
-      )}
-      <Typography
-        variant="caption"
-        title={compileLogTitle(log, compiled)}
-        sx={{ display: 'block', mt: 1 }}
-      >
-        {log}
-      </Typography>
-    </Box>
-  );
-
   const mainDoc =
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
-  const previewPane = (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <Preview
-        pdfUrl={pdfUrl}
-        stamp={previewDoc?.stamp ?? 0}
-        mainSource={mainDoc}
-        pageNumber={pageNumber}
-        onPage={setPageNumber}
-        onSync={handleForwardSync}
-        onInverse={(page, x, y) => {
-          void handleInverseSync(page, x, y);
-        }}
-        syncDisabled={compilePhase === 'compiling'}
-        zoomActionRef={zoomActionRef}
-        onZoom={(mode, percent) =>
-          emit({
-            scope: 'preview',
-            kind: 'info',
-            actor: 'user',
-            message: `preview zoom ${mode.kind === 'percent' ? '' : mode.kind + ' '}${Math.round(percent)}%`,
-            event: { action: 'preview.zoom', mode: mode.kind, percent: Math.round(percent) },
-          })
-        }
-      />
-    </Box>
-  );
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -1229,115 +1068,111 @@ export default function App({
           </Box>
         }
       />
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflowX: 'auto' }}>
-        {shell.treeVisible && (
-          <Box
-            sx={{
-              width: 260,
-              flexShrink: 0,
-              overflow: 'auto',
-              borderRight: 1,
-              borderColor: 'divider',
-              p: 1,
-              display: 'flex',
-              flexDirection: 'column',
+      <WorkArea
+        shell={shell}
+        side={
+          <SideColumn
+            root={root}
+            searchOpen={searchOpen}
+            search={{
+              runSearch,
+              onOpenHit: (rel, hit) => void openHit(rel, hit),
+              runPreview,
+              runApply,
+              lastReplace,
+              onUndoReplace: () => void undoReplace(),
+              onClose: () => setSearchOpen(false),
+              focusKey: searchFocus,
             }}
-          >
-            {root && searchOpen ? (
-              <SearchPanel
-                runSearch={runSearch}
-                onOpenHit={(rel, hit) => void openHit(rel, hit)}
-                runPreview={runPreview}
-                runApply={runApply}
-                lastReplace={lastReplace}
-                onUndoReplace={() => void undoReplace()}
-                onClose={() => setSearchOpen(false)}
-                focusKey={searchFocus}
-              />
-            ) : root ? (
-              <>
-                <Box sx={{ flexShrink: 0 }}>
-                  <FileTree
-                    tree={tree}
-                    selected={fileName}
-                    onSelect={handleSelect}
-                    onDoubleClick={(p) => {
-                      if (p.endsWith('.tex')) void handleSetMainPath(p);
-                    }}
-                    onDelete={handleDelete}
-                    onSetMain={(p) => {
-                      void handleSetMainPath(p);
-                    }}
-                    onCompileFile={(p) => {
-                      void handleCompileFile(p);
-                    }}
-                    onCreate={handleCreate}
-                    onRename={handleRename}
-                    onExpandDir={expandDir}
-                    rootDir={root}
-                    mainFile={mainFile}
-                    lazy
-                    maxDepth={2}
-                    filterHidden
-                  />
-                </Box>
-                {shell.outlineVisible ? (
-                  <OutlineView entries={outline} onJump={(line) => setCurrentLine(line)} />
-                ) : null}
-              </>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Open a project to browse files.
-              </Typography>
-            )}
-          </Box>
-        )}
-        {shell.editorVisible ? (
-          <Pane
-            label="editor"
-            ratio={previewVisible ? layout.editorRatio : 1}
-            onRatio={shell.setEditorRatio}
-          >
-            {editorPane}
-          </Pane>
-        ) : null}
-        {shell.editorVisible && previewVisible ? (
-          <PaneSplitter
-            label="Resize editor and preview"
-            onDrag={shell.dragSplitter}
-            onKeyResize={shell.nudgeSplitter}
+            tree={{
+              tree,
+              selected: fileName,
+              onSelect: handleSelect,
+              onDoubleClick: (p) => {
+                if (p.endsWith('.tex')) void handleSetMainPath(p);
+              },
+              onDelete: handleDelete,
+              onSetMain: (p) => {
+                void handleSetMainPath(p);
+              },
+              onCompileFile: (p) => {
+                void handleCompileFile(p);
+              },
+              onCreate: handleCreate,
+              onRename: handleRename,
+              onExpandDir: expandDir,
+              rootDir: root,
+              mainFile,
+              lazy: true,
+              maxDepth: 2,
+              filterHidden: true,
+            }}
+            outlineVisible={shell.outlineVisible}
+            outline={{ entries: outline, onJump: (line) => setCurrentLine(line) }}
           />
-        ) : null}
-        {!previewVisible ? (
-          <Box
-            sx={{
-              width: 48,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'center',
-              pt: 1,
+        }
+        editor={
+          <EditorPane
+            fileName={fileName}
+            fileLabel={relOf(fileName) ?? fileName}
+            dirty={!!buffers.get(fileName)?.dirty}
+            mainLabel={relOf(mainFile) ?? '(none)'}
+            mainTip={mainFileTip(mainFile, mainSource)}
+            mainFile={mainFile}
+            mainCandidates={mainCandidates}
+            onPickMain={(c) => void handlePickMain(c)}
+            labelOf={(c) => relOf(c) ?? c}
+            tabs={{
+              buffers,
+              active: fileName,
+              onSelect: (p) => {
+                void handleSelect(p);
+              },
+              onClose: (p) => {
+                void handleCloseBuffer(p);
+              },
+              onCloseOthers: (k) => {
+                void handleCloseOthers(k);
+              },
+              onCloseAll: () => {
+                void handleCloseAll();
+              },
             }}
-          >
-            <Button size="small" aria-label="Show preview" onClick={shell.showPreview}>
-              show
-            </Button>
-          </Box>
-        ) : (
-          <Pane
-            label="preview"
-            ratio={shell.editorVisible ? layout.previewRatio : 1}
-            onRatio={shell.setPreviewRatio}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button size="small" aria-label="Hide preview" onClick={shell.collapsePreview}>
-                hide
-              </Button>
-            </Box>
-            {previewPane}
-          </Pane>
-        )}
-      </Box>
+            largeFile={largeFile}
+            previewFile={previewFile}
+            viewport={{
+              value: tex,
+              onChange: handleTexChange,
+              onSave: save,
+              line: currentLine,
+              flashKey: synctexFlash,
+              select: hitSelect && hitSelect.path === fileName ? hitSelect : undefined,
+              viewportRef,
+              onDoubleClickRef: forwardSyncLineRef,
+              filePath: fileName,
+              prefs,
+              definitionRef,
+            }}
+            log={log}
+            logTitle={compileLogTitle(log, compiled)}
+          />
+        }
+        preview={
+          <PreviewPane
+            pdfUrl={pdfUrl}
+            stamp={previewDoc?.stamp ?? 0}
+            mainSource={mainDoc}
+            pageNumber={pageNumber}
+            onPage={setPageNumber}
+            onSync={handleForwardSync}
+            onInverse={(page, x, y) => {
+              void handleInverseSync(page, x, y);
+            }}
+            syncDisabled={compilePhase === 'compiling'}
+            zoomActionRef={zoomActionRef}
+          />
+        }
+      />
       <LogStream
         height={layout.logHeight}
         onHeight={shell.setLogHeight}
