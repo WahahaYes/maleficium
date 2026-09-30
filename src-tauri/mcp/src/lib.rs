@@ -68,7 +68,8 @@ struct TextOut {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct CompileRunParams {
     root_id: String,
-    rel: String,
+    /// Main file rel; absent resolves the same main file the app would.
+    rel: Option<String>,
     /// Fetch everything online first, then prove it compiles from the cache
     /// alone (the app's Make Available Offline).
     networked: Option<bool>,
@@ -345,16 +346,31 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network"
+        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network. rel optional: without it the job compiles the same main file the app would"
     )]
     fn compile_run(
         &self,
         Parameters(p): Parameters<CompileRunParams>,
     ) -> Result<Json<CompileRunOut>, String> {
+        let rel = match p.rel {
+            Some(r) => r,
+            None => {
+                let resolved = core::mainfile::resolve(&self.cx, &p.root_id, None)?;
+                let abs = resolved
+                    .main
+                    .ok_or_else(|| format!("no main file resolved for root {}", p.root_id))?;
+                let root = core::session_root(&self.cx, &p.root_id)?;
+                std::path::Path::new(&abs)
+                    .strip_prefix(&root)
+                    .map_err(|_| format!("resolved main file is outside the project: {abs}"))?
+                    .to_string_lossy()
+                    .to_string()
+            }
+        };
         let job_id = core::run_job(
             &self.cx,
             &p.root_id,
-            &p.rel,
+            &rel,
             p.networked.unwrap_or(false),
             core::compile::COMPILE_TIMEOUT_SECS,
         )?;

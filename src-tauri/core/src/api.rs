@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::export::Exported;
+use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
 use crate::synctex::{ForwardHit, InverseHit};
@@ -80,6 +81,8 @@ params! {
     IndexReplaceApplyParams { root_id: String, token: String, keep_open: Vec<String> },
     FuzzyRankParams { query: String, items: Vec<String>, max: Option<usize> },
     IndexDefinitionAtParams { root_id: String, line: String, col: u32, main_rel: Option<String> },
+    MainResolveParams { root_id: String, opened_abs: Option<String> },
+    MainSetAssociationParams { root_id: String, rel: String },
 }
 
 macro_rules! operations {
@@ -144,6 +147,8 @@ operations! {
     IndexReplaceApply via index_replace_apply(IndexReplaceApplyParams) -> ReplaceApplied,
     FuzzyRank via fuzzy_rank(FuzzyRankParams) -> Vec<Ranked>,
     IndexDefinitionAt via index_definition_at(IndexDefinitionAtParams) -> Option<Lookup>,
+    MainResolve via main_resolve(MainResolveParams) -> MainResolution,
+    MainSetAssociation via main_set_association(MainSetAssociationParams) -> (),
 }
 
 fn grant_project_access(cx: &Core, p: GrantProjectParams) -> Result<ProjectGrant, String> {
@@ -325,6 +330,14 @@ fn index_definition_at(cx: &Core, p: IndexDefinitionAtParams) -> Result<Option<L
     crate::search::definition_at(cx, &p.root_id, &p.line, p.col, p.main_rel.as_deref())
 }
 
+fn main_resolve(cx: &Core, p: MainResolveParams) -> Result<MainResolution, String> {
+    crate::mainfile::resolve(cx, &p.root_id, p.opened_abs.as_deref())
+}
+
+fn main_set_association(cx: &Core, p: MainSetAssociationParams) -> Result<(), String> {
+    crate::mainfile::set_association(cx, &p.root_id, &p.rel)
+}
+
 /// The generated TypeScript module for the operation contract
 /// (`src/lib/generated/api.ts`). Payload types owned elsewhere are imported
 /// from their own modules; only core-owned types are declared here.
@@ -341,6 +354,8 @@ pub fn typescript() -> String {
         ForwardHit::decl(&cfg),
         InverseHit::decl(&cfg),
         Precheck::decl(&cfg),
+        MainResolution::decl(&cfg),
+        MainSource::decl(&cfg),
         GrantProjectParams::decl(&cfg),
         GrantUntitledParams::decl(&cfg),
         CompileDiagnosticsParams::decl(&cfg),
@@ -375,6 +390,8 @@ pub fn typescript() -> String {
         IndexReplaceApplyParams::decl(&cfg),
         FuzzyRankParams::decl(&cfg),
         IndexDefinitionAtParams::decl(&cfg),
+        MainResolveParams::decl(&cfg),
+        MainSetAssociationParams::decl(&cfg),
         Request::decl(&cfg),
         Response::decl(&cfg),
     ];

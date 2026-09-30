@@ -1,34 +1,18 @@
-// mainFile.tauri.ts — Tauri-backed IO for mainFile resolution.
-//
-// Metadata/paths only; file contents read transiently, never stored.
+// mainFile.tauri.ts — desktop main-file resolution over the core operation
+// contract. Resolution order, the association store, and `..`
+// canonicalization live in core; this layer only shapes paths.
 
-import { fs } from './fs-provider';
-import { resolveMainFile, type MainFileResolution } from './mainFile';
-import { getMainFileFor, setMainFileFor } from './mainFile.store';
-import { joinPath, relUnder } from './paths';
+import { request } from './core-request.tauri';
+import type { MainSource } from './generated/api';
+import { relUnder } from './paths';
 
-async function listTexFilesRecursive(root: string): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (dir: string) => {
-    let entries;
-    try {
-      entries = await fs().listDir(dir);
-    } catch {
-      // Unreadable folder: the scan covers the rest of the project.
-      return;
-    }
-    for (const e of entries) {
-      const full = joinPath(dir, e.name);
-      if (e.isDirectory) {
-        if (e.name === '.git' || e.name === 'out' || e.name === '.maleficium-trash') continue;
-        await walk(full);
-      } else if (e.isFile && e.name.endsWith('.tex')) {
-        out.push(full);
-      }
-    }
-  };
-  await walk(root);
-  return out;
+export type MainFileSource = MainSource;
+
+export interface MainFileResolution {
+  mainFile: string | null;
+  source: MainFileSource;
+  /** All tied candidates when the scan found >1; empty otherwise. */
+  candidates: string[];
 }
 
 /**
@@ -36,27 +20,17 @@ async function listTexFilesRecursive(root: string): Promise<string[]> {
  * (`ProjectGrant.rootId`), the key the explicit association is stored under.
  */
 export async function resolveMainFileTauri(
-  root: string,
   rootId: string,
   openedFile: string | null,
 ): Promise<MainFileResolution> {
-  return resolveMainFile({
-    root,
-    openedFile,
-    readText: (p) => fs().readText(p),
-    listTexFiles: listTexFilesRecursive,
-    // App-local store read.
-    readConfig: async () => {
-      const rel = getMainFileFor(rootId);
-      return rel ? JSON.stringify({ mainFile: rel }) : null;
-    },
-  });
+  const r = await request('mainResolve', { rootId, openedAbs: openedFile });
+  return { mainFile: r.main, source: r.source, candidates: r.candidates };
 }
 
 /**
- * Persist explicit user association to the app-local store, keyed by the
- * grant's `rootId`. Takes the project root + the file's path (absolute or
- * rel); stores rel.
+ * Persist explicit user association to the core store, keyed by the grant's
+ * `rootId`. Takes the project root + the file's path (absolute or rel);
+ * stores rel.
  */
 export async function setMainFile(
   rootId: string,
@@ -64,5 +38,5 @@ export async function setMainFile(
   absOrRelPath: string,
 ): Promise<void> {
   const rel = relUnder(root, absOrRelPath) ?? absOrRelPath;
-  setMainFileFor(rootId, rel);
+  await request('mainSetAssociation', { rootId, rel }).then(() => undefined);
 }
