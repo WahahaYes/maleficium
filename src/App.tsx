@@ -20,7 +20,6 @@ import FileTree from './components/FileTree';
 import LogStream, { type ProblemRef } from './components/LogStream';
 import { baseName, dirName, hasDir, joinPath, relUnder } from './lib/paths';
 import { newMoves, type CameraMove } from './lib/devCamera';
-import { createOwnWrites } from './lib/own-writes';
 import OutlineView from './components/OutlineView';
 import SearchPanel from './components/SearchPanel';
 import PaletteDialog from './components/PaletteDialog';
@@ -127,9 +126,6 @@ export default function App({
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
   // Latest tree selection wins: rapid clicks resolve out of order otherwise.
   const selectTokenRef = useRef(0);
-  // Paths WE just wrote (save/autosave/compile persist/undo): watcher echoes of
-  // our own writes are not external changes.
-  const [ownWrites] = useState(() => createOwnWrites());
   const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
     useBufferManager({
       fileName,
@@ -139,14 +135,12 @@ export default function App({
       setTex,
       emptyTex: HELLO,
       setLargeFile,
-      ownWrites,
     });
   const { conflicts, checkExternal, resolveExternal } = useExternalChanges({
     buffers,
     setBuffers,
     fileName,
     setTex,
-    ownWrites,
   });
 
   // Revision history: app-local, keyed by the backend-minted project id.
@@ -179,7 +173,7 @@ export default function App({
     historySummary,
     historyNotice,
     restoringRev,
-    recordRevision,
+    noteSavedRevision,
     openHistory,
     restoreRevision,
   } = useRevisionHistory({
@@ -190,7 +184,6 @@ export default function App({
     setBuffers,
     setTex,
     setLog,
-    ownWrites,
   });
 
   useIndexOverlays(projectId, buffers, relInProject);
@@ -204,7 +197,7 @@ export default function App({
   useEffect(() => onPdf(setPreviewDoc), []);
 
   const resolveMain = useCallback(async (r: string, rootId: string, opened: string | null) => {
-    const res = await resolveMainFileTauri(r, rootId, opened);
+    const res = await resolveMainFileTauri(rootId, opened);
     // A resolve for a root that is no longer open never touches the open
     // project's main file.
     if (r !== rootRef.current) return null;
@@ -221,10 +214,9 @@ export default function App({
         const cur = buffers.get(fileName);
         if (cur?.dirty) {
           try {
-            await saveTex(fileName, cur.value, cur.disk);
-            ownWrites.wrote(fileName, cur.value);
+            const outcome = await saveTex(fileName, cur.value, cur.disk);
             setBuffers((b) => markSaved(b, fileName));
-            await recordRevision(fileName, cur.value);
+            await noteSavedRevision(fileName, outcome);
           } catch (e) {
             // The buffer stays dirty; say the save did not happen.
             emit({
@@ -336,7 +328,7 @@ export default function App({
         });
       }
     },
-    [buffers, setBuffers, fileName, ownWrites, recordRevision, resolveMain],
+    [buffers, setBuffers, fileName, noteSavedRevision, resolveMain],
   );
   // Callers defined before handleSelect (tab cycling, go to definition,
   // search hits) switch files through this ref.
@@ -476,10 +468,9 @@ export default function App({
       if (hasDir(fileName)) {
         const cur = buffers.get(fileName);
         const text = cur?.value ?? tex;
-        await saveTex(fileName, text, cur?.disk);
-        ownWrites.wrote(fileName, text);
+        const outcome = await saveTex(fileName, text, cur?.disk);
         setBuffers((b) => markSaved(b, fileName));
-        await recordRevision(fileName, text);
+        await noteSavedRevision(fileName, outcome);
         setLog('saved ' + fileName);
         emit({
           scope: 'fs',
@@ -516,18 +507,17 @@ export default function App({
         },
       });
     }
-  }, [fileName, tex, buffers, setBuffers, largeFile, ownWrites, recordRevision]);
+  }, [fileName, tex, buffers, setBuffers, largeFile, noteSavedRevision]);
 
   useEffect(() => {
     if (!hasDir(fileName)) return;
     const t = setTimeout(() => {
       const cur = buffers.get(fileName);
       if (cur?.dirty) {
-        ownWrites.wrote(fileName, cur.value);
         saveTex(fileName, cur.value, cur.disk)
-          .then(async () => {
+          .then(async (outcome) => {
             setBuffers((b) => markSaved(b, fileName));
-            await recordRevision(fileName, cur.value);
+            await noteSavedRevision(fileName, outcome);
             emit({
               scope: 'fs',
               kind: 'info',
@@ -555,7 +545,7 @@ export default function App({
       }
     }, 1200);
     return () => clearTimeout(t);
-  }, [tex, fileName, buffers, setBuffers, ownWrites, recordRevision]);
+  }, [tex, fileName, buffers, setBuffers, noteSavedRevision]);
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   /** One tree level on expand; an unreadable folder says so and lists empty. */
@@ -661,7 +651,6 @@ export default function App({
     setBuffers,
     largeFile,
     previewFile,
-    ownWrites,
     setLog,
     setLogCollapsed,
     compileRef,
@@ -674,7 +663,6 @@ export default function App({
       setProjectId: setProjectIdNow,
       setTree,
       fileNameRef,
-      ownWrites,
       checkExternal,
       setLog,
       trash,
@@ -698,7 +686,6 @@ export default function App({
     setPreviewFile,
     setBuffers,
     trash,
-    ownWrites,
     reloadTree,
     handleSelect,
   });

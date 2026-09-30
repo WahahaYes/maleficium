@@ -3,13 +3,16 @@
 //! search and replace, structure, history, templates, and export. No Tauri
 //! dependency.
 
+pub mod api;
 pub mod compile;
 pub mod engine;
+pub mod eventlog;
 pub mod export;
 pub mod fs;
 pub mod guard;
 pub mod history;
 pub mod index;
+pub mod mainfile;
 pub mod outputs;
 pub mod readiness;
 pub mod replace;
@@ -20,11 +23,13 @@ pub mod synctex;
 pub mod templates;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_scratch;
+pub mod watch;
 
 pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
 pub use fs::{
-    grant_project, grant_root, grant_untitled, list_dir, read_text, resolve_in, resolve_read,
-    session_root, trash_file, undo_trash,
+    grant_project, grant_root, grant_untitled, list_dir, make_dir, read_bytes, read_text,
+    remove_path, rename_path, resolve_in, resolve_read, resolve_write, save, session_root,
+    stat_path, trash_file, undo_trash, write_bytes, FileStat,
 };
 pub use outputs::{
     clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp, outputs_fresh,
@@ -44,6 +49,9 @@ struct State {
     jobs: compile::Jobs,
     indexes: index::Indexes,
     plans: replace::Plans,
+    watchers: watch::Watchers,
+    queues: watch::Queues,
+    owns: watch::OwnWrites,
 }
 
 impl Core {
@@ -59,12 +67,24 @@ impl Core {
     pub(crate) fn plans(&self) -> &replace::Plans {
         &self.0.plans
     }
+    pub(crate) fn watchers(&self) -> &watch::Watchers {
+        &self.0.watchers
+    }
+    pub(crate) fn queues(&self) -> &watch::Queues {
+        &self.0.queues
+    }
+    pub(crate) fn owns(&self) -> &watch::OwnWrites {
+        &self.0.owns
+    }
 }
 
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// How a waited child resolved: exited (with status), killed after the
 /// hang-guard timeout, or taken by cancel before the wait.
@@ -202,7 +222,8 @@ fn find_sidecar(
 }
 
 /// Entry kind for directory listings.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
     pub entry_type: String,
@@ -261,6 +282,9 @@ mod tests {
         let h = hash_root("/home/u/paper");
         assert_eq!(h.len(), 8);
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        // The frontend keys main-file associations and trash by this id and
+        // never rehashes (UTF-8 bytes: a UTF-16 hash gave 6ea6b60c here).
+        assert_eq!(hash_root("/home/josé/thèse"), "53bf67b2");
     }
 
     #[test]

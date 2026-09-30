@@ -9,8 +9,6 @@ import type { BatchFile, RecordOutcome, RetentionInfo, Revision } from './genera
 export type { BatchFile, RecordOutcome, RetentionInfo, Revision };
 
 export interface HistoryStore {
-  /** Snapshot the text a file now holds (called on save). */
-  recordRevision(projectId: string, relPath: string, text: string): Promise<RecordOutcome>;
   /** Newest first; none when history is unreadable. */
   listRevisions(projectId: string, relPath: string): Promise<Revision[]>;
   getRevision(projectId: string, relPath: string, rev: string): Promise<Uint8Array | null>;

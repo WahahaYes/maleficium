@@ -62,22 +62,30 @@ describe('relTo', () => {
 
 describe('synctex IPC', () => {
   it('forward speaks root id and relative paths', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ page: 4 });
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'forwardSync', result: { page: 4 } });
     expect(await forward_sync('r1', 'main.tex', 'ch/a.tex', 12)).toEqual({
       ok: true,
       page: 4,
       error: null,
     });
-    expect(invoke).toHaveBeenLastCalledWith('forward_sync', {
-      rootId: 'r1',
-      mainRel: 'main.tex',
-      texRel: 'ch/a.tex',
-      line: 12,
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'forwardSync',
+        params: {
+          rootId: 'r1',
+          mainRel: 'main.tex',
+          texRel: 'ch/a.tex',
+          line: 12,
+        },
+      },
     });
   });
 
   it('inverse returns a relative hit and maps refusals to ok:false', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ relPath: 'ch/a.tex', line: 7 });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      op: 'inverseSync',
+      result: { relPath: 'ch/a.tex', line: 7 },
+    });
     expect(await inverse_sync('r1', 'main.tex', 2, 10, 20)).toEqual({
       ok: true,
       relPath: 'ch/a.tex',

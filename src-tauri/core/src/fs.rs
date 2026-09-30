@@ -8,6 +8,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
 use super::{hash_root, is_hidden_name, FileEntry};
 
 /// Granted roots, keyed by session id. Roots stay readable until the
@@ -119,8 +122,7 @@ fn trash_home(root: &Path) -> PathBuf {
 }
 
 /// Escape one path component so `__` in the entry name is only ever a
-/// separator: `%` -> `%25`, then `_` -> `%5F`. Mirrored by `escapeComponent`
-/// in `src/lib/file-history.ts`.
+/// separator: `%` -> `%25`, then `_` -> `%5F`.
 fn escape_component(s: &str) -> String {
     s.replace('%', "%25").replace('_', "%5F")
 }
@@ -218,7 +220,7 @@ pub fn trash_file(cx: &Core, id: &str, rel: &str, confirm: &str) -> Result<Strin
     let home = trash_home(&root);
     std::fs::create_dir_all(&home).map_err(|e| format!("trash home unreachable: {}", e))?;
     let dest = home.join(trash_name(&abs, rel));
-    match std::fs::rename(&abs, &dest) {
+    let trashed = match std::fs::rename(&abs, &dest) {
         Ok(()) => Ok(dest.to_string_lossy().to_string()),
         Err(_) => {
             let bytes = std::fs::read(&abs).map_err(|e| format!("trash copy failed: {}", e))?;
@@ -226,7 +228,9 @@ pub fn trash_file(cx: &Core, id: &str, rel: &str, confirm: &str) -> Result<Strin
             std::fs::remove_file(&abs).map_err(|e| format!("trash copy failed: {}", e))?;
             Ok(dest.to_string_lossy().to_string())
         }
-    }
+    };
+    super::watch::mark_removed(cx, &abs);
+    trashed
 }
 
 /// Restore a trashed file to its original path.
@@ -250,7 +254,7 @@ pub fn undo_trash(cx: &Core, id: &str, trash_path: &str) -> Result<String, Strin
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("restore failed: {}", e))?;
     }
-    match std::fs::rename(&canon_src, &dest) {
+    let restored = match std::fs::rename(&canon_src, &dest) {
         Ok(()) => Ok(dest.to_string_lossy().to_string()),
         Err(_) => {
             let bytes = std::fs::read(&canon_src).map_err(|e| format!("restore failed: {}", e))?;
@@ -258,7 +262,9 @@ pub fn undo_trash(cx: &Core, id: &str, trash_path: &str) -> Result<String, Strin
             std::fs::remove_file(&canon_src).map_err(|e| format!("restore failed: {}", e))?;
             Ok(dest.to_string_lossy().to_string())
         }
-    }
+    };
+    super::watch::mark_settled(cx, &dest);
+    restored
 }
 
 /// List one directory level, sorted dirs-first. Hidden/build names skipped.
@@ -307,6 +313,147 @@ pub fn list_dir(cx: &Core, id: &str, rel: &str) -> Result<Vec<FileEntry>, String
 pub fn read_text(cx: &Core, id: &str, rel: &str) -> Result<String, String> {
     let abs = resolve_in(cx, id, rel)?;
     std::fs::read_to_string(&abs).map_err(|e| format!("read failed: {}", e))
+}
+
+/// Resolve `candidate` for writing: an existing path resolves strictly
+/// (symlinks followed, must stay under the root); a missing path resolves
+/// lexically with its canonicalized parent checked, so a write never lands
+/// through a symlink that points outside the project. Parents must exist:
+/// writes never create them.
+pub fn resolve_write(cx: &Core, id: &str, candidate: &str) -> Result<PathBuf, String> {
+    let probe = resolve_read(cx, id, candidate)?;
+    let root = session_root(cx, id)?;
+    match dunce::canonicalize(&probe) {
+        Ok(canon) => {
+            if canon.starts_with(&root) {
+                Ok(canon)
+            } else {
+                Err(format!("forbidden path (outside project): {}", candidate))
+            }
+        }
+        Err(_) => {
+            let parent = probe
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .ok_or_else(|| format!("forbidden path (no parent directory): {}", candidate))?;
+            let canon_parent = dunce::canonicalize(parent)
+                .map_err(|e| format!("forbidden path (unresolvable): {}: {}", candidate, e))?;
+            if !canon_parent.starts_with(&root) {
+                return Err(format!("forbidden path (outside project): {}", candidate));
+            }
+            Ok(probe)
+        }
+    }
+}
+
+/// Read a project file as bytes (previews go through here; text reads use
+/// `read_text`).
+pub fn read_bytes(cx: &Core, id: &str, rel: &str) -> Result<Vec<u8>, String> {
+    let abs = resolve_in(cx, id, rel)?;
+    std::fs::read(&abs).map_err(|e| format!("read failed: {}", e))
+}
+
+/// Write bytes to a project file. The destination's parents must exist.
+pub fn write_bytes(cx: &Core, id: &str, rel: &str, bytes: &[u8]) -> Result<(), String> {
+    let abs = resolve_write(cx, id, rel)?;
+    std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
+    super::watch::mark_written(cx, &abs, bytes);
+    Ok(())
+}
+
+/// Save a buffer in one call: refuse when the disk holds an outside edit
+/// the caller has not seen (`base`: what the buffer last synced), else
+/// write and snapshot a history revision. A missing file writes fresh; a
+/// disk that already holds the new bytes saves without complaint. Returns
+/// the revision outcome for the caller's event log.
+pub fn save(
+    cx: &Core,
+    id: &str,
+    rel: &str,
+    bytes: &[u8],
+    base: Option<&[u8]>,
+) -> Result<maleficium_events::RecordOutcome, String> {
+    let abs = resolve_write(cx, id, rel)?;
+    let current = std::fs::read(&abs).ok();
+    // A missing file writes fresh, as the frontend's null-disk read does.
+    if let (Some(want), Some(cur)) = (base, current.as_deref()) {
+        if cur != want && cur != bytes {
+            return Err("changed on disk: reload or keep your edits first".to_string());
+        }
+    }
+    std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
+    super::watch::mark_written(cx, &abs, bytes);
+    Ok(crate::history::record(cx, id, rel, bytes))
+}
+
+/// Rename within the project. Both sides stay confined.
+pub fn rename_path(cx: &Core, id: &str, old_rel: &str, new_rel: &str) -> Result<(), String> {
+    let from = resolve_write(cx, id, old_rel)?;
+    let to = resolve_write(cx, id, new_rel)?;
+    std::fs::rename(&from, &to).map_err(|e| format!("rename failed: {}", e))?;
+    super::watch::mark_removed(cx, &from);
+    super::watch::mark_settled(cx, &to);
+    Ok(())
+}
+
+/// Create a project directory and its missing parents.
+pub fn make_dir(cx: &Core, id: &str, rel: &str) -> Result<(), String> {
+    let abs = resolve_write(cx, id, rel)?;
+    std::fs::create_dir_all(&abs).map_err(|e| format!("mkdir failed: {}", e))?;
+    super::watch::mark_settled(cx, &abs);
+    Ok(())
+}
+
+/// Remove a project file or directory (directories only with `recursive`).
+pub fn remove_path(cx: &Core, id: &str, rel: &str, recursive: bool) -> Result<(), String> {
+    let abs = resolve_write(cx, id, rel)?;
+    if abs.is_dir() {
+        if recursive {
+            std::fs::remove_dir_all(&abs)
+        } else {
+            std::fs::remove_dir(&abs)
+        }
+        .map_err(|e| format!("remove failed: {}", e))?;
+    } else {
+        std::fs::remove_file(&abs).map_err(|e| format!("remove failed: {}", e))?;
+    }
+    super::watch::mark_removed(cx, &abs);
+    Ok(())
+}
+
+/// Stat of a project file. Missing or unreadable reads as absent (`None`),
+/// matching the frontend seam's contract; escapes are errors.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStat {
+    pub size: u64,
+    pub is_file: bool,
+    pub is_dir: bool,
+}
+
+pub fn stat_path(cx: &Core, id: &str, rel: &str) -> Result<Option<FileStat>, String> {
+    let probe = if rel.is_empty() || rel == "." {
+        session_root(cx, id)?
+    } else {
+        resolve_read(cx, id, rel)?
+    };
+    let root = session_root(cx, id)?;
+    let canon = match dunce::canonicalize(&probe) {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    if !canon.starts_with(&root) {
+        return Ok(None);
+    }
+    match std::fs::metadata(&canon) {
+        Ok(m) => Ok(Some(FileStat {
+            size: m.len(),
+            is_file: m.is_file(),
+            is_dir: m.is_dir(),
+        })),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("stat failed: {}", e)),
+    }
 }
 
 #[cfg(test)]
@@ -443,7 +590,7 @@ mod tests {
         // Plain names keep the pre-escaping format, so old entries still decode.
         let plain = trash_name(Path::new("a.tex"), "sub/a.tex");
         assert!(plain.starts_with("a.tex__sub__a.tex__"));
-        // Same literal as `trashName` in src/lib/file-history.test.ts.
+        // The escaped literal below pins the wire format core undo reads.
         assert_eq!(
             split_trash_name("my%5F%5Fnotes.tex__a%5F%5Fb__my%5F%5Fnotes.tex__1234"),
             Some((
@@ -489,5 +636,102 @@ mod tests {
         std::fs::write(dir.join("a.tex"), "hi").unwrap();
         let abs = dir.join("a.tex").to_string_lossy().to_string();
         assert!(undo_trash(cx, &id, &abs).is_err());
+    }
+
+    #[test]
+    fn write_rename_mkdir_remove_stat_round_trip() {
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "mutate");
+        make_dir(cx, &id, "sub").unwrap();
+        write_bytes(cx, &id, "sub/a.tex", b"hello").unwrap();
+        assert_eq!(read_bytes(cx, &id, "sub/a.tex").unwrap(), b"hello");
+        let st = stat_path(cx, &id, "sub/a.tex").unwrap().unwrap();
+        assert_eq!((st.size, st.is_file, st.is_dir), (5, true, false));
+        rename_path(cx, &id, "sub/a.tex", "sub/b.tex").unwrap();
+        assert!(!dir.join("sub/a.tex").exists());
+        assert_eq!(read_bytes(cx, &id, "sub/b.tex").unwrap(), b"hello");
+        remove_path(cx, &id, "sub/b.tex", false).unwrap();
+        assert!(stat_path(cx, &id, "sub/b.tex").unwrap().is_none());
+        remove_path(cx, &id, "sub", false).unwrap();
+        assert!(!dir.join("sub").exists());
+    }
+
+    #[test]
+    fn mutating_ops_reject_escapes() {
+        let cx = &Core::default();
+        let (id, _dir) = grant_tmp(cx, "mut-escape");
+        for bad in crate::test_scratch::escapes() {
+            assert!(resolve_write(cx, &id, bad).is_err(), "{bad}");
+            assert!(write_bytes(cx, &id, bad, b"x").is_err(), "{bad}");
+            assert!(read_bytes(cx, &id, bad).is_err(), "{bad}");
+            assert!(rename_path(cx, &id, bad, "ok.tex").is_err(), "{bad}");
+            assert!(rename_path(cx, &id, "ok.tex", bad).is_err(), "{bad}");
+            assert!(make_dir(cx, &id, bad).is_err(), "{bad}");
+            assert!(remove_path(cx, &id, bad, true).is_err(), "{bad}");
+            assert!(stat_path(cx, &id, bad).is_err(), "{bad}");
+            assert!(save(cx, &id, bad, b"x", None).is_err(), "{bad}");
+        }
+        // Writes never create parents on their own.
+        assert!(write_bytes(cx, &id, "no/such/parent/a.tex", b"x").is_err());
+    }
+
+    #[test]
+    fn save_conflict_check_mirrors_the_frontend() {
+        let cx = &Core::default();
+        let (id, _dir) = grant_tmp(cx, "save-conflict");
+        // A missing file writes fresh, and the write snapshots a revision.
+        let first = save(cx, &id, "a.tex", b"mine", Some(b"synced")).unwrap();
+        assert!(first.stored, "{first:?}");
+        // Saving over the text the buffer last synced, or over its own
+        // text, succeeds; an unseen outside edit is refused.
+        assert!(save(cx, &id, "a.tex", b"mine2", Some(b"mine")).is_ok());
+        assert!(save(cx, &id, "a.tex", b"mine2", Some(b"mine2")).is_ok());
+        let err = save(cx, &id, "a.tex", b"mine3", Some(b"stale")).unwrap_err();
+        assert!(err.contains("changed on disk"), "{err}");
+        assert_eq!(read_bytes(cx, &id, "a.tex").unwrap(), b"mine2");
+        // No base: overwrite, as the compile persist does.
+        assert!(save(cx, &id, "a.tex", b"forced", None).is_ok());
+    }
+
+    #[test]
+    fn stat_missing_reads_absent_and_root_stats() {
+        let cx = &Core::default();
+        let (id, _dir) = grant_tmp(cx, "stat-absent");
+        assert!(stat_path(cx, &id, "missing.tex").unwrap().is_none());
+        for root in ["", "."] {
+            let st = stat_path(cx, &id, root).unwrap().unwrap();
+            assert!((st.is_dir, st.is_file) == (true, false), "{st:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writes_never_land_through_an_outside_symlink() {
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "sym-write");
+        let outside = crate::test_scratch::dir("sym-write-outside");
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.tex"), "secret").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.tex"), dir.join("link.tex")).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("linkdir")).unwrap();
+        // Every mutating op refuses the link itself...
+        assert!(write_bytes(cx, &id, "link.tex", b"x").is_err());
+        assert!(save(cx, &id, "link.tex", b"x", None).is_err());
+        assert!(rename_path(cx, &id, "link.tex", "b.tex").is_err());
+        assert!(remove_path(cx, &id, "link.tex", false).is_err());
+        // ...as well as paths beneath the linked directory, whether or not
+        // the far side exists.
+        assert!(write_bytes(cx, &id, "linkdir/a.tex", b"x").is_err());
+        assert!(write_bytes(cx, &id, "linkdir/secret.tex", b"x").is_err());
+        assert!(make_dir(cx, &id, "linkdir/sub").is_err());
+        // The outside file is untouched throughout.
+        assert_eq!(
+            std::fs::read_to_string(outside.join("secret.tex")).unwrap(),
+            "secret"
+        );
+        // A stat through the link reads as absent, never as the outside file.
+        assert!(stat_path(cx, &id, "link.tex").unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }

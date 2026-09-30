@@ -1,23 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { acknowledgeDisk, getOrCreateBuffer, markSaved, updateBuffer } from './buffers';
 import { decideExternal, holdWrites, writesHeld } from './externalChange';
 import { saveTex } from './files';
-import { setProviders, type DialogProvider, type FsProvider } from './fs-provider';
+import { bindProjectRoot, clearProjectRoots } from './fs-provider';
 
-const disk = new Map<string, string>();
-setProviders({
-  fs: {
-    readText: async (p: string) => disk.get(p) ?? '',
-    writeText: async (p: string, c: string) => void disk.set(p, c),
-  } as unknown as FsProvider,
-  dialog: {} as DialogProvider,
-});
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+
+import { invoke } from '@tauri-apps/api/core';
 
 function loaded(text: string) {
   const m = new Map();
   getOrCreateBuffer(m, '/p/a.tex', text);
   return m;
 }
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  clearProjectRoots();
+  bindProjectRoot('proj1', '/p');
+  vi.mocked(invoke).mockResolvedValue({
+    op: 'fileSave',
+    result: { stored: true, rev: 'r1', deduped: false, reason: null },
+  });
+});
 
 describe('decideExternal', () => {
   it('ignores a disk that still holds the synced text', () => {
@@ -50,28 +55,40 @@ describe('disk tracking', () => {
   });
 });
 
-describe('held writes', () => {
-  it('refuses to save over an unresolved disk change, then allows it', async () => {
-    disk.set('/p/a.tex', 'theirs');
+describe('core save', () => {
+  it('refuses to save over an unresolved disk change without calling core', async () => {
     holdWrites('/p/a.tex', true);
     expect(writesHeld('/p/a.tex')).toBe(true);
     await expect(saveTex('/p/a.tex', 'mine')).rejects.toThrow(/changed on disk/);
-    expect(disk.get('/p/a.tex')).toBe('theirs');
+    expect(invoke).not.toHaveBeenCalled();
     holdWrites('/p/a.tex', false);
     await saveTex('/p/a.tex', 'mine');
-    expect(disk.get('/p/a.tex')).toBe('mine');
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileSave',
+        params: { rootId: 'proj1', rel: 'a.tex', text: 'mine', base: null },
+      },
+    });
   });
 
-  it('refuses to save over an outside edit the watcher has not reported yet', async () => {
-    disk.set('/p/b.tex', 'theirs');
-    await expect(saveTex('/p/b.tex', 'mine', 'synced')).rejects.toThrow(/changed on disk/);
-    expect(disk.get('/p/b.tex')).toBe('theirs');
+  it('carries the synced base for the conflict check and returns the outcome', async () => {
+    const outcome = await saveTex('/p/b.tex', 'mine', 'synced');
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileSave',
+        params: { rootId: 'proj1', rel: 'b.tex', text: 'mine', base: 'synced' },
+      },
+    });
+    expect(outcome).toMatchObject({ stored: true, rev: 'r1' });
   });
-  it('saves over the text the buffer last synced, or over its own text', async () => {
-    disk.set('/p/c.tex', 'synced');
-    await saveTex('/p/c.tex', 'mine', 'synced');
-    expect(disk.get('/p/c.tex')).toBe('mine');
-    await saveTex('/p/c.tex', 'mine', 'synced');
-    expect(disk.get('/p/c.tex')).toBe('mine');
+
+  it('surfaces a core conflict refusal', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce('changed on disk: reload or keep your edits first');
+    await expect(saveTex('/p/c.tex', 'mine', 'synced')).rejects.toThrow(/changed on disk/);
+  });
+
+  it('refuses a path outside every open project', async () => {
+    await expect(saveTex('/q/a.tex', 'mine')).rejects.toThrow(/outside any open project/);
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

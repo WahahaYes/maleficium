@@ -8,7 +8,6 @@ import { useRef, useState } from 'react';
 import type { BufferState } from '../lib/buffers';
 import { emit } from '../lib/events';
 import { saveTex } from '../lib/files';
-import type { OwnWrites } from '../lib/own-writes';
 import { hasDir } from '../lib/paths';
 
 export interface UseBufferManagerDeps {
@@ -20,20 +19,11 @@ export interface UseBufferManagerDeps {
   /** Boot document content: the editor falls back here when nothing is open. */
   emptyTex: string;
   setLargeFile: (v: string | null) => void;
-  ownWrites: OwnWrites;
 }
 
 export function useBufferManager(deps: UseBufferManagerDeps) {
-  const {
-    fileName,
-    setFileName,
-    previewFile,
-    setPreviewFile,
-    setTex,
-    emptyTex,
-    setLargeFile,
-    ownWrites,
-  } = deps;
+  const { fileName, setFileName, previewFile, setPreviewFile, setTex, emptyTex, setLargeFile } =
+    deps;
 
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
   const buffersRef = useRef(buffers);
@@ -46,7 +36,6 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       if (cur?.dirty) {
         try {
           await saveTex(fileName, cur.value, cur.disk);
-          ownWrites.wrote(fileName, cur.value);
         } catch (e) {
           // Close never loses work: the file stays open and dirty.
           emit({
@@ -82,7 +71,6 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       if (cur?.dirty) {
         try {
           await saveTex(fileName, cur.value, cur.disk);
-          ownWrites.wrote(fileName, cur.value);
         } catch (e) {
           // Close never loses work: the file stays open and dirty.
           emit({

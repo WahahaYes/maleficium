@@ -1,18 +1,21 @@
+//! Desktop compile runs: a thin adapter over the core job service. The run
+//! itself (registry, timeout, report) lives in `core::compile`; this layer
+//! only forwards lines to the window and keeps the command async so the
+//! webview paints progress and accepts Cancel meanwhile.
+
 use maleficium_core::Core;
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use maleficium_events::{
-    CompileFailure, CompileLine, CompileReport, CompileStream, OfflineReadiness,
-};
+use maleficium_core::compile::EventSink;
+use maleficium_events::{CompileLine, CompileReport};
 
-use maleficium_core::{self as core, engine, structure::Precheck};
+struct WindowSink {
+    app: AppHandle,
+}
 
-pub struct CompileState(pub Mutex<Option<std::process::Child>>);
-
-impl Default for CompileState {
-    fn default() -> Self {
-        Self(Mutex::new(None))
+impl EventSink for WindowSink {
+    fn push(&mut self, line: &CompileLine) {
+        let _ = self.app.emit("compile-line", line.clone());
     }
 }
 
@@ -22,173 +25,21 @@ impl Default for CompileState {
 pub fn compile_tex(
     cx: State<'_, Core>,
     app: AppHandle,
-    state: State<'_, CompileState>,
     root_id: String,
     main_rel: String,
     networked: Option<bool>,
 ) -> Result<CompileReport, String> {
-    // The main file resolves inside the session root; the engine runs in its
-    // directory and writes to the app-cache outdir derived from it.
-    let out = core::outputs_of(&cx, &root_id, &main_rel)?;
-    let _ = app.emit(
-        "compile-line",
-        CompileLine {
-            stream: CompileStream::Status,
-            text: format!(
-                "sidecar compile {} in {}",
-                out.main_file,
-                out.dir.to_string_lossy()
-            ),
-            signal: None,
-        },
-    );
-
-    const COMPILE_TIMEOUT_SECS: u64 = 120;
-    let mut on_line = |l: &CompileLine| {
-        let _ = app.emit("compile-line", l.clone());
-    };
-    let c = match engine::compile(
-        &out,
-        &state.0,
-        COMPILE_TIMEOUT_SECS,
+    let mut sink = WindowSink { app };
+    maleficium_core::compile::run_blocking(
+        &cx,
+        &root_id,
+        &main_rel,
         networked.unwrap_or(false),
-        &mut on_line,
-    ) {
-        Ok(c) => c,
-        Err(message) => {
-            return Ok(CompileReport {
-                pdf_url: None,
-                failure: Some(CompileFailure::SpawnFailed),
-                missing: None,
-                message,
-            })
-        }
-    };
-    core::compile::settle(&cx, &root_id, &main_rel, &out, &c);
-    let failed = |failure, message| CompileReport {
-        pdf_url: None,
-        failure: Some(failure),
-        missing: c.missing.clone(),
-        message,
-    };
-    Ok(match c.status {
-        core::JobStatus::Success => CompileReport {
-            pdf_url: Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
-            failure: None,
-            missing: c.missing.clone(),
-            message: String::new(),
-        },
-        core::JobStatus::Failed if c.missing.is_some() => failed(
-            CompileFailure::MissingDependency,
-            core::compile::failure_text(&c),
-        ),
-        core::JobStatus::Failed => failed(CompileFailure::EngineError, core::compile::failure_text(&c)),
-        core::JobStatus::TimedOut => failed(
-            CompileFailure::EngineError,
-            format!(
-                "compile timed out after {}s (engine produced no exit — killed; retry or Cancel, then check the LogStream tail)",
-                COMPILE_TIMEOUT_SECS
-            ),
-        ),
-        core::JobStatus::Cancelled | core::JobStatus::Running => {
-            return Err(String::from("compile cancelled"))
-        }
-    })
+        &mut sink,
+    )
 }
 
 #[tauri::command]
-pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> {
-    match state.0.lock().unwrap().take() {
-        Some(mut c) => {
-            let _ = c.kill();
-            let _ = c.wait();
-            Ok(String::from("cancelled"))
-        }
-        None => Err(String::from("nothing to cancel")),
-    }
-}
-
-/// Dependency checks over the saved document from `main_rel`, before compiling.
-#[tauri::command]
-pub fn precompile_checks(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Precheck, String> {
-    core::structure::precompile_checks(&cx, &root_id, &main_rel)
-}
-
-#[tauri::command]
-pub fn offline_readiness(cx: State<'_, Core>, root_id: String) -> Result<OfflineReadiness, String> {
-    core::compile::offline_readiness(&cx, &root_id)
-}
-
-/// The last compile's problems, as the MCP diagnostics tool reports them:
-/// the engine's errors plus TeX's own warnings (undefined references and
-/// citations, duplicate labels), root-relative.
-#[tauri::command(async)]
-pub fn compile_diagnostics(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Vec<maleficium_structure::Diagnostic>, String> {
-    Ok(core::structure::diagnostics(&cx, &root_id, &main_rel, 100)?.diagnostics)
-}
-
-#[tauri::command]
-pub fn output_stamp(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Option<core::OutputStamp>, String> {
-    core::output_stamp(&cx, &root_id, &main_rel)
-}
-
-/// The compiled pdf's path, or `None` before any compile left one.
-#[tauri::command]
-pub fn output_pdf(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Option<String>, String> {
-    core::output_pdf(&cx, &root_id, &main_rel)
-}
-
-/// Copy the compiled pdf to `dest` (absolute, outside the project).
-#[tauri::command]
-pub fn export_pdf(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-    dest: String,
-) -> Result<core::export::Exported, String> {
-    core::export::export_pdf(&cx, &root_id, &main_rel, &dest)
-}
-
-/// Zip the project's sources to `dest` (absolute, outside the project).
-#[tauri::command(async)]
-pub fn export_zip(
-    cx: State<'_, Core>,
-    root_id: String,
-    dest: String,
-) -> Result<core::export::Exported, String> {
-    core::export::export_zip(&cx, &root_id, &dest)
-}
-
-#[tauri::command]
-pub fn outputs_fresh(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<bool, String> {
-    core::outputs_fresh(&cx, &root_id, &main_rel)
-}
-
-#[tauri::command]
-pub fn clean_outputs(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<usize, String> {
-    core::clean_outputs(&cx, &root_id, &main_rel)
+pub fn cancel_compile(cx: State<'_, Core>) -> Result<String, String> {
+    maleficium_core::compile::cancel_current(&cx)
 }

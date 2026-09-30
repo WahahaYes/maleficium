@@ -440,7 +440,9 @@ pub fn get(cx: &Core, root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
 pub fn restore(cx: &Core, root_id: &str, rel: &str, rev: &str) -> Option<Vec<u8>> {
     let store = store_of(cx, root_id).ok()?;
     let abs = super::resolve_read(cx, root_id, rel).ok()?;
-    restore_to(&store, rel, rev, &abs)
+    let bytes = restore_to(&store, rel, rev, &abs)?;
+    super::watch::mark_written(cx, &abs, &bytes);
+    Some(bytes)
 }
 
 pub fn batch_files(cx: &Core, root_id: &str, batch: &str) -> Vec<BatchFile> {
@@ -460,7 +462,8 @@ pub fn restore_batch(cx: &Core, root_id: &str, batch: &str) -> Result<Vec<BatchF
     let mut done = Vec::new();
     for f in files {
         let abs = super::resolve_read(cx, root_id, &f.rel)?;
-        if restore_to(&store, &f.rel, &f.rev, &abs).is_some() {
+        if let Some(bytes) = restore_to(&store, &f.rel, &f.rev, &abs) {
+            super::watch::mark_written(cx, &abs, &bytes);
             done.push(f);
         }
     }

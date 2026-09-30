@@ -68,7 +68,6 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     previewFile: null as string | null,
     buffers: new Map<string, BufferState>(),
     selected: [] as string[],
-    ownWrites: [] as string[],
     reloads: 0,
   };
   const trash = new FileHistory();
@@ -83,14 +82,6 @@ function harness(over: Partial<UseFileOpsDeps> = {}) {
     setPreviewFile: (v) => (state.previewFile = v),
     setBuffers: (u) => (state.buffers = typeof u === 'function' ? u(state.buffers) : u),
     trash,
-    ownWrites: {
-      wrote: (p, content) =>
-        state.ownWrites.push(
-          content === null ? `removed ${p}` : `wrote ${p} ${JSON.stringify(content)}`,
-        ),
-      settled: (p) => state.ownWrites.push(`settled ${p}`),
-      isEcho: async () => false,
-    },
     reloadTree: async () => {
       state.reloads++;
     },
@@ -122,7 +113,10 @@ beforeEach(() => {
 });
 
 describe('useFileOps delete → undo', () => {
-  it('moves the file to the app-local trash, then restores it', async () => {
+  it('deletes through core, then restores it', async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ op: 'fileTrash', result: '/data/trash/fig.tex__fig.tex__7' })
+      .mockResolvedValueOnce({ op: 'fileUndoTrash', result: '/p/fig.tex' });
     const { state, trash, ops } = harness();
     state.buffers.set('/p/fig.tex', {
       value: 'fig body',
@@ -134,19 +128,28 @@ describe('useFileOps delete → undo', () => {
 
     await ops().handleDelete('/p/fig.tex');
 
-    expect(files.has('/p/fig.tex')).toBe(false);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileTrash',
+        params: { rootId: 'p1', rel: 'fig.tex', confirm: '/p/fig.tex' },
+      },
+    });
     const [entry] = trash.list();
-    expect(entry.originalPath).toBe('/p/fig.tex');
-    // Sharded by the grant's root id (projectId), never a frontend path hash.
-    expect(entry.trashPath.startsWith('/app/data/maleficium-trash/p1/')).toBe(true);
-    expect(files.get(entry.trashPath)).toBe('fig body');
+    expect(entry).toMatchObject({
+      originalPath: '/p/fig.tex',
+      trashPath: '/data/trash/fig.tex__fig.tex__7',
+    });
     expect(state.buffers.has('/p/fig.tex')).toBe(false);
     expect(state.previewFile).toBeNull();
 
     await ops().handleUndo();
 
-    expect(files.get('/p/fig.tex')).toBe('fig body');
-    expect(files.has(entry.trashPath)).toBe(false);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'fileUndoTrash',
+        params: { rootId: 'p1', trashPath: '/data/trash/fig.tex__fig.tex__7' },
+      },
+    });
     expect(trash.size).toBe(0);
     expect(state.reloads).toBe(2);
     expect(actions()).toEqual(['file.delete', 'file.undo-delete']);
@@ -154,6 +157,7 @@ describe('useFileOps delete → undo', () => {
   });
 
   it('reports a failed delete and leaves the file and buffer alone', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce('forbidden path (outside project): gone.tex');
     const { state, trash, ops } = harness();
     state.buffers.set('/p/gone.tex', { value: 'x', dirty: true, disk: '', version: 1 });
 
@@ -172,13 +176,12 @@ describe('useFileOps delete → undo', () => {
 });
 
 describe('useFileOps create and rename', () => {
-  it('creates an empty file, marks the own-write and opens it', async () => {
+  it('creates an empty file and opens it', async () => {
     const { state, ops } = harness();
 
     await ops().handleCreate('/p', 'intro.tex');
 
     expect(files.get('/p/intro.tex')).toBe('');
-    expect(state.ownWrites).toEqual(['wrote /p/intro.tex ""']);
     expect(state.selected).toEqual(['/p/intro.tex']);
     expect(actions()).toEqual(['file.create']);
   });
@@ -195,33 +198,33 @@ describe('useFileOps create and rename', () => {
     expect(state.buffers.get('/p/paper.tex')).toBe(buf);
     expect(state.buffers.has('/p/main.tex')).toBe(false);
     expect(state.fileName).toBe('/p/paper.tex');
-    expect(state.ownWrites).toEqual(['removed /p/main.tex', 'settled /p/paper.tex']);
     expect(actions()).toEqual(['file.rename']);
   });
 
   it('rejects an empty rename without touching disk', async () => {
-    const { state, ops } = harness();
+    const { ops } = harness();
     await ops().handleRename('/p/fig.tex', '   ');
     expect(files.get('/p/fig.tex')).toBe('fig body');
-    expect(state.ownWrites).toEqual([]);
     expect(actions()).toEqual(['file.rename-failed']);
   });
 });
 
 describe('useFileOps clean', () => {
   it('asks the backend to clean the main file by root id, never naming the outdir', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(3);
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'cleanOutputs', result: 3 });
     const { ops } = harness();
 
     await ops().handleClean();
 
-    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', { rootId: 'p1', mainRel: 'main.tex' });
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'cleanOutputs', params: { rootId: 'p1', mainRel: 'main.tex' } },
+    });
     expect(actions()).toEqual(['compile.clean']);
     expect(data(0)).toEqual({ action: 'compile.clean', target: 'main.tex', removed: 3 });
   });
 
   it('cleans an untitled document through the scratch root', async () => {
-    vi.mocked(invoke).mockResolvedValueOnce(0);
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'cleanOutputs', result: 0 });
     const { ops } = harness({
       root: null,
       projectId: null,
@@ -231,9 +234,8 @@ describe('useFileOps clean', () => {
 
     await ops().handleClean();
 
-    expect(invoke).toHaveBeenLastCalledWith('clean_outputs', {
-      rootId: 's1',
-      mainRel: 'untitled.tex',
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'cleanOutputs', params: { rootId: 's1', mainRel: 'untitled.tex' } },
     });
     expect(transport().snapshot()[0].message).toBe('Clean: already clean');
   });

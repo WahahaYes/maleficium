@@ -1,12 +1,10 @@
 // structure.tauri.ts — desktop implementation of the structure seam: the
-// Rust crate over IPC.
+// Rust crate over the operation contract.
 
-import { invoke } from '@tauri-apps/api/core';
-import type { Diagnostic, Outline } from './generated/structure';
+import { request } from './core-request.tauri';
 import type { StructureProvider } from './structure';
 
 export const desktopStructure: StructureProvider = {
-  outline: (text) => invoke<Outline>('structure_outline', { text }),
-  diagnostics: (log, root, base) =>
-    invoke<Diagnostic[]>('structure_diagnostics', { log, root, base }),
+  outline: (text) => request('structureOutline', { text }),
+  diagnostics: (log, root, base) => request('structureDiagnostics', { log, root, base }),
 };

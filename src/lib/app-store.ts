@@ -28,7 +28,6 @@ export const DEVICE_PREF_KEYS = {
 /** Pointers into project state. Server-owned from birth. */
 export const PROJECT_POINTER_KEYS = {
   recentProjects: 'maleficium.recentProjects.v1',
-  mainFileAssoc: 'maleficium.mainFile.v1',
 } as const;
 
 let impl: AppStore | null = null;
