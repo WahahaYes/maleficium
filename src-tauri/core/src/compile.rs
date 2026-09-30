@@ -173,7 +173,13 @@ pub fn report(
     };
     Ok(match c.status {
         JobStatus::Success => CompileReport {
-            pdf_url: Some(out.outdir.join(&out.pdf_name).to_string_lossy().to_string()),
+            // URLs use forward slashes on every OS.
+            pdf_url: Some(
+                out.outdir
+                    .join(&out.pdf_name)
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            ),
             failure: None,
             missing: c.missing.clone(),
             message: String::new(),
