@@ -1,13 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { cancelCompileRun, runCompileTex, subscribeCompileLines } from './compile.tauri';
 import { request } from './core-request.tauri';
-import type {
-  CompileFailure,
-  CompileLine,
-  CompileReport,
-  EventKind,
-  OfflineReadiness,
-} from './generated/events';
+import type { CompileFailure, CompileLine, EventKind, OfflineReadiness } from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
 import type { Exported } from './generated/api';
 import type { OutputStamp } from './externalRefresh';
@@ -32,7 +25,7 @@ export type CompileResult = {
 };
 
 export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => void> {
-  return listen<CompileLine>('compile-line', (e) => cb(e.payload));
+  return subscribeCompileLines(cb);
 }
 
 /**
@@ -45,7 +38,7 @@ export async function compileTex(
   networked = false,
 ): Promise<CompileResult> {
   try {
-    const r = await invoke<CompileReport>('compile_tex', { rootId, mainRel, networked });
+    const r = await runCompileTex(rootId, mainRel, networked);
     return {
       ok: r.pdfUrl != null,
       pdfUrl: r.pdfUrl,
@@ -136,7 +129,7 @@ export function compileLogTitle(log: string, out: CompiledOutput | null): string
 }
 
 export async function cancelCompile(): Promise<string> {
-  return await invoke<string>('cancel_compile');
+  return await cancelCompileRun();
 }
 
 /**
