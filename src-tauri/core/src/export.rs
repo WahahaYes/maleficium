@@ -8,9 +8,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use ts_rs::TS;
 
 /// What an export wrote.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Exported {
     /// The file written.

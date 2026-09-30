@@ -1,26 +1,16 @@
-// templates.ts — project templates over IPC, and the gallery's sections.
+// templates.ts — project templates over the operation contract, and the
+// gallery's sections.
 
-import { invoke } from '@tauri-apps/api/core';
+import { request } from './core-request.tauri';
+import type { Created, TemplateInfo, TemplateList } from './generated/api';
 
-export type TemplateInfo = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  /** Root-relative main file. */
-  main: string;
-  /** Saved or imported by the user, not bundled. */
-  user: boolean;
-};
-export type TemplateList = { templates: TemplateInfo[]; unreadable: string[] };
-/** A project made from a template: its absolute root and main file. */
-export type Created = { root: string; main: string };
+export type { Created, TemplateInfo, TemplateList };
 
 export const BUILTIN_HEADING = 'Built-in';
 export const USER_CATEGORY = 'Your templates';
 
 export async function listTemplates(): Promise<TemplateList> {
-  return await invoke<TemplateList>('templates_list');
+  return await request('templatesList', {});
 }
 
 export async function instantiateTemplate(
@@ -28,25 +18,25 @@ export async function instantiateTemplate(
   parent: string,
   name: string,
 ): Promise<Created> {
-  return await invoke<Created>('template_instantiate', { template, parent, name });
+  return await request('templateInstantiate', { template, parent, name });
 }
 
 export async function saveProjectAsTemplate(
   rootId: string,
   info: TemplateInfo,
 ): Promise<TemplateInfo> {
-  return await invoke<TemplateInfo>('template_save_project', { rootId, info });
+  return await request('templateSaveProject', { rootId, info });
 }
 
 export async function importFolderAsTemplate(
   dir: string,
   info: TemplateInfo,
 ): Promise<TemplateInfo> {
-  return await invoke<TemplateInfo>('template_import_folder', { dir, info });
+  return await request('templateImportFolder', { dir, info });
 }
 
 export async function welcomeProject(): Promise<Created> {
-  return await invoke<Created>('template_welcome');
+  return await request('templateWelcome', {});
 }
 
 /** One labeled part of the gallery: its heading and its category groups. */

@@ -6,6 +6,7 @@ use crate::Core;
 use std::path::{Path, PathBuf};
 
 use super::MainOutputs;
+use ts_rs::TS;
 
 /// Resolve a main file inside the root and derive where its outputs live.
 pub fn outputs_of(cx: &Core, root_id: &str, main_rel: &str) -> Result<MainOutputs, String> {
@@ -69,7 +70,7 @@ pub fn log_tail(
 
 /// When and how large the main file's pdf last was written: whoever
 /// compiled it (this app, an agent over MCP) changes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputStamp {
     pub mtime_ms: u64,

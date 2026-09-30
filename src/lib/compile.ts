@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { request } from './core-request.tauri';
 import type {
   CompileFailure,
   CompileLine,
@@ -8,6 +9,7 @@ import type {
   OfflineReadiness,
 } from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
+import type { Exported } from './generated/api';
 import type { OutputStamp } from './externalRefresh';
 
 /**
@@ -147,7 +149,7 @@ export async function compileDiagnostics(
   mainRel: string,
 ): Promise<Diagnostic[] | null> {
   try {
-    return await invoke<Diagnostic[]>('compile_diagnostics', { rootId, mainRel });
+    return await request('compileDiagnostics', { rootId, mainRel });
   } catch {
     // No log kept for this main file yet; callers fall back to the run's own output.
     return null;
@@ -156,31 +158,28 @@ export async function compileDiagnostics(
 
 /** Stamp of the main file's pdf, or null before any compile. */
 export async function outputStamp(rootId: string, mainRel: string): Promise<OutputStamp | null> {
-  return await invoke<OutputStamp | null>('output_stamp', { rootId, mainRel });
+  return await request('outputStamp', { rootId, mainRel });
 }
 
 /** Where main_rel's compiled pdf is, or null before any compile left one. */
 export async function outputPdf(rootId: string, mainRel: string): Promise<string | null> {
-  return await invoke<string | null>('output_pdf', { rootId, mainRel });
+  return await request('outputPdf', { rootId, mainRel });
 }
-
-/** What an export wrote. */
-export type Exported = { path: string; bytes: number; files: string[] };
 
 /** Copy the compiled pdf to `dest` (absolute, outside the project). */
 export async function exportPdf(rootId: string, mainRel: string, dest: string): Promise<Exported> {
-  return await invoke<Exported>('export_pdf', { rootId, mainRel, dest });
+  return await request('exportPdf', { rootId, mainRel, dest });
 }
 
 /** Zip the project's sources to `dest` (absolute, outside the project). */
 export async function exportZip(rootId: string, dest: string): Promise<Exported> {
-  return await invoke<Exported>('export_zip', { rootId, dest });
+  return await request('exportZip', { rootId, dest });
 }
 
 /** Whether a previous compile left a pdf. Never throws. */
 export async function outputsFresh(rootId: string, mainRel: string): Promise<boolean> {
   try {
-    return await invoke<boolean>('outputs_fresh', { rootId, mainRel });
+    return await request('outputsFresh', { rootId, mainRel });
   } catch {
     // Main file no longer resolvable: nothing to warm, the next Compile reports why.
     return false;
@@ -192,7 +191,7 @@ export type CleanResult = { ok: boolean; removed: number; error: string | null }
 /** Remove the main file's build artifacts. Sources are never touched. */
 export async function cleanOutputs(rootId: string, mainRel: string): Promise<CleanResult> {
   try {
-    const removed = await invoke<number>('clean_outputs', { rootId, mainRel });
+    const removed = await request('cleanOutputs', { rootId, mainRel });
     return { ok: true, removed, error: null };
   } catch (e) {
     return { ok: false, removed: 0, error: String(e) };
@@ -201,7 +200,7 @@ export async function cleanOutputs(rootId: string, mainRel: string): Promise<Cle
 
 /** The project's offline readiness; rejects when the root is not granted. */
 export async function offlineReadiness(rootId: string): Promise<OfflineReadiness> {
-  return await invoke<OfflineReadiness>('offline_readiness', { rootId });
+  return await request('offlineReadiness', { rootId });
 }
 
 export type OfflineBadge = {
@@ -263,7 +262,7 @@ export function offlineBadge(r: OfflineReadiness): OfflineBadge {
  * missing fonts. Rejects when the checks cannot run.
  */
 export async function precompileChecks(rootId: string, mainRel: string): Promise<Finding[]> {
-  const r = await invoke<{ findings: Finding[] }>('precompile_checks', { rootId, mainRel });
+  const r = await request('precompileChecks', { rootId, mainRel });
   return r.findings;
 }
 

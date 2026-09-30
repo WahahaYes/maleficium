@@ -2,11 +2,9 @@ use maleficium_core::Core;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-use maleficium_events::{
-    CompileFailure, CompileLine, CompileReport, CompileStream, OfflineReadiness,
-};
+use maleficium_events::{CompileFailure, CompileLine, CompileReport, CompileStream};
 
-use maleficium_core::{self as core, engine, structure::Precheck};
+use maleficium_core::{self as core, engine};
 
 pub struct CompileState(pub Mutex<Option<std::process::Child>>);
 
@@ -106,89 +104,4 @@ pub fn cancel_compile(state: State<'_, CompileState>) -> Result<String, String> 
         }
         None => Err(String::from("nothing to cancel")),
     }
-}
-
-/// Dependency checks over the saved document from `main_rel`, before compiling.
-#[tauri::command]
-pub fn precompile_checks(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Precheck, String> {
-    core::structure::precompile_checks(&cx, &root_id, &main_rel)
-}
-
-#[tauri::command]
-pub fn offline_readiness(cx: State<'_, Core>, root_id: String) -> Result<OfflineReadiness, String> {
-    core::compile::offline_readiness(&cx, &root_id)
-}
-
-/// The last compile's problems, as the MCP diagnostics tool reports them:
-/// the engine's errors plus TeX's own warnings (undefined references and
-/// citations, duplicate labels), root-relative.
-#[tauri::command(async)]
-pub fn compile_diagnostics(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Vec<maleficium_structure::Diagnostic>, String> {
-    Ok(core::structure::diagnostics(&cx, &root_id, &main_rel, 100)?.diagnostics)
-}
-
-#[tauri::command]
-pub fn output_stamp(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Option<core::OutputStamp>, String> {
-    core::output_stamp(&cx, &root_id, &main_rel)
-}
-
-/// The compiled pdf's path, or `None` before any compile left one.
-#[tauri::command]
-pub fn output_pdf(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<Option<String>, String> {
-    core::output_pdf(&cx, &root_id, &main_rel)
-}
-
-/// Copy the compiled pdf to `dest` (absolute, outside the project).
-#[tauri::command]
-pub fn export_pdf(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-    dest: String,
-) -> Result<core::export::Exported, String> {
-    core::export::export_pdf(&cx, &root_id, &main_rel, &dest)
-}
-
-/// Zip the project's sources to `dest` (absolute, outside the project).
-#[tauri::command(async)]
-pub fn export_zip(
-    cx: State<'_, Core>,
-    root_id: String,
-    dest: String,
-) -> Result<core::export::Exported, String> {
-    core::export::export_zip(&cx, &root_id, &dest)
-}
-
-#[tauri::command]
-pub fn outputs_fresh(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<bool, String> {
-    core::outputs_fresh(&cx, &root_id, &main_rel)
-}
-
-#[tauri::command]
-pub fn clean_outputs(
-    cx: State<'_, Core>,
-    root_id: String,
-    main_rel: String,
-) -> Result<usize, String> {
-    core::clean_outputs(&cx, &root_id, &main_rel)
 }

@@ -3,6 +3,7 @@
 //! search and replace, structure, history, templates, and export. No Tauri
 //! dependency.
 
+pub mod api;
 pub mod compile;
 pub mod engine;
 pub mod export;
