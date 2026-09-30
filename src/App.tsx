@@ -26,8 +26,8 @@ import StatusBar from './components/StatusBar';
 import PrecheckPanel from './components/PrecheckPanel';
 import ExternalChangeDialog from './components/ExternalChangeDialog';
 import { useExternalChanges } from './hooks/useExternalChanges';
-import { listDir1Level, loadTex, saveTex, saveTexToDisk, TreeEntry } from './lib/files';
-import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
+import { listDir1Level, loadTex, TreeEntry } from './lib/files';
+import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
 import { emit } from './lib/events';
@@ -45,6 +45,7 @@ import { grantUntitledAccess } from './lib/projectAccess';
 import { useProjectReplace } from './hooks/useProjectReplace';
 import { useFileSelection } from './hooks/useFileSelection';
 import { useMainFile } from './hooks/useMainFile';
+import { useSaveFile } from './hooks/useSaveFile';
 import { useGlobalKeymap } from './hooks/useGlobalKeymap';
 import { useShellLayout } from './hooks/useShellLayout';
 import { useBufferManager } from './hooks/useBufferManager';
@@ -246,100 +247,15 @@ export default function App({
     return (root ? relUnder(root, abs) : null) ?? abs;
   };
 
-  const save = useCallback(async () => {
-    if (largeFile) {
-      setLog('save blocked: large placeholder file is not loaded');
-      emit({
-        scope: 'fs',
-        kind: 'warn',
-        actor: 'user',
-        message: 'save blocked for large placeholder ' + largeFile,
-        event: { action: 'file.save-blocked', path: largeFile, reason: 'large-placeholder' },
-      });
-      return;
-    }
-    try {
-      if (hasDir(fileName)) {
-        const cur = buffers.get(fileName);
-        const text = cur?.value ?? tex;
-        const outcome = await saveTex(fileName, text, cur?.disk);
-        setBuffers((b) => markSaved(b, fileName));
-        await noteSavedRevision(fileName, outcome);
-        setLog('saved ' + fileName);
-        emit({
-          scope: 'fs',
-          kind: 'success',
-          actor: 'user',
-          message: 'saved ' + fileName,
-          event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
-        });
-      } else {
-        await saveTexToDisk(fileName, tex);
-        setLog('saved ' + fileName);
-        emit({
-          scope: 'fs',
-          kind: 'success',
-          actor: 'user',
-          message: 'saved ' + fileName,
-          event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
-        });
-      }
-    } catch (e) {
-      // Refused (held for a conflict, or the file changed on disk) or failed:
-      // the buffer stays dirty, and the user is told instead of nothing happening.
-      setLog('save failed: ' + fileName);
-      emit({
-        scope: 'fs',
-        kind: 'error',
-        actor: 'user',
-        message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
-        event: {
-          action: 'file.save-failed',
-          path: fileName,
-          trigger: 'manual',
-          error: String(e).slice(0, 200),
-        },
-      });
-    }
-  }, [fileName, tex, buffers, setBuffers, largeFile, noteSavedRevision]);
-
-  useEffect(() => {
-    if (!hasDir(fileName)) return;
-    const t = setTimeout(() => {
-      const cur = buffers.get(fileName);
-      if (cur?.dirty) {
-        saveTex(fileName, cur.value, cur.disk)
-          .then(async (outcome) => {
-            setBuffers((b) => markSaved(b, fileName));
-            await noteSavedRevision(fileName, outcome);
-            emit({
-              scope: 'fs',
-              kind: 'info',
-              actor: 'system',
-              message: 'autosaved ' + fileName,
-              event: { action: 'file.save', path: fileName, chars: cur.value.length, mode: 'auto' },
-            });
-            setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
-          })
-          .catch((e) => {
-            // The dirty flag stays, so the next edit retries.
-            emit({
-              scope: 'fs',
-              kind: 'error',
-              actor: 'system',
-              message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
-              event: {
-                action: 'file.save-failed',
-                path: fileName,
-                trigger: 'auto',
-                error: String(e).slice(0, 200),
-              },
-            });
-          });
-      }
-    }, 1200);
-    return () => clearTimeout(t);
-  }, [tex, fileName, buffers, setBuffers, noteSavedRevision]);
+  const save = useSaveFile({
+    fileName,
+    tex,
+    buffers,
+    setBuffers,
+    largeFile,
+    noteSavedRevision,
+    setLog,
+  });
 
   // Publish engine-log problems as first-class stream events (click-to-jump).
   /** One tree level on expand; an unreadable folder says so and lists empty. */
