@@ -5,7 +5,6 @@
 // caller's open path with its main file associated.
 
 import { useEffect, useState } from 'react';
-import { homeDir } from '@tauri-apps/api/path';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -17,6 +16,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { emit } from '../lib/events';
 import { dialog } from '../lib/fs-provider';
+import { homeDirectory } from '../lib/fs-provider.tauri';
 import { joinPath } from '../lib/paths';
 import type { SessionRoot } from '../lib/preview-bus';
 import {
@@ -64,7 +64,7 @@ export default function TemplateDialogs({
     if (mode === 'gallery') {
       setPicked(null);
       setFolder('');
-      homeDir().then(
+      homeDirectory().then(
         (h) => setLocation((l) => l || h),
         () => undefined,
       );

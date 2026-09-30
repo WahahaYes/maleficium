@@ -27,6 +27,18 @@ export default defineConfig([
       'react-hooks/purity': 'off',
       'react-hooks/preserve-manual-memoization': 'off',
       'react-hooks/set-state-in-effect': 'off',
+      // Tauri calls live in *.tauri.ts adapters (and test mocks) only.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@tauri-apps/*'],
+              message: 'Import the *.tauri.ts adapter instead; adapters own all Tauri calls.',
+            },
+          ],
+        },
+      ],
       // Theme tokens are the only styling source: no manual shadows and no
       // ripple re-enables outside the theme factory.
       'no-restricted-syntax': [
@@ -46,5 +58,10 @@ export default defineConfig([
         },
       ],
     },
+  },
+  {
+    // Adapters own the transport; tests mock it.
+    files: ['**/*.tauri.{ts,tsx}', '**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 ]);

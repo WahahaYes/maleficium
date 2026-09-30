@@ -26,6 +26,11 @@ function fromCoreStat(s: { size: number; isFile: boolean; isDir: boolean }): Fil
   return { size: s.size, isDirectory: s.isDir, isFile: s.isFile };
 }
 
+/** The OS home directory, for dialog starting points outside any project. */
+export function homeDirectory(): Promise<string> {
+  return homeDir();
+}
+
 export const desktopFs: FsProvider = {
   readText: async (path) => {
     const p = lookupProjectRoot(path);
