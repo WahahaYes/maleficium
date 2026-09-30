@@ -204,7 +204,7 @@ export default function App({
   useEffect(() => onPdf(setPreviewDoc), []);
 
   const resolveMain = useCallback(async (r: string, rootId: string, opened: string | null) => {
-    const res = await resolveMainFileTauri(r, rootId, opened);
+    const res = await resolveMainFileTauri(rootId, opened);
     // A resolve for a root that is no longer open never touches the open
     // project's main file.
     if (r !== rootRef.current) return null;

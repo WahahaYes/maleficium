@@ -18,7 +18,7 @@ import { fs } from '../lib/fs-provider';
 import type { FileHistory } from '../lib/file-history';
 import type { SessionRoot } from '../lib/preview-bus';
 import { welcomeProject } from '../lib/templates';
-import { setMainFileFor } from '../lib/mainFile.store';
+import { setMainFile } from '../lib/mainFile.tauri';
 
 export interface UseProjectTreeDeps {
   root: string | null;
@@ -203,7 +203,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     clearMainFile();
     // A freshly created project names its main file; record it under the
     // backend's root id before resolving.
-    if (opts?.main) setMainFileFor(grant.rootId, opts.main);
+    if (opts?.main) void setMainFile(grant.rootId, grant.path, opts.main);
     setRecentProjects(touchRecentProject(canon));
     const t0 = performance.now();
     projectIndex()
