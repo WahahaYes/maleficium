@@ -12,7 +12,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 **It's open source, so you can make it yours.** Maleficium is Apache 2.0 and built to be changed at the source: fork it and shape it to the way you work. Menus and the command palette are built from one command registry, so a new action shows up in both from a single entry. A template is just a folder, a color theme is a standard VS Code theme file, and the Rust core behind the editor is the same one its automation tools use. [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) gets you from clone to running app. No fork needed for the everyday cases: save any project as a template, or import a folder as one, and it joins the gallery beside the CC0 built-ins.
 
-**It's built for working alongside AI agents.** Every action the app takes is written to a structured JSONL event log that an agent can read. When another process recompiles your document, the preview reloads on its own. The app ships an MCP server, so an agent such as Claude Code can compile, search, replace, and jump through SyncTeX with the same core the editor uses ([Use with an AI agent](#use-with-an-ai-agent)).
+**It's built for working alongside AI agents.** Every action the app and its agents take is written to one shared structured JSONL event log that an agent can read — each line names its actor, and the log keeps the newest 2000 lines. When another process recompiles your document, the preview reloads on its own. The app ships an MCP server, so an agent such as Claude Code can compile, search, replace, and jump through SyncTeX with the same core the editor uses ([Use with an AI agent](#use-with-an-ai-agent)).
 
 ## Features
 
@@ -136,7 +136,7 @@ claude mcp add maleficium -- /usr/bin/maleficium --mcp
 
 ### What the agent can do
 
-The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
+The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. Every tool call is appended to the same event log with actor agent, so the app's log shows what the agent did. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 

@@ -1,52 +1,48 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  mkdir: vi.fn(),
-  writeFile: vi.fn(),
-}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-vi.mock('@tauri-apps/api/path', () => ({
-  appDataDir: vi.fn(),
-}));
-
-import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
-import { appDataDir } from '@tauri-apps/api/path';
+import { invoke } from '@tauri-apps/api/core';
 import * as events from './events';
 import { transport } from './event-transport';
 import { appEventLogDir, eventLogPath } from './paths';
 
-import { setProviders } from './fs-provider';
-import { desktopFs, desktopDialog } from './fs-provider.tauri';
-
-setProviders({ fs: desktopFs, dialog: desktopDialog });
 import {
   MAX_LINE_BYTES,
   MAX_LOG_EVENTS,
   MAX_MESSAGE_CHARS,
   eventsFor,
   parseEventLog,
-  retain,
   revisionRecordData,
   revisionRestoreData,
   serializeEvent,
   startEventLog,
 } from './eventlog';
-import type { LogLine } from './generated/events';
+import type { BusEvent, LogLine } from './generated/events';
 
 const APP_DATA = '/app/data';
-const dec = new TextDecoder();
+const APP_LOG = eventLogPath(APP_DATA);
 
-/** In-memory disk that honours the append option, as the plugin does. */
-function fakeDisk() {
-  const files = new Map<string, string>();
-  vi.mocked(appDataDir).mockResolvedValue(APP_DATA);
-  vi.mocked(mkdir).mockResolvedValue(undefined);
-  vi.mocked(writeFile).mockImplementation(async (p, data, opts) => {
-    const key = String(p);
-    const text = dec.decode(data as Uint8Array);
-    files.set(key, opts?.append ? (files.get(key) ?? '') + text : text);
+/** Batches the recorder sent to the core writer, in order. */
+const appended: BusEvent[][] = [];
+/** Ops the recorder ran, in order. */
+const ops: string[] = [];
+
+/** The core writer behind a mock backend: rotate opens, appends are kept. */
+function mockWriter() {
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd !== 'core_request') throw new Error('unexpected transport ' + String(cmd));
+    const req = (args as { req: { op: string; params: { events?: BusEvent[] } } }).req;
+    ops.push(req.op);
+    if (req.op === 'eventRotate') {
+      return { op: 'eventRotate', result: { path: APP_LOG, kept: 0, dropped: 0 } };
+    }
+    if (req.op === 'eventAppend') {
+      appended.push(req.params.events ?? []);
+      return { op: 'eventAppend', result: null };
+    }
+    throw new Error('unexpected op ' + req.op);
   });
-  return files;
 }
 
 /** Let the recorder resolve its path, then write everything queued. */
@@ -123,32 +119,19 @@ describe('event serialization', () => {
   });
 });
 
-describe('event log retention', () => {
-  it('keeps the newest MAX_LOG_EVENTS lines and rewrites once full', () => {
-    const kept = Array.from({ length: MAX_LOG_EVENTS - 2 }, (_, i) => `k${i}\n`);
-    const under = retain(kept, ['a\n', 'b\n']);
-    expect(under.lines.length).toBe(MAX_LOG_EVENTS);
-    expect(under.rewrite).toBe(false);
-
-    const over = retain(under.lines, ['c\n', 'd\n', 'e\n']);
-    expect(over.lines.length).toBe(MAX_LOG_EVENTS);
-    expect(over.rewrite).toBe(true);
-    expect(over.lines[over.lines.length - 1]).toBe('e\n');
-    expect(over.lines[0]).toBe('k3\n');
-  });
-});
-
 describe('event log recording', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     transport().clear();
+    appended.length = 0;
+    ops.length = 0;
+    mockWriter();
   });
   afterEach(() => {
     transport().clear();
   });
 
-  it('starts the run from an empty file and appends the stream', async () => {
-    const files = fakeDisk();
+  it('opens with a rotate and appends the stream through core', async () => {
     const log = startEventLog();
     try {
       events.emit({
@@ -166,12 +149,17 @@ describe('event log recording', () => {
         event: { action: 'file.save', path: '/p/a.tex', chars: 1, mode: 'manual' },
       });
       await settle(log);
-      const parsed = parseEventLog(files.get(eventLogPath(APP_DATA)) ?? '');
+      // The run starts by rotating, never by truncating: the first backend
+      // call opens the shared log, and every call goes through the contract.
+      expect(ops[0]).toBe('eventRotate');
+      for (const call of vi.mocked(invoke).mock.calls) expect(call[0]).toBe('core_request');
+      const text = appended.flat().map(serializeEvent).join('');
+      const parsed = parseEventLog(text);
       expect(parsed.filter((e) => e.message === 'one' || e.message === 'two')).toHaveLength(2);
-      expect(parsed.map((e) => e.message)).toContain('event log ' + eventLogPath(APP_DATA));
+      expect(parsed.map((e) => e.message)).toContain('event log ' + APP_LOG);
       expect(eventsFor(parsed, 'file.save')).toHaveLength(1);
       expect(eventsFor(parsed, 'log.open')[0].event).toMatchObject({
-        path: eventLogPath(APP_DATA),
+        path: APP_LOG,
         maxEvents: MAX_LOG_EVENTS,
         maxLineBytes: MAX_LINE_BYTES,
       });
@@ -180,33 +168,23 @@ describe('event log recording', () => {
     }
   });
 
-  it('holds at most MAX_LOG_EVENTS lines however long the run is', async () => {
-    const files = fakeDisk();
+  it('writes the queued remainder on stop', async () => {
     const log = startEventLog();
-    try {
-      await settle(log);
-      for (let i = 0; i < MAX_LOG_EVENTS + 100; i++) {
-        events.emit({
-          scope: 'app',
-          kind: 'info',
-          actor: 'system',
-          message: `m${i}`,
-          event: { action: 'file.load', path: 'p' },
-        });
-        if (i % 500 === 0) await log.flush();
-      }
-      await log.flush();
-      const parsed = parseEventLog(files.get(eventLogPath(APP_DATA)) ?? '');
-      expect(parsed.length).toBe(MAX_LOG_EVENTS);
-      expect(parsed[parsed.length - 1].message).toBe(`m${MAX_LOG_EVENTS + 99}`);
-    } finally {
-      log.stop();
-    }
+    await settle(log);
+    events.emit({
+      scope: 'app',
+      kind: 'info',
+      actor: 'system',
+      message: 'late',
+      event: { action: 'file.load', path: 'p' },
+    });
+    log.stop();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(appended.flat().map((e) => e.message)).toContain('late');
   });
 
   it('degrades silently when the store is unreachable', async () => {
-    vi.mocked(appDataDir).mockRejectedValue(new Error('no backend'));
-    vi.mocked(writeFile).mockRejectedValue(new Error('no backend'));
+    vi.mocked(invoke).mockRejectedValue(new Error('no backend'));
     const log = startEventLog();
     try {
       events.emit({

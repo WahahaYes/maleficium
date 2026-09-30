@@ -1,30 +1,31 @@
 // eventlog.ts — the event bus, recorded app-locally as JSONL.
 //
-// One file, under the app-data dir, truncated when the run starts: it holds
-// the current run and nothing else. Every line is one JSON object
+// One file, under the app-data dir, shared by every writer: the app and
+// every agent acting through the automation surface append typed events
+// with an actor, and readers tell them apart by it. The core owns the
+// writer (whole-line appends, rotation keeping the newest MAX_LOG_EVENTS
+// lines); the log is never truncated on start, so a run's segment starts
+// at its own `log.open`. Every line is one JSON object
 // `{at, scope, kind, actor, message, event}` (the `LogLine` type generated
 // from the Rust catalog), and `event.action` names the fact so a reader
-// matches on the payload rather than on prose. Retention is the
-// newest MAX_LOG_EVENTS lines, each at most MAX_LINE_BYTES.
+// matches on the payload rather than on prose.
 //
 // Nothing is written to the project dir, and a write that fails is dropped
 // rather than surfaced.
 //
 // Read the current run hands-free (Linux app-data home):
 //   L=~/.local/share/io.github.wahahayes.maleficium/maleficium-log/events.jsonl
-//   cat "$L"                                   # the whole run
+//   cat "$L"                                   # every run, newest last
 //   grep '"action":"compile.finish"' "$L"      # one fact
 //   tail -f "$L"                               # live
 
-import { fs } from './fs-provider';
-import { appDataDir } from '@tauri-apps/api/path';
-import { appEventLogDir, eventLogPath } from './paths';
+import { request } from './core-request.tauri';
 import { emit } from './events';
 import { transport } from './event-transport';
 import type { AppEvent, BusEvent, LogLine } from './generated/events';
 import type { RecordOutcome } from './history';
 
-/** Newest events kept on disk for one run; older lines are dropped. */
+/** Newest events kept on disk; older lines are dropped by core rotation. */
 export const MAX_LOG_EVENTS = 2000;
 /** Ceiling on one serialized line, newline included. */
 export const MAX_LINE_BYTES = 2048;
@@ -41,7 +42,8 @@ function byteLength(s: string): number {
 
 /**
  * One JSONL line. A payload that would break the line ceiling is dropped
- * down to its action, so every line stays parseable.
+ * down to its action, so every line stays parseable. Byte-identical in
+ * shape to the core writer's `serialize`, which owns the file.
  */
 export function serializeEvent(e: BusEvent): string {
   const head = {
@@ -56,19 +58,6 @@ export function serializeEvent(e: BusEvent): string {
     line = JSON.stringify({ ...head, dropped: e.event.action } satisfies LogLine);
   }
   return line + '\n';
-}
-
-/**
- * Newest-wins retention. Returns the lines the file must hold and whether it
- * has to be rewritten rather than appended to.
- */
-export function retain(
-  kept: readonly string[],
-  incoming: readonly string[],
-): { lines: string[]; rewrite: boolean } {
-  const all = [...kept, ...incoming];
-  if (all.length <= MAX_LOG_EVENTS) return { lines: all, rewrite: false };
-  return { lines: all.slice(all.length - MAX_LOG_EVENTS), rewrite: true };
 }
 
 /** Parse JSONL text; a line that is not one event is skipped. */
@@ -113,35 +102,34 @@ export interface EventLog {
 }
 
 /**
- * Record the bus to the app-local JSONL file for this run. Events already in
- * the in-memory buffer are included, and an unreachable store simply stops
- * the recording.
+ * Record the bus to the shared JSONL file through the core writer. Events
+ * already in the in-memory buffer are included. Opening rotates instead of
+ * truncating, so earlier runs' tails survive; an unreachable store simply
+ * stops the recording.
  */
 export function startEventLog(): EventLog {
-  let target: string | null = null;
   let recording = true;
   let flushing = false;
-  const kept: string[] = [];
-  let pending: string[] = transport().snapshot().map(serializeEvent);
+  let pending: BusEvent[] = transport().snapshot();
 
   const unsub = transport().subscribe((e) => {
-    if (recording) pending.push(serializeEvent(e));
+    if (recording) pending.push(e);
   });
 
-  const flush = async (): Promise<void> => {
-    if (flushing || target === null || pending.length === 0) return;
-    flushing = true;
-    const batch = pending;
-    pending = [];
-    const next = retain(kept, batch);
-    kept.length = 0;
-    kept.push(...next.lines);
+  const send = async (batch: BusEvent[]): Promise<void> => {
     try {
-      const body = next.rewrite ? next.lines.join('') : batch.join('');
-      await fs().writeBytes(target, enc.encode(body), next.rewrite ? undefined : { append: true });
+      await request('eventAppend', { events: batch });
     } catch {
       /* the log is never the reason the app stops */
     }
+  };
+
+  const flush = async (): Promise<void> => {
+    if (flushing || !recording || pending.length === 0) return;
+    flushing = true;
+    const batch = pending;
+    pending = [];
+    await send(batch);
     flushing = false;
   };
 
@@ -149,21 +137,16 @@ export function startEventLog(): EventLog {
 
   void (async () => {
     try {
-      const base = await appDataDir();
+      const report = await request('eventRotate', {});
       if (!recording) return;
-      await fs().mkdir(appEventLogDir(base), { recursive: true });
-      if (!recording) return;
-      const path = eventLogPath(base);
-      await fs().writeBytes(path, new Uint8Array());
-      target = path;
       emit({
         scope: 'app',
         kind: 'info',
         actor: 'system',
-        message: 'event log ' + path,
+        message: 'event log ' + report.path,
         event: {
           action: 'log.open',
-          path,
+          path: report.path,
           maxEvents: MAX_LOG_EVENTS,
           maxLineBytes: MAX_LINE_BYTES,
         },
@@ -177,10 +160,12 @@ export function startEventLog(): EventLog {
   return {
     flush,
     stop: () => {
+      const batch = pending;
+      pending = [];
       recording = false;
       unsub();
       clearInterval(timer);
-      void flush();
+      if (batch.length > 0) void send(batch);
     },
   };
 }
