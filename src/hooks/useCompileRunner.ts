@@ -36,7 +36,6 @@ import { findingsKey, loadPrecheckPopup, savePrecheckPopup, shouldPop } from '..
 import { saveTex } from '../lib/files';
 import { structure } from '../lib/structure';
 import { emitPdf, sourceFor, type SessionRoot } from '../lib/preview-bus';
-import type { OwnWrites } from '../lib/own-writes';
 import { hasDir, joinPath, relUnder } from '../lib/paths';
 
 /** The compile lifecycle. `phaseRef` leads this state by a tick. */
@@ -64,7 +63,6 @@ export interface UseCompileRunnerDeps {
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   largeFile: string | null;
   previewFile: string | null;
-  ownWrites: OwnWrites;
   setLog: (v: string) => void;
   setLogCollapsed: (v: boolean) => void;
   /** Latest-closure handle for the keymap listener and the menu dispatcher. */
@@ -86,7 +84,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     setBuffers,
     largeFile,
     previewFile,
-    ownWrites,
     setLog,
     setLogCollapsed,
     compileRef,
@@ -317,7 +314,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
             if (buf.dirty) {
               try {
                 await saveTex(p, buf.value, buf.disk);
-                ownWrites.wrote(p, buf.value);
                 saved.push(p);
               } catch {
                 /* keep dirty, reported at finish */
@@ -334,7 +330,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           // visible file was persisted above to its own path.
           if (!buffers.has(target) && !hasDir(fileName)) {
             await saveTex(target, tex);
-            ownWrites.wrote(target, tex);
           }
         }
       } else {
@@ -342,7 +337,6 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         workdir = scratch.path;
         const t2 = joinPath(workdir, fileName);
         await saveTex(t2, tex);
-        ownWrites.wrote(t2, tex);
         setMainFileState(t2);
       }
     } catch (e) {

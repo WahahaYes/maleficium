@@ -1,6 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { FileHistory } from './file-history';
-import { coalesceEvents, debounce } from './watcher';
 import { sortTreeEntries, isHiddenName, LARGE_FILE_BYTES } from './files';
 import {
   getOrCreateBuffer,
@@ -19,32 +18,6 @@ describe('FileHistory 50-entry cap', () => {
     for (let i = 0; i < 55; i++) h.record({ originalPath: `/a${i}`, trashPath: `/t${i}` });
     expect(h.size).toBe(50);
     expect(h.list()[0].originalPath).toBe('/a5');
-  });
-});
-
-describe('watcher coalesce+debounce', () => {
-  it('keeps latest per path', () => {
-    const out = coalesceEvents([
-      { kind: 'modify', path: '/a' },
-      { kind: 'modify', path: '/b' },
-      { kind: 'delete', path: '/a' },
-    ]);
-    expect(out).toEqual([
-      { kind: 'delete', path: '/a' },
-      { kind: 'modify', path: '/b' },
-    ]);
-  });
-  it('debounces bursts', () => {
-    vi.useFakeTimers();
-    const fn = vi.fn();
-    const d = debounce(fn, 250);
-    d();
-    d();
-    d();
-    expect(fn).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(250);
-    expect(fn).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 });
 

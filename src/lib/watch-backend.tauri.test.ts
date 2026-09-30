@@ -1,44 +1,57 @@
-import { describe, it, expect, vi } from 'vitest';
-vi.mock('@tauri-apps/plugin-fs', () => ({ watch: vi.fn() }));
-import { watch } from '@tauri-apps/plugin-fs';
-import { classify, desktopWatch } from './watch-backend.tauri';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+import { invoke } from '@tauri-apps/api/core';
+import { desktopWatch, WATCH_POLL_MS } from './watch-backend.tauri';
+import { bindProjectRoot, clearProjectRoots } from './fs-provider';
 
-describe('plugin-fs event classification', () => {
-  it('maps create/remove/modify kinds to changes', () => {
-    expect(classify({ type: { create: { kind: 'file' } }, paths: ['/a'] })).toEqual([
-      { kind: 'create', path: '/a' },
-    ]);
-    expect(classify({ type: { remove: { kind: 'any' } }, paths: ['/a'] })).toEqual([
-      { kind: 'delete', path: '/a' },
-    ]);
-    expect(
-      classify({ type: { modify: { kind: 'data', mode: 'content' } }, paths: ['/a'] }),
-    ).toEqual([{ kind: 'modify', path: '/a' }]);
-    expect(classify({ type: 'any', paths: ['/a'] })).toEqual([{ kind: 'modify', path: '/a' }]);
-    expect(classify({ type: 'other', paths: ['/a'] })).toEqual([{ kind: 'modify', path: '/a' }]);
-  });
-  it('drops access noise and fans out multiple paths', () => {
-    expect(classify({ type: { access: { kind: 'any' } }, paths: ['/a'] })).toEqual([]);
-    expect(classify({ type: { modify: { kind: 'any' } }, paths: ['/a', '/b'] })).toEqual([
-      { kind: 'modify', path: '/a' },
-      { kind: 'modify', path: '/b' },
-    ]);
-  });
-  it('watches recursively and forwards only non-empty batches', async () => {
-    const stop = vi.fn();
-    let handler: ((ev: unknown) => void) | undefined;
-    vi.mocked(watch).mockImplementation(async (_root, cb) => {
-      handler = cb as (ev: unknown) => void;
-      return stop;
-    });
+function respond(op: string, result: unknown) {
+  vi.mocked(invoke).mockResolvedValueOnce({ op, result });
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  clearProjectRoots();
+  bindProjectRoot('r1', '/p');
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('core watch backend', () => {
+  it('starts the core watch and polls it on a timer', async () => {
+    respond('watchStart', null);
     const seen: unknown[] = [];
     const unwatch = await desktopWatch.watch('/p', (c) => seen.push(c));
-    expect(vi.mocked(watch).mock.calls[0][0]).toBe('/p');
-    expect(vi.mocked(watch).mock.calls[0][2]).toMatchObject({ recursive: true });
-    handler?.({ type: { access: { kind: 'any' } }, paths: ['/p/a'], attrs: null });
-    handler?.({ type: { create: { kind: 'file' } }, paths: ['/p/b'], attrs: null });
-    expect(seen).toEqual([[{ kind: 'create', path: '/p/b' }]]);
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'watchStart', params: { rootId: 'r1' } },
+    });
+    respond('watchPoll', [{ rel: 'a.tex', change: 'modify' }]);
+    await vi.advanceTimersByTimeAsync(WATCH_POLL_MS);
+    expect(seen).toEqual([[{ kind: 'modify', path: '/p/a.tex' }]]);
     unwatch();
-    expect(stop).toHaveBeenCalled();
+  });
+  it('ignores empty polls and stops polling after unwatch', async () => {
+    respond('watchStart', null);
+    const seen: unknown[] = [];
+    const unwatch = await desktopWatch.watch('/p', (c) => seen.push(c));
+    respond('watchPoll', []);
+    await vi.advanceTimersByTimeAsync(WATCH_POLL_MS);
+    expect(seen).toEqual([]);
+    respond('watchStop', null);
+    unwatch();
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: { op: 'watchStop', params: { rootId: 'r1' } },
+    });
+    const calls = vi.mocked(invoke).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(WATCH_POLL_MS * 3);
+    expect(vi.mocked(invoke).mock.calls.length).toBe(calls);
+  });
+  it('refuses roots outside any open project', async () => {
+    await expect(desktopWatch.watch('/elsewhere', () => {})).rejects.toThrow(
+      'outside any open project',
+    );
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

@@ -6,9 +6,8 @@ import { request } from './core-request.tauri';
  *
  * Asks the backend to validate `root` (absolute, resolvable, a directory)
  * and register it as a session root, then binds it for the desktop file
- * seam so project paths resolve to the core file service. The recursive
- * fs-scope grant beside it stays until the core watcher lands: it is the
- * watcher's only path to project dirs. File IO no longer needs it.
+ * seam so project paths resolve to the core file service. No Tauri fs-scope
+ * grant is minted: core owns every project path, including the watcher.
  *
  * Failure contract: `{ok:false}` with a message, never a throw.
  */

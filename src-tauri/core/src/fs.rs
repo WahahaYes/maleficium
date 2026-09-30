@@ -220,7 +220,7 @@ pub fn trash_file(cx: &Core, id: &str, rel: &str, confirm: &str) -> Result<Strin
     let home = trash_home(&root);
     std::fs::create_dir_all(&home).map_err(|e| format!("trash home unreachable: {}", e))?;
     let dest = home.join(trash_name(&abs, rel));
-    match std::fs::rename(&abs, &dest) {
+    let trashed = match std::fs::rename(&abs, &dest) {
         Ok(()) => Ok(dest.to_string_lossy().to_string()),
         Err(_) => {
             let bytes = std::fs::read(&abs).map_err(|e| format!("trash copy failed: {}", e))?;
@@ -228,7 +228,9 @@ pub fn trash_file(cx: &Core, id: &str, rel: &str, confirm: &str) -> Result<Strin
             std::fs::remove_file(&abs).map_err(|e| format!("trash copy failed: {}", e))?;
             Ok(dest.to_string_lossy().to_string())
         }
-    }
+    };
+    super::watch::mark_removed(cx, &abs);
+    trashed
 }
 
 /// Restore a trashed file to its original path.
@@ -252,7 +254,7 @@ pub fn undo_trash(cx: &Core, id: &str, trash_path: &str) -> Result<String, Strin
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("restore failed: {}", e))?;
     }
-    match std::fs::rename(&canon_src, &dest) {
+    let restored = match std::fs::rename(&canon_src, &dest) {
         Ok(()) => Ok(dest.to_string_lossy().to_string()),
         Err(_) => {
             let bytes = std::fs::read(&canon_src).map_err(|e| format!("restore failed: {}", e))?;
@@ -260,7 +262,9 @@ pub fn undo_trash(cx: &Core, id: &str, trash_path: &str) -> Result<String, Strin
             std::fs::remove_file(&canon_src).map_err(|e| format!("restore failed: {}", e))?;
             Ok(dest.to_string_lossy().to_string())
         }
-    }
+    };
+    super::watch::mark_settled(cx, &dest);
+    restored
 }
 
 /// List one directory level, sorted dirs-first. Hidden/build names skipped.
@@ -352,7 +356,9 @@ pub fn read_bytes(cx: &Core, id: &str, rel: &str) -> Result<Vec<u8>, String> {
 /// Write bytes to a project file. The destination's parents must exist.
 pub fn write_bytes(cx: &Core, id: &str, rel: &str, bytes: &[u8]) -> Result<(), String> {
     let abs = resolve_write(cx, id, rel)?;
-    std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))
+    std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
+    super::watch::mark_written(cx, &abs, bytes);
+    Ok(())
 }
 
 /// Save a buffer in one call: refuse when the disk holds an outside edit
@@ -376,6 +382,7 @@ pub fn save(
         }
     }
     std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
+    super::watch::mark_written(cx, &abs, bytes);
     Ok(crate::history::record(cx, id, rel, bytes))
 }
 
@@ -383,13 +390,18 @@ pub fn save(
 pub fn rename_path(cx: &Core, id: &str, old_rel: &str, new_rel: &str) -> Result<(), String> {
     let from = resolve_write(cx, id, old_rel)?;
     let to = resolve_write(cx, id, new_rel)?;
-    std::fs::rename(&from, &to).map_err(|e| format!("rename failed: {}", e))
+    std::fs::rename(&from, &to).map_err(|e| format!("rename failed: {}", e))?;
+    super::watch::mark_removed(cx, &from);
+    super::watch::mark_settled(cx, &to);
+    Ok(())
 }
 
 /// Create a project directory and its missing parents.
 pub fn make_dir(cx: &Core, id: &str, rel: &str) -> Result<(), String> {
     let abs = resolve_write(cx, id, rel)?;
-    std::fs::create_dir_all(&abs).map_err(|e| format!("mkdir failed: {}", e))
+    std::fs::create_dir_all(&abs).map_err(|e| format!("mkdir failed: {}", e))?;
+    super::watch::mark_settled(cx, &abs);
+    Ok(())
 }
 
 /// Remove a project file or directory (directories only with `recursive`).
@@ -401,10 +413,12 @@ pub fn remove_path(cx: &Core, id: &str, rel: &str, recursive: bool) -> Result<()
         } else {
             std::fs::remove_dir(&abs)
         }
-        .map_err(|e| format!("remove failed: {}", e))
+        .map_err(|e| format!("remove failed: {}", e))?;
     } else {
-        std::fs::remove_file(&abs).map_err(|e| format!("remove failed: {}", e))
+        std::fs::remove_file(&abs).map_err(|e| format!("remove failed: {}", e))?;
     }
+    super::watch::mark_removed(cx, &abs);
+    Ok(())
 }
 
 /// Stat of a project file. Missing or unreadable reads as absent (`None`),

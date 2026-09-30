@@ -18,7 +18,6 @@ import {
   type RevisionRow,
 } from '../lib/history.view';
 import { markSaved, updateBuffer, type BufferState } from '../lib/buffers';
-import type { OwnWrites } from '../lib/own-writes';
 
 export interface UseRevisionHistoryDeps {
   root: string | null;
@@ -28,11 +27,10 @@ export interface UseRevisionHistoryDeps {
   setBuffers: React.Dispatch<React.SetStateAction<Map<string, BufferState>>>;
   setTex: (v: string) => void;
   setLog: (v: string) => void;
-  ownWrites: OwnWrites;
 }
 
 export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
-  const { root, projectId, relInProject, fileName, setBuffers, setTex, setLog, ownWrites } = deps;
+  const { root, projectId, relInProject, fileName, setBuffers, setTex, setLog } = deps;
 
   const [revisionCount, setRevisionCount] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -125,7 +123,6 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
           return;
         }
         const text = new TextDecoder().decode(bytes);
-        ownWrites.wrote(fileName, text);
         setBuffers((b) => markSaved(updateBuffer(b, fileName, text), fileName));
         setTex(text);
         setLog('restored ' + rel);
@@ -141,17 +138,7 @@ export function useRevisionHistory(deps: UseRevisionHistoryDeps) {
       }
       await openHistory();
     },
-    [
-      fileName,
-      setBuffers,
-      setLog,
-      setTex,
-      history,
-      ownWrites,
-      openHistory,
-      projectId,
-      relInProject,
-    ],
+    [fileName, setBuffers, setLog, setTex, history, openHistory, projectId, relInProject],
   );
 
   return {
