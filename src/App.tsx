@@ -26,15 +26,7 @@ import StatusBar from './components/StatusBar';
 import PrecheckPanel from './components/PrecheckPanel';
 import ExternalChangeDialog from './components/ExternalChangeDialog';
 import { useExternalChanges } from './hooks/useExternalChanges';
-import {
-  listDir1Level,
-  loadTex,
-  saveTex,
-  saveTexToDisk,
-  isPreviewable,
-  LARGE_FILE_BYTES,
-  TreeEntry,
-} from './lib/files';
+import { listDir1Level, loadTex, saveTex, saveTexToDisk, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, markSaved, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
@@ -55,12 +47,12 @@ import type { ZoomAction } from './lib/zoom';
 import { useExport } from './hooks/useExport';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
-import { resolveMainFileTauri, setMainFile } from './lib/mainFile.tauri';
 import { FileHistory } from './lib/file-history';
 import { pruneRecentProjects } from './lib/recentProjects';
-import { fs } from './lib/fs-provider';
 import { grantUntitledAccess } from './lib/projectAccess';
 import { useProjectReplace } from './hooks/useProjectReplace';
+import { useFileSelection } from './hooks/useFileSelection';
+import { useMainFile } from './hooks/useMainFile';
 import { useShellLayout } from './hooks/useShellLayout';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
@@ -94,9 +86,6 @@ export default function App({
   const [projectId, setProjectId] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [fileName, setFileName] = useState('hello.tex');
-  const [mainFile, setMainFileState] = useState<string | null>(null);
-  const [mainSource, setMainSource] = useState('');
-  const [mainCandidates, setMainCandidates] = useState<string[]>([]);
   const [trash] = useState(() => new FileHistory());
 
   const [log, setLog] = useState('ready');
@@ -116,8 +105,6 @@ export default function App({
   const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
-  // Latest tree selection wins: rapid clicks resolve out of order otherwise.
-  const selectTokenRef = useRef(0);
   const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
     useBufferManager({
       fileName,
@@ -188,193 +175,44 @@ export default function App({
 
   useEffect(() => onPdf(setPreviewDoc), []);
 
-  const resolveMain = useCallback(async (r: string, rootId: string, opened: string | null) => {
-    const res = await resolveMainFileTauri(rootId, opened);
-    // A resolve for a root that is no longer open never touches the open
-    // project's main file.
-    if (r !== rootRef.current) return null;
-    setMainFileState(res.mainFile);
-    setMainSource(res.source);
-    setMainCandidates(res.candidates);
-    return res.mainFile;
-  }, []);
-
-  const handleSelect = useCallback(
-    async (path: string) => {
-      // Persist current buffer before switching (dirty survives switch via map).
-      if (hasDir(fileName) && path !== fileName) {
-        const cur = buffers.get(fileName);
-        if (cur?.dirty) {
-          try {
-            const outcome = await saveTex(fileName, cur.value, cur.disk);
-            setBuffers((b) => markSaved(b, fileName));
-            await noteSavedRevision(fileName, outcome);
-          } catch (e) {
-            // The buffer stays dirty; say the save did not happen.
-            emit({
-              scope: 'fs',
-              kind: 'error',
-              actor: 'user',
-              message: `save failed: ${fileName} (${String(e).slice(0, 120)})`,
-              event: {
-                action: 'file.save-failed',
-                path: fileName,
-                trigger: 'switch',
-                error: String(e).slice(0, 200),
-              },
-            });
-          }
-        }
-      }
-      const selectToken = ++selectTokenRef.current;
-      // Non-text files never enter the editor: rich preview surface instead.
-      if (isPreviewable(path)) {
-        if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-        setPreviewFile(path);
-        setFileName(path);
-        setLargeFile(null);
-        setLog('previewing ' + path);
-        emit({
-          scope: 'fs',
-          kind: 'info',
-          actor: 'user',
-          message: 'previewing ' + path,
-          event: { action: 'file.preview', path },
-        });
-        return;
-      }
-      // Reuse preserved buffer without re-reading.
-      const kept = buffers.get(path);
-      if (kept) {
-        if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-        setTex(kept.value);
-        setFileName(path);
-        setPreviewFile(null);
-        setLargeFile(null);
-        setLog('switched ' + path + (kept.dirty ? ' (unsaved changes)' : ''));
-        emit({
-          scope: 'fs',
-          kind: 'info',
-          actor: 'user',
-          message: 'switched ' + path,
-          event: { action: 'file.switch', path, dirty: kept.dirty },
-        });
-        if (rootRef.current && projectIdRef.current && path.endsWith('.tex'))
-          void resolveMain(rootRef.current, projectIdRef.current, path);
-        return;
-      }
-      emit({
-        scope: 'fs',
-        kind: 'progress',
-        actor: 'user',
-        message: 'loading ' + path,
-        event: { action: 'file.load', path },
-      });
-      setLog('loading ' + path);
-      try {
-        const info = await fs().stat(path);
-        const size = info?.size ?? 0;
-        if (size > LARGE_FILE_BYTES) {
-          if (selectToken !== selectTokenRef.current) return; // stale click lost the race
-          setLargeFile(path);
-          setFileName(path);
-          setLog(`large file (${Math.round(size / 1024)}KB) — preview only`);
-          emit({
-            scope: 'fs',
-            kind: 'warn',
-            actor: 'user',
-            message: `large file placeholder ${path} (${size}B)`,
-            event: { action: 'file.too-large', path, bytes: size },
-          });
-          return;
-        }
-        setLargeFile(null);
-        setPreviewFile(null);
-        const content = await loadTex(path);
-        if (selectToken !== selectTokenRef.current) return; // stale load: drop, keep newest
-        setBuffers((b) => {
-          const n = new Map(b);
-          getOrCreateBuffer(n, path, content);
-          return enforceBufferCap(n, fileNameRef.current);
-        });
-        setTex(content);
-        setFileName(path);
-        setLog('loaded ' + path);
-        emit({
-          scope: 'fs',
-          kind: 'success',
-          actor: 'user',
-          message: 'loaded ' + path,
-          event: { action: 'file.open', path, chars: content.length },
-        });
-        if (rootRef.current && projectIdRef.current && path.endsWith('.tex'))
-          void resolveMain(rootRef.current, projectIdRef.current, path);
-      } catch (e) {
-        setLog('load failed: ' + String(e).slice(0, 120));
-        emit({
-          scope: 'fs',
-          kind: 'error',
-          actor: 'user',
-          message: 'load failed ' + path,
-          event: { action: 'file.load-failed', path, error: String(e).slice(0, 200) },
-        });
-      }
-    },
-    [buffers, setBuffers, fileName, noteSavedRevision, resolveMain],
-  );
+  const {
+    mainFile,
+    mainSource,
+    mainCandidates,
+    setMainFileState,
+    clearMain,
+    resolveMain,
+    setMainToOpenFile,
+    setMainToPath,
+    pickMain,
+  } = useMainFile({ root, projectId, rootRef, setLog });
+  const handleSelect = useFileSelection({
+    fileName,
+    fileNameRef,
+    buffers,
+    setBuffers,
+    setTex,
+    setFileName,
+    setPreviewFile,
+    setLargeFile,
+    setLog,
+    noteSavedRevision,
+    resolveMain,
+    rootRef,
+    projectIdRef,
+  });
   // Callers defined before handleSelect (tab cycling, go to definition,
   // search hits) switch files through this ref.
   handleSelectRef.current = handleSelect;
+  // Tree-driven main association (double-click / context menu on a .tex row).
+  const selectAndSetMain = async (path: string) => {
+    await handleSelect(path);
+    await setMainToPath(path);
+  };
 
   // UI tree is 1 level + expand-on-demand. The recursive walk runs only
   // for main-file scan + watcher baseline, never on the open path.
   // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
-
-  async function handleSetMain() {
-    if (!root || !projectId || !hasDir(fileName)) return;
-    await setMainFile(projectId, root, fileName);
-    const m = await resolveMain(root, projectId, fileName);
-    setLog('main file: ' + (m ?? '(none)'));
-    emit({
-      scope: 'fs',
-      kind: 'success',
-      actor: 'user',
-      message: 'main file set: ' + (m ?? '(none)'),
-      event: { action: 'main.set', mainFile: m },
-    });
-  }
-
-  // Main-file tie-break: the scan found >1 `\documentclass` and picked the
-  // first. Choosing here writes the explicit association, so the tie never
-  // reappears for this project.
-  async function handlePickMain(path: string) {
-    if (!root || !projectId) return;
-    await setMainFile(projectId, root, path);
-    await resolveMain(root, projectId, path);
-    emit({
-      scope: 'fs',
-      kind: 'success',
-      actor: 'user',
-      message: 'main file set: ' + path,
-      event: { action: 'main.set', mainFile: path },
-    });
-  }
-
-  // Tree-driven main association (double-click / context menu on a .tex row).
-  async function handleSetMainPath(path: string) {
-    if (!root || !projectId) return;
-    await handleSelect(path);
-    await setMainFile(projectId, root, path);
-    const m = await resolveMain(root, projectId, path);
-    setLog('main file: ' + (m ?? '(none)'));
-    emit({
-      scope: 'fs',
-      kind: 'success',
-      actor: 'user',
-      message: 'main file set: ' + (m ?? '(none)'),
-      event: { action: 'main.set', mainFile: m },
-    });
-  }
 
   // One-off compile of a tree-selected file. This is EXPECTED to fail for
   // fragments (a chapter without \documentclass cannot build alone) — the
@@ -628,11 +466,7 @@ export default function App({
       setLog,
       trash,
       resolveMain,
-      clearMainFile: () => {
-        setMainFileState(null);
-        setMainSource('');
-        setMainCandidates([]);
-      },
+      clearMainFile: clearMain,
       handleSelect,
       warmCompile,
     });
@@ -935,7 +769,7 @@ export default function App({
       void save();
     },
     setMainFile: () => {
-      void handleSetMain();
+      void setMainToOpenFile(fileName);
     },
     reloadFromDisk: () => {
       void resolveExternal('reload');
@@ -1089,11 +923,11 @@ export default function App({
               selected: fileName,
               onSelect: handleSelect,
               onDoubleClick: (p) => {
-                if (p.endsWith('.tex')) void handleSetMainPath(p);
+                if (p.endsWith('.tex')) void selectAndSetMain(p);
               },
               onDelete: handleDelete,
               onSetMain: (p) => {
-                void handleSetMainPath(p);
+                void selectAndSetMain(p);
               },
               onCompileFile: (p) => {
                 void handleCompileFile(p);
@@ -1120,7 +954,7 @@ export default function App({
             mainTip={mainFileTip(mainFile, mainSource)}
             mainFile={mainFile}
             mainCandidates={mainCandidates}
-            onPickMain={(c) => void handlePickMain(c)}
+            onPickMain={(c) => void pickMain(c)}
             labelOf={(c) => relOf(c) ?? c}
             tabs={{
               buffers,
