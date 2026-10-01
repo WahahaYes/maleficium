@@ -218,8 +218,18 @@ r = export("single-file", "cap-small.html", {"size_cap_bytes": 1000})
 check("single-file over a small cap warns and still writes",
       r["ok"] and any(w["kind"] == "size-cap" for w in r["warnings"]) and os.path.isfile(os.path.join(OUT, "cap-small.html")), str(r)[:300])
 check("single-file under the default cap does not warn", not any(w["kind"] == "size-cap" for w in exp["single-file"]["warnings"]), str(exp["single-file"]["warnings"]))
-check("the fixture's missing model and video runtimes are warned, not hidden",
-      sum(w["kind"] == "no-runtime" for w in exp["folder"]["warnings"]) == 2, str(exp["folder"]["warnings"])[:300])
+def widget_doc(profile_dir, wid):
+    return open(os.path.join(profile_dir, "widgets", wid, "index.html"), encoding="utf-8").read()
+fdir = exp["folder"]["path"]
+model_doc, video_doc = widget_doc(fdir, "fig-mesh"), widget_doc(fdir, "fig-clip")
+check("model and video widgets export with their runtime, not as a poster",
+      'id="view"' in model_doc and "WebGLRenderer" in model_doc and '<video id="v" controls' in video_doc
+      and "<img" not in model_doc and "<img" not in video_doc, "")
+check("the exported model and video runtimes are one classic script with no external url",
+      all(d.count("<script") == 1 and 'type="module"' not in d and not re.search(r'<script[^>]*\bsrc=|@import|importScripts', d)
+          and not re.search(r'(?:src|href)=["\']?(?:https?:)?//', d) for d in (model_doc, video_doc)), "")
+check("no export warns about a missing runtime", not any("runtime" in w["message"] for w in exp["folder"]["warnings"]),
+      str(exp["folder"]["warnings"])[:300])
 glb = os.path.join(ROOT, "models/mesh.glb")
 orig = open(glb, "rb").read()
 with open(glb, "wb") as f:
