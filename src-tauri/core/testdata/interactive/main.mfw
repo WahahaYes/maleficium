@@ -1,6 +1,6 @@
 mfw 1
 widget|fig-mesh|model|model@1|fig:mesh|1|house|figures/mesh.png|model=models/mesh.glb|height=170.71652pt|Avatar mesh before and after protection
 widget|fig-clip|video|video@1|||house|figures/clip.png|video=media/clip.mp4|height=142.26378pt,remote=,sha256=|Session playback
-widget|tab-results|table|table@1|fig:clip|1|house||data=data/results.csv|pdfrows=2|Full scores for all configurations
-widget|fig-chart|chart|chart@1|fig:clip|1|house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart
-widget|fig-demo|html||fig:demo|1|house|figures/demo.png|bundle=widgets/demo/|height=227.62204pt|Live demo widget
+widget|tab-results|table|table@1|||house||data=data/results.csv|pdfrows=2|Full scores for all configurations
+widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart
+widget|fig-demo|html||||house|figures/demo.png|bundle=widgets/demo/|height=227.62204pt|Live demo widget
