@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Model</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--m-figure-bg, transparent);
+        color: var(--m-color-text, #1f2328);
+        font: var(--m-size-small, 13px) / var(--m-leading, 1.4)
+          var(--m-font-body, system-ui, sans-serif);
+      }
+      #view {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        cursor: grab;
+      }
+      canvas:focus-visible {
+        outline: 2px solid var(--m-color-accent, #0969da);
+        outline-offset: -2px;
+      }
+      .msg {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--m-space-3, 12px);
+        text-align: center;
+        color: var(--m-color-muted, #59636e);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="view"><div class="msg" id="msg">Loading…</div></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

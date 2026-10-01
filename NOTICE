@@ -40,6 +40,17 @@ permissively licensed (checked against package-lock.json, 2026-10-01):
   BSD-3-Clause; fast-deep-equal, json-stringify-pretty-compact and similar
   under MIT; tslib under 0BSD; robust-predicates under Unlicense).
 
+The model runtime under src-tauri/widget-runtimes/model/ also inlines three.js
+0.186.1 (its GLTFLoader and OrbitControls included), Copyright (c) 2010-2026
+three.js authors, MIT, with no dependencies (checked against package-lock.json,
+2026-10-01). Its type declarations, @types/three 0.186.0 (MIT) and their
+dependencies (MIT, Apache-2.0), are build-time only and not bundled. The video
+runtime uses only the browser's own <video> element.
+
+The model and video test fixtures under e2e/fixtures/ (a generated glb cube and
+an ffmpeg test pattern, e2e/fixtures/gen-media.py) are original to Maleficium
+and dedicated to the public domain under CC0 1.0.
+
 The built-in project templates under src-tauri/templates/ are original to
 Maleficium and dedicated to the public domain under CC0 1.0
 (src-tauri/templates/LICENSE); see src-tauri/templates/README.md.
