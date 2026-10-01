@@ -12,6 +12,7 @@ pub mod fs;
 pub mod guard;
 pub mod history;
 pub mod index;
+pub mod interactive;
 pub mod mainfile;
 pub mod outputs;
 pub mod readiness;

@@ -25,6 +25,7 @@ use ts_rs::TS;
 use crate::eventlog::RotateReport;
 use crate::export::Exported;
 use crate::fs::FileStat;
+use crate::interactive::Installed;
 use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
@@ -68,6 +69,7 @@ params! {
     TemplateSaveProjectParams { root_id: String, info: TemplateInfo },
     TemplateImportFolderParams { dir: String, info: TemplateInfo },
     TemplateWelcomeParams {},
+    InteractiveInstallParams { root_id: String },
     ForwardSyncParams { root_id: String, main_rel: String, tex_rel: String, line: u32 },
     InverseSyncParams { root_id: String, main_rel: String, page: u32, x: f32, y: f32 },
     StructureOutlineParams { text: String },
@@ -150,6 +152,7 @@ operations! {
     TemplateSaveProject via template_save_project(TemplateSaveProjectParams) -> TemplateInfo,
     TemplateImportFolder via template_import_folder(TemplateImportFolderParams) -> TemplateInfo,
     TemplateWelcome via template_welcome(TemplateWelcomeParams) -> Created,
+    InteractiveInstall via interactive_install(InteractiveInstallParams) -> Installed,
     ForwardSync via forward_sync(ForwardSyncParams) -> ForwardHit,
     InverseSync via inverse_sync(InverseSyncParams) -> InverseHit,
     StructureOutline via structure_outline(StructureOutlineParams) -> Outline,
@@ -261,6 +264,10 @@ fn template_import_folder(
 
 fn template_welcome(_cx: &Core, _p: TemplateWelcomeParams) -> Result<Created, String> {
     crate::templates::welcome()
+}
+
+fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<Installed, String> {
+    crate::interactive::install(cx, &p.root_id)
 }
 
 fn forward_sync(cx: &Core, p: ForwardSyncParams) -> Result<ForwardHit, String> {
@@ -483,6 +490,8 @@ pub fn typescript() -> String {
         TemplateSaveProjectParams::decl(&cfg),
         TemplateImportFolderParams::decl(&cfg),
         TemplateWelcomeParams::decl(&cfg),
+        InteractiveInstallParams::decl(&cfg),
+        Installed::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),
@@ -578,6 +587,19 @@ mod tests {
         assert!(matches!(resp, Response::TemplatesList(_)));
         let v = serde_json::to_value(&resp).unwrap();
         assert_eq!(v["op"], "templatesList");
+    }
+
+    #[test]
+    fn interactive_install_round_trips_and_rejects_unknown_roots() {
+        let cx = &Core::default();
+        let err = dispatch(
+            cx,
+            Request::InteractiveInstall(InteractiveInstallParams {
+                root_id: "nope".into(),
+            }),
+        )
+        .unwrap_err();
+        assert!(!err.is_empty());
     }
 
     #[test]
