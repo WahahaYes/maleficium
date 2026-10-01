@@ -2,7 +2,8 @@ import { cancelCompileRun, runCompileTex, subscribeCompileLines } from './compil
 import { request } from './core-request.tauri';
 import type { CompileFailure, CompileLine, EventKind, OfflineReadiness } from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
-import type { Exported } from './generated/api';
+import type { BundleExported, Exported } from './generated/api';
+import type { BundleProfile } from './generated/events';
 import type { OutputStamp } from './externalRefresh';
 
 /**
@@ -167,6 +168,22 @@ export async function exportPdf(rootId: string, mainRel: string, dest: string): 
 /** Zip the project's sources to `dest` (absolute, outside the project). */
 export async function exportZip(rootId: string, dest: string): Promise<Exported> {
   return await request('exportZip', { rootId, dest });
+}
+
+/**
+ * Write main_rel's paper bundle to `dest` (absolute, outside the project):
+ * a folder for `folder` and `hosted`, one file for `single-file`. The call
+ * carries no approval to download anything; the core refuses remote assets
+ * it cannot hash locally.
+ */
+export async function exportBundle(
+  rootId: string,
+  mainRel: string,
+  dest: string,
+  profile: BundleProfile,
+  sizeCapBytes: number | null = null,
+): Promise<BundleExported> {
+  return await request('exportBundle', { rootId, mainRel, dest, profile, sizeCapBytes });
 }
 
 /** Whether a previous compile left a pdf. Never throws. */

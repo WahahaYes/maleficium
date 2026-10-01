@@ -187,6 +187,18 @@ pub enum ExportKind {
     Zip,
 }
 
+/// The layout an exported paper bundle takes (bundle spec section 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum BundleProfile {
+    /// A folder for any static http(s) host.
+    Folder,
+    /// One html document with everything inlined: email, archives, file://.
+    SingleFile,
+    /// A folder for the preprint server, which mirrors remote assets.
+    Hosted,
+}
+
 /// Whether a project compiles without network, as far as its last compiles
 /// and this machine show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -547,6 +559,25 @@ pub enum AppEvent {
     },
     #[serde(rename = "export.failed")]
     ExportFailed { kind: ExportKind, error: String },
+    /// A paper bundle was written outside the project: how many widgets and
+    /// bytes it holds and how many warnings the export raised.
+    #[serde(rename = "bundle.exported")]
+    BundleExported {
+        main: String,
+        profile: BundleProfile,
+        path: String,
+        bytes: u64,
+        widgets: u32,
+        warnings: u32,
+    },
+    /// A paper bundle export was refused or failed; nothing was left at the
+    /// destination.
+    #[serde(rename = "bundle.failed")]
+    BundleFailed {
+        main: String,
+        profile: BundleProfile,
+        error: String,
+    },
     /// The preview zoom changed; `percent` is what a page now shows at.
     #[serde(rename = "preview.zoom")]
     PreviewZoom { mode: ZoomKind, percent: u32 },
@@ -707,6 +738,7 @@ pub fn typescript() -> String {
         CompileReport::decl(&cfg),
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
+        BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
         PrecheckPanelVia::decl(&cfg),

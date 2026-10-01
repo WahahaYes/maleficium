@@ -4,6 +4,7 @@
 //! dependency.
 
 pub mod api;
+pub mod bundle;
 pub mod compile;
 pub mod engine;
 pub mod eventlog;

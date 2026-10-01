@@ -61,6 +61,10 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 
 Drives the sidecar through grant → `interactive_install` → compile → poll against `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the four failing documents, and that only the installed package landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
 
+### export-run.sh
+
+Drives the sidecar through grant → install → compile of a scratch copy of `fixtures/interactive/`, then `export_bundle` in every profile (`folder`, `single-file`, `hosted`). Checks each manifest against the committed schema (`src-tauri/core/schemas/paper-bundle-1.schema.json`, validated with python `jsonschema`, required), the sha256 of the pdf and of every asset against both the bundle bytes and the project source, the layout and the inline single-file islands, that each widget is one inline document with its policy first, destinations inside the project refused in all profiles (nothing written), the single-file size cap (a small configured cap, then a real 51 MiB model against the 50 MiB default), a remote-only asset refused without approval, that MCP has no way to approve a download (extra fields refused, no approval field in the tool schema), that the project is unchanged, and that re-export replaces only an earlier bundle. The last step repeats the exports in a process inside an empty network namespace (`unshare -rn`); without that support it prints `skip:` and the cargo test that core has no http client stands in. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling.
+
 ### stills-run.py
 
 Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard shortcuts, and captures a PNG per state into `STILLS_OUT`. Needs Xvfb, xdotool, and ImageMagick.

@@ -723,6 +723,8 @@ export default function App({
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
     exportZip: () => void exporter.exportZipAs(),
+    exportBundleFolder: () => void exporter.exportBundleAs('folder'),
+    exportBundleSingleFile: () => void exporter.exportBundleAs('single-file'),
     newFromTemplate: () => setTemplateMode('gallery'),
     saveAsTemplate: () => setTemplateMode('save'),
     importTemplate: () => setTemplateMode('import'),
