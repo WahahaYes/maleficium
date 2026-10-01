@@ -23,7 +23,7 @@ pub struct Exported {
 
 /// An absolute destination whose directory exists, outside the root. The
 /// destination itself may not exist yet, so its parent is canonicalized.
-fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
+pub(crate) fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
     let d = Path::new(dest);
     if !d.is_absolute() {
         return Err(format!("export destination must be absolute: {dest}"));

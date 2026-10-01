@@ -2,11 +2,11 @@
 // a place the user picks outside the project.
 
 import { dialog } from '../lib/fs-provider';
-import { exportPdf, exportZip } from '../lib/compile';
+import { exportBundle, exportPdf, exportZip } from '../lib/compile';
 import { emit } from '../lib/events';
-import type { ExportKind } from '../lib/generated/events';
+import type { BundleProfile, ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
-import { baseName } from '../lib/paths';
+import { baseName, joinPath } from '../lib/paths';
 
 /** The last path segment without a `.tex` suffix, for default file names. */
 function stem(path: string): string {
@@ -63,5 +63,55 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     if (dest) await report('zip', exportZip(p.rootId, dest));
   }
 
-  return { exportPdfAs, exportZipAs };
+  /** The folder profiles ask for a parent folder and make `<name>-bundle` in it. */
+  async function exportBundleAs(profile: BundleProfile) {
+    const src = deps.pdf;
+    const fail = (error: string) =>
+      emit({
+        scope: 'app',
+        kind: 'error',
+        actor: 'user',
+        message: `paper bundle export failed: ${error}`.slice(0, 240),
+        event: { action: 'bundle.failed', main: src?.mainRel ?? '', profile, error },
+      });
+    if (!src) {
+      fail('no compiled pdf to export: compile first');
+      return;
+    }
+    const single = profile === 'single-file';
+    const picked = single
+      ? await dialog().saveFile({
+          title: 'Export Paper Bundle as One File',
+          defaultPath: stem(src.mainRel) + '.html',
+          filters: [{ name: 'HTML', extensions: ['html'] }],
+        })
+      : await dialog().openDirectory({ title: 'Export Paper Bundle: choose a parent folder' });
+    if (!picked) return;
+    const dest = single ? picked : joinPath(picked, stem(src.mainRel) + '-bundle');
+    try {
+      const r = await exportBundle(src.rootId, src.mainRel, dest, profile);
+      const notes = r.warnings.map((w) => w.message).join('; ');
+      emit({
+        scope: 'app',
+        kind: r.warnings.length > 0 ? 'warn' : 'success',
+        actor: 'user',
+        message:
+          `exported a ${profile} bundle to ${r.path} (${r.bytes} bytes)` +
+          (notes ? `: ${notes}` : '').slice(0, 400),
+        event: {
+          action: 'bundle.exported',
+          main: src.mainRel,
+          profile,
+          path: r.path,
+          bytes: r.bytes,
+          widgets: r.widgets,
+          warnings: r.warnings.length,
+        },
+      });
+    } catch (err) {
+      fail(String(err).slice(0, 300));
+    }
+  }
+
+  return { exportPdfAs, exportZipAs, exportBundleAs };
 }
