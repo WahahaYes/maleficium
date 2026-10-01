@@ -98,9 +98,9 @@ A real model does a LaTeX task through the MCP server, and the result is judged 
 ```sh
 cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium
 python3 e2e/agent-run.py --self-test                    # oracles vs. solutions, no model
-python3 e2e/agent-run.py -n 3                           # opencode, free model, source build
-python3 e2e/agent-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor \
-    --bin ../out/Maleficium_0.1.1_amd64.AppImage         # opencode, recorded model, packaged build
+python3 e2e/agent-run.py -n 3                           # opencode, openrouter/meta/muse-spark-1.3, source build
+python3 e2e/agent-run.py -n 3 --model openrouter/meta/muse-spark-1.3 \
+    --bin ../out/Maleficium_0.1.1_amd64.AppImage         # opencode, explicit model, packaged build
 python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-sonnet-5, source build
 ```
 
@@ -108,7 +108,7 @@ python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-son
 - Results go to `--out` (default `/var/tmp/maleficium-agent-runs/<time>`): a dir per run with `result.json` (oracles, metrics, the MCP call record), `events.jsonl` (the runner's own transcript, see below), and the project as the agent left it; plus `summary.md`. Opencode runs also keep a live `opencode.log`.
 - A run that hits its scenario's `timeout_s` is killed and reported as a timeout.
 - Two sweeps can run at once if the second sets `AGENT_MIRROR_PORT` (default 18790) to a free port for its bundle mirror.
-- `--budget` (default $5) stops the whole `-n` sweep once the cost the runner reports adds up to it (free opencode models report $0). For the claude runner, `--max-turns` (default 40) and `--max-budget-usd` (default $2) are an additional hard per-run cap, passed straight to `claude -p`.
+- `--budget` (default $5) stops the whole `-n` sweep once the cost the runner reports adds up to it. For the claude runner, `--max-turns` (default 40) and `--max-budget-usd` (default $2) are an additional hard per-run cap, passed straight to `claude -p`.
 - Each scenario's engine cache is warmed once, cold, by compiling its solution (through `bundle-mirror.py` for the source build; online for a packaged build), and kept in `/var/tmp/maleficium-agent-cache`. Each run gets a copy.
 - Both runners write their transcript to `events.jsonl`, one event per line, as it streams, so a stalled run is visible before it times out. Claude runner lines carry an added `_ts_ms` (epoch ms at read time) for syncing a screen recording to the transcript.
 - Another harness can run one scenario with `run_scenario_once(...)` and get the same `result.json` and `events.jsonl`.
@@ -134,7 +134,7 @@ Oracles from the app's event log: the preview reloaded on the agent's compiles a
 
 ```sh
 python3 e2e/codrive-run.py --runner script              # the solution, no model: checks the harness
-python3 e2e/codrive-run.py -n 3 --model openrouter/meta/muse-spark-1.3-contributor
+python3 e2e/codrive-run.py -n 3 --model openrouter/meta/muse-spark-1.3
 python3 e2e/codrive-run.py --runner claude --mode showcase --fresh
 python3 e2e/codrive-run.py --mode race                  # no agent: outside writes timed against autosave
 ```
@@ -161,7 +161,7 @@ python3 e2e/showreel/run.py                           # interactive Claude Code 
 ```
 
 - Three agents behind one interface (`agents.py`): `print` (`claude -p`), `tmux` (interactive Claude Code in an xterm on its own display, recorded beside the app), and `opencode` (headless `opencode run`, resumed with `--session`). Every turn streams its transcript to `events.jsonl` and hands the director Claude-shaped tool_use/tool_result envelopes, whatever runner produced them — adding a runner means a new class, no director changes. The tmux runner tails Claude Code's own session log: `print` is the supported path, tmux is best-effort, and a breaking Claude Code change gets resolved if one lands.
-- Runs are manual only, never in CI or pre-commit. Takes spend model credits: `--budget` (default $10) stops the sweep, `--beat-budget` caps each `claude -p` beat. `--agent opencode` defaults to the free variant where the login allows it; otherwise pass `--model` (e.g. `openrouter/meta/muse-spark-1.3`).
+- Runs are manual only, never in CI or pre-commit. Takes spend model credits: `--budget` (default $10) stops the sweep, `--beat-budget` caps each `claude -p` beat. `--agent opencode` defaults to `openrouter/meta/muse-spark-1.3` (verified 2026-09-29). There is no working free model id now: `opencode/muse-spark-1.3-contributor-free` returns 403 without an OpenCode Console login, and `openrouter/meta/muse-spark-1.3-contributor` no longer routes.
 - It builds the app into `CARGO_TARGET_DIR` (default `/var/tmp/maleficium-showreel-target`) and serves vite on `SHOWREEL_PORT` (1424), with Xvfb on `SHOWREEL_DISPLAY` (`:96`) at `SHOWREEL_SCREEN` (1536x864), the agent's terminal on `:95`, and the bundle mirror on `SHOWREEL_MIRROR_PORT` (18792). The project lives at `SHOWREEL_HOME` (default `/tmp/barista`), wiped only if it holds the `.showreel-home` marker. It takes the stills display lock.
 - Beats are judged per snapshot with `agent-run.py`'s `Judge`; two sequential forms (`more_addplots_than_before`, `table_columns_grew`) translate to absolute thresholds against the previous beat. A take passes only if every beat does, so a video can state an honest pass rate over its takes.
 - Per take (`take-N/`): `screen.mp4` (and `claude.mp4` for tmux), `captions.srt`, `events.jsonl`, `camera.jsonl`, `timeline.jsonl`, the app's `app-events.jsonl`, per-beat snapshots, and `result.json`. `--preview` stitches a tmux take's two recordings side by side, sped up; `--suggest-shots` prints candidate edit shots from the shared-clock logs. Per-take edit scripts stay out of the repo: only these generic transforms belong here.
