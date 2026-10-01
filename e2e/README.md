@@ -93,7 +93,7 @@ A real model does a LaTeX task through the MCP server, and the result is judged 
 
 1. generates the fixture from `src-tauri/templates` into a fresh run dir;
 2. drives the agent headless inside `bwrap`, with the whole host read-only except the run dir (and, for opencode, its own state dirs), and a per-run MCP config that starts the server under test with `--mcp` and a scratch `HOME`;
-3. judges the result after the agent exits: it compiles, references and citations resolve, the outline and file contents meet the spec, bytes are restored after an undo, nothing outside the project changed, and the run's own record of MCP calls shows the required tools succeeding in order. The model's prose is never read.
+3. judges the result after the agent exits: it compiles, references and citations resolve, the outline and file contents meet the spec, bytes are restored after an undo, nothing outside the project changed, and the run's own record of MCP calls shows the required tools succeeding in order. The model's prose is never read, except for one machine line a scenario's prompt asks for (`view_shows` below).
 
 ```sh
 cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium
@@ -112,6 +112,22 @@ python3 e2e/agent-run.py --runner claude -n 3            # claude -p, claude-son
 - Each scenario's engine cache is warmed once, cold, by compiling its solution (through `bundle-mirror.py` for the source build; online for a packaged build), and kept in `/var/tmp/maleficium-agent-cache`. Each run gets a copy.
 - Both runners write their transcript to `events.jsonl`, one event per line, as it streams, so a stalled run is visible before it times out. Claude runner lines carry an added `_ts_ms` (epoch ms at read time) for syncing a screen recording to the transcript.
 - Another harness can run one scenario with `run_scenario_once(...)` and get the same `result.json` and `events.jsonl`.
+- `--bin source` runs `maleficium --mcp` from `CARGO_TARGET_DIR` (default `src-tauri/target`), or `maleficium-mcp` there when only the server is built.
+
+#### MCP App Views
+
+`show-snippet` asks for a table from the paper through the `snippet` tool, whose result renders in the snippet View. Its oracles replay the agent's last successful `snippet` call on the project it left:
+
+- `view_resource`: the tool's `_meta.ui.resourceUri` names the View, and `resources/read` returns it as a self-contained `text/html;profile=mcp-app` page.
+- `snippet_shows_label`: the call lands on the table's page and region.
+- `snippet_parity`: as made and with `with_image`, from a client that declares the MCP Apps extension and one that does not, the text content is the `structuredContent`, and both clients get the same text and the same image.
+- `view_shows`: `apps-host/render.mjs` renders the call in the View in headless Firefox (the same host page as `apps-host/run.mjs`), saves `view/snippet.png` and `view/render.json` in the run dir, and checks the View shows the region with a `page N of M` header that the answer's `SHOWN: page N of M` line repeats.
+
+A scenario with a `script` also runs under `--self-test` with a scripted fake agent: no model, the same `events.jsonl` shape as the claude runner, judged by every oracle. As scripted it must pass; each `tampered` variant (a wrong answer line, a skipped call) must fail the oracles it names. The View steps need `node` and a Firefox for playwright-core (`npx playwright install firefox`). Offline, with warm caches:
+
+```sh
+MIRROR_OFFLINE=1 python3 e2e/agent-run.py --self-test --scenario show-snippet
+```
 
 #### Claude runner isolation
 
