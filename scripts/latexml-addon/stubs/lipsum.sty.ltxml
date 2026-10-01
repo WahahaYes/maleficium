@@ -1,0 +1,21 @@
+# -*- mode: Perl -*-
+# Stub binding for lipsum, shipped with the Maleficium LaTeXML add-on.
+# Real lipsum loads raw expl3-code.tex, which LaTeXML 0.8.8 runs until its
+# timeout. Placeholder text has no place in the HTML view, so its commands
+# expand to nothing.
+package LaTeXML::Package::Pool;
+use strict;
+use warnings;
+use LaTeXML::Package;
+
+DefMacro('\lipsum OptionalMatch:* []',     '');
+DefMacro('\Lipsum OptionalMatch:* []',     '');
+DefMacro('\lipsumexp OptionalMatch:* []',  '');
+DefMacro('\setlipsum{}',                   '');
+DefMacro('\SetLipsumText{}',               '');
+DefMacro('\SetLipsumParListStart{}',       '');
+DefMacro('\SetLipsumParListEnd{}',         '');
+DefMacro('\SetLipsumSentenceListStart{}',  '');
+DefMacro('\SetLipsumSentenceListEnd{}',    '');
+
+1;
