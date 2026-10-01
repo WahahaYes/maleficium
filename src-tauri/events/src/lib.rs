@@ -632,6 +632,14 @@ pub enum AppEvent {
         max_events: u32,
         max_line_bytes: u32,
     },
+    /// The widgets of a compiled main file were read: how many the document
+    /// declares (sidecar and pdf annotations agreeing).
+    #[serde(rename = "widgets.read")]
+    WidgetsRead { main: String, count: u32 },
+    /// The widget list could not be produced (never compiled, a stale or
+    /// malformed sidecar, a bad bundle manifest).
+    #[serde(rename = "widgets.failed")]
+    WidgetsFailed { main: String, error: String },
     /// An automation-surface tool call and its outcome, logged with actor
     /// `agent` through the same writer as the app's events.
     #[serde(rename = "mcp.call")]

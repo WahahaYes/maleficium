@@ -126,6 +126,49 @@ marks = re.findall(rb"/NM\s*\(mfw:([^)]+)\)", blob)
 check("pdf carries five named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-demo"]), str(marks))
 rects = re.findall(rb"/Rect\s*\[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]", blob)
 check("annotation rects are well-formed", len(rects) >= 5 and all(float(a) < float(c) and float(b) < float(d) for a, b, c, d in rects), str(rects[:6]))
+
+# The core joins the sidecar with the annotation rects: one typed list.
+w = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
+check("widgets lists the compiled fixture", w["ok"], str(w)[:300])
+wl = w.get("widgets") or []
+check("widgets returns every widget in document order",
+      [x["id"] for x in wl] == ["fig-mesh", "tab-results", "fig-clip", "fig-chart", "fig-demo"],
+      str([x["id"] for x in wl]))
+wby = {x["id"]: x for x in wl}
+check("widgets agree with the sidecar on type and runtime",
+      all(x["type"] == by_id[x["id"]][2] and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
+      str(wl)[:300])
+check("widget rects are the pdf annotation rects",
+      all(any(all(abs(float(r[i]) - x["rect"][k]) < 0.01 for i, k in enumerate(["x0", "y0", "x1", "y1"]))
+              for r in rects) for x in wl),
+      str([x["rect"] for x in wl])[:300])
+check("widget pages and rects are well-formed",
+      all(x["page"] >= 1 and x["rect"]["x0"] < x["rect"]["x1"] and x["rect"]["y0"] < x["rect"]["y1"] for x in wl))
+check("widget sources and options are typed",
+      wby["fig-mesh"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
+      and {"key": "pdfrows", "value": "2"} in wby["tab-results"]["options"]
+      and wby["fig-demo"]["sources"][0]["role"] == "bundle", str(wby)[:300])
+check("pre-caption widget lists no label", "label" not in wby["fig-clip"], str(wby["fig-clip"]))
+
+# A sidecar that lost track of the pdf is an error, not a shorter list.
+mfw_good = open(mfw).read()
+open(mfw, "w").write(mfw_good + "widget|ghost|chart|chart@1|||house|p.png|spec=a.json|height=1pt|Ghost\n")
+ws = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
+check("stale sidecar is an error naming the id",
+      not ws["ok"] and "ghost" in ws["error"] and "recompile" in ws["error"], str(ws)[:300])
+os.remove(mfw)
+wm = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
+check("missing sidecar beside an annotated pdf is an error",
+      not wm["ok"] and "no widget sidecar" in wm["error"], str(wm)[:300])
+open(mfw, "w").write(mfw_good)
+wn = call("widgets", {"root_id": "ip", "main_rel": "bad-id.tex"})
+check("widgets before any compile is an error", not wn["ok"] and "compile it first" in wn["error"], str(wn)[:300])
+wu = call("widgets", {"root_id": "nope", "main_rel": "main.tex"})
+check("widgets refuses unknown roots", not wu["ok"], str(wu)[:200])
+wtool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "widgets"), {})
+check("widgets is advertised read-only and idempotent",
+      (wtool.get("annotations") or {}).get("readOnlyHint") is True
+      and (wtool.get("annotations") or {}).get("idempotentHint") is True, str(wtool)[:300])
 import shutil
 if shutil.which("mutool"):
     txt = subprocess.run(["mutool", "draw", "-F", "txt", "-o", "-", pdf],
@@ -149,6 +192,8 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
 
 pr = compile("plain.tex", rounds=20)
 check("package-free document compiles", pr.get("status") == "success", str(pr)[:200])
+wp = call("widgets", {"root_id": "ip", "main_rel": "plain.tex"})
+check("package-free document lists no widgets", wp["ok"] and wp.get("widgets") == [], str(wp)[:200])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)
