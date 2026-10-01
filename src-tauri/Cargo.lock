@@ -2276,6 +2276,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "maleficium-widget-helper"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "gdk",
+ "gdkx11",
+ "gio",
+ "glib",
+ "gtk",
+ "javascriptcore-rs",
+ "libc",
+ "maleficium-widget-host",
+ "serde",
+ "serde_json",
+ "soup3",
+ "webkit2gtk",
+ "x11",
+]
+
+[[package]]
 name = "maleficium-widget-host"
 version = "0.3.0"
 dependencies = [

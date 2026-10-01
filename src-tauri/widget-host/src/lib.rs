@@ -18,6 +18,9 @@ pub mod watchdog;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 
+#[cfg(target_os = "linux")]
+pub mod linux;
+
 pub use caps::Capabilities;
 pub use host::*;
 
