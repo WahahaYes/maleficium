@@ -80,16 +80,17 @@
   \end{tikzpicture}}
 \newcommand{\mlHeadText}[1]{{\mlTracked\small\MakeUppercase{#1}}}
 \newcommand{\mlHeadRule}{%
-  \vspace{0.9\mlGap}{\color{mlhair}\titlerule[0.4pt]}\nointerlineskip
+  \nopagebreak[4]\vspace{0.9\mlGap}{\color{mlhair}\titlerule[0.4pt]}\nointerlineskip
   \noindent\raisebox{\dimexpr\ht\strutbox-0.4pt\relax}[0pt][0pt]{\mlSlash}\par
-  \vspace{-\dimexpr\ht\strutbox+\dp\strutbox\relax}}
+  \vspace{-\dimexpr\ht\strutbox+\dp\strutbox\relax}%
+  \nopagebreak[4]}
 \titleformat{\section}[block]
   {\normalfont\bfseries\color{mlaccent}}{}{0pt}
   {\mlHeadText}
   [\mlHeadRule]
 \titlespacing*{\section}{0pt}{2\mlGap}{2\mlGap}
 % \mlSection{Experience}
-\newcommand{\mlSection}[1]{\section{#1}}
+\newcommand{\mlSection}[1]{\Needspace*{4\baselineskip}\section{#1}}
 
 % -- the header --------------------------------------------------------------
 % \mlName{First Last}  \mlTagline{Role you want}  \mlContact{a \mlSep b}
