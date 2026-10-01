@@ -207,6 +207,22 @@ struct WidgetsParams {
     main_rel: String,
 }
 
+/// Unknown fields are refused: the export has no approval argument for an
+/// agent to pass, so an `approved_fetch` (or anything like it) is an error,
+/// not something quietly ignored.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ExportBundleParams {
+    root_id: String,
+    main_rel: String,
+    /// Absolute path outside the project: a new or empty folder (folder,
+    /// hosted), or the file to write (single-file).
+    dest: String,
+    profile: maleficium_events::BundleProfile,
+    /// Single-file warning threshold in bytes; default 50 MiB.
+    size_cap_bytes: Option<u64>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -663,6 +679,38 @@ impl Maleficium {
             let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
             let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
                 &p.main_rel,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Export main_rel's last compile as a paper bundle at dest, an absolute path outside the project: profile folder or hosted writes a folder (manifest.json, index.html, paper.pdf, theme/, widgets/<id>/index.html, content-addressed assets/), single-file writes one html file with everything inline. Every widget is one self-contained document with a strict CSP; assets are sha256-hashed from the project's files. Writes only to dest (an earlier bundle there is replaced; any other non-empty folder is refused) and never fetches: a remote asset with no local copy is refused, since hashing it would need a download that only the user can approve in the app. Returns the path, bytes, counts and warnings (size cap, runtimes missing from this build, files an author bundle could not inline). Fails before any compile, for a destination inside the project, and for an invalid manifest.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn export_bundle(
+        &self,
+        Parameters(p): Parameters<ExportBundleParams>,
+    ) -> Result<Json<core::bundle::BundleExported>, String> {
+        self.tool("export_bundle", || {
+            let r = core::bundle::export_bundle(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+                &p.dest,
+                p.profile,
+                p.size_cap_bytes,
+            );
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                p.profile,
                 &r,
                 maleficium_events::Actor::Agent,
             )));
@@ -1178,6 +1226,64 @@ mod tests {
                 root_id: "nope".into(),
                 main_rel: "main.tex".into(),
             }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The export writes a new place and replaces only an earlier bundle, so
+    /// it is not read-only; it never fetches, so it is not open-world. An
+    /// agent has no way to approve a download: the parameters refuse any
+    /// field the schema does not list, and the tool has no approval argument.
+    #[test]
+    fn export_bundle_cannot_be_given_an_approval_and_fails_closed() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "export_bundle")
+            .expect("export_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            props,
+            ["dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+        let base = serde_json::json!({
+            "root_id": "r", "main_rel": "main.tex", "dest": "/tmp/x", "profile": "folder"
+        });
+        assert!(serde_json::from_value::<ExportBundleParams>(base.clone()).is_ok());
+        for extra in [
+            "approved_fetch",
+            "approve_fetch",
+            "approve",
+            "fetch",
+            "network",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(["https://media.example.org/clip.mp4"]);
+            assert!(
+                serde_json::from_value::<ExportBundleParams>(v).is_err(),
+                "{extra} must not be accepted"
+            );
+        }
+        let m = Maleficium::default();
+        let err = m
+            .export_bundle(Parameters(
+                serde_json::from_value::<ExportBundleParams>(base).unwrap(),
+            ))
             .err()
             .expect("an ungranted root fails");
         assert!(!err.is_empty());
