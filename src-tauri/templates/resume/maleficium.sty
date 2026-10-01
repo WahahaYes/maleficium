@@ -161,21 +161,26 @@
 % A chip leans like the heading slash: a slanted card in a pale accent tint,
 % with a dark slanted tab on its left edge. The text node is a plain
 % rectangle; the slanted shapes are drawn behind it.
-\tikzset{mlchip/.style={inner xsep=8pt, inner ysep=2.4pt, text=mlink}}
+\tikzset{mlchip/.style={inner xsep=10pt, inner ysep=1.6pt, text=mlink}}
 \newcommand{\mlTag}[1]{%
   \tikz[baseline=(mlp.base)]{%
-    \node[mlchip](mlp){\mlChipFont\scriptsize #1};
+    \pgfmathsetmacro{\mlChipSz}{\f@size+1}%
+    \node[mlchip](mlp){\mlChipFont
+      \fontsize{\mlChipSz}{0}\selectfont
+      \rule[-0.3em]{0pt}{1.02em}#1};
     \begin{scope}[on background layer]
       \fill[mlaccent!13] (mlp.south west) -- ($(mlp.south east)+(-3pt,0)$)
         -- (mlp.north east) -- ($(mlp.north west)+(3pt,0)$) -- cycle;
-      \fill[mlaccent] (mlp.south west) -- ($(mlp.south west)+(2.2pt,0)$)
-        -- ($(mlp.north west)+(5.2pt,0)$) -- ($(mlp.north west)+(3pt,0)$) -- cycle;
+      \fill[mlaccent] (mlp.south west) -- ($(mlp.south west)+(2.4pt,0)$)
+        -- ($(mlp.north west)+(5.4pt,0)$) -- ($(mlp.north west)+(3pt,0)$) -- cycle;
+      \fill[mlaccentlt] ($(mlp.south west)+(3.6pt,0)$) -- ($(mlp.south west)+(5.6pt,0)$)
+        -- ($(mlp.north west)+(8.6pt,0)$) -- ($(mlp.north west)+(6.6pt,0)$) -- cycle;
     \end{scope}}%
   \hskip 0.5em plus 0.25em\relax}
 \newcommand{\mlTagGroup}[2]{%
   \begingroup\noindent\hangindent=\mlLabelW\hangafter=1
   \makebox[\mlLabelW][l]{\small\color{mlaccent}\bfseries #1}%
-  {\fontsize{8.6}{16.5}\selectfont\raggedright #2\par}\endgroup
+  {\pgfmathsetmacro{\mlLead}{\f@size*1.8}\fontsize{\f@size}{\mlLead}\selectfont\raggedright #2\par}\endgroup
   \vspace{0.2\mlGap}}
 
 % \mlMe{Name} -- your own name inside an author list.
