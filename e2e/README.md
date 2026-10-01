@@ -57,6 +57,10 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 - `DRIVER_LOG` sets the JSONL run log, `WARM_ONLY=1` stops after the first compile, `POLL_ROUNDS` bounds polling, and `MCP_ROOT_OVERRIDE` drives an existing folder in place.
 - The render budgets need `@napi-rs/canvas`, an optional dependency of `pdfjs-dist`. Without it the probe prints `skip:` and the run stays green.
 
+### interactive-run.sh
+
+Drives the sidecar through grant → `interactive_install` → compile → poll against `fixtures/interactive/`, then checks the `.mfw` sidecar, the named PDF annotations, the table row cap, the four failing documents, and that only the installed package landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
+
 ### stills-run.py
 
 Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard shortcuts, and captures a PNG per state into `STILLS_OUT`. Needs Xvfb, xdotool, and ImageMagick.
