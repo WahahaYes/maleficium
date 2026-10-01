@@ -63,6 +63,7 @@ fn untied(g: &BTreeMap<String, Vec<String>>, root: &str) {
 fn widget_crates_pull_in_no_tauri() {
     let g = graph(LOCK);
     untied(&g, "maleficium-widget-host");
+    untied(&g, "maleficium-widget-helper");
 }
 
 #[test]

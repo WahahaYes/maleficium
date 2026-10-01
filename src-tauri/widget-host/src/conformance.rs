@@ -685,6 +685,7 @@ pub fn watchdog(p: &mut dyn Platform) -> Outcome {
             } if id == "loop-1" => *gap_ms,
             _ => None,
         });
+        eprintln!("watchdog: badge at {badge:?} ms, kill at {kill:?} ms");
         check(badge.is_some_and(|g| (2_000..2_700).contains(&g)), || {
             format!("badge gap {badge:?}, want 2000..2700")
         })?;
@@ -832,6 +833,11 @@ pub fn live_cap(p: &mut dyn Platform) -> Outcome {
                 .any(|(_, e)| matches!(e, HostEvent::Resumed { id } if id == "w-0")),
             || "scrolling back did not resume w-0".into(),
         )?;
+        eprintln!(
+            "live-cap: peak {peak} live of {N}, peak memory {} MiB ({} MiB per live widget)",
+            peak_kib / 1024,
+            peak_kib / 1024 / peak.max(1) as u64
+        );
         const BUDGET_KIB: u64 = 150 * 1024;
         check(peak_kib <= cap as u64 * BUDGET_KIB, || {
             format!("peak memory {} MiB over {cap} x 150 MiB", peak_kib / 1024)
