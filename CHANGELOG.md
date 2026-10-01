@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixes
+
+- **A label's snippet lands on its figure.** `snippet` with a `label` (or a line such as `\label` or `\end{figure}` that has no box of its own) came back as the whole page body on the page where the float's text sits, so an agent asking about a figure got the wrong page. It now uses the nearest earlier line that has a placement of its own, which puts the snippet on the figure.
+
+### For AI agents
+
+- **Hosts that support MCP Apps show the snippet inline.** The `snippet` tool now names a small View (`ui://maleficium/snippet/v1`): the rendered region of the PDF beside the source lines, with previous/next page, a whole-page toggle, and a refresh when a compile replaces the PDF. It follows the host's light or dark theme and never inverts the page. Hosts without Apps support get the same text and, with `with_image`, the same image as before. A new `snippet_render` tool, hidden from the model, lets the View re-render without a model turn.
+
 ## 0.3.0 - 2026-09-30
 
 ### Fixes

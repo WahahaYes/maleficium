@@ -243,9 +243,28 @@ meta = (raw.get("structuredContent") or {}).get("image") or {}
 check("snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
 check("snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
 pg = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "with_image": True})
+fl = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram"})
+fi = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 32})
+check("a label lands where its figure is, not on the page body", fl["ok"] and fi["ok"] and fl["page"] == fi["page"] and (fl.get("region") or {}).get("height", 999) < 400, str(fl.get("region")) + " vs " + str(fi.get("region")))
 check("snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
 two = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
 check("snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
+
+tl = mcp.request("tools/list")["result"]["tools"]
+ui_of = {t["name"]: (t.get("_meta") or {}).get("ui") for t in tl}
+check("only the snippet tools carry a View", sorted(k for k, v in ui_of.items() if v) == ["snippet", "snippet_render"], str(sorted(k for k, v in ui_of.items() if v)))
+check("snippet names its View and stays model-callable", ui_of["snippet"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["snippet"]["visibility"], str(ui_of["snippet"]))
+check("snippet_render is app-only", ui_of["snippet_render"]["visibility"] == ["app"], str(ui_of["snippet_render"]))
+view = mcp.request("resources/read", {"uri": "ui://maleficium/snippet/v1"})["result"]["contents"][0]
+check("the View is served as an MCP App html page", view["mimeType"] == "text/html;profile=mcp-app" and view["text"].lstrip().lower().startswith("<!doctype html>") and (view.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (view.get("_meta") or {}).get("ui", {}), str(view)[:160])
+check("the View is self-contained", "src=\"http" not in view["text"] and "href=\"http" not in view["text"] and "@import" not in view["text"])
+check("an unknown ui resource is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/nope/v1"}))
+check("Views stay out of resources/list", mcp.request("resources/list")["result"].get("resources") == [])
+sr = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 1, "scale": 1}})["result"]
+srimg = next((b for b in sr.get("content") or [] if b.get("type") == "image"), None)
+check("snippet_render returns the page as a png", not sr.get("isError") and srimg and _b64.b64decode(srimg["data"])[:8] == b"\x89PNG\r\n\x1a\n" and ROOT not in json.dumps(sr.get("structuredContent")), str(sr.get("structuredContent")))
+sr2 = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 999}})["result"]
+check("snippet_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
 
 st = call("file_graph", {"root_id": "drv", "main_rel": "main.tex"})
 st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}

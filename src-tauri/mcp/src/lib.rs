@@ -15,6 +15,27 @@ use serde::{Deserialize, Serialize};
 
 use maleficium_core as core;
 
+/// The snippet View's `ui://` resource. A contract change ships `/v2` and
+/// deletes `/v1` in the same change.
+const SNIPPET_VIEW_URI: &str = "ui://maleficium/snippet/v1";
+const SNIPPET_VIEW_HTML: &str = include_str!("../views/snippet.html");
+/// The MCP Apps extension id and the MIME type its Views are served as.
+const UI_EXTENSION: &str = "io.modelcontextprotocol/ui";
+const UI_MIME: &str = "text/html;profile=mcp-app";
+
+/// `_meta.ui` for a tool: the View it renders in, and who may call it
+/// (`["app"]` hides a tool from the model).
+fn ui_meta(resource_uri: Option<&str>, visibility: &[&str]) -> rmcp::model::MetaObject {
+    let mut ui = serde_json::Map::new();
+    if let Some(uri) = resource_uri {
+        ui.insert("resourceUri".into(), uri.into());
+    }
+    ui.insert("visibility".into(), visibility.into());
+    let mut meta = serde_json::Map::new();
+    meta.insert("ui".into(), ui.into());
+    meta.into()
+}
+
 /// The MCP adapter: one `Core` for the life of the stdio session.
 #[derive(Clone, Default)]
 struct Maleficium {
@@ -173,6 +194,19 @@ impl SnippetParams {
             _ => Err("give exactly one target: tex_rel with line, or label, or page".to_string()),
         }
     }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SnippetRenderParams {
+    root_id: String,
+    main_rel: String,
+    /// The page to render (1-based).
+    page: u32,
+    /// Crop to a full-width band around this region (pdf points from the
+    /// page's top left); omit for the whole page.
+    region: Option<core::snippet::Region>,
+    /// Pixels per point before the size caps (default 2, clamped to 0.5..3).
+    scale: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -578,7 +612,8 @@ impl Maleficium {
 
     #[tool(
         description = "See how part of main_rel's compiled PDF looks: the page and region where a source line (tex_rel + line), a label, or a page landed, with the source lines around it. with_image: true also returns that region rendered as a PNG; use it for layout questions (placement, width, overflow, how a figure or table looks), not to read text. stale is true when the source changed after the last compile.",
-        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Snippet>()
+        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Snippet>(),
+        meta = ui_meta(Some(SNIPPET_VIEW_URI), &["model", "app"])
     )]
     fn snippet(
         &self,
@@ -602,6 +637,35 @@ impl Maleficium {
                     .content
                     .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
             }
+            Ok(result)
+        })
+    }
+
+    #[tool(
+        description = "For the snippet View only: re-render a page, or a band of it, as a PNG at another scale",
+        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Rendered>(),
+        meta = ui_meta(Some(SNIPPET_VIEW_URI), &["app"])
+    )]
+    fn snippet_render(
+        &self,
+        Parameters(p): Parameters<SnippetRenderParams>,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        self.tool("snippet_render", || {
+            use base64::Engine as _;
+            let r = core::snippet::render_page(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+                p.page,
+                p.region,
+                p.scale,
+            )?;
+            let value = serde_json::to_value(&r).map_err(|e| e.to_string())?;
+            let mut result = rmcp::model::CallToolResult::structured(value);
+            let data = base64::engine::general_purpose::STANDARD.encode(&r.png);
+            result
+                .content
+                .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
             Ok(result)
         })
     }
@@ -882,7 +946,51 @@ impl Maleficium {
 // Named explicitly: rmcp's default server info is its own crate name and
 // version, since its env! expands inside rmcp.
 #[tool_handler(name = "maleficium")]
-impl rmcp::ServerHandler for Maleficium {}
+impl rmcp::ServerHandler for Maleficium {
+    fn get_info(&self) -> rmcp::model::ServerConfig {
+        let mut extensions = rmcp::model::ExtensionCapabilities::new();
+        extensions.insert(UI_EXTENSION.to_string(), serde_json::Map::new());
+        rmcp::model::ServerConfig::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .enable_extensions_with(extensions)
+                .build(),
+        )
+        .with_server_info(rmcp::model::Implementation::new(
+            "maleficium",
+            env!("CARGO_PKG_VERSION"),
+        ))
+    }
+
+    // Views are fetched by the URI a tool names, so they stay out of
+    // `resources/list` (the default empty list).
+    async fn read_resource(
+        &self,
+        request: rmcp::model::ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ReadResourceResponse, rmcp::ErrorData> {
+        if request.uri != SNIPPET_VIEW_URI {
+            return Err(rmcp::ErrorData::resource_not_found(
+                format!("no resource {}", request.uri),
+                None,
+            ));
+        }
+        let mut contents = rmcp::model::ResourceContents::text(SNIPPET_VIEW_HTML, SNIPPET_VIEW_URI);
+        if let rmcp::model::ResourceContents::TextResourceContents {
+            mime_type, meta, ..
+        } = &mut contents
+        {
+            *mime_type = Some(UI_MIME.to_string());
+            // No csp: the host's most restrictive default applies.
+            *meta = serde_json::json!({ "ui": { "prefersBorder": true } })
+                .as_object()
+                .cloned()
+                .map(Into::into);
+        }
+        Ok(rmcp::model::ReadResourceResult::new(vec![contents]).into())
+    }
+}
 
 async fn run_stdio() -> anyhow::Result<()> {
     let service = Maleficium::default().serve(stdio()).await?;
@@ -940,6 +1048,51 @@ mod tests {
     /// The MCP tools add nothing to core's confinement: every escape core
     /// refuses (and so the desktop command, a direct forward), the tool
     /// refuses with the same error.
+    #[test]
+    fn the_ui_extension_is_advertised_beside_resources() {
+        let caps = rmcp::ServerHandler::get_info(&Maleficium::default()).capabilities;
+        assert!(caps.resources.is_some() && caps.tools.is_some());
+        let ext = caps.extensions.expect("extensions");
+        assert!(ext.contains_key(UI_EXTENSION), "{ext:?}");
+    }
+
+    /// Only the snippet tools name a View, and the re-render tool is
+    /// hidden from the model.
+    #[test]
+    fn only_the_snippet_tools_carry_ui_meta() {
+        let tools = Maleficium::tool_router().list_all();
+        let ui = |t: &rmcp::model::Tool| {
+            t.meta
+                .as_ref()
+                .and_then(|m| m.get("ui").cloned())
+                .map(|v| v.to_string())
+        };
+        let with: Vec<_> = tools
+            .iter()
+            .filter(|t| ui(t).is_some())
+            .map(|t| t.name.to_string())
+            .collect();
+        assert_eq!(with.len(), 2, "{with:?}");
+        let get = |n: &str| ui(tools.iter().find(|t| t.name == n).unwrap()).unwrap();
+        assert!(get("snippet").contains(SNIPPET_VIEW_URI) && get("snippet").contains("model"));
+        assert_eq!(
+            get("snippet_render"),
+            format!(r#"{{"resourceUri":"{SNIPPET_VIEW_URI}","visibility":["app"]}}"#)
+        );
+    }
+
+    /// The embedded View is a whole html page that loads nothing from the
+    /// network (the default Apps CSP would block it anyway).
+    #[test]
+    fn the_snippet_view_is_a_self_contained_page() {
+        let html = SNIPPET_VIEW_HTML.trim_start().to_ascii_lowercase();
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.len() > 10_000, "the built View is missing or a stub");
+        for external in ["src=\"http", "href=\"http", "@import", "<link "] {
+            assert!(!html.contains(external), "{external}");
+        }
+    }
+
     #[test]
     fn snippet_takes_exactly_one_target() {
         let p = |tex_rel: Option<&str>, line, label: Option<&str>, page| SnippetParams {
