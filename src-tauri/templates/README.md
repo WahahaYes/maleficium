@@ -17,12 +17,12 @@ This covers the template files only. The rest of Maleficium is Apache 2.0.
 | Article | `article/` | Written for Maleficium | article; amsmath, biblatex, booktabs, geometry, hyperref, tikz |
 | Assignment | `assignment/` | Written for Maleficium | article; amsmath, amssymb, amsthm, enumitem, geometry |
 | Book | `book/` | Written for Maleficium | book; geometry, hyperref |
-| Curriculum Vitae | `cv/` | Written for Maleficium | article; shared `maleficium.sty` (fontspec, titlesec, enumitem, hyperref, xcolor); TeX Gyre Heros font |
+| Curriculum Vitae | `cv/` | Written for Maleficium | article; shared `maleficium.sty` and `maleficium-mark.pdf` (fontspec, titlesec, enumitem, fancyhdr, tikz, hyperref, xcolor); TeX Gyre Heros font |
 | Journal Paper (IEEEtran) | `journal/` | Written for Maleficium | IEEEtran; amsmath, cite, graphicx |
 | Letter | `letter/` | Written for Maleficium | letter; geometry |
 | Presentation | `beamer/` | Written for Maleficium | beamer (Singapore theme); amsmath |
 | Report | `report/` | Written for Maleficium | report; amsmath, geometry, graphicx, hyperref |
-| Resume | `resume/` | Written for Maleficium | article; shared `maleficium.sty` (same as the CV); TeX Gyre Heros font |
+| Resume | `resume/` | Written for Maleficium | article; shared `maleficium.sty` and `maleficium-mark.pdf` (same as the CV); TeX Gyre Heros font |
 | Welcome tour | `welcome/` | Written for Maleficium | article; geometry, hyperref |
 
 The welcome tour opens on first launch and is not listed in the gallery.
