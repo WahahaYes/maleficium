@@ -16,8 +16,14 @@
 
 - **Agents can see how the PDF looks.** The new `snippet` tool finds where a source line, a label, or a page landed in the compiled PDF and returns that page, the region, and the source lines around it. With `with_image: true` it also returns the region as a PNG, so an agent can check a figure's size and placement or a table that overflows. Images are off by default because they cost model context.
 
+- **Agent actions and yours share one event log.** The app and the MCP server now write to the same `events.jsonl`, each line tagged with who did it (`user`, `agent` or `system`), and every MCP tool call is recorded as `mcp.call`. The log is trimmed by rotation instead of being emptied at each launch, so an agent can read what happened before you opened the app.
+
 ### For contributors
 
+- **The app's logic lives in the Rust core.** Compiling, saving and trash, main-file detection, the event log, and the file watcher moved into `maleficium-core`, behind one typed operation contract that the app and the MCP server both call. The frontend reaches Tauri only through `*.tauri.ts` adapters, and an eslint rule enforces it.
+- **`App.tsx` is smaller.** Pane layout, file switching, saving, the main file, project search and replace, and the window keymap moved into hooks, and the editor, preview and side column into components.
+- **The stills harness is Python.** `e2e/stills-run.sh` is now `e2e/stills-run.py`, with the same env vars, states and log checks.
+- **A harness records showcase videos.** `e2e/showreel/` drives an agent through the app and cuts the take; the README embeds the result.
 - **The playground is generated, not tracked.** `sh scripts/playground.sh` fills an ignored `playground/` with one project per built-in template, the `simple` test fixture (now at `e2e/fixtures/simple`), and the vendored papers.
 - **Real papers as fixtures, and a smoke that scores them.** `e2e/fixtures/vendored/` holds real, permissively licensed papers with their provenance. `python3 e2e/papers-run.py` compiles each over the MCP server, lists every diagnostic, and fails only when a paper that should compile error-free stops doing so, or when one that should not starts to.
 - **One MCP test client.** The e2e harnesses share `e2e/mcp_client.py` instead of five copies.

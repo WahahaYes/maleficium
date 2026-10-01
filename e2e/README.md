@@ -8,7 +8,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `history-surface.sh` | no | The revision history surface is wired up and restores exact bytes |
 | `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
-| `stills-run.sh` | Xvfb | Screenshots of each app state, and the app's own event log |
+| `stills-run.py` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `papers-run.py` | no | How many vendored real papers compile error-free, and what blocks the rest |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
 | `agent-run.py` | no | A real LLM agent can do LaTeX tasks through the MCP server (manual; spends model credits) |
@@ -20,7 +20,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 Run harnesses through `worktree-run.sh`, which checks out a pinned commit into a separate worktree so edits in your checkout cannot disturb a run:
 
 ```sh
-./e2e/worktree-run.sh [<ref>] -- ./e2e/stills-run.sh
+./e2e/worktree-run.sh [<ref>] -- ./e2e/stills-run.py
 ```
 
 - It carries your uncommitted `e2e/` changes into the worktree, so you can test a harness before committing it.
@@ -57,12 +57,12 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 - `DRIVER_LOG` sets the JSONL run log, `WARM_ONLY=1` stops after the first compile, `POLL_ROUNDS` bounds polling, and `MCP_ROOT_OVERRIDE` drives an existing folder in place.
 - The render budgets need `@napi-rs/canvas`, an optional dependency of `pdfjs-dist`. Without it the probe prints `skip:` and the run stays green.
 
-### stills-run.sh
+### stills-run.py
 
 Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard shortcuts, and captures a PNG per state into `STILLS_OUT`. Needs Xvfb, xdotool, and ImageMagick.
 
 ```sh
-STILLS_OUT=/tmp/stills ./e2e/stills-run.sh
+STILLS_OUT=/tmp/stills ./e2e/stills-run.py
 ```
 
 There are no pixel assertions; the stills are for human review. It is the one harness that starts the frontend, so after each state it also asserts the app's event log: one `log.open` per launch, valid JSONL, and the expected events for that state (saves, compiles, PDF loads, page renders, zoom, the pre-compile warnings panel, and reloads or conflicts when an open file changes on disk).

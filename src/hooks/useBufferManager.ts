@@ -4,7 +4,8 @@
 // fails to persist stays open and aborts a batch close. Buffer contents are
 // App-wide state, so the map and its setter are returned rather than hidden.
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useLatest } from './useLatest';
 import type { BufferState } from '../lib/buffers';
 import { emit } from '../lib/events';
 import { saveTex } from '../lib/files';
@@ -26,8 +27,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     deps;
 
   const [buffers, setBuffers] = useState<Map<string, BufferState>>(new Map());
-  const buffersRef = useRef(buffers);
-  buffersRef.current = buffers;
+  const buffersRef = useLatest(buffers);
 
   async function handleCloseBuffer(path: string) {
     // Persist-then-evict: close never loses work silently.

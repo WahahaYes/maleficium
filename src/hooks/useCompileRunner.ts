@@ -21,11 +21,11 @@ import {
   offlineReadiness,
   readinessLine,
   type OfflineBadge,
-  onCompileLine,
   outputsFresh,
   type CompileResult,
 } from '../lib/compile';
 import { emit } from '../lib/events';
+import { detach, forwardCompileLines, startFrameProbe, startHeartbeat } from '../lib/compileRun';
 import { foldProgress, IDLE_PROGRESS, progressLabel } from '../lib/compileProgress';
 import { INITIAL_AUTO, parseAutoCompile, stepAuto, type AutoInput } from '../lib/autoCompile';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
@@ -231,73 +231,10 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     setLog('compiling...');
     // Write-then-compile: the engine reads from disk, so persist first.
     let workdir: string;
-    let unlisten: () => void = () => {};
-    // Fetch lines arrive typed: each becomes `compile.fetch`, so a long first
-    // build reads as network-wait, not an engine hang. A failed fetch is
-    // reported once per file (the engine retries and repeats itself).
-    const failedFetches = new Set<string>();
-    try {
-      unlisten = await onCompileLine((line) => {
-        const sig = line.signal;
-        if (sig?.kind === 'phase') {
-          emitProgress({
-            scope: 'compile',
-            kind: 'progress',
-            actor,
-            message: line.text.slice(0, 300),
-            event: { action: 'compile.phase', phase: sig.phase, detail: sig.detail },
-          });
-        } else if (sig?.kind === 'fetch') {
-          if (sig.outcome === 'failed') {
-            if (failedFetches.has(sig.file)) return;
-            failedFetches.add(sig.file);
-          }
-          emitProgress({
-            scope: 'compile',
-            kind: sig.outcome === 'failed' ? 'warn' : 'info',
-            actor,
-            message: (sig.outcome === 'failed' ? 'could not download ' : 'downloading ') + sig.file,
-            event: { action: 'compile.fetch', file: sig.file, outcome: sig.outcome },
-          });
-        } else
-          emit({
-            scope: 'compile',
-            kind: 'progress',
-            actor,
-            message: line.text.slice(0, 300),
-            event: { action: 'compile.engine-line', stream: line.stream },
-          });
-      });
-    } catch {
-      /* listener attach best-effort — compile proceeds without live lines */
-    }
+    const unlisten = await forwardCompileLines(actor, emitProgress);
     const t0 = Date.now();
-    const hb = setInterval(
-      () =>
-        emit({
-          scope: 'compile',
-          kind: 'progress',
-          actor,
-          message: `still compiling ${target ?? fileName} (${Math.floor((Date.now() - t0) / 1000)}s)`,
-          event: {
-            action: 'compile.progress',
-            target: target ?? fileName,
-            elapsedMs: Date.now() - t0,
-          },
-        }),
-      5000,
-    );
-    let maxGap = 0;
-    let lastT = performance.now();
-    let probing = true;
-    const tickProbe = () => {
-      if (!probing) return;
-      const now = performance.now();
-      maxGap = Math.max(maxGap, now - lastT);
-      lastT = now;
-      requestAnimationFrame(tickProbe);
-    };
-    requestAnimationFrame(tickProbe);
+    const stopHeartbeat = startHeartbeat(actor, target ?? fileName, t0);
+    const stopProbe = startFrameProbe();
     // Persist before compile: every dirty buffer goes to its own file, so
     // \input parts compile from disk. A target with no buffer compiles
     // from disk as-is — the visible editor may show a different file
@@ -342,7 +279,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     } catch (e) {
       finish('failure');
       setCompileStart(null);
-      probing = false;
+      stopProbe();
       emit({
         scope: 'compile',
         kind: 'error',
@@ -350,12 +287,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         message: 'save failed: ' + String(e).slice(0, 200),
         event: { action: 'compile.persist-failed', target, error: String(e).slice(0, 200) },
       });
-      clearInterval(hb);
-      try {
-        unlisten();
-      } catch {
-        /* already detached */
-      }
+      stopHeartbeat();
+      detach(unlisten);
       return false;
     }
     const activeTarget = target ?? (hasDir(fileName) ? fileName : joinPath(workdir!, fileName));
@@ -450,29 +383,12 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         message: 'preview ' + String(r.pdfUrl),
         event: { action: 'preview.update', pdfUrl: String(r.pdfUrl) },
       });
-    } else if (!r.ok && r.failure === 'spawn-failed') {
-      finish('failure');
-      setCompileStart(null);
-      setLogCollapsed(false);
-      setLog(r.log + ' (engine sidecar failed to start)');
-      emit({
-        scope: 'compile',
-        kind: 'error',
-        actor,
-        message: String(r.log).slice(0, 300),
-        event: {
-          action: 'compile.finish',
-          ok: false,
-          target: activeTarget,
-          reason: 'spawn-failed',
-          ms: Date.now() - t0,
-        },
-      });
-      await publishProblems(r.log, mainDir, src, actor);
     } else if (!r.ok) {
+      const spawnFailed = r.failure === 'spawn-failed';
       finish('failure');
       setCompileStart(null);
       setLogCollapsed(false);
+      if (spawnFailed) setLog(r.log + ' (engine sidecar failed to start)');
       emit({
         scope: 'compile',
         kind: 'error',
@@ -482,25 +398,21 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           action: 'compile.finish',
           ok: false,
           target: activeTarget,
-          reason: r.failure ?? 'engine-error',
+          reason: spawnFailed ? 'spawn-failed' : (r.failure ?? 'engine-error'),
           ms: Date.now() - t0,
         },
       });
       await publishProblems(r.log, mainDir, src, actor);
     }
-    clearInterval(hb);
-    try {
-      unlisten();
-    } catch {
-      /* already detached */
-    }
-    probing = false;
+    stopHeartbeat();
+    detach(unlisten);
+    const maxGap = stopProbe();
     emit({
       scope: 'compile',
       kind: 'info',
       actor: 'system',
-      message: `main-thread max frame ${Math.round(maxGap)}ms during compile`,
-      event: { action: 'compile.frame-probe', maxFrameMs: Math.round(maxGap) },
+      message: `main-thread max frame ${maxGap}ms during compile`,
+      event: { action: 'compile.frame-probe', maxFrameMs: maxGap },
     });
     if (src && src.rootId === (opts?.root?.rootId ?? projectId)) {
       await refreshReadiness({ rootId: src.rootId, path: src.rootPath });

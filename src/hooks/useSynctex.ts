@@ -4,7 +4,8 @@
 // directions are disabled while a compile runs: the .synctex.gz is being
 // rewritten, so any answer would describe the previous document.
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useLatest } from './useLatest';
 import type { RefObject } from 'react';
 import type { EditorViewportHandle } from '../components/EditorViewport';
 import type { CompilePhase } from './useCompileRunner';
@@ -62,12 +63,10 @@ export function useSynctex(deps: UseSynctexDeps) {
   } = deps;
 
   const [currentLine, setCurrentLine] = useState(1);
-  const currentLineRef = useRef(currentLine);
-  currentLineRef.current = currentLine;
+  const currentLineRef = useLatest(currentLine);
   const [synctexFlash, setSynctexFlash] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
-  const pageNumberRef = useRef(pageNumber);
-  pageNumberRef.current = pageNumber;
+  const pageNumberRef = useLatest(pageNumber);
 
   /** Forward query for `file`: the target page, or null after reporting why. */
   async function forwardPage(file: string, line: number): Promise<number | null> {

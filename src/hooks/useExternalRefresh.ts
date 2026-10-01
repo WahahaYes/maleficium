@@ -6,7 +6,8 @@
 // With nothing shown yet it watches the open project's main file, so an
 // agent's first compile of a project this app never built opens the preview.
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { useLatest } from './useLatest';
 import { outputPdf, outputStamp } from '../lib/compile';
 import { emit } from '../lib/events';
 import { transport } from '../lib/event-transport';
@@ -16,8 +17,7 @@ import { emitPdf, onPdf, type PreviewDoc, type PreviewSource } from '../lib/prev
 export const REFRESH_POLL_MS = 1500;
 
 export function useExternalRefresh(main: PreviewSource | null = null) {
-  const mainRef = useRef(main);
-  mainRef.current = main;
+  const mainRef = useLatest(main);
   useEffect(() => {
     let doc: PreviewDoc | null = null;
     let state = INITIAL_REFRESH;
@@ -78,5 +78,5 @@ export function useExternalRefresh(main: PreviewSource | null = null) {
       offBus();
       clearInterval(timer);
     };
-  }, []);
+  }, [mainRef]);
 }
