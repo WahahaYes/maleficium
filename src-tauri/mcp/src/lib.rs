@@ -1484,4 +1484,357 @@ mod tests {
             );
         }
     }
+
+    /// m8ven Test coverage: every registered tool has a case below calling
+    /// its named handler. The router enumeration fails on any tool without one.
+    #[test]
+    fn every_registered_tool_has_a_case_and_runs() {
+        let m = Maleficium::default();
+        let cx = &m.cx;
+        let dir = core::test_scratch::dir("cov");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.tex"),
+            "\\section{Hi}\\label{sec:hi}\nSee~\\ref{sec:hi}.\n",
+        )
+        .unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
+        let root = canon.to_string_lossy().to_string();
+        core::grant_root(cx, "cov", &root).unwrap();
+
+        let info = m
+            .info(Parameters(RootParams {
+                root_id: "cov".into(),
+            }))
+            .unwrap();
+        assert_eq!(info.0.path, root);
+
+        let grant = m
+            .grant(Parameters(GrantParams {
+                root_id: "cov2".into(),
+                root: root.clone(),
+            }))
+            .unwrap();
+        assert_eq!(grant.0.path, root);
+
+        let list = m
+            .list(Parameters(ListParams {
+                root_id: "cov".into(),
+                rel: None,
+            }))
+            .unwrap();
+        assert!(list.0.entries.iter().any(|e| e.name == "main.tex"));
+
+        let read = m
+            .read(Parameters(FileParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert!(read.0.text.contains("\\section{Hi}"));
+
+        assert!(m
+            .compile_run(Parameters(CompileRunParams {
+                root_id: "nope".into(),
+                rel: Some("main.tex".into()),
+                networked: None,
+            }))
+            .is_err());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert!(rt
+            .block_on(m.compile_poll(Parameters(CompilePollParams {
+                job_id: "nope".into(),
+                tail_lines: None,
+                wait_ms: Some(0),
+            })))
+            .is_err());
+
+        assert!(m
+            .offline_readiness(Parameters(RootParams {
+                root_id: "cov".into()
+            }))
+            .is_ok());
+
+        let stamp = m
+            .output_stamp(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert!(stamp.0.stamp.is_none());
+
+        let pdf_dest = dir.join("out.pdf").to_string_lossy().to_string();
+        assert!(m
+            .export_pdf(Parameters(ExportPdfParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                dest: pdf_dest,
+            }))
+            .is_err());
+
+        let zip_parent = core::test_scratch::dir("cov-zip");
+        std::fs::create_dir_all(&zip_parent).unwrap();
+        let zip_dest = zip_parent.join("sources.zip").to_string_lossy().to_string();
+        let zip = m
+            .export_zip(Parameters(ExportZipParams {
+                root_id: "cov".into(),
+                dest: zip_dest.clone(),
+            }))
+            .unwrap();
+        assert!(zip.0.files.contains(&"main.tex".to_string()));
+        assert!(std::path::Path::new(&zip_dest).is_file());
+
+        let templates = m.templates().unwrap();
+        assert!(!templates.0.templates.is_empty());
+
+        let tpl_parent = core::test_scratch::dir("cov-tpl");
+        std::fs::create_dir_all(&tpl_parent).unwrap();
+        let created = m
+            .new_from_template(Parameters(NewFromTemplateParams {
+                template: "welcome".into(),
+                parent_dir: tpl_parent.to_string_lossy().to_string(),
+                name: "proj1".into(),
+            }))
+            .unwrap();
+        assert!(std::path::Path::new(&created.0.root)
+            .join(&created.0.main)
+            .is_file());
+
+        let cancel = m.compile_cancel(Parameters(CancelParams {
+            job_id: "nope".into(),
+        }));
+        assert_eq!(cancel.err(), Some("unknown job: nope".to_string()));
+
+        assert!(m
+            .synctex_forward(Parameters(ForwardParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                tex_rel: "main.tex".into(),
+                line: 1,
+            }))
+            .is_err());
+
+        assert!(m
+            .snippet(Parameters(SnippetParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                tex_rel: None,
+                line: None,
+                label: None,
+                page: Some(1),
+                with_image: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .snippet_render(Parameters(SnippetRenderParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                page: 1,
+                region: None,
+                scale: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .synctex_inverse(Parameters(InverseParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                page: 1,
+                x: None,
+                y: None,
+            }))
+            .is_err());
+
+        std::fs::write(dir.join("victim.txt"), "bye").unwrap();
+        let unconfirmed = m.delete(Parameters(DeleteParams {
+            root_id: "cov".into(),
+            rel: "victim.txt".into(),
+            confirm: None,
+        }));
+        assert!(unconfirmed.err().unwrap().contains("victim.txt"));
+        let abs = canon.join("victim.txt").to_string_lossy().to_string();
+        let trashed = m
+            .delete(Parameters(DeleteParams {
+                root_id: "cov".into(),
+                rel: "victim.txt".into(),
+                confirm: Some(abs),
+            }))
+            .unwrap();
+        assert!(!canon.join("victim.txt").exists());
+
+        let restored = m
+            .undo(Parameters(UndoParams {
+                root_id: "cov".into(),
+                trash_path: trashed.0.trash_path,
+            }))
+            .unwrap();
+        assert!(restored.0.path.ends_with("victim.txt"));
+        assert_eq!(
+            std::fs::read_to_string(canon.join("victim.txt")).unwrap(),
+            "bye"
+        );
+
+        assert!(m
+            .log_tail(Parameters(LogTailParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into(),
+                max_lines: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .outline(Parameters(FileParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .file_graph(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .labels_refs(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .citations(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .precompile_checks(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+
+        let search = m
+            .search(Parameters(SearchParams {
+                root_id: "cov".into(),
+                pattern: "section".into(),
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+                max: None,
+            }))
+            .unwrap();
+        assert!(search.0.hits >= 1);
+
+        let preview = m
+            .replace_preview(Parameters(ReplacePreviewParams {
+                root_id: "cov".into(),
+                pattern: "Hi".into(),
+                replacement: "Hello".into(),
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+            }))
+            .unwrap();
+        assert_eq!(preview.0.replacements, 3);
+        let applied = m
+            .replace_apply(Parameters(ReplaceApplyParams {
+                root_id: "cov".into(),
+                token: preview.0.token,
+            }))
+            .unwrap();
+        assert!(applied.0.written.contains(&"main.tex".to_string()));
+        assert!(std::fs::read_to_string(canon.join("main.tex"))
+            .unwrap()
+            .contains("Hello"));
+        let undone = m
+            .replace_undo(Parameters(ReplaceUndoParams {
+                root_id: "cov".into(),
+                batch: applied.0.batch,
+            }))
+            .unwrap();
+        assert!(undone.0.restored.iter().any(|f| f.rel == "main.tex"));
+        assert!(std::fs::read_to_string(canon.join("main.tex"))
+            .unwrap()
+            .contains("\\section{Hi}"));
+
+        let definition = m
+            .definition(Parameters(DefinitionParams {
+                root_id: "cov".into(),
+                kind: Some(maleficium_index::definition::RefKind::Label),
+                key: Some("sec:hi".into()),
+                rel: None,
+                line: None,
+                col: None,
+                main_rel: None,
+            }))
+            .unwrap();
+        assert!(definition.0.lookup.is_some());
+
+        let found = m
+            .find_files(Parameters(FindFilesParams {
+                root_id: "cov".into(),
+                query: "main".into(),
+                max: None,
+            }))
+            .unwrap();
+        assert!(!found.0.files.is_empty());
+
+        assert!(m
+            .diagnostics(Parameters(DiagnosticsParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                max: None,
+            }))
+            .is_err());
+
+        let covered = [
+            "grant",
+            "info",
+            "list",
+            "read",
+            "compile_run",
+            "compile_poll",
+            "offline_readiness",
+            "output_stamp",
+            "export_pdf",
+            "export_zip",
+            "templates",
+            "new_from_template",
+            "compile_cancel",
+            "synctex_forward",
+            "snippet",
+            "snippet_render",
+            "synctex_inverse",
+            "delete",
+            "undo",
+            "log_tail",
+            "outline",
+            "file_graph",
+            "labels_refs",
+            "citations",
+            "precompile_checks",
+            "search",
+            "replace_preview",
+            "replace_apply",
+            "replace_undo",
+            "definition",
+            "find_files",
+            "diagnostics",
+        ];
+        for t in Maleficium::tool_router().list_all() {
+            assert!(
+                covered.contains(&t.name.as_ref()),
+                "tool `{}` has no coverage case",
+                t.name
+            );
+        }
+    }
 }
