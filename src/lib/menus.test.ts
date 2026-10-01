@@ -72,6 +72,8 @@ const actions: CommandActions = {
   importTemplate: noop,
   showWelcome: noop,
   exportZip: noop,
+  exportBundleFolder: noop,
+  exportBundleSingleFile: noop,
   zoomPreview: noop,
   cancelCompile: noop,
   forwardSync: noop,
@@ -108,6 +110,29 @@ describe('command registry', () => {
     // Leaf ids stay unique even counting submenu children.
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+  it('paper bundle export is a File submenu that needs a compiled pdf', () => {
+    const calls: string[] = [];
+    const a = {
+      ...actions,
+      exportBundleFolder: () => calls.push('folder'),
+      exportBundleSingleFile: () => calls.push('single-file'),
+    };
+    const find = (ctx: typeof baseCtx) =>
+      buildMenus(ctx, a)
+        .find((m) => m.id === 'file')!
+        .commands.find((c) => c.id === 'file.export-bundle')!;
+    const open = find({ ...baseCtx, pdfOpen: true });
+    expect(open.children?.map((k) => [k.id, k.label])).toEqual([
+      ['file.export-bundle-folder', 'Folder for Web Hosting…'],
+      ['file.export-bundle-single-file', 'Single File for Email…'],
+    ]);
+    for (const k of open.children ?? []) void k.run?.();
+    expect(calls).toEqual(['folder', 'single-file']);
+    // Red control: without a compiled pdf nothing in the submenu is enabled.
+    const closed = find({ ...baseCtx, pdfOpen: false });
+    expect(closed.enabled).toBe(false);
+    expect(closed.children?.every((k) => !k.enabled)).toBe(true);
   });
   it('zoom and fit are one View submenu with their chords', () => {
     const calls: string[] = [];
