@@ -234,22 +234,43 @@ fn every_widget_is_one_inline_document_with_its_policy_first() {
         );
         assert!(!html.contains("<script src"), "{id}");
     }
-    // The model and video runtimes are not in this build: they export as
-    // posters, and say so.
-    let no_runtime: Vec<&str> = r
-        .warnings
-        .iter()
-        .filter(|w| w.kind == BundleWarningKind::NoRuntime)
-        .map(|w| w.message.as_str())
-        .collect();
-    assert_eq!(no_runtime.len(), 2, "{no_runtime:?}");
-    assert!(no_runtime
-        .iter()
-        .any(|m| m.contains("fig-mesh") && m.contains("model@1")));
+    // Every built-in runtime exports with its own host and nothing warns.
+    assert!(
+        r.warnings
+            .iter()
+            .all(|w| w.kind == BundleWarningKind::Metadata),
+        "{:?}",
+        r.warnings
+    );
+    let host = |id: &str| {
+        std::fs::read_to_string(PathBuf::from(&d).join(format!("widgets/{id}/index.html"))).unwrap()
+    };
+    let (model, video) = (host("fig-mesh"), host("fig-clip"));
+    assert!(model.contains("id=\"view\"") && model.contains("WebGLRenderer"));
+    assert!(video.contains("<video id=\"v\" controls"));
+    for (id, html) in [("fig-mesh", &model), ("fig-clip", &video)] {
+        assert!(!html.contains("<img"), "{id}: not a poster document");
+        assert!(
+            !html.contains("type=\"module\""),
+            "{id}: one classic script"
+        );
+        assert_eq!(html.matches("<script").count(), 1, "{id}");
+    }
     // The table and chart hosts are the generated runtimes.
     let table =
         std::fs::read_to_string(PathBuf::from(&d).join("widgets/tab-results/index.html")).unwrap();
     assert!(table.contains("id=\"filter\""));
+}
+
+#[test]
+fn a_widget_whose_runtime_is_not_built_in_is_refused() {
+    let sidecar = REAL_SIDECAR.replace("|model@1|", "|model@9|");
+    assert_ne!(sidecar, REAL_SIDECAR, "the fixture line changed");
+    let p = project("unknown-runtime", &sidecar);
+    let d = dest(&p, "paper");
+    let e = export(&p, &d, BundleProfile::Folder).unwrap_err();
+    assert!(e.contains("fig-mesh") && e.contains("model@9"), "{e}");
+    assert!(!PathBuf::from(&d).exists());
 }
 
 #[test]
