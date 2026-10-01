@@ -22,6 +22,7 @@
 \RequirePackage{etoolbox}
 \RequirePackage{xurl}
 \RequirePackage[hidelinks]{hyperref}
+\urlstyle{same}
 
 % Fonts by file name come from the TeX bundle, so the output matches on every
 % machine.
@@ -81,6 +82,9 @@
   \vspace{0.6\mlGap}{\small\color{mlmuted}#1}\par\vspace{0.4\mlGap}}
 % \mlLink{url}{text}
 \newcommand{\mlLink}[2]{\href{#1}{#2}}
+% \mlUrlLink{url}{text}: like \mlLink, but the text may break across lines
+% (a long DOI otherwise runs off the margin). Text must be a plain URL form.
+\newcommand{\mlUrlLink}[2]{\href{#1}{\nolinkurl{#2}}}
 
 % \mlSummary{text} -- a lede paragraph, set apart from the body.
 \newcommand{\mlSummary}[1]{\vspace{0.8\mlGap}{\small\color{mlmuted}#1}\par}
@@ -88,8 +92,7 @@
 % -- body vocabulary ---------------------------------------------------------
 % \mlEntry{Title}{Dates}{Organisation}{Place}  -- a titled, dated entry.
 \newcommand{\mlEntry}[4]{%
-  \needspace{3\baselineskip}%
-  \noindent\textbf{#1}\hfill{\small\color{mlmuted}#2}\par
+  \noindent\textbf{#1}\hfill{\small\color{mlmuted}#2}\par\nopagebreak
   \ifstrempty{#3#4}{}{\vspace{0.1\mlGap}%
     \noindent{\small\color{mlaccent}#3}\hfill{\small\itshape\color{mlmuted}#4}\par}%
   \vspace{0.3\mlGap}}
@@ -107,15 +110,23 @@
   label=\textcolor{mlaccent}{\small[\arabic*]}}
 
 % \mlDated{Year}{Text} -- one dated line: awards, service, funding, talks.
+\newlength{\mlDateW}\setlength{\mlDateW}{4.4em}
+\newlength{\mlLabelW}\setlength{\mlLabelW}{6.4em}
+% \mlDateWidth{2020--2025} / \mlLabelWidth{Infrastructure}: size the left
+% column of the next \mlDated or \mlLabeled lines to fit the given widest text.
+\newcommand{\mlDateWidth}[1]{%
+  \settowidth{\mlDateW}{\small\bfseries #1}\addtolength{\mlDateW}{1em}}
+\newcommand{\mlLabelWidth}[1]{%
+  \settowidth{\mlLabelW}{\small\bfseries #1}\addtolength{\mlLabelW}{1em}}
 \newcommand{\mlDated}[2]{%
-  \noindent\hangindent=4.2em\hangafter=1
-  \makebox[4.2em][l]{\small\color{mlaccent}\bfseries #1}#2\par
+  \noindent\hangindent=\mlDateW\hangafter=1
+  \makebox[\mlDateW][l]{\small\color{mlaccent}\bfseries #1}#2\par
   \vspace{0.25\mlGap}}
 
 % \mlLabeled{Label}{Items} -- skills, languages, interests.
 \newcommand{\mlLabeled}[2]{%
-  \noindent\hangindent=6.2em\hangafter=1
-  \makebox[6.2em][l]{\small\color{mlaccent}\bfseries #1}#2\par
+  \noindent\hangindent=\mlLabelW\hangafter=1
+  \makebox[\mlLabelW][l]{\small\color{mlaccent}\bfseries #1}#2\par
   \vspace{0.25\mlGap}}
 
 % \mlMe{Name} -- your own name inside an author list.
