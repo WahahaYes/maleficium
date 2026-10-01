@@ -148,7 +148,7 @@ export type WidgetList = { widgets: Array<Widget>, };
 
 export type ExportBundleParams = { rootId: string, mainRel: string, dest: string, profile: BundleProfile, sizeCapBytes: number | null, };
 
-export type BundleWarningKind = "size-cap" | "no-runtime" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
+export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
 
 export type BundleWarning = { kind: BundleWarningKind, message: string, };
 
