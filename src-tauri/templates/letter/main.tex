@@ -3,13 +3,16 @@
 
 \documentclass[11pt]{letter}
 \usepackage[margin=1in]{geometry}
+\usepackage{maleficium-doc}   % the Maleficium look; remove for plain LaTeX
+\usepackage{maleficium-footer}   % "Made with Maleficium" mark; delete this line to remove it
 
 \signature{Your Name}
-\address{Your Name \\ 1 Example Street \\ City, Postcode}
+\address{}
 
 \begin{document}
 \begin{letter}{Recipient Name \\ Their Organisation \\ 2 Other Road \\ City, Postcode}
 
+\mlLetterhead{Your Name}{1 Example Street, City, Postcode}
 \opening{Dear Recipient,}
 
 The first paragraph says why you are writing.

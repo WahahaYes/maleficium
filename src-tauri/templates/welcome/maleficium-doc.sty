@@ -1,0 +1,178 @@
+% maleficium-doc.sty -- the Maleficium look for documents.
+% Dedicated to the public domain under CC0 1.0.
+% https://creativecommons.org/publicdomain/zero/1.0/
+%
+% For articles, reports, books, assignments and letters. Same family as the
+% resume and CV style: Libertinus type, one violet accent on warm ink, and the
+% two-tone slash as the mark that opens a heading. Needs XeTeX or LuaTeX
+% (fontspec). Load it after amsmath.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{maleficium-doc}[2026/09/30 Maleficium document style]
+
+\RequirePackage{amsmath}
+\RequirePackage{xcolor}
+\RequirePackage{fontspec}
+\RequirePackage{unicode-math}
+\RequirePackage{etoolbox}
+\RequirePackage{microtype}
+\RequirePackage{enumitem}
+\RequirePackage{titlesec}
+\RequirePackage{fancyhdr}
+\RequirePackage{caption}
+\RequirePackage{tikz}
+\RequirePackage{hyperref}
+\usetikzlibrary{calc}
+
+% -- type --------------------------------------------------------------------
+% Libertinus, loaded by file name from the TeX bundle. Roles: body (serif),
+% display (titles), sans (headings and labels), tracked (small capitals).
+\setmainfont{LibertinusSerif-Regular.otf}[
+  BoldFont = LibertinusSerif-Bold.otf,
+  ItalicFont = LibertinusSerif-Italic.otf,
+  BoldItalicFont = LibertinusSerif-BoldItalic.otf]
+\setsansfont{LibertinusSans-Regular.otf}[
+  BoldFont = LibertinusSans-Bold.otf, ItalicFont = LibertinusSans-Italic.otf]
+\setmonofont{LibertinusMono-Regular.otf}[Scale=0.92]
+\setmathfont{LibertinusMath-Regular.otf}
+\newfontfamily\mlDisplayFont{LibertinusSerif-Semibold.otf}
+\newfontfamily\mlTracked{LibertinusSans-Regular.otf}[
+  BoldFont = LibertinusSans-Bold.otf, LetterSpace = 10.0]
+
+% -- colour ------------------------------------------------------------------
+\newcommand{\mlAccent}{5B2A86}
+\newcommand{\mlInk}{1E1B24}
+\newcommand{\mlMuted}{6B6676}
+\newcommand{\mlSetAccent}[1]{\renewcommand{\mlAccent}{#1}\mlDefineColors}
+\newcommand{\mlDefineColors}{%
+  \definecolor{mlaccent}{HTML}{\mlAccent}%
+  \definecolor{mlink}{HTML}{\mlInk}%
+  \definecolor{mlmuted}{HTML}{\mlMuted}%
+  \definecolor{mlhair}{HTML}{D9D5E0}%
+  \colorlet{mlaccentlt}{mlaccent!55!white}%
+  \hypersetup{colorlinks=true, linkcolor=mlaccent, citecolor=mlaccent,
+    urlcolor=mlaccent, pdfborder={0 0 0}}}
+\mlDefineColors
+\AtBeginDocument{\color{mlink}}
+
+\setlength{\emergencystretch}{3em}
+\tolerance=1200 \hbadness=3000
+
+% -- the mark ----------------------------------------------------------------
+% A two-tone slash: dark over light, leaning right. \mlSlash scales with the
+% text, so it can sit in a heading or stand alone.
+\newcommand{\mlSlash}{%
+  \begin{tikzpicture}[baseline=0pt, x=0.085em, y=0.085em]
+    \fill[mlaccentlt] (4.6,-3.5) -- (7.6,-3.5) -- (10.6,4.5) -- (7.6,4.5) -- cycle;
+    \fill[mlaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
+  \end{tikzpicture}}
+
+% A hairline with the slash centred on it, drawn as one picture so the two
+% always line up: a divider for headings, headers and letters.
+\newcommand{\mlHairSlash}[1][\linewidth]{%
+  \par\noindent\begin{tikzpicture}[x=0.085em, y=0.085em, baseline=(current bounding box.south)]
+    \draw[mlhair, line width=0.5pt] (0pt,0.5) -- (#1,0.5);
+    \fill[mlaccentlt] (4.6,-3.5) -- (7.6,-3.5) -- (10.6,4.5) -- (7.6,4.5) -- cycle;
+    \fill[mlaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
+  \end{tikzpicture}\par}
+
+% -- headings ----------------------------------------------------------------
+% Sections hang the slash in the left margin; the title is bold sans. Deeper
+% levels drop the mark and keep the sans.
+\newcommand{\mlHeadFont}{\sffamily\bfseries}
+\titleformat{\section}
+  {\mlHeadFont\Large\color{mlink}}
+  {\llap{\mlSlash\hspace{0.6em}}\color{mlaccent}\thesection}{0.7em}{}
+\titleformat{name=\section,numberless}
+  {\mlHeadFont\Large\color{mlink}}{\llap{\mlSlash\hspace{0.6em}}}{0pt}{}
+\titleformat{\subsection}
+  {\mlHeadFont\large\color{mlink}}{\color{mlaccent}\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}
+  {\mlHeadFont\normalsize\color{mlaccent}}{\thesubsubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{2.2ex plus 0.6ex}{1.2ex}
+\titlespacing*{\subsection}{0pt}{1.9ex plus 0.5ex}{0.9ex}
+\titlespacing*{\subsubsection}{0pt}{1.6ex plus 0.4ex}{0.7ex}
+
+% Chapters (report, book): a tracked label over a large display title, the
+% slash and a hairline beneath.
+\@ifundefined{chapter}{}{%
+  \newcommand{\mlChapterRule}{\vspace{0.9ex}\mlHairSlash\vspace{2ex}}
+  \newcommand{\mlChapterLabel}{{\mlTracked\small\bfseries\color{mlaccent}%
+    \MakeUppercase{\chaptername}\ \thechapter}\par\vspace{1ex}}
+  \titleformat{\chapter}[block]
+    {\normalfont\color{mlink}}
+    {\mlChapterLabel}
+    {0pt}{\mlDisplayFont\fontsize{26}{30}\selectfont}[\mlChapterRule]
+  \titleformat{name=\chapter,numberless}[block]
+    {\normalfont\color{mlink}}{}{0pt}
+    {\mlDisplayFont\fontsize{26}{30}\selectfont}[\mlChapterRule]
+  \titlespacing*{\chapter}{0pt}{0pt}{2ex}
+  \titleformat{\part}[display]
+    {\normalfont\centering\color{mlink}}
+    {{\mlTracked\small\bfseries\color{mlaccent}\MakeUppercase{\partname}\ \thepart}}{1.5ex}
+    {\mlDisplayFont\fontsize{30}{34}\selectfont}
+}
+
+% A hairline with the slash standing on it: a divider for headers and letters.
+\newcommand{\mlRule}{\par\vspace{0.9ex}\mlHairSlash\vspace{1.2ex}}
+
+% -- title block -------------------------------------------------------------
+% Left-aligned: display title, a slash, then author and date in muted sans.
+\newcommand{\mlTitleBlock}{%
+  \begingroup\raggedright
+  {\mlDisplayFont\fontsize{26}{30}\selectfont\color{mlink}\@title\par}%
+  \vspace{1.2ex}\noindent\mlSlash\par\vspace{1.2ex}%
+  {\sffamily\small\color{mlmuted}\let\and\relax\@author\par}%
+  \ifx\@date\@empty\else\vspace{0.4ex}{\sffamily\small\color{mlmuted}\@date\par}\fi
+  \endgroup\vspace{2ex}}
+% Reports and books get a title page: the title large and left, the slash,
+% then author and date in muted sans.
+\newcommand{\mlTitlePage}{%
+  \begin{titlepage}\raggedright
+  \vspace*{0.22\textheight}
+  {\mlDisplayFont\fontsize{40}{46}\selectfont\color{mlink}\@title\par}%
+  \vspace{3ex}{\fontsize{34}{34}\selectfont\mlSlash}\par\vspace{3ex}
+  {\sffamily\Large\color{mlmuted}\let\and\relax\@author\par}%
+  \ifx\@date\@empty\else\vspace{1ex}{\sffamily\large\color{mlmuted}\@date\par}\fi
+  \end{titlepage}}
+\@ifundefined{chapter}{\def\maketitle{\mlTitleBlock}}{\def\maketitle{\mlTitlePage}}
+
+% -- abstract ----------------------------------------------------------------
+\@ifundefined{abstract}{\let\ml@envdef\newenvironment}{\let\ml@envdef\renewenvironment}
+\ml@envdef{abstract}
+  {\begingroup\small\par\noindent{\mlTracked\bfseries\color{mlaccent}ABSTRACT}\par
+   \vspace{0.6ex}\noindent\ignorespaces}
+  {\par\endgroup\vspace{1ex}}
+
+% -- lists, captions, quotes -------------------------------------------------
+\setlist[itemize,1]{label=\raisebox{0.15ex}{\textcolor{mlaccent}{\rule{0.36em}{0.36em}}},
+  leftmargin=1.5em}
+\setlist[itemize,2]{label=\textcolor{mlaccent}{--}, leftmargin=1.5em}
+\setlist[enumerate,1]{label=\textcolor{mlaccent}{\sffamily\small\bfseries\arabic*.},
+  leftmargin=1.8em}
+\captionsetup{font={small}, labelfont={sf,bf,color=mlaccent}, labelsep=quad,
+  justification=raggedright, singlelinecheck=false}
+
+% -- page footer -------------------------------------------------------------
+\fancypagestyle{maleficium}{%
+  \fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[C]{\sffamily\small\color{mlmuted}\thepage}}
+\pagestyle{maleficium}
+\fancypagestyle{plain}{%
+  \fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[C]{\sffamily\small\color{mlmuted}\thepage}}
+
+% -- assignments and letters ------------------------------------------------
+\AtBeginDocument{\@ifundefined{qedsymbol}{}{%
+  \renewcommand{\qedsymbol}{\mlSlash}}}
+% \mlLetterhead{Name}{one line of contact details}
+\newcommand{\mlLetterhead}[2]{%
+  {\mlDisplayFont\fontsize{20}{24}\selectfont\color{mlink}#1\par}%
+  \vspace{0.4ex}{\sffamily\small\color{mlmuted}#2\par}\mlRule}
+
+% The table of contents keeps ink-coloured links; cross-references stay violet.
+\AtBeginDocument{\@ifundefined{tableofcontents}{}{%
+  \let\ml@toc\tableofcontents
+  \renewcommand{\tableofcontents}{\begingroup\hypersetup{linkcolor=mlink}\ml@toc\endgroup}}}
+
+\endinput
