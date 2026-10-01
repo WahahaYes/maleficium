@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maleficium snippet</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: var(--color-background-primary, #ffffff);
+        --fg: var(--color-text-primary, #1f2328);
+        --muted: var(--color-text-secondary, #59636e);
+        --line: var(--color-border-primary, #d1d9e0);
+        --code-bg: var(--color-background-secondary, #f6f8fa);
+        --font: var(--font-sans, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, monospace);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 8px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.4 var(--font);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      header .where {
+        flex: 1;
+        color: var(--muted);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .stale {
+        color: #9a6700;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        padding: 0 6px;
+      }
+      /* The page is paper: white in every theme, never inverted. */
+      .paper {
+        background: #fff;
+        border: 1px solid var(--line);
+        text-align: center;
+        overflow: auto;
+        max-height: 70vh;
+      }
+      .paper img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+      }
+      pre {
+        margin: 8px 0 0;
+        padding: 6px 8px;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font: 12px/1.45 var(--mono);
+        overflow: auto;
+      }
+      pre .hit {
+        background: color-mix(in srgb, #bf8700 25%, transparent);
+        display: inline-block;
+        width: 100%;
+      }
+      .msg {
+        color: var(--muted);
+        padding: 12px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header hidden id="bar">
+      <button id="prev" title="Previous page" aria-label="Previous page">‹</button>
+      <button id="next" title="Next page" aria-label="Next page">›</button>
+      <span class="where" id="where"></span>
+      <span class="stale" id="stale" hidden>stale: recompile</span>
+      <button id="zoom" title="Toggle between the region and the whole page">Whole page</button>
+    </header>
+    <div class="msg" id="msg">Waiting for the snippet…</div>
+    <div class="paper" id="paper" hidden>
+      <img id="img" alt="Rendered region of the compiled PDF" />
+    </div>
+    <pre id="src" hidden></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -10,14 +10,15 @@ PROTOCOL_VERSION = "2025-06-18"
 
 
 class McpClient:
-    """Starts `argv` and completes the initialize handshake as `name`."""
+    """Starts `argv` and completes the initialize handshake as `name`,
+    declaring `capabilities` (none by default)."""
 
-    def __init__(self, argv, name, env=None, stderr=None):
+    def __init__(self, argv, name, env=None, stderr=None, capabilities=None):
         self.p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                                   text=True, bufsize=1, env=env)
         self.n = 0
         self.server_info = self.request("initialize", {
-            "protocolVersion": PROTOCOL_VERSION, "capabilities": {},
+            "protocolVersion": PROTOCOL_VERSION, "capabilities": capabilities or {},
             "clientInfo": {"name": name, "version": "0"}})["result"]["serverInfo"]
         self.notify("notifications/initialized")
 
