@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import process from 'node:process';
 import { readFileSync } from 'node:fs';
 const host = process.env.TAURI_DEV_HOST;
-// scripts/dev.sh picks a free pair and exports DEV_PORT; e2e/stills-run.sh
+// scripts/dev.sh picks a free pair and exports DEV_PORT; e2e/stills-run.py
 // exports its STILLS_PORT. Unset means tauri.conf.json's devUrl, 1420.
 const port = Number(process.env.DEV_PORT ?? 1420);
 // The app version shown in the UI, from the manifest release.sh bumps.

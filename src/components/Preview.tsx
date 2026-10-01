@@ -14,6 +14,7 @@
 
 import { Box, Typography, useTheme } from '@mui/material';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useLatest } from '../hooks/useLatest';
 import type { RefObject } from 'react';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
 import {
@@ -99,10 +100,8 @@ export default function Preview({
   // cached handle instead of re-opening the whole document per page.
   const docRef = useRef<{ key: string; pdf: DocLike } | null>(null);
   const visibleRef = useRef(1);
-  const pageRef = useRef(page);
-  pageRef.current = page;
-  const onPageRef = useRef(onPage);
-  onPageRef.current = onPage;
+  const pageRef = useLatest(page);
+  const onPageRef = useLatest(onPage);
   const ratiosRef = useRef(new Map<number, number>());
   const lockRef = useRef<{ target: number; until: number } | null>(null);
   const pendingScrollRef = useRef<number | null>(null);
