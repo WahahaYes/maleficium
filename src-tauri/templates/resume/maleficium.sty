@@ -1,0 +1,128 @@
+% maleficium.sty -- the shared look of the Maleficium resume and CV templates.
+% Dedicated to the public domain under CC0 1.0.
+% https://creativecommons.org/publicdomain/zero/1.0/
+%
+% The resume and the CV load this same file, so they read as one family. The
+% main file holds only content and calls the commands below; change the look
+% here and both documents follow. Needs XeTeX or LuaTeX (fontspec).
+%
+% Design: left-aligned name, one violet accent on warm ink, letterspaced
+% small-cap headings that hang a short thick stub over a hairline, dates set
+% flush right in muted type.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{maleficium}[2026/09/30 Maleficium resume and CV style]
+
+\RequirePackage{xcolor}
+\RequirePackage{fontspec}
+\RequirePackage{enumitem}
+\RequirePackage{titlesec}
+\RequirePackage{microtype}
+\RequirePackage{needspace}
+\RequirePackage{etoolbox}
+\RequirePackage{xurl}
+\RequirePackage[hidelinks]{hyperref}
+
+% Fonts by file name come from the TeX bundle, so the output matches on every
+% machine.
+\setmainfont{texgyreheros-regular.otf}[
+  BoldFont = texgyreheros-bold.otf,
+  ItalicFont = texgyreheros-italic.otf,
+  BoldItalicFont = texgyreheros-bolditalic.otf]
+
+% Letterspacing for headings and the tagline. microtype's \textls does not run
+% under XeTeX, so the tracked face is a second fontspec family.
+\newfontfamily\mlTracked{texgyreheros-regular.otf}[
+  BoldFont = texgyreheros-bold.otf, LetterSpace = 10.0]
+
+% -- knobs -------------------------------------------------------------------
+\newcommand{\mlAccent}{5B2A86}      % hex, no '#'
+\newcommand{\mlInk}{1E1B24}
+\newcommand{\mlMuted}{6B6676}
+\newlength{\mlGap}\setlength{\mlGap}{4pt}   % the density unit
+\newcommand{\mlSetAccent}[1]{\renewcommand{\mlAccent}{#1}\mlDefineColors}
+\newcommand{\mlSetDensity}[1]{\setlength{\mlGap}{#1}}
+\newcommand{\mlDefineColors}{%
+  \definecolor{mlaccent}{HTML}{\mlAccent}%
+  \definecolor{mlink}{HTML}{\mlInk}%
+  \definecolor{mlmuted}{HTML}{\mlMuted}%
+  \definecolor{mlhair}{HTML}{D9D5E0}%
+}
+\mlDefineColors
+\AtBeginDocument{\color{mlink}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\pagestyle{empty}
+\setlength{\emergencystretch}{1.2em}
+\raggedbottom
+
+% -- headings ----------------------------------------------------------------
+% A short accent stub sits over a hairline, then the title in tracked small
+% caps. \needspace keeps a heading from stranding at the foot of a page.
+\newcommand{\mlHeadText}[1]{{\mlTracked\small\MakeUppercase{#1}}}
+\titleformat{\section}[block]
+  {\normalfont\bfseries\color{mlaccent}}{}{0pt}
+  {\mlHeadText}
+  [{\vspace{0.3\mlGap}{\color{mlhair}\titlerule[0.4pt]}\nointerlineskip
+    \vspace{-3.4pt}\noindent\textcolor{mlaccent}{\rule{2.2em}{1.6pt}}}]
+\titlespacing*{\section}{0pt}{2\mlGap}{0.9\mlGap}
+% \mlSection{Experience}
+\newcommand{\mlSection}[1]{\needspace{5\baselineskip}\section{#1}}
+
+% -- the header --------------------------------------------------------------
+% \mlName{First Last}  \mlTagline{Role you want}  \mlContact{a \mlSep b}
+\newcommand{\mlName}[1]{%
+  {\fontsize{26}{28}\selectfont\bfseries\color{mlink}#1}\par}
+\newcommand{\mlTagline}[1]{%
+  \vspace{0.4\mlGap}{\color{mlaccent}\mlTracked\footnotesize\MakeUppercase{#1}}\par}
+\newcommand{\mlSep}{\ \raisebox{0.1ex}{\textcolor{mlaccent}{\textbullet}}\ }
+\newcommand{\mlContact}[1]{%
+  \vspace{0.6\mlGap}{\small\color{mlmuted}#1}\par\vspace{0.4\mlGap}}
+% \mlLink{url}{text}
+\newcommand{\mlLink}[2]{\href{#1}{#2}}
+
+% \mlSummary{text} -- a lede paragraph, set apart from the body.
+\newcommand{\mlSummary}[1]{\vspace{0.8\mlGap}{\small\color{mlmuted}#1}\par}
+
+% -- body vocabulary ---------------------------------------------------------
+% \mlEntry{Title}{Dates}{Organisation}{Place}  -- a titled, dated entry.
+\newcommand{\mlEntry}[4]{%
+  \needspace{3\baselineskip}%
+  \noindent\textbf{#1}\hfill{\small\color{mlmuted}#2}\par\vspace{0.1\mlGap}%
+  \noindent{\small\color{mlaccent}#3}\hfill{\small\itshape\color{mlmuted}#4}\par
+  \vspace{0.3\mlGap}}
+
+% Bullets: a small accent square.
+\newlist{mlbullets}{itemize}{1}
+\setlist[mlbullets,1]{leftmargin=1.1em, itemsep=0.25\mlGap, topsep=0pt,
+  parsep=0pt, partopsep=0pt, after=\vspace{0.9\mlGap},
+  label=\raisebox{0.2ex}{\textcolor{mlaccent}{\rule{0.38em}{0.38em}}}}
+
+% Numbered citations: [1] ...
+\newlist{mlcites}{enumerate}{1}
+\setlist[mlcites,1]{leftmargin=2em, labelsep=0.4em, itemsep=0.35\mlGap,
+  topsep=0pt, parsep=0pt, after=\vspace{0.9\mlGap},
+  label=\textcolor{mlaccent}{\small[\arabic*]}}
+
+% \mlDated{Year}{Text} -- one dated line: awards, service, funding, talks.
+\newcommand{\mlDated}[2]{%
+  \noindent\hangindent=4.2em\hangafter=1
+  \makebox[4.2em][l]{\small\color{mlaccent}\bfseries #1}#2\par
+  \vspace{0.25\mlGap}}
+
+% \mlLabeled{Label}{Items} -- skills, languages, interests.
+\newcommand{\mlLabeled}[2]{%
+  \noindent\hangindent=6.2em\hangafter=1
+  \makebox[6.2em][l]{\small\color{mlaccent}\bfseries #1}#2\par
+  \vspace{0.25\mlGap}}
+
+% \mlMe{Name} -- your own name inside an author list.
+\newcommand{\mlMe}[1]{\textbf{#1}}
+% \mlVenue{Venue} and \mlBadge{text} for citation lines.
+\newcommand{\mlVenue}[1]{\textit{#1}}
+\newcommand{\mlBadge}[1]{{\small\color{mlmuted}(#1)}}
+% \mlNote{text} -- a muted aside under a heading.
+\newcommand{\mlNote}[1]{{\small\itshape\color{mlmuted}#1}\par\vspace{0.4\mlGap}}
+
+\endinput
