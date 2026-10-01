@@ -10,3 +10,4 @@ src/assets/themes/**/*.jsonc
 *.log
 src/lib/generated
 src-tauri/mcp/views
+src-tauri/widget-runtimes
