@@ -34,6 +34,13 @@
     \fill[mlaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
   \end{tikzpicture}}
 
+\newcommand{\mlHairSlash}[1][\linewidth]{%
+  \par\noindent\begin{tikzpicture}[x=0.085em, y=0.085em, baseline=(current bounding box.south)]
+    \draw[mlhair, line width=0.5pt] (0pt,0.5) -- (#1,0.5);
+    \fill[mlaccentlt] (4.6,-3.5) -- (7.6,-3.5) -- (10.6,4.5) -- (7.6,4.5) -- cycle;
+    \fill[mlaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
+  \end{tikzpicture}\par}
+
 \setbeamercolor{normal text}{fg=mlink, bg=white}
 \setbeamercolor{structure}{fg=mlaccent}
 \setbeamercolor{frametitle}{fg=mlink}
@@ -59,8 +66,7 @@
   \begin{beamercolorbox}[wd=\paperwidth, leftskip=1.6em, rightskip=1.6em]{frametitle}
     {\usebeamerfont{frametitle}\insertframetitle\par}
     {\usebeamerfont{framesubtitle}\usebeamercolor[fg]{subtitle}\insertframesubtitle\par}
-    \vspace{0.35em}{\color{mlhair}\rule{\dimexpr\paperwidth-3.2em\relax}{0.5pt}}\par
-    \vspace{-0.62em}\mlSlash
+    \vspace{0.35em}\mlHairSlash[\dimexpr\paperwidth-3.2em\relax]
   \end{beamercolorbox}}
 \setbeamerfont{frametitle}{family=\sffamily, series=\bfseries, size=\Large}
 \setbeamerfont{framesubtitle}{family=\sffamily, size=\normalsize}
@@ -81,9 +87,9 @@
   \end{minipage}
   \vfill}
 
-% Footline: the frame number, bottom right, in muted sans.
+% Footline: the frame number, bottom left (the Maleficium mark takes the right), in muted sans.
 \setbeamertemplate{footline}{%
-  \hfill{\sffamily\footnotesize\color{mlmuted}\insertframenumber}\hspace{1.6em}\vspace{1em}}
+  \hspace{1.6em}{\sffamily\footnotesize\color{mlmuted}\insertframenumber}\hfill\vspace{1em}}
 
 \setbeamersize{text margin left=1.6em, text margin right=1.6em}
 

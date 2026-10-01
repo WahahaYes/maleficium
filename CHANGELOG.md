@@ -4,7 +4,7 @@
 
 ### Templates
 
-- **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Presentation has a matching beamer theme. Journal Paper keeps plain IEEEtran formatting. Each folder carries its own copy of the style file, so a project stays self-contained.
+- **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Presentation has a matching beamer theme. Journal Paper keeps plain IEEEtran formatting. Every template ends each page with a small "Made with Maleficium" mark that links to the project; deleting one `\usepackage{maleficium-footer}` line removes it. Each folder carries its own copy of the style files, so a project stays self-contained.
 
 ### Fixes
 

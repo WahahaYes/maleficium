@@ -29,7 +29,7 @@ The welcome tour opens on first launch and is not listed in the gallery.
 
 ### Classes, packages, and fonts
 
-The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License). The look is shared: the Resume and CV carry `maleficium.sty`, every other template except the journal carries `maleficium-doc.sty` (the Presentation carries `beamerthememaleficium.sty`), each folder with its own copy so a project stays self-contained. The journal keeps plain IEEEtran formatting, because venues require it. Loading a class or package puts no terms on the document that uses it.
+The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License). Every template also carries `maleficium-footer.sty` and `maleficium-mark.pdf`, which draw the "Made with Maleficium" mark bottom right on each page; delete the `\usepackage{maleficium-footer}` line from a project to remove it. The look is shared: the Resume and CV carry `maleficium.sty`, every other template except the journal carries `maleficium-doc.sty` (the Presentation carries `beamerthememaleficium.sty`), each folder with its own copy so a project stays self-contained. The journal keeps plain IEEEtran formatting, because venues require it. Loading a class or package puts no terms on the document that uses it.
 
 ## Adding a built-in template
 
