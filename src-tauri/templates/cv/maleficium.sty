@@ -164,7 +164,7 @@
 \tikzset{mlchip/.style={inner xsep=10pt, inner ysep=1.6pt, text=mlink}}
 \newcommand{\mlTag}[1]{%
   \tikz[baseline=(mlp.base)]{%
-    \pgfmathsetmacro{\mlChipSz}{\f@size+1}%
+    \pgfmathsetmacro{\mlChipSz}{\f@size+0}%
     \node[mlchip](mlp){\mlChipFont
       \fontsize{\mlChipSz}{0}\selectfont
       \rule[-0.3em]{0pt}{1.02em}#1};
