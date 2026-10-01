@@ -27,17 +27,23 @@
 \RequirePackage[hidelinks]{hyperref}
 \urlstyle{same}
 
-% Fonts by file name come from the TeX bundle, so the output matches on every
-% machine.
-\setmainfont{texgyreheros-regular.otf}[
-  BoldFont = texgyreheros-bold.otf,
-  ItalicFont = texgyreheros-italic.otf,
-  BoldItalicFont = texgyreheros-bolditalic.otf]
-
-% Letterspacing for headings and the tagline. microtype's \textls does not run
-% under XeTeX, so the tracked face is a second fontspec family.
-\newfontfamily\mlTracked{texgyreheros-regular.otf}[
-  BoldFont = texgyreheros-bold.otf, LetterSpace = 10.0]
+% -- type -------------------------------------------------------------------
+% Libertinus (SIL OFL), a complete family in the bundle. Three roles, all loaded by file name from the TeX bundle so the output
+% matches on every machine:
+%   body     running text, entries, dates
+%   display  the name at the top of the page
+%   caps     tracked capitals: section headings and the tagline
+% microtype's \textls does not run under XeTeX, so letterspacing is done with
+% fontspec's LetterSpace on the caps face.
+%%FONTS-BEGIN
+\setmainfont{LibertinusSerif-Regular.otf}[
+  BoldFont = LibertinusSerif-Bold.otf,
+  ItalicFont = LibertinusSerif-Italic.otf,
+  BoldItalicFont = LibertinusSerif-BoldItalic.otf]
+\newfontfamily\mlDisplayFont{LibertinusSerif-Semibold.otf}
+\newfontfamily\mlTracked{LibertinusSans-Regular.otf}[
+  BoldFont = LibertinusSans-Bold.otf, LetterSpace = 10.0]
+%%FONTS-END
 
 % -- knobs -------------------------------------------------------------------
 \newcommand{\mlAccent}{5B2A86}      % hex, no '#'
@@ -59,7 +65,8 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
 
-\setlength{\emergencystretch}{1.2em}
+\setlength{\emergencystretch}{3em}
+\tolerance=1200\hbadness=3000
 \raggedbottom
 
 % -- headings ----------------------------------------------------------------
@@ -87,12 +94,15 @@
 % -- the header --------------------------------------------------------------
 % \mlName{First Last}  \mlTagline{Role you want}  \mlContact{a \mlSep b}
 \newcommand{\mlName}[1]{%
-  {\fontsize{26}{28}\selectfont\bfseries\color{mlink}#1}\par}
+  {\mlDisplayFont\fontsize{26}{28}\selectfont\color{mlink}#1}\par}
 \newcommand{\mlTagline}[1]{%
   \vspace{0.4\mlGap}{\color{mlaccent}\mlTracked\footnotesize\MakeUppercase{#1}}\par}
-\newcommand{\mlSep}{\ \raisebox{0.1ex}{\textcolor{mlaccent}{\textbullet}}\ }
+% The separator is a discretionary: where a line breaks it vanishes, so no
+% line starts or ends on a bare bullet. The contact block is set ragged so a
+% long item can never stretch the spaces or run past the margin.
+\newcommand{\mlSep}{\discretionary{}{}{\kern0.55em\raisebox{0.1ex}{\textcolor{mlaccent}{\textbullet}}\kern0.55em}}
 \newcommand{\mlContact}[1]{%
-  \vspace{0.6\mlGap}{\small\color{mlmuted}#1}\par\vspace{0.4\mlGap}}
+  \vspace{0.6\mlGap}{\small\color{mlmuted}\raggedright\sloppy #1\par}\vspace{0.4\mlGap}}
 % \mlLink{url}{text}
 \newcommand{\mlLink}[2]{\href{#1}{#2}}
 % \mlUrlLink{url}{text}: like \mlLink, but the text may break across lines
