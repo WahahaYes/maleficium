@@ -8,7 +8,9 @@ use std::process::Child;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use maleficium_structure::{MissingDependency, MissingReason};
+use maleficium_structure::{
+    CompilePhase, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+};
 
 use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
 
@@ -65,12 +67,50 @@ pub struct JobRecord {
     /// The dependency the run lacked, when that is why it failed (or the
     /// bundle changed under a clean run).
     pub missing: Option<MissingDependency>,
+    pub progress: Progress,
+}
+
+/// How far a job got: the latest phase its lines signalled, and the TeX
+/// support files it downloaded on the way.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+pub struct Progress {
+    /// `None` until the engine reports a phase.
+    pub phase: Option<CompilePhase>,
+    /// What the phase is about (a rerun's reason, a tool or file name).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Files downloaded so far.
+    pub fetched: u32,
+    /// Downloads that failed so far.
+    pub fetch_failed: u32,
+}
+
+impl Progress {
+    /// Fold one line's signal in.
+    pub fn note(&mut self, signal: Option<&LineSignal>) {
+        match signal {
+            Some(LineSignal::Phase { phase, detail }) => {
+                self.phase = Some(*phase);
+                self.detail = detail.clone();
+            }
+            Some(LineSignal::Fetch {
+                outcome: FetchOutcome::Fetched,
+                ..
+            }) => self.fetched += 1,
+            Some(LineSignal::Fetch {
+                outcome: FetchOutcome::Failed,
+                ..
+            }) => self.fetch_failed += 1,
+            None => {}
+        }
+    }
 }
 
 struct LiveJob {
     /// The running engine; a cancel takes it from here.
     child: Arc<Mutex<Option<Child>>>,
     lines: Vec<String>,
+    progress: Progress,
     done_tx: Option<std::sync::mpsc::Sender<JobRecord>>,
     done_rx: Option<std::sync::mpsc::Receiver<JobRecord>>,
 }
@@ -233,6 +273,7 @@ pub fn run_blocking(
         LiveJob {
             child: child.clone(),
             lines: Vec::new(),
+            progress: Progress::default(),
             done_tx: None,
             done_rx: None,
         },
@@ -315,6 +356,7 @@ pub fn run(
         LiveJob {
             child: child.clone(),
             lines: Vec::new(),
+            progress: Progress::default(),
             done_tx: Some(tx),
             done_rx: Some(rx),
         },
@@ -328,6 +370,7 @@ pub fn run(
         let mut on_line = |l: &maleficium_events::CompileLine| {
             if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {
                 job.lines.push(l.text.clone());
+                job.progress.note(l.signal.as_ref());
             }
         };
         let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
@@ -337,17 +380,18 @@ pub fn run(
                 log: e,
                 lines: Vec::new(),
                 missing: None,
+                progress: Progress::default(),
             },
             Ok(c) => {
                 settle(cx, &root_id, &rel, &out, &c);
                 // The record keeps the whole stream: every run and status line.
-                let lines = cx
+                let (lines, progress) = cx
                     .jobs()
                     .live
                     .lock()
                     .unwrap()
                     .get(&job_id)
-                    .map(|j| j.lines.clone())
+                    .map(|j| (j.lines.clone(), j.progress.clone()))
                     .unwrap_or_default();
                 let (pdf_url, log) = match c.status {
                     JobStatus::Success => (
@@ -370,6 +414,7 @@ pub fn run(
                     log,
                     lines,
                     missing: c.missing,
+                    progress,
                 }
             }
         };
@@ -408,6 +453,7 @@ pub fn poll(cx: &Core, job_id: &str, tail_lines: usize) -> Result<JobRecord, Str
                     log: String::from("compile worker lost"),
                     lines: job.lines.clone(),
                     missing: None,
+                    progress: job.progress.clone(),
                 });
             }
         }
@@ -420,6 +466,7 @@ pub fn poll(cx: &Core, job_id: &str, tail_lines: usize) -> Result<JobRecord, Str
         log: String::new(),
         lines: job.lines[start..].to_vec(),
         missing: None,
+        progress: job.progress.clone(),
     })
 }
 

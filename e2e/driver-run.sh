@@ -199,6 +199,9 @@ for _ in range(ROUNDS):
         break
 compile_ms = (time.time() - t0) * 1000
 check("compile succeeds", sc.get("status") == "success", str(sc)[:200], ms=compile_ms)
+check("compile_run names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
+prog = sc.get("progress") or {}
+check("compile_poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
 check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
 if WARM_ONLY:
     logf.close()
@@ -252,7 +255,13 @@ check("snippet refuses two targets", not two["ok"] and "exactly one target" in t
 
 tl = mcp.request("tools/list")["result"]["tools"]
 ui_of = {t["name"]: (t.get("_meta") or {}).get("ui") for t in tl}
-check("only the snippet tools carry a View", sorted(k for k, v in ui_of.items() if v) == ["snippet", "snippet_render"], str(sorted(k for k, v in ui_of.items() if v)))
+check("only the snippet tools and compile_run carry a View", sorted(k for k, v in ui_of.items() if v) == ["compile_run", "snippet", "snippet_render"], str(sorted(k for k, v in ui_of.items() if v)))
+check("compile_run names the dashboard and stays model-callable", ui_of["compile_run"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["compile_run"]))
+check("the dashboard's own calls stay plain tools", all(ui_of[n] is None for n in ["compile_poll", "compile_cancel", "diagnostics", "offline_readiness"]), str({n: ui_of[n] for n in ["compile_poll", "compile_cancel"]}))
+dash = mcp.request("resources/read", {"uri": "ui://maleficium/compile/v1"})["result"]["contents"][0]
+check("the dashboard is served as an MCP App html page", dash["mimeType"] == "text/html;profile=mcp-app" and dash["text"].lstrip().lower().startswith("<!doctype html>") and (dash.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (dash.get("_meta") or {}).get("ui", {}), str(dash)[:160])
+check("the dashboard is self-contained", "src=\"http" not in dash["text"] and "href=\"http" not in dash["text"] and "@import" not in dash["text"])
+check("an unknown version of the dashboard is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/compile/v2"}))
 check("snippet names its View and stays model-callable", ui_of["snippet"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["snippet"]["visibility"], str(ui_of["snippet"]))
 check("snippet_render is app-only", ui_of["snippet_render"]["visibility"] == ["app"], str(ui_of["snippet_render"]))
 view = mcp.request("resources/read", {"uri": "ui://maleficium/snippet/v1"})["result"]["contents"][0]

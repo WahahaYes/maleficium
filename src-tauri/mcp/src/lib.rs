@@ -19,6 +19,15 @@ use maleficium_core as core;
 /// deletes `/v1` in the same change.
 const SNIPPET_VIEW_URI: &str = "ui://maleficium/snippet/v1";
 const SNIPPET_VIEW_HTML: &str = include_str!("../views/snippet.html");
+/// The compile dashboard View: a `compile_run` job's status, phase, log
+/// tail, findings and a cancel button, polled through `compile_poll`.
+const COMPILE_VIEW_URI: &str = "ui://maleficium/compile/v1";
+const COMPILE_VIEW_HTML: &str = include_str!("../views/compile.html");
+/// Every View, by the URI its tools name.
+const VIEWS: &[(&str, &str)] = &[
+    (SNIPPET_VIEW_URI, SNIPPET_VIEW_HTML),
+    (COMPILE_VIEW_URI, COMPILE_VIEW_HTML),
+];
 /// The MCP Apps extension id and the MIME type its Views are served as.
 const UI_EXTENSION: &str = "io.modelcontextprotocol/ui";
 const UI_MIME: &str = "text/html;profile=mcp-app";
@@ -34,6 +43,30 @@ fn ui_meta(resource_uri: Option<&str>, visibility: &[&str]) -> rmcp::model::Meta
     let mut meta = serde_json::Map::new();
     meta.insert("ui".into(), ui.into());
     meta.into()
+}
+
+/// The `resources/read` answer for a View's URI: its html as an MCP App
+/// page. Any other URI is not found.
+fn view_resource(uri: &str) -> Result<rmcp::model::ResourceContents, rmcp::ErrorData> {
+    let Some(&(uri, html)) = VIEWS.iter().find(|(known, _)| *known == uri) else {
+        return Err(rmcp::ErrorData::resource_not_found(
+            format!("no resource {uri}"),
+            None,
+        ));
+    };
+    let mut contents = rmcp::model::ResourceContents::text(html, uri);
+    if let rmcp::model::ResourceContents::TextResourceContents {
+        mime_type, meta, ..
+    } = &mut contents
+    {
+        *mime_type = Some(UI_MIME.to_string());
+        // No csp: the host's most restrictive default applies.
+        *meta = serde_json::json!({ "ui": { "prefersBorder": true } })
+            .as_object()
+            .cloned()
+            .map(Into::into);
+    }
+    Ok(contents)
 }
 
 /// The MCP adapter: one `Core` for the life of the stdio session.
@@ -99,6 +132,8 @@ struct CompileRunParams {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CompileRunOut {
     job_id: String,
+    /// The main file the job compiles (root-relative).
+    main_rel: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -122,6 +157,8 @@ struct CompilePollOut {
     lines: Vec<String>,
     /// The dependency a finished run lacked, and why.
     missing: Option<maleficium_structure::MissingDependency>,
+    /// The phase the run is in (or last reached) and the files it downloaded.
+    progress: core::Progress,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -437,7 +474,8 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network. rel optional: without it the job compiles the same main file the app would"
+        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network. rel optional: without it the job compiles the same main file the app would",
+        meta = ui_meta(Some(COMPILE_VIEW_URI), &["model", "app"])
     )]
     fn compile_run(
         &self,
@@ -466,7 +504,10 @@ impl Maleficium {
                 p.networked.unwrap_or(false),
                 core::compile::COMPILE_TIMEOUT_SECS,
             )?;
-            Ok(Json(CompileRunOut { job_id }))
+            Ok(Json(CompileRunOut {
+                job_id,
+                main_rel: rel,
+            }))
         })
     }
 
@@ -494,6 +535,7 @@ impl Maleficium {
                 log: r.log,
                 lines: r.lines,
                 missing: r.missing,
+                progress: r.progress,
             }))
         })
         .await
@@ -970,25 +1012,7 @@ impl rmcp::ServerHandler for Maleficium {
         request: rmcp::model::ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResponse, rmcp::ErrorData> {
-        if request.uri != SNIPPET_VIEW_URI {
-            return Err(rmcp::ErrorData::resource_not_found(
-                format!("no resource {}", request.uri),
-                None,
-            ));
-        }
-        let mut contents = rmcp::model::ResourceContents::text(SNIPPET_VIEW_HTML, SNIPPET_VIEW_URI);
-        if let rmcp::model::ResourceContents::TextResourceContents {
-            mime_type, meta, ..
-        } = &mut contents
-        {
-            *mime_type = Some(UI_MIME.to_string());
-            // No csp: the host's most restrictive default applies.
-            *meta = serde_json::json!({ "ui": { "prefersBorder": true } })
-                .as_object()
-                .cloned()
-                .map(Into::into);
-        }
-        Ok(rmcp::model::ReadResourceResult::new(vec![contents]).into())
+        Ok(rmcp::model::ReadResourceResult::new(vec![view_resource(&request.uri)?]).into())
     }
 }
 
@@ -1056,10 +1080,12 @@ mod tests {
         assert!(ext.contains_key(UI_EXTENSION), "{ext:?}");
     }
 
-    /// Only the snippet tools name a View, and the re-render tool is
-    /// hidden from the model.
+    /// Only the snippet tools and compile_run name a View; the re-render
+    /// tool is hidden from the model, and the dashboard's own calls
+    /// (compile_poll, compile_cancel, diagnostics, offline_readiness) stay
+    /// plain tools so text-only hosts see them as before.
     #[test]
-    fn only_the_snippet_tools_carry_ui_meta() {
+    fn only_the_view_tools_carry_ui_meta() {
         let tools = Maleficium::tool_router().list_all();
         let ui = |t: &rmcp::model::Tool| {
             t.meta
@@ -1067,30 +1093,87 @@ mod tests {
                 .and_then(|m| m.get("ui").cloned())
                 .map(|v| v.to_string())
         };
-        let with: Vec<_> = tools
+        let mut with: Vec<_> = tools
             .iter()
             .filter(|t| ui(t).is_some())
             .map(|t| t.name.to_string())
             .collect();
-        assert_eq!(with.len(), 2, "{with:?}");
+        with.sort();
+        assert_eq!(with, ["compile_run", "snippet", "snippet_render"]);
         let get = |n: &str| ui(tools.iter().find(|t| t.name == n).unwrap()).unwrap();
         assert!(get("snippet").contains(SNIPPET_VIEW_URI) && get("snippet").contains("model"));
         assert_eq!(
             get("snippet_render"),
             format!(r#"{{"resourceUri":"{SNIPPET_VIEW_URI}","visibility":["app"]}}"#)
         );
+        assert_eq!(
+            get("compile_run"),
+            format!(r#"{{"resourceUri":"{COMPILE_VIEW_URI}","visibility":["model","app"]}}"#)
+        );
     }
 
-    /// The embedded View is a whole html page that loads nothing from the
-    /// network (the default Apps CSP would block it anyway).
+    /// Every embedded View is a whole html page that loads nothing from
+    /// the network (the default Apps CSP would block it anyway).
     #[test]
-    fn the_snippet_view_is_a_self_contained_page() {
-        let html = SNIPPET_VIEW_HTML.trim_start().to_ascii_lowercase();
-        assert!(html.starts_with("<!doctype html>"));
-        assert!(html.len() > 10_000, "the built View is missing or a stub");
-        for external in ["src=\"http", "href=\"http", "@import", "<link "] {
-            assert!(!html.contains(external), "{external}");
+    fn every_view_is_a_self_contained_page() {
+        assert_eq!(VIEWS.len(), 2);
+        for (uri, html) in VIEWS {
+            let html = html.trim_start().to_ascii_lowercase();
+            assert!(html.starts_with("<!doctype html>"), "{uri}");
+            assert!(
+                html.len() > 10_000,
+                "{uri}: the built View is missing or a stub"
+            );
+            for external in ["src=\"http", "href=\"http", "@import", "<link "] {
+                assert!(!html.contains(external), "{uri}: {external}");
+            }
         }
+    }
+
+    /// Each View is served at its versioned URI as an MCP App page with a
+    /// border and no csp; anything else under ui:// is not found.
+    #[test]
+    fn views_are_served_at_their_uris_and_nothing_else() {
+        for (uri, html) in VIEWS {
+            let served = serde_json::to_value(view_resource(uri).unwrap()).unwrap();
+            assert_eq!(served["uri"], *uri);
+            assert_eq!(served["mimeType"], UI_MIME);
+            assert_eq!(served["text"], *html);
+            assert_eq!(
+                served["_meta"],
+                serde_json::json!({ "ui": { "prefersBorder": true } })
+            );
+        }
+        assert!(COMPILE_VIEW_URI.ends_with("/v1"));
+        for unknown in [
+            "ui://maleficium/compile/v2",
+            "ui://maleficium/compile",
+            "ui://maleficium/nope/v1",
+            "file:///etc/passwd",
+        ] {
+            assert!(view_resource(unknown).is_err(), "{unknown}");
+        }
+    }
+
+    /// The dashboard's poll reports the phase and downloads it renders.
+    #[test]
+    fn progress_follows_phase_and_fetch_signals() {
+        use maleficium_structure::{line_signal, CompilePhase};
+        let mut p = core::Progress::default();
+        for line in [
+            "note: downloading article.cls",
+            "note: downloading size10.clo",
+            "warning: failed to download \"x.sty\"; please check your network connection",
+            "note: Running TeX ...",
+            "plain text with no signal",
+        ] {
+            p.note(line_signal(line).as_ref());
+        }
+        assert_eq!(p.phase, Some(CompilePhase::Tex));
+        assert_eq!((p.fetched, p.fetch_failed), (2, 1));
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!(json["phase"], "tex");
+        assert!(json.get("detail").is_none(), "{json}");
     }
 
     #[test]
