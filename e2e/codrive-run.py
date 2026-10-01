@@ -452,7 +452,7 @@ def main():
     ap.add_argument("--no-build", action="store_true", help="use the existing build in CARGO_TARGET_DIR")
     a = ap.parse_args()
     agent = a.mode != "race" and a.runner != "script"
-    a.model = a.model or (getattr(ar, "CLAUDE_MODEL", None) if a.runner == "claude" else ar.FREE_MODEL)
+    a.model = a.model or (getattr(ar, "CLAUDE_MODEL", None) if a.runner == "claude" else ar.OPENCODE_MODEL)
     for tool in ["Xvfb", "xdotool", "import", "bwrap", "curl"] + ([a.runner] if agent else []):
         if not shutil.which(tool):
             die("needs %s on PATH" % tool)
