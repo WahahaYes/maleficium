@@ -59,7 +59,7 @@
 
 % -- headings ----------------------------------------------------------------
 % A short accent stub sits over a hairline, then the title in tracked small
-% caps. \needspace keeps a heading from stranding at the foot of a page.
+% caps. titlesec keeps a heading attached to the line that follows it.
 \newcommand{\mlHeadText}[1]{{\mlTracked\small\MakeUppercase{#1}}}
 \titleformat{\section}[block]
   {\normalfont\bfseries\color{mlaccent}}{}{0pt}
@@ -68,7 +68,7 @@
     \vspace{-3.4pt}\noindent\textcolor{mlaccent}{\rule{2.2em}{1.6pt}}}]
 \titlespacing*{\section}{0pt}{2\mlGap}{0.9\mlGap}
 % \mlSection{Experience}
-\newcommand{\mlSection}[1]{\needspace{5\baselineskip}\section{#1}}
+\newcommand{\mlSection}[1]{\section{#1}}
 
 % -- the header --------------------------------------------------------------
 % \mlName{First Last}  \mlTagline{Role you want}  \mlContact{a \mlSep b}
@@ -89,8 +89,9 @@
 % \mlEntry{Title}{Dates}{Organisation}{Place}  -- a titled, dated entry.
 \newcommand{\mlEntry}[4]{%
   \needspace{3\baselineskip}%
-  \noindent\textbf{#1}\hfill{\small\color{mlmuted}#2}\par\vspace{0.1\mlGap}%
-  \noindent{\small\color{mlaccent}#3}\hfill{\small\itshape\color{mlmuted}#4}\par
+  \noindent\textbf{#1}\hfill{\small\color{mlmuted}#2}\par
+  \ifstrempty{#3#4}{}{\vspace{0.1\mlGap}%
+    \noindent{\small\color{mlaccent}#3}\hfill{\small\itshape\color{mlmuted}#4}\par}%
   \vspace{0.3\mlGap}}
 
 % Bullets: a small accent square.
