@@ -7,8 +7,10 @@
 \usepackage{booktabs}
 \usepackage{tikz}
 \usepackage[backend=bibtex]{biblatex}
-\usepackage{hyperref}
 \addbibresource{references.bib}
+\usepackage{hyperref}
+\usepackage{maleficium-doc}   % the Maleficium look; remove for plain LaTeX
+\usepackage{maleficium-footer}   % "Made with Maleficium" mark; delete this line to remove it
 
 \title{The Title of Your Article}
 \author{Your Name \\ \small Your Institution}
@@ -57,7 +59,7 @@ Table~\ref{tab:results} and Figure~\ref{fig:sketch} summarise the outcome.
   \begin{tikzpicture}
     \draw[->] (0,0) -- (4,0) node[right] {$x$};
     \draw[->] (0,0) -- (0,2.5) node[above] {$y$};
-    \draw[thick, blue] (0,0.2) .. controls (1.5,2.4) and (2.5,0.4) .. (4,2);
+    \draw[thick, mlaccent] (0,0.2) .. controls (1.5,2.4) and (2.5,0.4) .. (4,2);
   \end{tikzpicture}
   \caption{A figure drawn in TikZ; use \texttt{\textbackslash includegraphics} for images.}
   \label{fig:sketch}

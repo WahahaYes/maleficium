@@ -1,42 +1,83 @@
 % This template is dedicated to the public domain under CC0 1.0: use it for
 % anything, no credit needed. https://creativecommons.org/publicdomain/zero/1.0/
 
-\documentclass[11pt,a4paper,sans]{moderncv}
-\moderncvstyle{classic}
-\moderncvcolor{blue}
-\usepackage[scale=0.8]{geometry}
+% The look lives in maleficium-cv.sty, shared with the resume template. This file
+% is only content: replace the placeholders, delete the sections you do not
+% need. A CV has no page limit, so let it grow.
+\documentclass[11pt]{article}
+\usepackage[hmargin=1.15in, vmargin=0.8in]{geometry}
+\usepackage{maleficium-cv}
+\usepackage{maleficium-footer}   % "Made with Maleficium" mark; delete this line to remove it
+\mlSetDensity{4.5pt}
 
-\name{First}{Last}
-\title{Curriculum Vitae}
-\address{1 Example Street}{City, Postcode}{Country}
-\phone[mobile]{+1~(555)~123~4567}
-\email{first.last@example.org}
-\homepage{example.org}
+\hypersetup{pdftitle={First Last -- Curriculum Vitae}, pdfauthor={First Last}}
 
 \begin{document}
-\makecvtitle
 
-\section{Education}
-\cventry{2018--2022}{PhD in Your Field}{University Name}{City}{}{Thesis: \emph{Title of the thesis}}
-\cventry{2014--2018}{BSc in Your Field}{University Name}{City}{}{}
+\mlName{First Last}
+\mlTagline{Curriculum Vitae}
+\mlContact{first.last@example.org\mlSep +1~555~123~4567\mlSep City,~Country\mlSep ORCID~0000-0000-0000-0000\mlSep \mlLink{https://example.org}{example.org}}
 
-\section{Experience}
-\cventry{2022--now}{Job Title}{Employer}{City}{}{%
-  \begin{itemize}
-    \item What you did, and what came of it
-    \item A second responsibility or result
-  \end{itemize}}
+\mlSection{Education}
+\mlEntry{PhD in Your Field}{2018 -- 2022}{University Name}{City}
+\begin{mlbullets}
+  \item Thesis: \emph{Title of the thesis}. Advisor: A.\ Advisor.
+\end{mlbullets}
+\mlEntry{BSc in Your Field}{2014 -- 2018}{University Name}{City}
 
-\section{Publications}
-\cvitem{2023}{Author, A., \& Author, B. \emph{Paper title}. Venue.}
-\cvitem{2021}{Author, A. \emph{Another paper}. Venue.}
+\mlSection{Experience}
+\mlEntry{Research Scientist}{2022 -- Present}{Organisation}{City}
+\begin{mlbullets}
+  \item What you did, and what came of it.
+  \item A second responsibility or result.
+\end{mlbullets}
 
-\section{Skills}
-\cvitem{Languages}{Python, C++, \LaTeX}
-\cvitem{Methods}{Statistics, experiment design}
+\mlSection{Publications}
+\mlNote{Your name in bold. Peer-reviewed unless marked.}
+\begin{mlcites}
+  \item \mlMe{First Last}, A.\ Coauthor. Paper title. \mlVenue{Venue} (2025). doi:10.0000/example
+  \item A.\ Coauthor, \mlMe{First Last}. Another paper title. \mlVenue{Journal} 32, 1--12 (2024).
+\end{mlcites}
 
-\section{Languages}
-\cvitemwithcomment{English}{Native}{}
-\cvitemwithcomment{German}{Fluent}{}
+\mlSection{Patents}
+\mlDated{2024}{Title of the patent. Assignee, provisional.}
+
+\mlSection{Software}
+\mlEntry{Project Name}{2023 -- Present}{What it is in one line}{\mlLink{https://example.org}{example.org}}
+\begin{mlbullets}
+  \item What it does, and who uses it.
+\end{mlbullets}
+
+\mlSection{Awards \& Honors}
+\mlDated{2023}{Award name, Awarding body.}
+\mlDated{2020}{Another award, Awarding body.}
+
+\mlSection{Funding}
+\mlNote{Grants where you contributed substantially.}
+\mlDated{2024--29}{Funder: \emph{Grant title} (\$1.0M).}
+
+\mlSection{Invited Talks}
+\mlDated{2025}{\emph{Talk title.} Host, City.}
+\mlDated{2024}{\emph{Another talk title.} Conference.}
+
+\mlSection{Teaching}
+\mlEntry{Instructor, Course Name}{2022}{University Name}{City}
+
+\mlSection{Service}
+\mlDated{2025}{Reviewer, Journal or Conference Name.}
+\mlDated{2024}{Program committee, Workshop Name.}
+
+\mlSection{Mentoring}
+\mlLabeled{Masters}{Student Name (2022--23), Student Name (2021)}
+\mlLabeled{Undergrad}{Student Name (2022--24)}
+
+\mlSection{Skills}
+\mlLabelWidth{Languages}
+\mlTagGroup{Languages}{\mlTag{Python}\mlTag{C++}\mlTag{R}}
+\mlTagGroup{Methods}{\mlTag{Statistics}\mlTag{Experiment design}}
+
+\mlSection{Languages}
+\mlLabeled{English}{Native}
+\mlLabeled{German}{Fluent}
 
 \end{document}
