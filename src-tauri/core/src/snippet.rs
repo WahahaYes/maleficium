@@ -6,7 +6,7 @@
 
 use crate::Core;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// What to show.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,7 +17,7 @@ pub enum Target {
 }
 
 /// A region on a page, in pdf points from the page's top left.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Region {
     pub x: f32,
@@ -78,6 +78,10 @@ const PAD_PT: f32 = 14.0;
 const SCALE: f32 = 2.0;
 const MAX_WIDTH_PX: f32 = 1600.0;
 const MAX_PNG_BYTES: usize = 400 * 1024;
+/// A region taller than this share of the page is the page body, not the
+/// target; `refine` looks this many lines back for a real placement.
+const BODY_FRACTION: f32 = 0.6;
+const LOOK_BACK_LINES: u32 = 8;
 
 pub fn snippet(
     cx: &Core,
@@ -92,7 +96,7 @@ pub fn snippet(
         .map_err(|_| format!("no compiled output for {}: compile it first", main_rel))?;
     let pdf_mtime = mtime(&pdf_path);
 
-    let (page, region, source, stale) = match target {
+    let (page, mut region, source, stale) = match target {
         Target::Page { page } => (*page, None, None, false),
         Target::Line { tex_rel, line } => {
             at_line(cx, root_id, main_rel, tex_rel, *line, pdf_mtime)?
@@ -117,11 +121,22 @@ pub fn snippet(
             page, pages
         ));
     }
+    let mut page = page;
+    if let (Some(r), Some(src)) = (region, &source) {
+        let page_h = |p: u32| {
+            pdf.pages()
+                .get(p as usize - 1)
+                .map_or(792.0, |pg| pg.render_dimensions().1)
+        };
+        let (p, r) = refine(cx, root_id, main_rel, &src.rel, src.line, (page, r), page_h);
+        (page, region) = (p, Some(r));
+    }
 
     let (mut image, mut image_error, mut png) = (None, None, None);
     if with_image {
-        let rendered =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&pdf, page, region)));
+        let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            render(&pdf, page, region, SCALE)
+        }));
         match rendered {
             Ok(Ok((bytes, width, height))) => {
                 image = Some(ImageInfo {
@@ -149,6 +164,68 @@ pub fn snippet(
     })
 }
 
+/// One re-render of a page or a region of it, for a viewer that already
+/// holds a `Snippet` and wants another scale or page.
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Rendered {
+    pub main: String,
+    pub page: u32,
+    pub pages: u32,
+    pub region: Option<Region>,
+    pub image: ImageInfo,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub png: Vec<u8>,
+}
+
+/// Smallest and largest `scale` a caller may ask for, before the caps.
+const MIN_ZOOM: f32 = 0.5;
+const MAX_ZOOM: f32 = 3.0;
+
+pub fn render_page(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    page: u32,
+    region: Option<Region>,
+    scale: Option<f32>,
+) -> Result<Rendered, String> {
+    let out = super::outputs_of(cx, root_id, main_rel)?;
+    let pdf_bytes = std::fs::read(out.outdir.join(&out.pdf_name))
+        .map_err(|_| format!("no compiled output for {}: compile it first", main_rel))?;
+    let pdf = hayro::hayro_syntax::Pdf::new(pdf_bytes)
+        .map_err(|e| format!("cannot read the pdf of {}: {:?}", main_rel, e))?;
+    let pages = pdf.pages().len() as u32;
+    if page == 0 || page > pages {
+        return Err(format!(
+            "page {} is out of range: the pdf has {} pages",
+            page, pages
+        ));
+    }
+    let scale = scale.unwrap_or(SCALE);
+    if !scale.is_finite() {
+        return Err("scale must be a number".to_string());
+    }
+    let scale = scale.clamp(MIN_ZOOM, MAX_ZOOM);
+    let (png, width, height) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        render(&pdf, page, region, scale)
+    }))
+    .map_err(|_| format!("the renderer failed on page {}", page))??;
+    Ok(Rendered {
+        main: main_rel.to_string(),
+        page,
+        pages,
+        region,
+        image: ImageInfo {
+            width,
+            height,
+            bytes: png.len(),
+        },
+        png,
+    })
+}
+
 type Placed = (u32, Option<Region>, Option<SourceExcerpt>, bool);
 
 /// Where a source line landed, its excerpt, and whether the pdf predates it.
@@ -168,12 +245,27 @@ fn at_line(
         std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {}", tex_rel, e))?;
     let stale = matches!((mtime(&path), pdf_mtime), (Some(src), Some(pdf)) if src > pdf);
     let source = Some(excerpt(tex_rel, &text, line));
-    let boxes = super::synctex::forward_boxes(cx, root_id, main_rel, tex_rel, line)?;
-    let Some(first) = boxes.first() else {
+    let Some((page, region)) = placed(cx, root_id, main_rel, tex_rel, line)? else {
         return Err(format!(
             "{} line {} is not in the compiled pdf (not typeset, or compiled before it existed)",
             tex_rel, line
         ));
+    };
+    Ok((page, Some(region), source, stale))
+}
+
+/// The page and region SyncTeX gives a source line, or `None` when it is
+/// nowhere in the pdf.
+fn placed(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    tex_rel: &str,
+    line: u32,
+) -> Result<Option<(u32, Region)>, String> {
+    let boxes = super::synctex::forward_boxes(cx, root_id, main_rel, tex_rel, line)?;
+    let Some(first) = boxes.first() else {
+        return Ok(None);
     };
     let page = first.page;
     let on_page: Vec<_> = boxes.iter().filter(|b| b.page == page).collect();
@@ -187,13 +279,41 @@ fn at_line(
         .iter()
         .map(|b| b.y + b.height)
         .fold(f32::MIN, f32::max);
-    let region = Region {
-        x: x0,
-        y: y0,
-        width: (x1 - x0).max(0.0),
-        height: (y1 - y0).max(0.0),
-    };
-    Ok((page, Some(region), source, stale))
+    Ok(Some((
+        page,
+        Region {
+            x: x0,
+            y: y0,
+            width: (x1 - x0).max(0.0),
+            height: (y1 - y0).max(0.0),
+        },
+    )))
+}
+
+/// A line with no box of its own (a `\label`, a `\end{figure}`) comes back as
+/// the enclosing page body, on the page where the float's text sits. When
+/// that is the case, the nearest earlier line that has a box of its own
+/// says where the thing really landed.
+fn refine(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    tex_rel: &str,
+    line: u32,
+    (page, region): (u32, Region),
+    page_h: impl Fn(u32) -> f32,
+) -> (u32, Region) {
+    if region.height < BODY_FRACTION * page_h(page) {
+        return (page, region);
+    }
+    for back in 1..=LOOK_BACK_LINES.min(line.saturating_sub(1)) {
+        if let Ok(Some((p, r))) = placed(cx, root_id, main_rel, tex_rel, line - back) {
+            if r.height < BODY_FRACTION * page_h(p) {
+                return (p, r);
+            }
+        }
+    }
+    (page, region)
 }
 
 fn excerpt(rel: &str, text: &str, line: u32) -> SourceExcerpt {
@@ -229,13 +349,14 @@ fn render(
     pdf: &hayro::hayro_syntax::Pdf,
     page: u32,
     region: Option<Region>,
+    base_scale: f32,
 ) -> Result<(Vec<u8>, u32, u32), String> {
     use hayro::vello_cpu::color::palette::css::WHITE;
     use hayro::vello_cpu::Pixmap;
 
     let p = &pdf.pages()[page as usize - 1];
     let (page_w, page_h) = p.render_dimensions();
-    let mut scale = SCALE.min(MAX_WIDTH_PX / page_w.max(1.0));
+    let mut scale = base_scale.min(MAX_WIDTH_PX / page_w.max(1.0));
     for _ in 0..4 {
         let settings = hayro::RenderSettings {
             x_scale: scale,
@@ -321,7 +442,7 @@ mod tests {
     #[test]
     fn a_whole_page_renders_within_the_caps() {
         let pdf = hayro::hayro_syntax::Pdf::new(tiny_pdf()).unwrap();
-        let (bytes, w, h) = render(&pdf, 1, None).unwrap();
+        let (bytes, w, h) = render(&pdf, 1, None, SCALE).unwrap();
         assert_eq!(png_size(&bytes), (w, h));
         assert_eq!((w, h), (1224, 1584));
         assert!(bytes.len() <= MAX_PNG_BYTES);
@@ -337,7 +458,7 @@ mod tests {
             width: 200.0,
             height: 100.0,
         };
-        let (bytes, w, h) = render(&pdf, 1, Some(r)).unwrap();
+        let (bytes, w, h) = render(&pdf, 1, Some(r), SCALE).unwrap();
         assert_eq!(png_size(&bytes), (w, h));
         assert_eq!(w, 1224);
         assert_eq!(h, ((100.0 + 2.0 * PAD_PT) * SCALE) as u32);
@@ -348,7 +469,7 @@ mod tests {
             width: 10.0,
             height: 30.0,
         };
-        let (_, _, h) = render(&pdf, 1, Some(edge)).unwrap();
+        let (_, _, h) = render(&pdf, 1, Some(edge), SCALE).unwrap();
         assert!(h >= 1 && h <= ((2.0 + PAD_PT) * SCALE) as u32 + 1, "{h}");
     }
 
@@ -392,6 +513,17 @@ mod tests {
         assert_eq!((s.page, s.pages, s.region), (1, 1, None));
         assert!(
             s.png.is_some() && s.image.as_ref().unwrap().bytes == s.png.as_ref().unwrap().len()
+        );
+        let r = render_page(cx, "snip", "main.tex", 1, None, Some(1.0)).unwrap();
+        assert_eq!((r.page, r.pages, png_size(&r.png)), (1, 1, (612, 792)));
+        assert!(render_page(cx, "snip", "main.tex", 2, None, None).is_err());
+        assert!(render_page(cx, "snip", "main.tex", 1, None, Some(f32::NAN)).is_err());
+        let big = render_page(cx, "snip", "main.tex", 1, None, Some(99.0)).unwrap();
+        assert!(big.image.width <= MAX_WIDTH_PX as u32 && big.png.len() <= MAX_PNG_BYTES);
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(
+            !json.contains(&*root.to_string_lossy()) && !json.contains("png"),
+            "{json}"
         );
         let plain = snippet(cx, "snip", "main.tex", &Target::Page { page: 1 }, false).unwrap();
         assert!(plain.png.is_none() && plain.image.is_none());

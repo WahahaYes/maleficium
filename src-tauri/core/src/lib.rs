@@ -25,7 +25,9 @@ pub mod templates;
 pub mod test_scratch;
 pub mod watch;
 
-pub use compile::{cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus};
+pub use compile::{
+    cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus, Progress,
+};
 pub use fs::{
     grant_project, grant_root, grant_untitled, list_dir, make_dir, read_bytes, read_text,
     remove_path, rename_path, resolve_in, resolve_read, resolve_write, save, session_root,
