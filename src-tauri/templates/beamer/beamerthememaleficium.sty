@@ -1,0 +1,90 @@
+% beamerthememaleficium.sty -- the Maleficium look for slides. Dedicated to the
+% public domain under CC0 1.0. https://creativecommons.org/publicdomain/zero/1.0/
+% Libertinus type, one violet accent, and the two-tone slash under frame titles.
+% Needs XeTeX or LuaTeX (fontspec).
+
+\ProvidesPackage{beamerthememaleficium}[2026/09/30 Maleficium beamer theme]
+
+\RequirePackage{fontspec}
+\RequirePackage{unicode-math}
+\RequirePackage{tikz}
+\usetikzlibrary{calc}
+
+\setmainfont{LibertinusSerif-Regular.otf}[
+  BoldFont = LibertinusSerif-Bold.otf, ItalicFont = LibertinusSerif-Italic.otf,
+  BoldItalicFont = LibertinusSerif-BoldItalic.otf]
+\setsansfont{LibertinusSans-Regular.otf}[
+  BoldFont = LibertinusSans-Bold.otf, ItalicFont = LibertinusSans-Italic.otf]
+\setmonofont{LibertinusMono-Regular.otf}[Scale=0.92]
+\setmathfont{LibertinusMath-Regular.otf}
+\newfontfamily\mlDisplayFont{LibertinusSerif-Semibold.otf}
+\newfontfamily\mlTracked{LibertinusSans-Regular.otf}[
+  BoldFont = LibertinusSans-Bold.otf, LetterSpace = 10.0]
+\usefonttheme{professionalfonts}
+
+\definecolor{mlaccent}{HTML}{5B2A86}
+\definecolor{mlink}{HTML}{1E1B24}
+\definecolor{mlmuted}{HTML}{6B6676}
+\definecolor{mlhair}{HTML}{D9D5E0}
+\colorlet{mlaccentlt}{mlaccent!55!white}
+
+\newcommand{\mlSlash}{%
+  \begin{tikzpicture}[baseline=0pt, x=0.085em, y=0.085em]
+    \fill[mlaccentlt] (4.6,-3.5) -- (7.6,-3.5) -- (10.6,4.5) -- (7.6,4.5) -- cycle;
+    \fill[mlaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
+  \end{tikzpicture}}
+
+\setbeamercolor{normal text}{fg=mlink, bg=white}
+\setbeamercolor{structure}{fg=mlaccent}
+\setbeamercolor{frametitle}{fg=mlink}
+\setbeamercolor{title}{fg=mlink}
+\setbeamercolor{subtitle}{fg=mlmuted}
+\setbeamercolor{author}{fg=mlmuted}
+\setbeamercolor{institute}{fg=mlmuted}
+\setbeamercolor{date}{fg=mlmuted}
+\setbeamercolor{block title}{fg=mlaccent, bg=mlaccent!10}
+\setbeamercolor{block body}{fg=mlink, bg=mlaccent!4}
+\setbeamercolor{item}{fg=mlaccent}
+\setbeamercolor{footline}{fg=mlmuted}
+\hypersetup{colorlinks=true, linkcolor=mlaccent, urlcolor=mlaccent, citecolor=mlaccent}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\raisebox{0.18ex}{\textcolor{mlaccent}{\rule{0.4em}{0.4em}}}}
+\setbeamertemplate{itemize subitem}{\textcolor{mlaccent}{--}}
+\setbeamertemplate{blocks}[default]
+
+% Frame title: bold sans, then a hairline with the slash standing on it.
+\setbeamertemplate{frametitle}{%
+  \vspace{0.6em}\nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth, leftskip=1.6em, rightskip=1.6em]{frametitle}
+    {\usebeamerfont{frametitle}\insertframetitle\par}
+    {\usebeamerfont{framesubtitle}\usebeamercolor[fg]{subtitle}\insertframesubtitle\par}
+    \vspace{0.35em}{\color{mlhair}\rule{\dimexpr\paperwidth-3.2em\relax}{0.5pt}}\par
+    \vspace{-0.62em}\mlSlash
+  \end{beamercolorbox}}
+\setbeamerfont{frametitle}{family=\sffamily, series=\bfseries, size=\Large}
+\setbeamerfont{framesubtitle}{family=\sffamily, size=\normalsize}
+\setbeamerfont{block title}{family=\sffamily, series=\bfseries}
+\setbeamerfont{section in toc}{family=\sffamily}
+
+% Title page: left-aligned display title, the slash, then the byline in muted sans.
+\setbeamertemplate{title page}{%
+  \vfill
+  \begin{minipage}{0.86\textwidth}\raggedright
+    {\mlDisplayFont\fontsize{30}{34}\selectfont\color{mlink}\inserttitle\par}
+    \ifx\insertsubtitle\@empty\else
+      \vspace{0.5em}{\sffamily\Large\color{mlmuted}\insertsubtitle\par}\fi
+    \vspace{1em}{\fontsize{26}{26}\selectfont\mlSlash}\par\vspace{1.4em}
+    {\sffamily\large\color{mlink}\insertauthor\par}
+    \vspace{0.3em}{\sffamily\normalsize\color{mlmuted}\insertinstitute\par}
+    \vspace{0.3em}{\sffamily\normalsize\color{mlmuted}\insertdate\par}
+  \end{minipage}
+  \vfill}
+
+% Footline: the frame number, bottom right, in muted sans.
+\setbeamertemplate{footline}{%
+  \hfill{\sffamily\footnotesize\color{mlmuted}\insertframenumber}\hspace{1.6em}\vspace{1em}}
+
+\setbeamersize{text margin left=1.6em, text margin right=1.6em}
+
+\endinput

@@ -3,21 +3,22 @@
 
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
+\usepackage{amsmath, amsthm}
 \usepackage{enumitem}
+\usepackage{maleficium-doc}   % the Maleficium look; remove for plain LaTeX
 
 \newcounter{problem}
 \newenvironment{problem}[1][]
-  {\refstepcounter{problem}\par\medskip\noindent\textbf{Problem \theproblem}%
+  {\refstepcounter{problem}\par\medskip\noindent{\sffamily\bfseries\color{mlaccent}Problem \theproblem}%
    \ifx\relax#1\relax\else\ (#1)\fi.\ }
   {\par}
 \newenvironment{solution}{\begin{proof}[Solution]}{\end{proof}}
 
 \begin{document}
 \noindent
-\textbf{Course 101: Assignment 1} \hfill Your Name \\
-Due: \today \hfill Student ID: 0000000
-\medskip\hrule
+{\mlDisplayFont\Large Course 101: Assignment 1} \hfill {\sffamily Your Name} \\[0.3ex]
+{\sffamily\small\color{mlmuted}Due: \today \hfill Student ID: 0000000}
+\mlRule
 
 \begin{problem}[5 points]
 Show that $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$ for every $n \ge 1$.

@@ -14,22 +14,22 @@ This covers the template files only. The rest of Maleficium is Apache 2.0.
 
 | Template | Folder | Origin | Class and packages it loads |
 | --- | --- | --- | --- |
-| Article | `article/` | Written for Maleficium | article; amsmath, biblatex, booktabs, geometry, hyperref, tikz |
-| Assignment | `assignment/` | Written for Maleficium | article; amsmath, amssymb, amsthm, enumitem, geometry |
-| Book | `book/` | Written for Maleficium | book; geometry, hyperref |
+| Article | `article/` | Written for Maleficium | article; `maleficium-doc.sty` (amsmath, biblatex, booktabs, tikz, hyperref); Libertinus fonts |
+| Assignment | `assignment/` | Written for Maleficium | article; `maleficium-doc.sty` (amsmath, amsthm, enumitem); Libertinus fonts |
+| Book | `book/` | Written for Maleficium | book; `maleficium-doc.sty` (hyperref); Libertinus fonts |
 | Curriculum Vitae | `cv/` | Written for Maleficium | article; shared `maleficium.sty` and `maleficium-mark.pdf` (fontspec, titlesec, enumitem, fancyhdr, tikz, hyperref, xcolor); Libertinus font |
 | Journal Paper (IEEEtran) | `journal/` | Written for Maleficium | IEEEtran; amsmath, cite, graphicx |
-| Letter | `letter/` | Written for Maleficium | letter; geometry |
-| Presentation | `beamer/` | Written for Maleficium | beamer (Singapore theme); amsmath |
-| Report | `report/` | Written for Maleficium | report; amsmath, geometry, graphicx, hyperref |
+| Letter | `letter/` | Written for Maleficium | letter; `maleficium-doc.sty`; Libertinus fonts |
+| Presentation | `beamer/` | Written for Maleficium | beamer with the bundled `beamerthememaleficium.sty` (amsmath); Libertinus fonts |
+| Report | `report/` | Written for Maleficium | report; `maleficium-doc.sty` (amsmath, graphicx, hyperref); Libertinus fonts |
 | Resume | `resume/` | Written for Maleficium | article; shared `maleficium.sty` and `maleficium-mark.pdf` (same as the CV); Libertinus font |
-| Welcome tour | `welcome/` | Written for Maleficium | article; geometry, hyperref |
+| Welcome tour | `welcome/` | Written for Maleficium | article; `maleficium-doc.sty` (hyperref); Libertinus fonts |
 
 The welcome tour opens on first launch and is not listed in the gallery.
 
 ### Classes, packages, and fonts
 
-The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License), and the Resume and CV share one `maleficium.sty` that each folder carries a copy of. Loading a class or package puts no terms on the document that uses it.
+The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License). The look is shared: the Resume and CV carry `maleficium.sty`, every other template except the journal carries `maleficium-doc.sty` (the Presentation carries `beamerthememaleficium.sty`), each folder with its own copy so a project stays self-contained. The journal keeps plain IEEEtran formatting, because venues require it. Loading a class or package puts no terms on the document that uses it.
 
 ## Adding a built-in template
 
