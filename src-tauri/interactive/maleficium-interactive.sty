@@ -24,7 +24,8 @@
 % Every widget declares its text alternative with alt= (used as the HTML
 % img alt); there is no caption fallback because the exporter cannot read
 % caption text back. Place the macro after the float's \caption\label for
-% label and figure capture; before it they stay empty rather than stale.
+% label and figure capture; before it, or outside any float, they stay empty
+% rather than stale.
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{maleficium-interactive}[2026/10/01 Maleficium interactive widgets]
@@ -157,18 +158,26 @@
 \cs_new_protected:Npn \mfw@check@nobar #1 { \exp_args:NV \mfw_nobar:n #1 }
 \ExplSyntaxOff
 
-% The float's own label, tracked separately from any earlier one: entering a
-% float clears it, so a widget placed before the float's \caption records
-% empty label and figure instead of its neighbour's. Outside floats it is
-% simply the nearest preceding label.
+% The float's own label, and only that: entering a float clears it, labels
+% record only while inside one, and leaving clears it again. A widget outside
+% a float, or placed before its float's \caption\label, records empty label
+% and figure instead of a neighbour's.
+\newif\ifmfw@infloat
 \AtBeginDocument{%
   \let\mfw@orig@label\label
-  \renewcommand{\label}[1]{\mfw@orig@label{#1}\gdef\mfw@floatlabel{#1}}%
+  \renewcommand{\label}[1]{\mfw@orig@label{#1}%
+    \ifmfw@infloat\gdef\mfw@floatlabel{#1}\fi}%
 }
-\AtBeginEnvironment{figure}{\gdef\mfw@floatlabel{}}
-\AtBeginEnvironment{table}{\gdef\mfw@floatlabel{}}
-\AtBeginEnvironment{figure*}{\gdef\mfw@floatlabel{}}
-\AtBeginEnvironment{table*}{\gdef\mfw@floatlabel{}}
+\newcommand{\mfw@enterfloat}{\gdef\mfw@floatlabel{}\global\mfw@infloattrue}
+\newcommand{\mfw@leavefloat}{\gdef\mfw@floatlabel{}\global\mfw@infloatfalse}
+\AtBeginEnvironment{figure}{\mfw@enterfloat}
+\AtBeginEnvironment{table}{\mfw@enterfloat}
+\AtBeginEnvironment{figure*}{\mfw@enterfloat}
+\AtBeginEnvironment{table*}{\mfw@enterfloat}
+\AtEndEnvironment{figure}{\mfw@leavefloat}
+\AtEndEnvironment{table}{\mfw@leavefloat}
+\AtEndEnvironment{figure*}{\mfw@leavefloat}
+\AtEndEnvironment{table*}{\mfw@leavefloat}
 % The figure number rides along only when a label anchors it; otherwise the
 % counter still holds whatever came before and is left out.
 \newcommand{\mfw@snap@fig}{%

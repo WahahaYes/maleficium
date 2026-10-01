@@ -128,6 +128,12 @@ fn the_fixture_joins_into_a_typed_list_in_document_order() {
         (clip.page, clip.label.clone(), clip.figure.clone()),
         (2, None, None)
     );
+    // Widgets outside a captioned float record no label or figure either:
+    // the previous float's caption must not leak into them.
+    for id in ["tab-results", "fig-chart", "fig-demo"] {
+        let w = by_id(&l, id);
+        assert_eq!((w.label.clone(), w.figure.clone()), (None, None), "{id}");
+    }
     // The empty remote= and sha256= entries are not listed.
     assert_eq!(
         clip.options
