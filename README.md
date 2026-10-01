@@ -21,7 +21,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 - **Find your way around.** File tree, document outline, go to definition for labels, citations, and macros, and a quick file finder (Ctrl+P).
 - **Search and replace across the project.** Every replacement is previewed before it is applied, and the whole replace undoes in one step.
 - **Revision history.** Every save keeps a revision you can restore (Ctrl+H).
-- **Templates and themes.** Nine built-in starter templates, from articles and books to beamer slides and a CV, plus 18 bundled VS Code themes, dark and light.
+- **Templates and themes.** Nine built-in starter templates, from articles and books to slides and a CV, plus 18 bundled VS Code themes, dark and light.
 
 <p>
   <img src="docs/screenshots/search.png" width="49%" alt="Project-wide search in the dark theme, with matches grouped by file">

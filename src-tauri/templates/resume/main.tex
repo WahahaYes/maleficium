@@ -1,67 +1,62 @@
 % This template is dedicated to the public domain under CC0 1.0: use it for
 % anything, no credit needed. https://creativecommons.org/publicdomain/zero/1.0/
 
+% The look lives in maleficium-cv.sty, shared with the CV template. This file is
+% only content: replace the placeholders, delete the sections you do not need.
 \documentclass[10pt]{article}
-\usepackage[margin=0.6in]{geometry}
-\usepackage{fontspec}
-% Fonts by file name come from the TeX bundle, so the resume looks the same
-% on every machine.
-\setmainfont{texgyreheros-regular.otf}[
-  BoldFont = texgyreheros-bold.otf,
-  ItalicFont = texgyreheros-italic.otf,
-  BoldItalicFont = texgyreheros-bolditalic.otf]
-\usepackage{fontawesome5}
-\usepackage{xcolor}
-\usepackage{titlesec}
-\usepackage{enumitem}
-\usepackage[hidelinks]{hyperref}
+\usepackage[hmargin=0.95in, vmargin=0.7in]{geometry}
+\usepackage{maleficium-cv}
+\usepackage{maleficium-footer}   % "Made with Maleficium" mark; delete this line to remove it
 
-\definecolor{accent}{HTML}{1F4E79}
-\pagestyle{empty}
-\setlength{\parindent}{0pt}
-\titleformat{\section}{\large\bfseries\color{accent}}{}{0pt}{}[\vspace{-0.6ex}\color{accent}\rule{\linewidth}{0.6pt}]
-\titlespacing*{\section}{0pt}{1.4ex}{0.8ex}
-\setlist[itemize]{leftmargin=1.2em, itemsep=0.2ex, topsep=0.3ex, after=\vspace{0.8ex}}
-
-% \role{Title}{Organisation}{Place}{Dates}
-\newcommand{\role}[4]{\textbf{#1} \hfill #4 \\ \textit{#2} \hfill \textit{#3}}
+\hypersetup{pdftitle={First Last -- Resume}, pdfauthor={First Last}}
 
 \begin{document}
 
-\begin{center}
-  {\Huge\bfseries First Last} \\[0.6ex]
-  {\large Role you want} \\[1ex]
-  \faEnvelope\ \href{mailto:first.last@example.org}{first.last@example.org} \quad
-  \faPhone\ +1 555 123 4567 \quad
-  \faMapMarker*\ City, Country \quad
-  \faGithub\ \href{https://github.com/example}{github.com/example} \quad
-  \faLinkedin\ \href{https://linkedin.com/in/example}{in/example}
-\end{center}
+\mlName{First Last}
+\mlTagline{Role you want \textperiodcentered\ Specialty}
+\mlContact{first.last@example.org\mlSep +1~555~123~4567\mlSep City,~Country\mlSep \mlLink{https://github.com/example}{github.com/example}\mlSep \mlLink{https://linkedin.com/in/example}{linkedin.com/in/example}}
+\mlSummary{Two sentences on what you do and what you are looking for. Lead with
+  the strongest fact, and swap this paragraph for each application.}
 
-\section{Experience}
-\role{Senior Engineer}{Company Name}{City}{2022 -- Present}
-\begin{itemize}
+\mlSection{Experience}
+\mlEntry{Senior Engineer}{2022 -- Present}{Company Name}{City}
+\begin{mlbullets}
   \item Led a change that did something measurable, e.g.\ cut build time by 40\%.
   \item Owned a system end to end; name the scale (users, requests, data).
-\end{itemize}
-
-\role{Engineer}{Earlier Company}{City}{2019 -- 2022}
-\begin{itemize}
+\end{mlbullets}
+\mlEntry{Engineer}{2019 -- 2022}{Earlier Company}{City}
+\begin{mlbullets}
   \item Start each line with a verb and end it with a result.
-  \item Keep it to one or two lines.
-\end{itemize}
+\end{mlbullets}
 
-\section{Projects}
-\textbf{Project Name} \textperiodcentered\ \textit{Python, Rust} \hfill \href{https://example.org}{example.org}
-\begin{itemize}
+\mlSection{Projects}
+\mlEntry{Project Name}{2023 -- Present}{What it is in one line}{\mlLink{https://example.org}{example.org}}
+\begin{mlbullets}
   \item What it does, and why anyone uses it.
-\end{itemize}
+\end{mlbullets}
 
-\section{Education}
-\role{BSc in Computer Science}{University Name}{City}{2015 -- 2019}
+\mlSection{Open-Source Contributions}
+\mlDated{2026}{Fixed a cache bug in \mlVenue{owner/repo} (merged PR \#123).}
+\mlDated{2025}{Added a feature to \mlVenue{owner/other-repo}.}
 
-\section{Skills}
-\textbf{Languages:} Python, Rust, TypeScript, SQL \\
-\textbf{Tools:} Git, Docker, Linux, \LaTeX
+\mlSection{Publications}
+\begin{mlcites}
+  \item \mlMe{First Last}, A.\ Coauthor. Paper title. \mlVenue{Venue} (2025). \mlBadge{12 citations}
+  \item A.\ Coauthor, \mlMe{First Last}. Another paper title. \mlVenue{Journal} 32, 1--12 (2024).
+\end{mlcites}
+
+\mlSection{Patents}
+\mlDated{2024}{Title of the patent. Assignee, provisional.}
+
+\mlSection{Education}
+\mlEntry{BSc in Computer Science}{2015 -- 2019}{University Name}{City}
+
+\mlSection{Skills}
+\mlLabelWidth{Languages}
+\mlTagGroup{Languages}{\mlTag{Python}\mlTag{Rust}\mlTag{TypeScript}}
+\mlTagGroup{Tools}{\mlTag{Git}\mlTag{Docker}\mlTag{Linux}\mlTag{Make}}
+
+\mlSection{Certifications}
+\mlDated{2024}{Certificate name, Issuing body.}
 
 \end{document}
