@@ -155,6 +155,29 @@ for (const withImage of [true, false]) {
   if (withImage) {
     const ev = await view.locator('#zoom').isVisible();
     check('whole-page toggle is offered when there is a region', ev === !!sc.region, String(ev));
+    if (sc.region) {
+      const zoom = view.locator('#zoom');
+      await zoom.click();
+      await view
+        .locator('#zoom', { hasText: 'Back to region' })
+        .waitFor({ timeout: 5000 })
+        .catch(() => {});
+      check(
+        'the whole-page view can go back to the region',
+        (await zoom.isVisible()) && (await zoom.textContent()) === 'Back to region',
+        await zoom.textContent(),
+      );
+      await zoom.click();
+      await view
+        .locator('#zoom', { hasText: 'Whole page' })
+        .waitFor({ timeout: 5000 })
+        .catch(() => {});
+      check(
+        'and the region toggle offers the whole page again',
+        (await zoom.textContent()) === 'Whole page',
+        await zoom.textContent(),
+      );
+    }
     // Paging asks the app-only tool for another page, with no model turn.
     toolCalls.length = 0;
     const pages = sc.pages;
