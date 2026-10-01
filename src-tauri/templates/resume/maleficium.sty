@@ -21,6 +21,9 @@
 \RequirePackage{needspace}
 \RequirePackage{etoolbox}
 \RequirePackage{xurl}
+\RequirePackage{graphicx}
+\RequirePackage{fancyhdr}
+\RequirePackage{tikz}
 \RequirePackage[hidelinks]{hyperref}
 \urlstyle{same}
 
@@ -48,26 +51,36 @@
   \definecolor{mlink}{HTML}{\mlInk}%
   \definecolor{mlmuted}{HTML}{\mlMuted}%
   \definecolor{mlhair}{HTML}{D9D5E0}%
+  \colorlet{mlaccentlt}{mlaccent!55!white}%
 }
 \mlDefineColors
 \AtBeginDocument{\color{mlink}}
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
-\pagestyle{empty}
+
 \setlength{\emergencystretch}{1.2em}
 \raggedbottom
 
 % -- headings ----------------------------------------------------------------
-% A short accent stub sits over a hairline, then the title in tracked small
-% caps. titlesec keeps a heading attached to the line that follows it.
+% A two-tone slash (dark over light, like the Maleficium mark's cut) stands on
+% a hairline, then the title in tracked caps. titlesec keeps a heading
+% attached to the line that follows it.
+\newcommand{\mlSlash}{%
+  \begin{tikzpicture}[baseline=0pt, x=1pt, y=1pt]
+    \fill[mlaccentlt] (4.6,-3) -- (7.6,-3) -- (10.6,4) -- (7.6,4) -- cycle;
+    \fill[mlaccent]   (0,-3)   -- (3.4,-3) -- (6.4,4)  -- (3.0,4) -- cycle;
+  \end{tikzpicture}}
 \newcommand{\mlHeadText}[1]{{\mlTracked\small\MakeUppercase{#1}}}
+\newcommand{\mlHeadRule}{%
+  \vspace{0.9\mlGap}{\color{mlhair}\titlerule[0.4pt]}\nointerlineskip
+  \noindent\raisebox{\dimexpr\ht\strutbox-0.4pt\relax}[0pt][0pt]{\mlSlash}\par
+  \vspace{-\dimexpr\ht\strutbox+\dp\strutbox\relax}}
 \titleformat{\section}[block]
   {\normalfont\bfseries\color{mlaccent}}{}{0pt}
   {\mlHeadText}
-  [{\vspace{0.3\mlGap}{\color{mlhair}\titlerule[0.4pt]}\nointerlineskip
-    \vspace{-3.4pt}\noindent\textcolor{mlaccent}{\rule{2.2em}{1.6pt}}}]
-\titlespacing*{\section}{0pt}{2\mlGap}{0.9\mlGap}
+  [\mlHeadRule]
+\titlespacing*{\section}{0pt}{2\mlGap}{2\mlGap}
 % \mlSection{Experience}
 \newcommand{\mlSection}[1]{\section{#1}}
 
@@ -136,5 +149,19 @@
 \newcommand{\mlBadge}[1]{{\small\color{mlmuted}(#1)}}
 % \mlNote{text} -- a muted aside under a heading.
 \newcommand{\mlNote}[1]{{\small\itshape\color{mlmuted}#1}\par\vspace{0.4\mlGap}}
+
+% -- footer --------------------------------------------------------------
+% "Made with Maleficium" in the bottom-right corner of every page. The mark
+% keeps its own colours and the link is not recoloured. Delete the
+% \mlFooter line below (or \usepackage option) to remove it.
+\newcommand{\mlHome}{https://github.com/WahahaYes/maleficium}
+\newcommand{\mlFooter}{%
+  \href{\mlHome}{\raisebox{-0.25em}{\includegraphics[height=1.15em]{maleficium-mark.pdf}}%
+    \hspace{0.4em}{\scriptsize\color{mlmuted}Made with Maleficium}}}
+\fancypagestyle{maleficium}{%
+  \fancyhf{}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[R]{\mlFooter}}
+\pagestyle{maleficium}
 
 \endinput
