@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Table</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--m-figure-bg, transparent);
+        color: var(--m-color-text, #1f2328);
+        font: var(--m-size-small, 13px) / var(--m-leading, 1.4)
+          var(--m-font-body, system-ui, sans-serif);
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: var(--m-space-2, 8px);
+        padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
+        border-bottom: 1px solid var(--m-color-rule, #d1d9e0);
+      }
+      .bar input {
+        flex: 1;
+        min-width: 0;
+        font: inherit;
+        color: inherit;
+        background: var(--m-color-surface, #f6f8fa);
+        border: 1px solid var(--m-color-rule, #d1d9e0);
+        border-radius: var(--m-radius, 4px);
+        padding: 2px 6px;
+      }
+      .bar .count {
+        color: var(--m-color-muted, #59636e);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      :focus-visible {
+        outline: 2px solid var(--m-color-accent, #0969da);
+        outline-offset: -2px;
+      }
+      .scroll {
+        flex: 1;
+        overflow: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        padding: 2px var(--m-space-2, 8px);
+        text-align: left;
+        border-bottom: 1px solid var(--m-color-rule, #d1d9e0);
+        white-space: nowrap;
+      }
+      th.num,
+      td.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--m-color-surface, #f6f8fa);
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+      }
+      th[aria-sort='ascending']::after {
+        content: ' \25B2';
+        color: var(--m-color-accent, #0969da);
+      }
+      th[aria-sort='descending']::after {
+        content: ' \25BC';
+        color: var(--m-color-accent, #0969da);
+      }
+      tbody tr:hover {
+        background: var(--m-color-target, rgba(9, 105, 218, 0.1));
+      }
+      .msg {
+        padding: var(--m-space-3, 12px);
+        color: var(--m-color-muted, #59636e);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" role="group">
+      <div class="bar">
+        <input
+          id="filter"
+          type="search"
+          placeholder="Filter, e.g. alpha or score>20"
+          aria-label="Filter rows"
+        />
+        <span class="count" id="count" aria-live="polite"></span>
+      </div>
+      <div class="scroll"><div class="msg" id="msg">Loading…</div></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
