@@ -20,14 +20,14 @@ Usage:
   python3 e2e/agent-run.py [--runner opencode|claude] [--bin source|<AppImage>]
                            [--model M] [-n N] [--scenario ID ...] [--out DIR]
                            [--budget USD]
-  python3 e2e/agent-run.py --self-test [--bin ...]   # oracles vs. solutions, no model
+  python3 e2e/agent-run.py --self-test [--bin ...]   # oracles vs. solutions and scripted agents, no model
 Needs: python3, bwrap, and the chosen runner's CLI, authenticated
 (opencode: `opencode auth`; claude: `claude auth login`, or `claude setup-token`).
 The source build needs
 `cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium` first.
 Manual only: it spends model credits. See e2e/README.md.
 """
-import argparse, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
+import argparse, base64, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 
 from mcp_client import McpClient
 
@@ -39,7 +39,7 @@ IDENT = "io.github.wahahayes.maleficium"
 CACHE_ROOT = "/var/tmp/maleficium-agent-cache"
 MIRROR_CACHE = "/var/tmp/maleficium-bundle-mirror"
 MIRROR_PORT = int(os.environ.get("AGENT_MIRROR_PORT", "18790"))  # override to run beside another sweep
-FREE_MODEL = "opencode/muse-spark-1.3-contributor-free"
+OPENCODE_MODEL = "openrouter/meta/muse-spark-1.3"
 CLAUDE_MODEL = "claude-sonnet-5"
 CLAUDE_BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"]  # no Bash, no WebFetch
 
@@ -61,7 +61,12 @@ class Server:
     def __init__(self, spec, mirror_url):
         if spec == "source":
             self.kind = "source"
-            self.cmd = [os.path.join(ROOT, "src-tauri", "target", "debug", "maleficium"), "--mcp"]
+            debug = os.path.join(os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "src-tauri", "target"),
+                                 "debug")
+            self.cmd = [os.path.join(debug, "maleficium"), "--mcp"]
+            if not os.access(self.cmd[0], os.X_OK):
+                # the same server without the app around it (serve_stdio); it ignores --mcp
+                self.cmd[0] = os.path.join(debug, "maleficium-mcp")
             if not os.access(self.cmd[0], os.X_OK):
                 die("no source build; run cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium")
             # debug builds read the bundle through the local mirror
@@ -83,8 +88,9 @@ class Server:
 class Mcp(McpClient):
     """A scripted MCP client for oracles and cache warming."""
 
-    def __init__(self, server, home):
-        super().__init__(server.cmd, "agent-run", env=server.environ(home), stderr=subprocess.DEVNULL)
+    def __init__(self, server, home, capabilities=None):
+        super().__init__(server.cmd, "agent-run", env=server.environ(home), stderr=subprocess.DEVNULL,
+                         capabilities=capabilities)
 
     def call(self, name, args):
         """(ok, structuredContent or error text)"""
@@ -408,6 +414,61 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
             "project": project, "home": mcp_home, "prompt": prompt}
 
 
+def run_agent_script(scenario, server, run_dir, warm, answer=None, skip=()):
+    """No model: the scenario's `script` played by a fake agent. Each step is
+    an MCP call (`{"tool", "args"}`, `{project}` filled in) or `{"compile":
+    main}` (compile_run, then compile_poll until done); `answer` is the final
+    reply, with `{page}`, `{pages}` and `{wrong_page}` taken from the last
+    snippet result. It writes a claude stream-json transcript, so the
+    oracles and read_events_claude see exactly what a real run gives them.
+    `answer` and `skip` (tools to leave out) let the self-test tamper with it."""
+    project = os.path.join(run_dir, "project")
+    home = os.path.join(run_dir, "home")
+    make_fixture(scenario, project)
+    seed_home(warm, home)
+    before = snapshot(run_dir, skip=("home",))
+    script = scenario["script"]
+    events, last_snippet = [], {}
+    t0 = time.time()
+    mcp = Mcp(server, home)
+
+    def call(name, args):
+        tid = "fake-%d" % (len(events) // 2 + 1)
+        events.append({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": tid, "name": "mcp__maleficium__" + name, "input": args}]}})
+        r = mcp.request("tools/call", {"name": name, "arguments": args})["result"]
+        content = [dict(c, data="<%d base64 chars>" % len(c["data"])) if c.get("type") == "image" else c
+                   for c in r.get("content") or []]
+        events.append({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": tid, "content": content, "is_error": bool(r.get("isError"))}]}})
+        return r
+
+    try:
+        for step in script["steps"]:
+            if "compile" in step:
+                job = call("compile_run", {"root_id": "agent", "rel": step["compile"]})["structuredContent"]
+                rec = {"status": "running"}
+                while rec.get("status") == "running":
+                    rec = call("compile_poll", {"job_id": job["job_id"], "wait_ms": 30000})["structuredContent"]
+                continue
+            if step["tool"] in skip:
+                continue
+            args = json.loads(json.dumps(step["args"]).replace("{project}", project))
+            r = call(step["tool"], args)
+            if step["tool"] == "snippet" and not r.get("isError"):
+                last_snippet = r["structuredContent"]
+    finally:
+        mcp.close()
+    page, pages = last_snippet.get("page", 0), last_snippet.get("pages", 0)
+    text = (answer or script["answer"]).format(page=page, pages=pages, wrong_page=page + 1)
+    events.append({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+    events.append({"type": "result", "num_turns": len(events) // 2, "total_cost_usd": 0, "result": text})
+    with open(os.path.join(run_dir, "events.jsonl"), "w") as f:
+        f.writelines(json.dumps(e) + "\n" for e in events)
+    return {"exit": 0, "timed_out": False, "wall_s": round(time.time() - t0, 1), "before": before,
+            "project": project, "home": home, "prompt": scenario["prompt"].replace("{project}", project)}
+
+
 def read_events_opencode(path):
     """Metrics and the tool-call record from opencode's --format json stream."""
     calls, other, texts = [], [], []
@@ -578,13 +639,58 @@ def max_tabular_width(text):
     return best
 
 
+APP_MIME = "text/html;profile=mcp-app"
+# What an MCP Apps host declares at initialize (the server's tools ignore it today).
+APPS_CAPABILITY = {"extensions": {"io.modelcontextprotocol/ui": {"mimeTypes": [APP_MIME]}}}
+
+
+def snippet_parity_problems(plain, apps):
+    """What breaks parity between two raw snippet tools/call results, one
+    from a plain client and one from an apps host: each has one text block
+    that is its structuredContent as JSON, an image block exactly when the
+    record names an image (a PNG of the stated size), and both carry the same
+    text and image."""
+    out = []
+    for who, r in (("plain", plain), ("apps", apps)):
+        if r.get("isError"):
+            out.append("%s: error %s" % (who, r.get("content")))
+            continue
+        texts = [c["text"] for c in r.get("content") or [] if c.get("type") == "text"]
+        imgs = [c for c in r.get("content") or [] if c.get("type") == "image"]
+        sc = r.get("structuredContent")
+        try:
+            same = len(texts) == 1 and json.loads(texts[0]) == sc
+        except ValueError:
+            same = False
+        if not same:
+            out.append("%s: text content is not structuredContent" % who)
+        meta = (sc or {}).get("image")
+        if meta:
+            png = base64.b64decode(imgs[0].get("data", "")) if len(imgs) == 1 else b""
+            if not (len(imgs) == 1 and imgs[0].get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n"
+                    and meta.get("bytes") == len(png)):
+                out.append("%s: image block does not match %s" % (who, meta))
+        elif imgs:
+            out.append("%s: image block without an image in the record" % who)
+    if not out:
+        if [c for c in plain["content"] if c.get("type") == "text"] != \
+                [c for c in apps["content"] if c.get("type") == "text"]:
+            out.append("text differs with the apps capability")
+        if [c.get("data") for c in plain["content"] if c.get("type") == "image"] != \
+                [c.get("data") for c in apps["content"] if c.get("type") == "image"]:
+            out.append("image differs with the apps capability")
+    return out
+
+
 class Judge:
     """Evaluates one scenario's oracles against a finished run."""
 
-    def __init__(self, scenario, server, project, home, fixture, calls, run_dir=None, before=None, own=()):
+    def __init__(self, scenario, server, project, home, fixture, calls, run_dir=None, before=None, own=(),
+                 final_text=""):
         self.s, self.server, self.project, self.home = scenario, server, project, home
         self.fixture, self.calls, self.run_dir, self.before = fixture, calls, run_dir, before
         self.own = own  # extra top-level run_dir names the runner itself owns (not agent output)
+        self.final_text = final_text  # read only by view_shows, for its one stated answer line
         self._mcp = None
         self._compiled = {}
 
@@ -709,7 +815,7 @@ class Judge:
     def o_footprint(self, _):
         if self.before is None:
             return True, "n/a"
-        skip = ("home", "events.jsonl", "opencode.log", "result.json") + tuple(self.own)
+        skip = ("home", "events.jsonl", "opencode.log", "result.json", "view") + tuple(self.own)
         after = snapshot(self.run_dir, skip=skip)
         outside = {k: v for k, v in after.items() if not k.startswith("project" + os.sep)}
         was = {k: v for k, v in self.before.items() if not k.startswith("project" + os.sep)}
@@ -829,6 +935,119 @@ class Judge:
         w = max([max_tabular_width(t) for t in texts] + [0])
         return w >= spec["n"], "widest %d columns" % w
 
+    # MCP App Views: the agent's snippet call, replayed on what the run left
+
+    def agent_snippet(self):
+        """The arguments of the agent's last successful snippet call, minus
+        its root id (the judge grants its own)."""
+        hits = [c for c in self.calls if c["tool"] == "snippet" and c["ok"]]
+        if not hits:
+            raise RuntimeError("the agent made no successful snippet call")
+        return {k: v for k, v in hits[-1]["input"].items() if k != "root_id"}
+
+    def replay(self, client, args):
+        return client.request("tools/call", {"name": "snippet",
+                                             "arguments": dict(args, root_id="judge")})["result"]
+
+    def o_view_resource(self, spec):
+        """The tool names its View in _meta.ui, and the View it names is a
+        self-contained MCP App page."""
+        self.agent_snippet()
+        tools = {t["name"]: t for t in self.mcp().request("tools/list", {})["result"]["tools"]}
+        ui = (tools.get(spec["tool"], {}).get("_meta") or {}).get("ui") or {}
+        if ui.get("resourceUri") != spec["uri"] or "model" not in ui.get("visibility", []):
+            return False, "%s _meta.ui is %s" % (spec["tool"], ui)
+        r = self.mcp().request("resources/read", {"uri": spec["uri"]})
+        if "error" in r:
+            return False, "resources/read: %s" % r["error"]
+        (c,) = r["result"]["contents"]
+        html = c.get("text") or ""
+        bad = [why for why, hit in [
+            ("mime %s" % c.get("mimeType"), c.get("mimeType") != APP_MIME),
+            ("not an html document", not html.lstrip().lower().startswith("<!doctype html>")
+             or "</html>" not in html.lower()),
+            ("loads from the network", re.search(r"""(src|href)\s*=\s*["']?(https?:)?//|@import|url\(\s*["']?https?:""",
+                                                 html, re.I)),
+            ("no inline script", "<script" not in html.lower())] if hit]
+        return not bad, "; ".join(bad) or "%s -> %s, %d bytes of self-contained html" % (spec["tool"], spec["uri"],
+                                                                                          len(html))
+
+    def o_snippet_shows_label(self, spec):
+        """The agent's snippet call shows the label's page, overlapping its region."""
+        if self.compiled(spec["main"]).get("status") != "success":
+            return False, "did not compile"
+        mine = self.replay(self.mcp(), self.agent_snippet())
+        want = self.replay(self.mcp(), {"main_rel": spec["main"], "label": spec["label"]})
+        if mine.get("isError") or want.get("isError"):
+            return False, "snippet refused: %s" % (mine if mine.get("isError") else want)["content"]
+        a, b = mine["structuredContent"], want["structuredContent"]
+        ra, rb = a.get("region"), b.get("region")
+        overlap = not ra or not rb or (ra["y"] < rb["y"] + rb["height"] and rb["y"] < ra["y"] + ra["height"])
+        return a["page"] == b["page"] and overlap, "agent page %s region %s; %s on page %s region %s" % (
+            a["page"], ra, spec["label"], b["page"], rb)
+
+    def o_snippet_parity(self, spec):
+        """The agent's call, as made and with with_image, from a client that
+        declares the MCP Apps extension and one that does not: the text
+        fallback is structuredContent, and both clients get the same text
+        and the same image."""
+        if self.compiled(spec["main"]).get("status") != "success":
+            return False, "did not compile"
+        args = self.agent_snippet()
+        apps = Mcp(self.server, self.home, capabilities=APPS_CAPABILITY)
+        try:
+            ok, err = apps.call("grant", {"root_id": "judge", "root": self.project})
+            if not ok:
+                return False, "grant: " + err
+            bad = []
+            for v in (args, dict(args, with_image=True)):
+                bad += ["%s: %s" % (json.dumps(v, sort_keys=True), p)
+                        for p in snippet_parity_problems(self.replay(self.mcp(), v), self.replay(apps, v))]
+        finally:
+            apps.close()
+        return not bad, "; ".join(bad[:3]) or "same text and image with and without the apps capability"
+
+    def o_view_shows(self, spec):
+        """The View, rendered headless (e2e/apps-host/render.mjs) on the
+        agent's call, shows the region, and the answer's stated page line
+        matches the page the View shows. Snapshot: <run>/view/snippet.png."""
+        if self.compiled(spec["main"]).get("status") != "success":
+            return False, "did not compile"
+        args = self.agent_snippet()
+        node = shutil.which("node")
+        if not node:
+            return False, "needs node on PATH"
+        shots = os.path.join(self.run_dir, "view") if self.run_dir else tempfile.mkdtemp(dir="/var/tmp")
+        os.makedirs(shots, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir="/var/tmp") as t:
+            spec_path, out_path = os.path.join(t, "spec.json"), os.path.join(shots, "render.json")
+            with open(spec_path, "w") as f:
+                json.dump({"cmd": self.server.cmd, "env": self.server.environ(self.home), "project": self.project,
+                           "args": dict(args, main_rel=args.get("main_rel", spec["main"])),
+                           "shot": os.path.join(shots, "snippet.png"), "out": out_path}, f)
+            try:
+                subprocess.run([node, os.path.join(HERE, "apps-host", "render.mjs"), spec_path], cwd=ROOT,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+            except subprocess.TimeoutExpired:
+                return False, "render.mjs timed out"
+        try:
+            with open(out_path) as f:
+                v = json.load(f)
+        except (OSError, ValueError) as e:
+            return False, "no render result: %r" % e
+        sc = v.get("structured") or {}
+        shown = "page %s of %s" % (sc.get("page"), sc.get("pages"))
+        said = re.findall(spec["answer"], self.final_text or "")
+        bad = [why for why, hit in [
+            ("render: %s" % (v.get("error") or "")[:200], v.get("error")),
+            ("no image (%s)" % v.get("img"), not (v["img"][0] > 100 and v["img"][1] > 20)),
+            ("header %r lacks %r" % (v.get("where"), shown), shown not in (v.get("where") or "")),
+            ("no source pane", not (v.get("src") or "").strip()),
+            ("no answer line /%s/" % spec["answer"], not said),
+            ("answer says page %s of %s" % tuple(said[-1]) if said else "",
+             said and "page %s of %s" % tuple(said[-1]) != shown)] if hit]
+        return not bad, "; ".join(bad) or "View shows %r; the answer says the same" % v["where"]
+
     def run(self):
         out = []
         for o in self.s["oracles"]:
@@ -919,12 +1138,59 @@ def self_test_oracles():
         j2._mcp = StubMcp("error", 4, {"page": 2, "region": {"y": 100}})
         j2._compiled = {}
         check("pages_at_least_nocompile", j2.o_pages_at_least({"main": "main.tex", "n": 3}), False)
+
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 8).decode()
+    sc = {"page": 2, "pages": 3, "image": {"bytes": 16}}
+
+    def res(sc, text=None, data=png):
+        return {"structuredContent": sc, "content": [{"type": "image", "mimeType": "image/png", "data": data}] * bool(data)
+                + [{"type": "text", "text": json.dumps(sc) if text is None else text}]}
+
+    def parity(a, b):
+        p = snippet_parity_problems(a, b)
+        return not p, "; ".join(p) or "parity"
+
+    check("snippet_parity", parity(res(sc), res(sc)), True)
+    check("snippet_parity_text_not_structured", parity(res(sc), res(sc, text='{"page": 1}')), False)
+    check("snippet_parity_text_differs", parity(res(sc), res(sc, text=json.dumps(sc, indent=1))), False)
+    other = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"y" * 8).decode()
+    check("snippet_parity_image_differs", parity(res(sc), res(sc, data=other)), False)
+    check("snippet_parity_image_missing", parity(res(sc), res(sc, data=None)), False)
+    check("snippet_parity_image_size", parity(res(dict(sc, image={"bytes": 9})), res(dict(sc, image={"bytes": 9}))),
+          False)
+    check("snippet_parity_no_image", parity(res({"page": 1}, data=None), res({"page": 1}, data=None)), True)
     return bad
 
 
-def self_test(scenarios, server, warm):
-    """Solved fixtures must pass every file oracle; raw fixtures must fail one."""
-    bad = self_test_oracles()
+def self_test_scripts(scenarios, server, warm, out):
+    """Scenarios with a `script` run end to end with the scripted fake agent:
+    as written it must pass every oracle; with a wrong answer line, or with
+    its tool calls left out, it must fail the oracles named."""
+    bad = 0
+    for s in (s for s in scenarios if s.get("script")):
+        script = s["script"]
+        tampers = [("as scripted", None, [])] + [
+            (t["about"], {k: t[k] for k in ("answer", "skip") if k in t}, t["fails"]) for t in script.get("tampered", [])]
+        for i, (about, tamper, fails) in enumerate(tampers):
+            run_dir = os.path.join(out, "%s-script-%d" % (s["id"], i))
+            result, _ = run_scenario_once(s, server, "script", None, run_dir, warm[s["id"]], script_tamper=tamper)
+            failed = sorted({j["oracle"] for j in result["oracles"] if not j["ok"]})
+            good = result["passed"] if not fails else set(fails) <= set(failed)
+            bad += not good
+            say("self-test %s script, %s: %s %s%s" % (s["id"], about, "pass" if result["passed"] else "fail",
+                                                      "ok" if good else "WRONG",
+                                                      " (failed %s)" % failed if failed else ""))
+            for j in result["oracles"]:
+                if not good or (fails and not j["ok"]):
+                    say("    %s %s: %s" % ("ok " if j["ok"] else "BAD", j["oracle"], j["detail"]))
+        say("    View snapshot: %s" % os.path.join(out, "%s-script-0" % s["id"], "view", "snippet.png"))
+    return bad
+
+
+def self_test(scenarios, server, warm, out):
+    """Solved fixtures must pass every file oracle; raw fixtures must fail one;
+    scripted scenarios must pass as scripted and fail when tampered with."""
+    bad = self_test_oracles() + self_test_scripts(scenarios, server, warm, out)
     run_oracles = {"compiles", "clean_log", "outline_has", "file_matches", "file_lacks", "count_equal",
                    "section_matches", "unchanged", "secret_not_leaked"}
     with tempfile.TemporaryDirectory(dir="/var/tmp") as t:
@@ -978,8 +1244,10 @@ def summarize(results, out):
 
 
 def run_scenario_once(scenario, server, runner, model, run_dir, warm, run=1, claude_tool_names=None,
-                      claude_max_turns=40, claude_budget_usd=2.0, claude_bin=None):
-    """Run one scenario once with the given runner ('opencode' or 'claude').
+                      claude_max_turns=40, claude_budget_usd=2.0, claude_bin=None, script_tamper=None):
+    """Run one scenario once with the given runner ('opencode', 'claude', or
+    'script': the scenario's scripted fake agent, no model; script_tamper is
+    passed to run_agent_script).
 
     This is the callable surface for other harnesses that drive one scenario
     at a time (e.g. a harness that also has the app open and screen-recording
@@ -995,6 +1263,10 @@ def run_scenario_once(scenario, server, runner, model, run_dir, warm, run=1, cla
         r = run_agent_opencode(scenario, server, model, run_dir, warm)
         events_path = os.path.join(run_dir, "events.jsonl")
         metrics, calls, other, texts = read_events_opencode(events_path)
+    elif runner == "script":
+        r = run_agent_script(scenario, server, run_dir, warm, **(script_tamper or {}))
+        events_path = os.path.join(run_dir, "events.jsonl")
+        metrics, calls, other, texts = read_events_claude(events_path)
     elif runner == "claude":
         if claude_tool_names is None:
             claude_tool_names = discover_tool_names(server)
@@ -1003,18 +1275,20 @@ def run_scenario_once(scenario, server, runner, model, run_dir, warm, run=1, cla
         events_path = os.path.join(run_dir, "events.jsonl")
         metrics, calls, other, texts = read_events_claude(events_path)
     else:
-        die("unknown runner: %s (want opencode or claude)" % runner)
+        die("unknown runner: %s (want opencode, claude or script)" % runner)
     fixture_dir = tempfile.mkdtemp(dir="/var/tmp")
     make_fixture(scenario, os.path.join(fixture_dir, "p"))
     fixture = snapshot(os.path.join(fixture_dir, "p"))
     shutil.rmtree(fixture_dir)
     own = ("claude-home", "mcp-home", "claude.stderr.log") if runner == "claude" else ()
-    judged = Judge(scenario, server, r["project"], r["home"], fixture, calls, run_dir, r["before"], own=own).run()
+    final_text = texts[-1] if texts else ""
+    judged = Judge(scenario, server, r["project"], r["home"], fixture, calls, run_dir, r["before"], own=own,
+                   final_text=final_text).run()
     passed = not r["timed_out"] and all(j["ok"] for j in judged)
     result = {"scenario": scenario["id"], "run": run, "bin": server.kind, "runner": runner, "model": model,
               "passed": passed, "timed_out": r["timed_out"], "exit": r["exit"], "wall_s": r["wall_s"],
               "metrics": metrics, "oracles": judged, "calls": calls, "other_tools": other,
-              "final_text": texts[-1] if texts else ""}
+              "final_text": final_text}
     with open(os.path.join(run_dir, "result.json"), "w") as f:
         json.dump(result, f, indent=2)
     return result, events_path
@@ -1024,7 +1298,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--runner", choices=["opencode", "claude"], default="opencode")
     ap.add_argument("--bin", default="source", help="'source' (target/debug) or a packaged AppImage")
-    ap.add_argument("--model", help="default: %s for opencode, %s for claude" % (FREE_MODEL, CLAUDE_MODEL))
+    ap.add_argument("--model", help="default: %s for opencode, %s for claude" % (OPENCODE_MODEL, CLAUDE_MODEL))
     ap.add_argument("--claude-bin", help="path to the claude CLI (default: PATH, else /usr/bin/claude)")
     ap.add_argument("--max-turns", type=int, default=40, help="claude runner: --max-turns per run")
     ap.add_argument("--max-budget-usd", type=float, default=2.0, help="claude runner: --max-budget-usd per run")
@@ -1034,7 +1308,7 @@ def main():
     ap.add_argument("--budget", type=float, default=5.0, help="stop once reported cost reaches this (USD)")
     ap.add_argument("--self-test", action="store_true", help="check the oracles against the solutions; no model")
     a = ap.parse_args()
-    model = a.model or (CLAUDE_MODEL if a.runner == "claude" else FREE_MODEL)
+    model = a.model or (CLAUDE_MODEL if a.runner == "claude" else OPENCODE_MODEL)
     needed = ["bwrap"] + (["opencode"] if a.runner == "opencode" else [])
     for tool in needed:
         if not shutil.which(tool):
@@ -1053,7 +1327,7 @@ def main():
         server = Server(a.bin, "http://127.0.0.1:%d/tlextras-2022.0r0.tar" % MIRROR_PORT)
         warm = {s["id"]: warm_cache(server, s) for s in scenarios}
         if a.self_test:
-            sys.exit(1 if self_test(scenarios, server, warm) else 0)
+            sys.exit(1 if self_test(scenarios, server, warm, out) else 0)
         claude_tool_names = discover_tool_names(server) if a.runner == "claude" else None
         if claude_tool_names is not None:
             say("claude runner: %d maleficium tools discovered live: %s" % (len(claude_tool_names),

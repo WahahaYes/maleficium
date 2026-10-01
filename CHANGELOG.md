@@ -4,6 +4,23 @@
 
 ### Fixes
 
+- **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
+- **A label's snippet lands on its figure.** `snippet` with a `label` (or a line such as `\label` or `\end{figure}` that has no box of its own) came back as the whole page body on the page where the float's text sits, so an agent asking about a figure got the wrong page. It now uses the nearest earlier line that has a placement of its own, which puts the snippet on the figure.
+
+### For AI agents
+
+- **Hosts that support MCP Apps show compiles live.** `compile_run` now names a compile dashboard View (`ui://maleficium/compile/v1`): status, the phase reached and files downloaded, the log tail, offline-readiness and missing-dependency findings, the failing source lines, and a Cancel button. It polls only while visible and stops when the compile finishes. Other hosts get the same results as text. `compile_run` also returns the `main_rel` it compiles, and `compile_poll` reports `progress` (the phase, plus files downloaded and failed).
+
+- **Hosts that support MCP Apps show the snippet inline.** The `snippet` tool now names a small View (`ui://maleficium/snippet/v1`): the rendered region of the PDF beside the source lines, with previous/next page, a whole-page toggle, and a refresh when a compile replaces the PDF. It follows the host's light or dark theme and never inverts the page. Hosts without Apps support get the same text and, with `with_image`, the same image as before. A new `snippet_render` tool, hidden from the model, lets the View re-render without a model turn.
+
+### Templates
+
+- **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Slides has a matching style. Journal Paper keeps plain IEEEtran formatting. Every template ends each page with a small "Made with Maleficium" mark that links to the project; deleting one `\usepackage{maleficium-footer}` line removes it. Each folder carries its own copy of the style files, so a project stays self-contained.
+
+## 0.3.0 - 2026-09-30
+
+### Fixes
+
 - **Font-tracing noise no longer buries real warnings.** Compiling under XeTeX with font tracing on (for example through libertine.sty) reported dozens of fragment warnings such as `Requested font "nxlmi7" at 7.3pt` and `-> nxlmi7`, one per trace line. Those lines are now recognized as tracing noise and dropped, so the diagnostics list shows the warnings that matter.
 - **A flaky macOS package step is hardened.** The Intel dmg bundle intermittently failed inside the bundler after a clean compile, stalling the release: hdiutil's create and detach steps race Spotlight indexing and report "Resource busy", and the bundler swallows the script's output so the log said nothing. `package.sh` now takes Spotlight indexing off CI runners before packaging, and if the bundle still fails it re-runs the bundle step verbose so the log names the failing call.
 - **Saving never overwrites an agent's edit.** When another program (such as an AI agent) wrote a file you had open, the app could save your copy over it in the moment before it noticed the change: on autosave, switching or closing a file, or compiling. Every save now checks the file on disk first, and if it changed, you get the usual choice to reload or keep your edits instead.
