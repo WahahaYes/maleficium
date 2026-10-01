@@ -47,6 +47,8 @@ const [prev, next, zoom] = ['prev', 'next', 'zoom'].map((id) => $<HTMLButtonElem
 const app = new App({ name: 'maleficium-snippet', version: '1.0.0' });
 
 let ref: Ref | null = null;
+// `target` is what the model asked about; `data` is what is on screen now.
+let target: SnippetData | null = null;
 let data: SnippetData | null = null;
 let stamp: string | null = null;
 let wholePage = false;
@@ -70,8 +72,8 @@ function show(d: SnippetData, image: string | null): void {
   staleTag.hidden = !d.stale;
   prev.disabled = d.page <= 1;
   next.disabled = d.page >= d.pages;
-  zoom.hidden = !d.region;
-  zoom.textContent = wholePage ? 'Region' : 'Whole page';
+  zoom.hidden = !target?.region;
+  zoom.textContent = wholePage ? 'Back to region' : 'Whole page';
   if (image) {
     img.src = image;
     paper.hidden = false;
@@ -106,19 +108,15 @@ async function render(page: number, withRegion: boolean): Promise<void> {
         root_id: ref.rootId,
         main_rel: ref.main,
         page,
-        ...(withRegion && data.region ? { region: data.region } : {}),
+        ...(withRegion && target?.region ? { region: target.region } : {}),
       },
     });
     if (seq !== renderSeq) return;
     if (r.isError) return say(textOf(r));
     const meta = r.structuredContent as { page: number; pages: number } | undefined;
-    const same = withRegion && data.region && page === data.page;
-    show(
-      { ...data, page, pages: meta?.pages ?? data.pages, region: same ? data.region : null },
-      imageOf(r),
-    );
-    // Moving off the target's page drops the region and the source highlight.
-    if (page !== data.page && data.source) src.hidden = true;
+    const region = withRegion && page === target?.page ? target.region : null;
+    wholePage = !region;
+    show({ ...data, page, pages: meta?.pages ?? data.pages, region }, imageOf(r));
   } catch (e) {
     if (seq === renderSeq) say(`Could not render: ${String(e)}`);
   }
@@ -138,6 +136,7 @@ app.ontoolresult = async (result) => {
   if (result.isError) return say(textOf(result as CallToolResult));
   const d = result.structuredContent as unknown as SnippetData | undefined;
   if (!d) return say('The snippet had no content.');
+  target = d;
   wholePage = false;
   const given = imageOf(result as CallToolResult);
   show(d, given);
@@ -149,8 +148,9 @@ prev.onclick = () => data && void render(data.page - 1, false);
 next.onclick = () => data && void render(data.page + 1, false);
 zoom.onclick = () => {
   if (!data) return;
-  wholePage = !wholePage;
-  void render(data.page, !wholePage);
+  // Whole page <-> the target's region (back on the target's page).
+  if (wholePage && target) void render(target.page, true);
+  else void render(data.page, false);
 };
 
 // Re-render when a compile (anyone's) replaces the pdf. The page is polled
@@ -169,7 +169,7 @@ async function pollStamp(seed = false): Promise<void> {
     stamp = s;
     if (moved && !seed && data) {
       data = { ...data, stale: false };
-      await render(data.page, !wholePage && !!data.region);
+      await render(wholePage ? data.page : (target?.page ?? data.page), !wholePage);
     }
   } catch {
     /* host closed or tool busy: try again next tick */
