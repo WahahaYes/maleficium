@@ -102,6 +102,7 @@ EXPECT = {  # id: (type, runtime, label)
     "fig-chart": ("chart", "chart@1", "fig:chart"),
     "fig-html": ("html", "", "fig:html"),
     "chart-bare": ("chart", "chart@1", ""),
+    "chart-inline": ("chart", "chart@1", ""),
 }
 check("sidecar lists every widget", {w[1] for w in rows} == set(EXPECT), str([w[1] for w in rows]))
 by_id = {w[1]: w for w in rows}
@@ -112,7 +113,8 @@ for wid, (typ, rt, label) in EXPECT.items():
     w = by_id.get(wid)
     check(f"{wid} type, runtime and label",
           bool(w) and w[2] == typ and w[3] == rt and w[4] == label, str(w))
-check("uncaptioned widget has no figure number", by_id["chart-bare"][5] == "", str(by_id["chart-bare"]))
+check("uncaptioned and floatless widgets have no figure number",
+      all(by_id[i][5] == "" for i in ("chart-bare", "chart-inline")), str([by_id[i] for i in ("chart-bare", "chart-inline")]))
 check("captioned widgets carry a figure number",
       all(by_id[i][5] != "" for i in ("fig-model", "fig-video", "fig-chart", "fig-html")), str([by_id[i][5] for i in by_id]))
 
@@ -144,7 +146,8 @@ check("widget sources and options are typed",
       wby["fig-model"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
       and {"key": "pdfrows", "value": "3"} in wby["tab-results"]["options"]
       and wby["fig-html"]["sources"][0]["role"] == "bundle", str(wl)[:300])
-check("uncaptioned widget lists no label", "label" not in wby["chart-bare"], str(wby["chart-bare"]))
+check("uncaptioned and floatless widgets list no label",
+      all("label" not in wby[i] for i in ("chart-bare", "chart-inline")), str([wby[i] for i in ("chart-bare", "chart-inline")]))
 
 import shutil, subprocess
 if shutil.which("mutool"):
