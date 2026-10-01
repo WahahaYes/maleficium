@@ -84,6 +84,14 @@ carries no label and no figure number.
   alt={Small uncaptioned copy of the accuracy chart}]{charts/ablation.vl.json}
 \end{figure}
 
+A widget may also sit directly in the text, outside any float. It records
+no label and no figure number either.
+
+\begin{center}
+\interactivechart[poster=figures/chart.png, height=3cm, id=chart-inline,
+  alt={Small inline copy of the accuracy chart outside any float}]{charts/ablation.vl.json}
+\end{center}
+
 \section{Plain floats}
 Not every figure is interactive. Figure~\ref{fig:plain} has a caption;
 the one after it has none.
