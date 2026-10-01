@@ -153,6 +153,20 @@
   \makebox[\mlLabelW][l]{\small\color{mlaccent}\bfseries #1}#2\par
   \vspace{0.25\mlGap}}
 
+
+% \mlTagGroup{Label}{\mlTag{One}\mlTag{Two}} -- skills as rounded pills, wrapping
+% beside a label. Each pill is a tinted card with a hairline accent border.
+\usetikzlibrary{calc}
+\tikzset{mlpill/.style={rounded corners=2.4pt, fill=mlaccent!7, draw=mlaccent!38,
+  line width=0.4pt, inner xsep=4.2pt, inner ysep=2.2pt, text=mlink}}
+\newcommand{\mlTag}[1]{%
+  \tikz[baseline=(mlp.base)]\node[mlpill](mlp){#1};\hskip 0.28em plus 0.2em\relax}
+\newcommand{\mlTagGroup}[2]{%
+  \begingroup\noindent\hangindent=\mlLabelW\hangafter=1
+  \makebox[\mlLabelW][l]{\small\color{mlaccent}\bfseries #1}%
+  {\fontsize{8.6}{15.5}\selectfont\raggedright #2\par}\endgroup
+  \vspace{0.2\mlGap}}
+
 % \mlMe{Name} -- your own name inside an author list.
 \newcommand{\mlMe}[1]{\textbf{#1}}
 % \mlVenue{Venue} and \mlBadge{text} for citation lines.
