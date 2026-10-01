@@ -8,7 +8,7 @@ edition = "2021"
 default-run = "maleficium"
 
 [workspace]
-members = ["core", "mcp", "structure", "events", "index"]
+members = ["core", "mcp", "structure", "events", "index", "widget-host"]
 
 # The app version; the MCP server reports it too.
 [workspace.package]
