@@ -25,6 +25,7 @@ pub mod templates;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_scratch;
 pub mod watch;
+pub mod widgets;
 
 pub use compile::{
     cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus, Progress,

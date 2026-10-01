@@ -32,6 +32,7 @@ use crate::structure::Precheck;
 use crate::synctex::{ForwardHit, InverseHit};
 use crate::templates::{Created, TemplateInfo, TemplateList};
 use crate::watch::WatchEvent;
+use crate::widgets::WidgetList;
 
 /// A granted project: its canonical path and the session-root id the other
 /// operations take. The Tauri adapter mints the fs-scope grant beside this.
@@ -70,6 +71,7 @@ params! {
     TemplateImportFolderParams { dir: String, info: TemplateInfo },
     TemplateWelcomeParams {},
     InteractiveInstallParams { root_id: String },
+    WidgetsParams { root_id: String, main_rel: String },
     ForwardSyncParams { root_id: String, main_rel: String, tex_rel: String, line: u32 },
     InverseSyncParams { root_id: String, main_rel: String, page: u32, x: f32, y: f32 },
     StructureOutlineParams { text: String },
@@ -153,6 +155,7 @@ operations! {
     TemplateImportFolder via template_import_folder(TemplateImportFolderParams) -> TemplateInfo,
     TemplateWelcome via template_welcome(TemplateWelcomeParams) -> Created,
     InteractiveInstall via interactive_install(InteractiveInstallParams) -> Installed,
+    Widgets via widgets(WidgetsParams) -> WidgetList,
     ForwardSync via forward_sync(ForwardSyncParams) -> ForwardHit,
     InverseSync via inverse_sync(InverseSyncParams) -> InverseHit,
     StructureOutline via structure_outline(StructureOutlineParams) -> Outline,
@@ -268,6 +271,10 @@ fn template_welcome(_cx: &Core, _p: TemplateWelcomeParams) -> Result<Created, St
 
 fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<Installed, String> {
     crate::interactive::install(cx, &p.root_id)
+}
+
+fn widgets(cx: &Core, p: WidgetsParams) -> Result<WidgetList, String> {
+    crate::widgets::widgets(cx, &p.root_id, &p.main_rel)
 }
 
 fn forward_sync(cx: &Core, p: ForwardSyncParams) -> Result<ForwardHit, String> {
@@ -492,6 +499,14 @@ pub fn typescript() -> String {
         TemplateWelcomeParams::decl(&cfg),
         InteractiveInstallParams::decl(&cfg),
         Installed::decl(&cfg),
+        WidgetsParams::decl(&cfg),
+        crate::widgets::WidgetType::decl(&cfg),
+        crate::widgets::WidgetRect::decl(&cfg),
+        crate::widgets::WidgetSource::decl(&cfg),
+        crate::widgets::WidgetOption::decl(&cfg),
+        crate::widgets::WidgetCsp::decl(&cfg),
+        crate::widgets::Widget::decl(&cfg),
+        WidgetList::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),
@@ -600,6 +615,19 @@ mod tests {
         )
         .unwrap_err();
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn widgets_round_trips_and_rejects_unknown_roots() {
+        let cx = &Core::default();
+        let req = Request::Widgets(WidgetsParams {
+            root_id: "nope".into(),
+            main_rel: "main.tex".into(),
+        });
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["op"], "widgets");
+        assert_eq!(json["params"]["mainRel"], "main.tex");
+        assert!(!dispatch(cx, req).unwrap_err().is_empty());
     }
 
     #[test]
