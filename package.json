@@ -21,7 +21,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "sh scripts/clean.sh",
-    "build:runtimes": "vite build --config vite.runtimes.config.ts --mode table && vite build --config vite.runtimes.config.ts --mode chart"
+    "build:runtimes": "vite build --config vite.runtimes.config.ts --mode table && vite build --config vite.runtimes.config.ts --mode chart && vite build --config vite.runtimes.config.ts --mode model && vite build --config vite.runtimes.config.ts --mode video"
   },
   "dependencies": {
     "@codemirror/language": "^6.12.4",
@@ -48,6 +48,7 @@
     "@types/node": "^22.20.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
@@ -56,6 +57,7 @@
     "globals": "^16.5.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.9.8",
+    "three": "0.186.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.0",
     "vega": "^6.4.0",
