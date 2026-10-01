@@ -8,6 +8,8 @@
 
 ### For AI agents
 
+- **Hosts that support MCP Apps show compiles live.** `compile_run` now names a compile dashboard View (`ui://maleficium/compile/v1`): status, the phase reached and files downloaded, the log tail, offline-readiness and missing-dependency findings, the failing source lines, and a Cancel button. It polls only while visible and stops when the compile finishes. Other hosts get the same results as text. `compile_run` also returns the `main_rel` it compiles, and `compile_poll` reports `progress` (the phase, plus files downloaded and failed).
+
 - **Hosts that support MCP Apps show the snippet inline.** The `snippet` tool now names a small View (`ui://maleficium/snippet/v1`): the rendered region of the PDF beside the source lines, with previous/next page, a whole-page toggle, and a refresh when a compile replaces the PDF. It follows the host's light or dark theme and never inverts the page. Hosts without Apps support get the same text and, with `with_image`, the same image as before. A new `snippet_render` tool, hidden from the model, lets the View re-render without a model turn.
 
 ## 0.3.0 - 2026-09-30
