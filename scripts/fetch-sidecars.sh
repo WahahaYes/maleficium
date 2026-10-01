@@ -69,7 +69,7 @@ echo "$TECTONIC_PINS" | while read -r triple pin; do
         continue
     fi
     say "tectonic $triple: downloading"
-    curl -sSfL -o "$WORK/$archive" "$TECTONIC_URL/$archive" || die "download failed: $archive"
+    curl -sSfL --retry 4 --retry-delay 5 --retry-all-errors -o "$WORK/$archive" "$TECTONIC_URL/$archive" || die "download failed: $archive"
     mkdir -p "$WORK/$triple"
     case "$archive" in
         *.zip) python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$WORK/$archive" "$WORK/$triple" ;;
