@@ -1,21 +1,26 @@
-// Builds each MCP App View into one self-contained html file under
+// Builds one MCP App View into a self-contained html file under
 // src-tauri/mcp/views/, which maleficium-mcp embeds with include_str!. The
-// output is committed so cargo builds need no node: rerun after editing a
-// View (`npm run build:views`); scripts/check-freshness.sh and the mcp tests
-// fail on a stale build.
+// mode (or VIEW) names the View: `vite build --config vite.views.config.ts
+// --mode compile`. The output is committed so cargo builds need no node:
+// rerun `npm run build:views` (every View) after editing one; the mcp
+// tests and src/mcp-views/fresh.test.ts fail on a stale build.
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import process from 'node:process';
 
-const view = process.env.VIEW ?? 'snippet';
+/** Every View, by its directory under src/mcp-views/. */
+export const VIEWS = ['snippet', 'compile'];
 
-export default defineConfig({
-  root: `src/mcp-views/${view}`,
-  plugins: [viteSingleFile()],
-  build: {
-    outDir: '../../../src-tauri/mcp/views',
-    emptyOutDir: false,
-    target: 'es2020',
-    rollupOptions: { input: `src/mcp-views/${view}/${view}.html` },
-  },
+export default defineConfig(({ mode }) => {
+  const view = process.env.VIEW ?? (VIEWS.includes(mode) ? mode : 'snippet');
+  return {
+    root: `src/mcp-views/${view}`,
+    plugins: [viteSingleFile()],
+    build: {
+      outDir: '../../../src-tauri/mcp/views',
+      emptyOutDir: false,
+      target: 'es2020',
+      rollupOptions: { input: `src/mcp-views/${view}/${view}.html` },
+    },
+  };
 });
