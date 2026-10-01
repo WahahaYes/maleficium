@@ -58,6 +58,22 @@ fn embed_templates() {
     std::fs::write(out, src).expect("templates table written");
 }
 
+/// Embeds `interactive/maleficium-interactive.sty` as `INTERACTIVE_STY`,
+/// shared by the desktop app and the MCP binary.
+fn embed_interactive() {
+    let file = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("../interactive/maleficium-interactive.sty");
+    println!("cargo:rerun-if-changed={}", file.display());
+    let src = format!(
+        "/// The interactive-widget package, embedded for offline compiles.\n\
+         pub static INTERACTIVE_STY: &[u8] = include_bytes!({:?});\n",
+        file.display().to_string()
+    );
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("interactive.rs");
+    std::fs::write(out, src).expect("interactive package table written");
+}
+
 fn main() {
     embed_templates();
+    embed_interactive();
 }

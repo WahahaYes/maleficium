@@ -138,6 +138,11 @@ struct CancelParams {
     job_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct InteractiveInstallParams {
+    root_id: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -544,6 +549,18 @@ impl Maleficium {
                 &p.parent_dir,
                 &p.name,
             )?))
+        })
+    }
+
+    #[tool(
+        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path."
+    )]
+    fn interactive_install(
+        &self,
+        Parameters(p): Parameters<InteractiveInstallParams>,
+    ) -> Result<Json<core::interactive::Installed>, String> {
+        self.tool("interactive_install", || {
+            Ok(Json(core::interactive::install(&self.cx, &p.root_id)?))
         })
     }
 
