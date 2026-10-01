@@ -13,7 +13,7 @@
 use crate::Core;
 
 use maleficium_events::{
-    BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
+    BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
 };
 use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
@@ -22,6 +22,7 @@ use maleficium_structure::{Diagnostic, Outline};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::bundle::BundleExported;
 use crate::eventlog::RotateReport;
 use crate::export::Exported;
 use crate::fs::FileStat;
@@ -72,6 +73,7 @@ params! {
     TemplateWelcomeParams {},
     InteractiveInstallParams { root_id: String },
     WidgetsParams { root_id: String, main_rel: String },
+    ExportBundleParams { root_id: String, main_rel: String, dest: String, profile: BundleProfile, size_cap_bytes: Option<u64> },
     ForwardSyncParams { root_id: String, main_rel: String, tex_rel: String, line: u32 },
     InverseSyncParams { root_id: String, main_rel: String, page: u32, x: f32, y: f32 },
     StructureOutlineParams { text: String },
@@ -156,6 +158,7 @@ operations! {
     TemplateWelcome via template_welcome(TemplateWelcomeParams) -> Created,
     InteractiveInstall via interactive_install(InteractiveInstallParams) -> Installed,
     Widgets via widgets(WidgetsParams) -> WidgetList,
+    ExportBundle via export_bundle(ExportBundleParams) -> BundleExported,
     ForwardSync via forward_sync(ForwardSyncParams) -> ForwardHit,
     InverseSync via inverse_sync(InverseSyncParams) -> InverseHit,
     StructureOutline via structure_outline(StructureOutlineParams) -> Outline,
@@ -271,6 +274,17 @@ fn template_welcome(_cx: &Core, _p: TemplateWelcomeParams) -> Result<Created, St
 
 fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<Installed, String> {
     crate::interactive::install(cx, &p.root_id)
+}
+
+fn export_bundle(cx: &Core, p: ExportBundleParams) -> Result<BundleExported, String> {
+    crate::bundle::export_bundle(
+        cx,
+        &p.root_id,
+        &p.main_rel,
+        &p.dest,
+        p.profile,
+        p.size_cap_bytes,
+    )
 }
 
 fn widgets(cx: &Core, p: WidgetsParams) -> Result<WidgetList, String> {
@@ -507,6 +521,10 @@ pub fn typescript() -> String {
         crate::widgets::WidgetCsp::decl(&cfg),
         crate::widgets::Widget::decl(&cfg),
         WidgetList::decl(&cfg),
+        ExportBundleParams::decl(&cfg),
+        crate::bundle::BundleWarningKind::decl(&cfg),
+        crate::bundle::BundleWarning::decl(&cfg),
+        BundleExported::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),
@@ -552,7 +570,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange } from './events';\n\
+         import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );
