@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maleficium compile</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: var(--color-background-primary, #ffffff);
+        --fg: var(--color-text-primary, #1f2328);
+        --muted: var(--color-text-secondary, #59636e);
+        --line: var(--color-border-primary, #d1d9e0);
+        --code-bg: var(--color-background-secondary, #f6f8fa);
+        --ok: var(--color-text-success, #1a7f37);
+        --bad: var(--color-text-danger, #d1242f);
+        --warn: var(--color-text-warning, #9a6700);
+        --info: var(--color-text-info, #0969da);
+        --font: var(--font-sans, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, monospace);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 8px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.4 var(--font);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      header .where {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      header .time {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .status {
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        padding: 0 6px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .status[data-status='running'] {
+        color: var(--info);
+      }
+      .status[data-status='success'] {
+        color: var(--ok);
+      }
+      .status[data-status='failed'],
+      .status[data-status='timed-out'] {
+        color: var(--bad);
+      }
+      .status[data-status='cancelled'] {
+        color: var(--muted);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .phase,
+      .msg {
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .findings {
+        margin: 8px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .findings li {
+        padding: 3px 6px;
+        border-left: 3px solid var(--warn);
+        margin-bottom: 3px;
+        background: var(--code-bg);
+        overflow-wrap: anywhere;
+      }
+      .findings li.error {
+        border-left-color: var(--bad);
+      }
+      .findings li.ok {
+        border-left-color: var(--ok);
+      }
+      .findings .at {
+        font-family: var(--mono);
+        margin-right: 6px;
+      }
+      pre {
+        margin: 8px 0 0;
+        padding: 6px 8px;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font: 12px/1.45 var(--mono);
+        max-height: 40vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <header hidden id="bar">
+      <span class="status" id="status" data-status="running">Running</span>
+      <span class="where" id="where"></span>
+      <span class="time" id="time"></span>
+      <button id="cancel" title="Stop this compile" hidden>Cancel</button>
+    </header>
+    <div class="phase" id="phase" hidden></div>
+    <div class="msg" id="msg">Waiting for the compile…</div>
+    <ul class="findings" id="findings" hidden></ul>
+    <pre id="log" hidden></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
