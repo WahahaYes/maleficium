@@ -29,6 +29,17 @@ into the installable next to the app binary:
   MIT-style license (Copyright Jerome Laurens 2008-2024, plus a
   non-advertising clause).
 
+This product bundles, inlined into the built-in widget runtimes under
+src-tauri/widget-runtimes/ (built by `npm run build:runtimes`, no network at
+build or run time), the Vega visualization stack and its dependencies, all
+permissively licensed (checked against package-lock.json, 2026-10-01):
+
+- vega 6.4.0, vega-lite 6.4.3 and vega-interpreter 2.3.2, Copyright (c)
+  2015-present the Vega project and UW Interactive Data Lab, BSD-3-Clause.
+- Their 76 transitive dependencies (d3-* and topojson-client under ISC or
+  BSD-3-Clause; fast-deep-equal, json-stringify-pretty-compact and similar
+  under MIT; tslib under 0BSD; robust-predicates under Unlicense).
+
 The built-in project templates under src-tauri/templates/ are original to
 Maleficium and dedicated to the public domain under CC0 1.0
 (src-tauri/templates/LICENSE); see src-tauri/templates/README.md.
