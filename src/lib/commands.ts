@@ -18,6 +18,9 @@ export type CommandId =
   | 'file.import-template'
   | 'file.export-pdf'
   | 'file.export-zip'
+  | 'file.export-bundle'
+  | 'file.export-bundle-folder'
+  | 'file.export-bundle-single-file'
   | 'file.reload'
   | 'file.keep-mine'
   | 'file.clean'
@@ -165,6 +168,8 @@ export interface CommandActions {
   importTemplate: () => void;
   showWelcome: () => void;
   exportZip: () => void;
+  exportBundleFolder: () => void;
+  exportBundleSingleFile: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -267,6 +272,25 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Export Project as Zip…',
           enabled: ctx.hasProject,
           run: a.exportZip,
+        },
+        {
+          id: 'file.export-bundle',
+          label: 'Export Paper Bundle',
+          enabled: ctx.pdfOpen,
+          children: [
+            {
+              id: 'file.export-bundle-folder',
+              label: 'Folder for Web Hosting…',
+              enabled: ctx.pdfOpen,
+              run: a.exportBundleFolder,
+            },
+            {
+              id: 'file.export-bundle-single-file',
+              label: 'Single File for Email…',
+              enabled: ctx.pdfOpen,
+              run: a.exportBundleSingleFile,
+            },
+          ],
         },
         {
           id: 'file.set-main',
