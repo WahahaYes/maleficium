@@ -2276,6 +2276,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "maleficium-widget-host"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
