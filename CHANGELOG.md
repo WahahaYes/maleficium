@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
 - **A label's snippet lands on its figure.** `snippet` with a `label` (or a line such as `\label` or `\end{figure}` that has no box of its own) came back as the whole page body on the page where the float's text sits, so an agent asking about a figure got the wrong page. It now uses the nearest earlier line that has a placement of its own, which puts the snippet on the figure.
 
 ### For AI agents

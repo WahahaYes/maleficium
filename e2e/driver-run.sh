@@ -202,6 +202,8 @@ check("compile succeeds", sc.get("status") == "success", str(sc)[:200], ms=compi
 check("compile_run names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
 prog = sc.get("progress") or {}
 check("compile_poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
+again = [call("compile_poll", {"job_id": job, "tail_lines": 3}).get("status") for _ in range(3)]
+check("a finished compile answers later polls the same", again == [sc.get("status")] * 3, str(again))
 check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
 if WARM_ONLY:
     logf.close()
