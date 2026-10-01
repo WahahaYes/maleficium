@@ -2,6 +2,8 @@
 // drives the real maleficium-mcp over stdio, plays a chat client in headless
 // Firefox, and checks what a View shows with and without the model asking
 // for an image, and what it does when the user pages or a compile lands.
+// The compile dashboard (mcp.5) follows a compile_run job to success, to a
+// failure with its source line, and to a cancel, polling only while visible.
 //
 //   node e2e/apps-host/run.mjs [--shots <dir>]
 //
@@ -243,6 +245,189 @@ for (const theme of ['light', 'dark']) {
     toolCalls.includes('snippet_render'),
     String(toolCalls),
   );
+  await page.close();
+}
+
+// ---- the compile dashboard (ui://maleficium/compile/v1) ----
+const dashHtml = (await client.readResource({ uri: 'ui://maleficium/compile/v1' })).contents[0]
+  .text;
+// A broken file (as driver-run.sh writes it) and a long one to cancel.
+writeFileSync(
+  join(proj, 'fail.tex'),
+  '\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{document}\n',
+);
+writeFileSync(
+  join(proj, 'long.tex'),
+  '\\documentclass{article}\n\\newcount\\n\n\\begin{document}\n' +
+    '\\loop \\section{S\\the\\n} Lorem ipsum dolor sit amet. \\newpage' +
+    ' \\advance\\n by 1 \\ifnum\\n<20000 \\repeat\n\\end{document}\n',
+);
+
+// The model calls compile_run; the host renders its View with that result.
+async function openDashboard(rel, theme = 'light') {
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => check('no page error', false, String(e)));
+  await page.exposeFunction('mcpCall', async (params) => {
+    toolCalls.push(params.name);
+    return call(params.name, params.arguments);
+  });
+  await page.goto(url);
+  const args = { root_id: 'h', rel };
+  const toolResult = await call('compile_run', args);
+  await page.evaluate((o) => window.runView(o), {
+    html: dashHtml,
+    toolInput: { arguments: args },
+    toolResult,
+    theme,
+  });
+  const frame = await (await page.$('#view')).contentFrame();
+  return { page, view: page.frameLocator('#view'), frame, toolResult };
+}
+
+// Sample the status badge until it leaves running: every value it showed.
+async function statuses(view, timeout = 120000) {
+  const seen = [];
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    const s = await view
+      .locator('#status')
+      .getAttribute('data-status', { timeout: 1000 })
+      .catch(() => null);
+    if (s && seen[seen.length - 1] !== s) seen.push(s);
+    if (s && s !== 'running') break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return seen;
+}
+const polls = () => toolCalls.filter((n) => n === 'compile_poll').length;
+
+{
+  toolCalls.length = 0;
+  const { page, view, toolResult } = await openDashboard('main.tex');
+  check(
+    'compile_run keeps its text result and names the main file',
+    toolResult.structuredContent.main_rel === 'main.tex' &&
+      text(toolResult).includes(toolResult.structuredContent.job_id),
+    text(toolResult),
+  );
+  const seen = await statuses(view);
+  check(
+    'the dashboard shows running, then success',
+    seen[0] === 'running' && seen[seen.length - 1] === 'success',
+    seen.join(' -> '),
+  );
+  await view
+    .locator('#findings li.ok')
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  check(
+    'a clean compile reads compiled, with no cancel button',
+    (await view.locator('#status').textContent()) === 'Compiled' &&
+      !(await view.locator('#cancel').isVisible()),
+    await view.locator('#status').textContent(),
+  );
+  check(
+    'it shows the log tail and the offline finding',
+    ((await view.locator('#log').textContent()) ?? '').length > 0 &&
+      (await view.locator('#findings').textContent()).includes('Compiles offline'),
+    await view.locator('#findings').textContent(),
+  );
+  const after = polls();
+  await page.waitForTimeout(3000);
+  check('polling stops once the compile settles', polls() === after, `${after} -> ${polls()}`);
+  check(
+    'the dashboard reads only tools a text host sees too',
+    toolCalls.every((n) => ['compile_poll', 'offline_readiness', 'diagnostics'].includes(n)),
+    String([...new Set(toolCalls)]),
+  );
+  await page.close();
+}
+
+{
+  toolCalls.length = 0;
+  const { page, view } = await openDashboard('fail.tex');
+  const seen = await statuses(view);
+  check('a broken file reads failed', seen[seen.length - 1] === 'failed', seen.join(' -> '));
+  await view
+    .locator('#findings li.error')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  const f = (await view.locator('#findings').textContent()) ?? '';
+  check(
+    'the failure names the source line and the error',
+    f.includes('fail.tex:3') && f.includes('Undefined control sequence'),
+    f.slice(0, 200),
+  );
+  check('a failed compile offers no cancel', !(await view.locator('#cancel').isVisible()));
+  check(
+    'the failure reads failed in the badge',
+    (await view.locator('#status').textContent()) === 'Failed',
+    await view.locator('#status').textContent(),
+  );
+  await page.close();
+}
+
+{
+  toolCalls.length = 0;
+  const { page, view, frame } = await openDashboard('long.tex');
+  const cancel = view.locator('#cancel');
+  await cancel.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  check('a running compile offers cancel', await cancel.isVisible());
+  await view
+    .locator('#phase')
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
+  check(
+    'a running compile shows its phase',
+    ((await view.locator('#phase').textContent()) ?? '').length > 0,
+    await view.locator('#phase').textContent(),
+  );
+  // A hidden View stops polling and picks up again when shown.
+  const visibility = (state) =>
+    frame.evaluate((s) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => s });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
+  await visibility('hidden');
+  await page.waitForTimeout(1500);
+  const hiddenAt = polls();
+  await page.waitForTimeout(3000);
+  check('a hidden View does not poll', polls() === hiddenAt, `${hiddenAt} -> ${polls()}`);
+  await visibility('visible');
+  await page.waitForTimeout(2500);
+  check('a shown View polls again', polls() > hiddenAt, `${hiddenAt} -> ${polls()}`);
+  check(
+    'the compile is still running before cancel',
+    (await view.locator('#status').getAttribute('data-status')) === 'running',
+    await view.locator('#status').getAttribute('data-status'),
+  );
+  await cancel.click();
+  const seen = await statuses(view, 15000);
+  check('cancel stops the running compile', seen.includes('cancelled'), seen.join(' -> '));
+  check('cancel went through compile_cancel', toolCalls.includes('compile_cancel'));
+  check('a cancelled compile hides cancel', !(await cancel.isVisible()));
+  check(
+    'the dashboard says nothing was written',
+    ((await view.locator('#msg').textContent()) ?? '').includes('cancelled'),
+    await view.locator('#msg').textContent(),
+  );
+  await page.close();
+}
+
+for (const theme of ['light', 'dark']) {
+  const { page, view } = await openDashboard('main.tex', theme);
+  await statuses(view);
+  const bg = await view.locator('body').evaluate((e) => getComputedStyle(e).backgroundColor);
+  check(
+    `${theme}: the dashboard follows the host theme`,
+    theme === 'dark' ? bg !== 'rgb(255, 255, 255)' : bg === 'rgb(255, 255, 255)',
+    bg,
+  );
+  if (shotsAt) {
+    mkdirSync(shotsAt, { recursive: true });
+    await page.screenshot({ path: join(shotsAt, `compile-${theme}.png`) });
+  }
   await page.close();
 }
 

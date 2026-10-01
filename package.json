@@ -12,7 +12,7 @@
     "dev:serve": "vite",
     "prebuild": "sh scripts/check-freshness.sh --all",
     "build": "tsc && vite build",
-    "build:views": "vite build --config vite.views.config.ts",
+    "build:views": "vite build --config vite.views.config.ts --mode snippet && vite build --config vite.views.config.ts --mode compile",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
