@@ -61,6 +61,10 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 
 Drives the sidecar through grant → `interactive_install` → compile → poll against `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the four failing documents, and that only the installed package landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
 
+### playground-run.sh
+
+Drives the sidecar over `fixtures/playground/`, the showcase paper for interactive features: one source that compiles to a PDF now and is meant to become HTML later. The paper uses every widget macro the package offers (`\interactivemodel`, `\interactivevideo`, `\interactivetable` from CSV, `\interactivechart` from a Vega-Lite spec, `\interactive` for an HTML folder) with alt text and posters, captioned and uncaptioned floats, plain figures, `subcaption` subfigures, display math, a theorem and proof, citations from `refs.bib`, cross-references, and a section explaining each widget. The run installs the package, compiles with `networked` (so the first run can fetch `subcaption`; later runs are offline), then asserts a clean PDF (no TeX errors, no undefined references, bibliography resolved), the `.mfw` sidecar, one named annotation per widget, the MCP `widgets` list (all six widgets, all five types, rects, sources, options, labels), and that only the installed package landed in the project. Poster images are generated placeholders and the `.glb` and `.mp4` files are stubs: only the PDF poster is exercised. The table text checks need `mutool` and skip with a reason without it. `POLL_ROUNDS` bounds polling.
+
 ### stills-run.py
 
 Launches the real app under Xvfb with a throwaway HOME, drives it with keyboard shortcuts, and captures a PNG per state into `STILLS_OUT`. Needs Xvfb, xdotool, and ImageMagick.
