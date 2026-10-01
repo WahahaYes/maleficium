@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Templates
+
+- **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Presentation has a matching beamer theme. Journal Paper keeps plain IEEEtran formatting. Each folder carries its own copy of the style file, so a project stays self-contained.
+
 ### Fixes
 
 - **Font-tracing noise no longer buries real warnings.** Compiling under XeTeX with font tracing on (for example through libertine.sty) reported dozens of fragment warnings such as `Requested font "nxlmi7" at 7.3pt` and `-> nxlmi7`, one per trace line. Those lines are now recognized as tracing noise and dropped, so the diagnostics list shows the warnings that matter.
