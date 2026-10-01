@@ -110,6 +110,10 @@ check("post-caption float captures label and figure",
 check("pre-caption float stays honest",
       by_id["fig-clip"][4] == "" and by_id["fig-clip"][5] == "", str(by_id["fig-clip"][4:6]))
 
+check("widgets outside a captioned float record no label or figure",
+      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("tab-results", "fig-chart", "fig-demo")),
+      str({i: by_id[i][4:6] for i in ("tab-results", "fig-chart", "fig-demo")}))
+
 def streams(pdf_path):
     data = open(pdf_path, "rb").read()
     blobs = [data]
@@ -149,6 +153,9 @@ check("widget sources and options are typed",
       and {"key": "pdfrows", "value": "2"} in wby["tab-results"]["options"]
       and wby["fig-demo"]["sources"][0]["role"] == "bundle", str(wby)[:300])
 check("pre-caption widget lists no label", "label" not in wby["fig-clip"], str(wby["fig-clip"]))
+check("widgets outside a float list no label or figure",
+      all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-demo")),
+      str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-demo")})[:300])
 
 # A sidecar that lost track of the pdf is an error, not a shorter list.
 mfw_good = open(mfw).read()
