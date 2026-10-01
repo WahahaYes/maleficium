@@ -113,6 +113,9 @@ struct LiveJob {
     progress: Progress,
     done_tx: Option<std::sync::mpsc::Sender<JobRecord>>,
     done_rx: Option<std::sync::mpsc::Receiver<JobRecord>>,
+    /// The final record once a poll has taken it off the channel, so every
+    /// later poll (a second viewer, a model and a View) sees the same result.
+    finished: Option<JobRecord>,
 }
 
 /// Compile jobs by id, plus the foreground run an adapter streams itself.
@@ -276,6 +279,7 @@ pub fn run_blocking(
             progress: Progress::default(),
             done_tx: None,
             done_rx: None,
+            finished: None,
         },
     );
     *cx.jobs().current.lock().unwrap() = Some(id.clone());
@@ -359,6 +363,7 @@ pub fn run(
             progress: Progress::default(),
             done_tx: Some(tx),
             done_rx: Some(rx),
+            finished: None,
         },
     );
 
@@ -436,25 +441,30 @@ pub fn poll(cx: &Core, job_id: &str, tail_lines: usize) -> Result<JobRecord, Str
     let job = guard
         .get_mut(job_id)
         .ok_or_else(|| format!("unknown job: {}", job_id))?;
+    if let Some(record) = &job.finished {
+        return Ok(record.clone());
+    }
     if let Some(rx) = job.done_rx.take() {
         match rx.try_recv() {
             Ok(record) => {
                 job.lines = record.lines.clone();
-                let _ = job.done_rx.insert(rx);
+                job.finished = Some(record.clone());
                 return Ok(record);
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 let _ = job.done_rx.insert(rx);
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                return Ok(JobRecord {
+                let record = JobRecord {
                     status: JobStatus::Failed,
                     pdf_url: None,
                     log: String::from("compile worker lost"),
                     lines: job.lines.clone(),
                     missing: None,
                     progress: job.progress.clone(),
-                });
+                };
+                job.finished = Some(record.clone());
+                return Ok(record);
             }
         }
     }
@@ -541,6 +551,60 @@ mod tests {
     fn poll_unknown_job_fails() {
         let cx = &Core::default();
         assert!(poll(cx, "job-404", 10).is_err());
+    }
+
+    fn record(status: JobStatus) -> JobRecord {
+        JobRecord {
+            status,
+            pdf_url: None,
+            log: String::new(),
+            lines: vec![String::from("done")],
+            missing: None,
+            progress: Progress::default(),
+        }
+    }
+
+    fn live_with_channel(cx: &Core, id: &str) -> std::sync::mpsc::Sender<JobRecord> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        cx.jobs().live.lock().unwrap().insert(
+            id.to_string(),
+            LiveJob {
+                child: Arc::new(Mutex::new(None)),
+                lines: Vec::new(),
+                progress: Progress::default(),
+                done_tx: None,
+                done_rx: Some(rx),
+                finished: None,
+            },
+        );
+        tx
+    }
+
+    /// A model and a View both poll one job: the finished record is the
+    /// answer every time, not "worker lost" after the first reader.
+    #[test]
+    fn a_finished_job_answers_every_poll_the_same() {
+        let cx = &Core::default();
+        let tx = live_with_channel(cx, "job-1");
+        assert_eq!(poll(cx, "job-1", 5).unwrap().status, JobStatus::Running);
+        tx.send(record(JobStatus::Success)).unwrap();
+        drop(tx);
+        for _ in 0..3 {
+            let r = poll(cx, "job-1", 5).unwrap();
+            assert_eq!((r.status, r.lines.len()), (JobStatus::Success, 1));
+            assert!(r.log.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_worker_that_vanishes_fails_the_job_once_and_stays_failed() {
+        let cx = &Core::default();
+        drop(live_with_channel(cx, "job-2"));
+        for _ in 0..2 {
+            let r = poll(cx, "job-2", 5).unwrap();
+            assert_eq!(r.status, JobStatus::Failed);
+            assert_eq!(r.log, "compile worker lost");
+        }
     }
 
     #[test]
