@@ -299,7 +299,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--scenario", default="coffee")
     ap.add_argument("-n", type=int, default=1, help="takes")
-    ap.add_argument("--model", help="default: the claude model for tmux/print, the free model for opencode")
+    ap.add_argument("--model", help="default: the claude model for tmux/print, the opencode model")
     ap.add_argument("--out", help="default /var/tmp/maleficium-showreel/<stamp>")
     ap.add_argument("--budget", type=float, default=10.0, help="stop starting takes once spend reaches this")
     ap.add_argument("--beat-budget", type=float, default=3.0, help="claude --max-budget-usd per beat")
@@ -316,7 +316,7 @@ def main():
     ap.add_argument("--camera-test", metavar="PROJECT",
                     help="no agent: run the camera's moves on a finished project, with screenshots")
     a = ap.parse_args()
-    model = a.model or (ar.FREE_MODEL if a.agent == "opencode" else ar.CLAUDE_MODEL)
+    model = a.model or (ar.OPENCODE_MODEL if a.agent == "opencode" else ar.CLAUDE_MODEL)
     if a.preview:
         return recording.preview(a.preview, a.speed)
     if a.suggest_shots:

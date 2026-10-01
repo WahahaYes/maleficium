@@ -39,7 +39,7 @@ IDENT = "io.github.wahahayes.maleficium"
 CACHE_ROOT = "/var/tmp/maleficium-agent-cache"
 MIRROR_CACHE = "/var/tmp/maleficium-bundle-mirror"
 MIRROR_PORT = int(os.environ.get("AGENT_MIRROR_PORT", "18790"))  # override to run beside another sweep
-FREE_MODEL = "opencode/muse-spark-1.3-contributor-free"
+OPENCODE_MODEL = "openrouter/meta/muse-spark-1.3"
 CLAUDE_MODEL = "claude-sonnet-5"
 CLAUDE_BUILTIN_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"]  # no Bash, no WebFetch
 
@@ -1024,7 +1024,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--runner", choices=["opencode", "claude"], default="opencode")
     ap.add_argument("--bin", default="source", help="'source' (target/debug) or a packaged AppImage")
-    ap.add_argument("--model", help="default: %s for opencode, %s for claude" % (FREE_MODEL, CLAUDE_MODEL))
+    ap.add_argument("--model", help="default: %s for opencode, %s for claude" % (OPENCODE_MODEL, CLAUDE_MODEL))
     ap.add_argument("--claude-bin", help="path to the claude CLI (default: PATH, else /usr/bin/claude)")
     ap.add_argument("--max-turns", type=int, default=40, help="claude runner: --max-turns per run")
     ap.add_argument("--max-budget-usd", type=float, default=2.0, help="claude runner: --max-budget-usd per run")
@@ -1034,7 +1034,7 @@ def main():
     ap.add_argument("--budget", type=float, default=5.0, help="stop once reported cost reaches this (USD)")
     ap.add_argument("--self-test", action="store_true", help="check the oracles against the solutions; no model")
     a = ap.parse_args()
-    model = a.model or (CLAUDE_MODEL if a.runner == "claude" else FREE_MODEL)
+    model = a.model or (CLAUDE_MODEL if a.runner == "claude" else OPENCODE_MODEL)
     needed = ["bwrap"] + (["opencode"] if a.runner == "opencode" else [])
     for tool in needed:
         if not shutil.which(tool):

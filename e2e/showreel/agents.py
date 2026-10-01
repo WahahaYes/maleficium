@@ -320,7 +320,7 @@ class OpencodePrint(AgentSession):
     def __init__(self, *args):
         super().__init__(*args)
         self.opencode = shutil.which("opencode") or "opencode"
-        # The free tier rejects fabricated session ids, so the first turn
+        # The opencode server rejects fabricated session ids, so the first turn
         # runs without --session and later turns resume the id the server
         # assigned (see turn()).
         self.session = None
