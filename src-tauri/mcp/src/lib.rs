@@ -201,6 +201,12 @@ struct InteractiveInstallParams {
     root_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WidgetsParams {
+    root_id: String,
+    main_rel: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -637,6 +643,30 @@ impl Maleficium {
     ) -> Result<Json<core::interactive::Installed>, String> {
         self.tool("interactive_install", || {
             Ok(Json(core::interactive::install(&self.cx, &p.root_id)?))
+        })
+    }
+
+    #[tool(
+        description = "The interactive widgets of main_rel's last compile: for each, its page, rect (PDF units, origin bottom-left), type, runtime, sources, options, alt, float label and figure number, and declared csp origins, in document order. Empty when the document declares none. Fails (isError) when main_rel was never compiled, or when the widget sidecar and the pdf disagree (recompile), or when a widget bundle's widget.json is invalid.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets(
+        &self,
+        Parameters(p): Parameters<WidgetsParams>,
+    ) -> Result<Json<core::widgets::WidgetList>, String> {
+        self.tool("widgets", || {
+            let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
+                &p.main_rel,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
         })
     }
 
@@ -1127,6 +1157,30 @@ mod tests {
             get("compile_run"),
             format!(r#"{{"resourceUri":"{COMPILE_VIEW_URI}","visibility":["model","app"]}}"#)
         );
+    }
+
+    /// The widget list only reads: hosts may call it without confirmation.
+    /// Its failures reach the client as tool errors, never as an empty list.
+    #[test]
+    fn widgets_is_a_read_only_tool_and_failures_are_errors() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "widgets").expect("widgets");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let m = Maleficium::default();
+        let err = m
+            .widgets(Parameters(WidgetsParams {
+                root_id: "nope".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
     }
 
     /// Every embedded View is a whole html page that loads nothing from
