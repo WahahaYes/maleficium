@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "maleficium-paper-bundle/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "generator",
+    "paper",
+    "pdf",
+    "theme",
+    "widgets",
+    "assets"
+  ],
+  "properties": {
+    "format": { "const": "maleficium-paper-bundle" },
+    "formatVersion": { "const": 1 },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": { "name": { "const": "maleficium" }, "version": { "type": "string" } }
+    },
+    "profile": { "enum": ["folder", "single-file", "hosted"] },
+    "sizeCapBytes": { "type": "integer", "minimum": 0 },
+    "paper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "authors"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "authors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "affiliations": { "type": "array", "items": { "type": "string" } },
+              "orcid": { "type": "string", "pattern": "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$" }
+            }
+          }
+        },
+        "abstract": { "type": "string" },
+        "versionLabel": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "doi": { "type": "string" },
+        "license": {
+          "type": "string",
+          "description": "SPDX id of the paper's license, e.g. CC-BY-4.0"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "url"],
+            "properties": {
+              "kind": { "enum": ["project", "code", "data", "preprint", "publisher", "other"] },
+              "url": { "type": "string", "format": "uri", "pattern": "^https://" }
+            }
+          }
+        }
+      }
+    },
+    "pdf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes", "pages"],
+      "properties": {
+        "path": {
+          "type": ["string", "null"],
+          "description": "paper.pdf; null when inlined (single-file)"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "pages": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contractVersion"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "contractVersion": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } },
+    "assets": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/asset" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "assetRef": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "key into assets"
+    },
+    "origin": { "type": "string", "pattern": "^https://[a-z0-9.-]+(:\\d+)?$" },
+    "rect": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "number" },
+      "description": "[x0, y0, x1, y1] in PDF user units, origin bottom-left, x0<x1, y0<y1"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sha256", "bytes", "mime"],
+      "properties": {
+        "mode": { "enum": ["bundled", "inline", "remote"] },
+        "path": { "type": ["string", "null"], "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]+$" },
+        "url": { "type": "string", "pattern": "^https://" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "mime": { "type": "string" },
+        "source": {
+          "type": "string",
+          "description": "project-relative path; never absolute, never ../"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "bundled" } } },
+          "then": { "required": ["path"], "properties": { "path": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "inline" } } },
+          "then": { "properties": { "path": { "const": null } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "remote" } } },
+          "then": { "required": ["url"] }
+        }
+      ]
+    },
+    "csp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } },
+        "resourceDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } },
+        "frameDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } }
+      }
+    },
+    "widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "page", "rect", "poster", "alt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$" },
+        "type": { "enum": ["model", "video", "table", "chart", "html"] },
+        "runtime": {
+          "type": "string",
+          "pattern": "^(model|video|table|chart)@\\d+$",
+          "description": "built-in runtime and its major version; absent for html"
+        },
+        "entry": {
+          "type": "string",
+          "description": "widgets/<id>/index.html; null in single-file"
+        },
+        "page": { "type": "integer", "minimum": 1 },
+        "rect": { "$ref": "#/$defs/rect" },
+        "label": {
+          "type": "string",
+          "description": "LaTeX \\label of the enclosing float, if any"
+        },
+        "figure": {
+          "type": "string",
+          "description": "rendered float number as in the PDF, e.g. \"3\" or \"3b\""
+        },
+        "poster": { "$ref": "#/$defs/assetRef" },
+        "alt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "text alternative; defaults to the caption"
+        },
+        "sources": {
+          "type": "object",
+          "description": "runtime inputs by role, e.g. {\"model\": \"mesh\"}; values are asset refs",
+          "additionalProperties": { "$ref": "#/$defs/assetRef" }
+        },
+        "options": {
+          "type": "object",
+          "description": "runtime options passed through from the .sty, validated by the runtime"
+        },
+        "csp": { "$ref": "#/$defs/csp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "html" } } },
+          "then": { "not": { "required": ["runtime"] } },
+          "else": { "required": ["runtime", "sources"] }
+        }
+      ]
+    }
+  }
+}
