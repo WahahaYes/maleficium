@@ -305,6 +305,71 @@ fn a_malformed_sidecar_fails_loudly() {
 }
 
 #[test]
+fn poster_parameters_are_canonical_in_the_list_and_bad_ones_fail() {
+    let cx = &Core::default();
+    let side = REAL_SIDECAR
+        .replace(
+            "height=170.71652pt|",
+            "height=170.71652pt,camera=pos=0 0 5 target=0 0 0,size=640x480,background=FFF|",
+        )
+        .replace(
+            "|spec=charts/ablation.vl.json|height=142.26378pt|",
+            "|spec=charts/ablation.vl.json|height=142.26378pt,scale=1.50|",
+        );
+    let (id, root, out) = compiled(cx, "params", "main.tex", Some(REAL_PDF), Some(&side));
+    std::fs::create_dir_all(root.join("widgets/demo")).unwrap();
+    std::fs::write(root.join("widgets/demo/index.html"), "<p>hi</p>").unwrap();
+    let l = widgets(cx, &id, "main.tex").unwrap();
+    let opt = |w: &str, k: &str| {
+        by_id(&l, w)
+            .options
+            .iter()
+            .find(|o| o.key == k)
+            .map(|o| o.value.clone())
+    };
+    assert_eq!(
+        opt("fig-mesh", "camera").as_deref(),
+        Some("1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1")
+    );
+    assert_eq!(opt("fig-mesh", "size").as_deref(), Some("640x480"));
+    assert_eq!(opt("fig-mesh", "background").as_deref(), Some("#ffffff"));
+    assert_eq!(opt("fig-chart", "scale").as_deref(), Some("1.5"));
+    let _ = std::fs::remove_dir_all(out);
+
+    for (name, from, to, want) in [
+        (
+            "cam",
+            "height=170.71652pt|",
+            "height=170.71652pt,camera=1 2 3|",
+            "widget fig-mesh: a camera matrix has 16 numbers",
+        ),
+        (
+            "size",
+            "height=170.71652pt|",
+            "height=170.71652pt,size=big|",
+            "widget fig-mesh: size= is WxH",
+        ),
+        (
+            "scale",
+            "height=170.71652pt|",
+            "height=170.71652pt,scale=2|",
+            "widget fig-mesh: scale= does not apply",
+        ),
+    ] {
+        let (id, _r, out) = compiled(
+            cx,
+            &format!("params-{name}"),
+            "main.tex",
+            Some(REAL_PDF),
+            Some(&REAL_SIDECAR.replace(from, to)),
+        );
+        let e = widgets(cx, &id, "main.tex").unwrap_err();
+        assert!(e.contains(want), "{name}: {e}");
+        let _ = std::fs::remove_dir_all(out);
+    }
+}
+
+#[test]
 fn only_widget_annotations_count_and_reversed_rects_are_normalised() {
     let marks = marks(annotated_pdf()).unwrap();
     assert_eq!(marks.len(), 1);
