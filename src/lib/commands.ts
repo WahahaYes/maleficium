@@ -51,6 +51,7 @@ export type CommandId =
   | 'view.toggle-preview'
   | 'view.toggle-log'
   | 'view.toggle-outline'
+  | 'view.widgets'
   | 'view.theme'
   | 'view.theme-dark'
   | 'view.theme-light'
@@ -87,6 +88,7 @@ export function presetOf(v: ViewState): ViewPreset {
 
 import type { Density } from './theme';
 import { baseName } from './paths';
+import { WIDGETS_PANEL_TITLE } from './widgets.view';
 
 export interface MenuContext {
   hasProject: boolean;
@@ -164,6 +166,7 @@ export interface CommandActions {
   makeOffline: () => void;
   showPrecheck: () => void;
   installInteractive: () => void;
+  showWidgets: () => void;
   toggleAutoCompile: () => void;
   exportPdf: () => void;
   newFromTemplate: () => void;
@@ -500,6 +503,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           checked: ctx.outlineVisible,
           enabled: true,
           run: a.toggleOutline,
+        },
+        {
+          id: 'view.widgets',
+          label: WIDGETS_PANEL_TITLE,
+          enabled: ctx.hasProject,
+          run: a.showWidgets,
         },
         {
           id: 'view.theme',

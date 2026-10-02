@@ -44,6 +44,9 @@ import type { ZoomAction } from './lib/zoom';
 import { useExport } from './hooks/useExport';
 import { INTERACTIVE_PACKAGE } from './lib/interactiveInstall';
 import { useInteractiveInstall } from './hooks/useInteractiveInstall';
+import { useWidgetApproval } from './hooks/useWidgetApproval';
+import WidgetsPanel from './components/WidgetsPanel';
+import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
 import { FileHistory } from './lib/file-history';
@@ -587,6 +590,10 @@ export default function App({
     projectId,
     onInstalled: resolveInteractive,
   });
+  const widgetApproval = useWidgetApproval({
+    projectId,
+    mainRel: mainFile ? relInProject(mainFile) : null,
+  });
   const [templateMode, setTemplateMode] = useState<TemplateDialogMode>(null);
   const exporter = useExport({
     pdf: previewDoc?.source ?? null,
@@ -734,6 +741,7 @@ export default function App({
     },
     showPrecheck: openPrecheck,
     installInteractive: interactiveInstall.install,
+    showWidgets: widgetApproval.openPanel,
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
     exportZip: () => void exporter.exportZipAs(),
@@ -967,6 +975,19 @@ export default function App({
         project={root && projectId ? { rootId: projectId, path: root } : null}
         mainRel={mainFile ? relInProject(mainFile) : null}
         openRoot={(r, main) => openRoot(r, { warm: true, cold: true, main })}
+      />
+      <WidgetsPanel
+        open={widgetApproval.panelOpen}
+        onClose={widgetApproval.closePanel}
+        model={widgetApproval.model}
+        state={widgetApproval.state}
+      />
+      <WidgetApprovalPrompt
+        prompt={widgetApproval.prompts?.current() ?? null}
+        failure={widgetApproval.prompts?.failure() ?? null}
+        onApprove={() => void widgetApproval.prompts?.approve()}
+        onSkip={() => widgetApproval.prompts?.skip()}
+        onDismissFailure={() => widgetApproval.prompts?.clearFailure()}
       />
       <StatusBar
         mainFile={relOf(mainFile)}
