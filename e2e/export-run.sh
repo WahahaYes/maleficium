@@ -327,9 +327,11 @@ EOF
 driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "export run failed"
 
-# The companion reader, in a headless browser, over the bundles just exported.
-timeout 300 node "$DEVROOT/e2e/reader-run.mjs" --single "$SCRATCH/out/single.html" \
-  --folder "$SCRATCH/out/folder" || fail "reader run failed"
+# The companion reader, in each headless browser, over the bundles just exported.
+for browser in chromium firefox webkit; do
+  timeout 300 node "$DEVROOT/e2e/reader-run.mjs" --single "$SCRATCH/out/single.html" \
+    --folder "$SCRATCH/out/folder" --browser "$browser" || fail "reader run failed in $browser"
+done
 
 echo ""
 echo "EXPORT PROOFS COMPLETE: live MCP run green."

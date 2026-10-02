@@ -1,4 +1,4 @@
-// Companion-reader check: headless Firefox loads the index.html of an exported
+// Companion-reader check: a headless browser (Firefox unless --browser says otherwise) loads the index.html of an exported
 // single-file bundle (over http and from file://) and of a folder bundle (over
 // http; from file:// it must say it is unsupported). Asserts every widget frame
 // is mounted in manifest order under the pdf, sandbox="allow-scripts" exactly,
@@ -9,11 +9,11 @@
 // own frame off-site is stopped by the reader's CSP but not by a copy of the
 // page with the CSP removed (red).
 //
-//   node e2e/reader-run.mjs --single <file.html> --folder <dir>
+//   node e2e/reader-run.mjs --single <file.html> --folder <dir> [--browser chromium|firefox|webkit]
 //
 // e2e/export-run.sh produces both bundles and calls this with them. Needs a
-// Firefox for playwright-core (npx playwright install firefox).
-import { firefox } from 'playwright-core';
+// browser for playwright-core (npx playwright-core install firefox chromium webkit).
+import { chromium, firefox, webkit } from 'playwright-core';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
@@ -25,8 +25,12 @@ const arg = (name) => {
 };
 const singleFile = arg('--single');
 const folderDir = arg('--folder');
-if (!singleFile || !folderDir) {
-  console.error('usage: node e2e/reader-run.mjs --single <file.html> --folder <dir>');
+const engines = { chromium, firefox, webkit };
+const engineName = arg('--browser') ?? 'firefox';
+if (!singleFile || !folderDir || !engines[engineName]) {
+  console.error(
+    'usage: node e2e/reader-run.mjs --single <file.html> --folder <dir> [--browser chromium|firefox|webkit]',
+  );
   process.exit(2);
 }
 
@@ -104,7 +108,7 @@ check(
 const singleDir = join(singleFile, '..');
 const single = await host(singleDir, singleFile);
 const folder = await host(folderDir, join(folderDir, 'index.html'));
-const browser = await firefox.launch({ headless: true });
+const browser = await engines[engineName].launch({ headless: true });
 
 async function until(fn, ms = 30_000) {
   const end = Date.now() + ms;
@@ -155,6 +159,20 @@ const inspect = (page) =>
 
 async function reader(label, url, expectCsp) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  await ctx.addInitScript(() => {
+    window.__csp = [];
+    // Not counted: the favicon request, and the report for a pdf object that has no
+    // data when parsed (single-file, before the reader script gives it its blob url).
+    // Browsers check that empty url against object-src and report the page itself
+    // (Chromium an empty uri, WebKit the page url) and load nothing; a blocked pdf
+    // would name the blob or paper.pdf instead.
+    document.addEventListener('securitypolicyviolation', (e) => {
+      if (e.blockedURI.endsWith('/favicon.ico')) return;
+      if (e.violatedDirective === 'object-src' && !/blob|data|paper\.pdf/.test(e.blockedURI))
+        return;
+      window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
+    });
+  });
   const page = await ctx.newPage();
   await page.goto(url);
   const all = await until(async () => {
@@ -193,6 +211,12 @@ async function reader(label, url, expectCsp) {
     s.frames.every((f) => f.caption.trim().length > 0),
   );
   check(`${label}: the reader's meta CSP is the exporter's`, s.csp === expectCsp, s.csp);
+  const violations = await page.evaluate(() => window.__csp);
+  check(
+    `${label}: the reader's own page (pdf embed included) breaks no CSP directive`,
+    violations.length === 0,
+    violations.join('; '),
+  );
   return { ctx, page, s };
 }
 
@@ -351,5 +375,5 @@ await browser.close();
 single.server.close();
 folder.server.close();
 leakServer.close();
-console.log(failed ? `${failed} check(s) failed` : 'READER PROOFS COMPLETE');
+console.log(failed ? `${failed} check(s) failed` : `READER PROOFS COMPLETE (${engineName})`);
 process.exit(failed ? 1 : 0);
