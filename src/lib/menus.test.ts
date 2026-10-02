@@ -66,6 +66,7 @@ const actions: CommandActions = {
   makeOffline: noop,
   showPrecheck: noop,
   installInteractive: noop,
+  showWidgets: noop,
   toggleAutoCompile: noop,
   exportPdf: noop,
   newFromTemplate: noop,
@@ -323,5 +324,23 @@ describe('install interactive package command', () => {
     expect(find({ ...baseCtx, hasProject: false }).enabled).toBe(false);
     const ids = paletteCommands(buildMenus(baseCtx, actions)).map((c) => c.id);
     expect(ids).toContain('tools.install-interactive');
+  });
+});
+
+describe('widgets panel command', () => {
+  it('is View > Widgets, matching the panel the MCP userAction names', async () => {
+    const { paletteCommands } = await import('./palette');
+    const { WIDGETS_PANEL_PATH } = await import('./widgets.view');
+    const find = (ctx: MenuContext) => {
+      const view = buildMenus(ctx, actions).find((s) => s.id === 'view')!;
+      return { view, cmd: view.commands.find((c) => c.id === 'view.widgets')! };
+    };
+    const { view, cmd } = find(baseCtx);
+    expect(`${view.title} > ${cmd.label}`).toBe(WIDGETS_PANEL_PATH);
+    expect(cmd.enabled).toBe(true);
+    expect(find({ ...baseCtx, hasProject: false }).cmd.enabled).toBe(false);
+    expect(paletteCommands(buildMenus(baseCtx, actions)).map((c) => c.id)).toContain(
+      'view.widgets',
+    );
   });
 });
