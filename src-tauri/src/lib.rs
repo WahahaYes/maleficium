@@ -16,6 +16,13 @@ pub fn run() {
         .manage(maleficium_core::Core::default())
         .manage(poster::Renders::default())
         .register_asynchronous_uri_scheme_protocol(poster::SCHEME, poster::protocol)
+        .setup(|app| {
+            // Compiles render missing auto-posters in this process.
+            let renderer = commands::poster::AppRenderer(app.handle().clone());
+            app.state::<maleficium_core::Core>()
+                .set_poster_renderer(std::sync::Arc::new(renderer));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::api::core_request,
             commands::compile::compile_tex,
