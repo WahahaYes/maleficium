@@ -87,6 +87,14 @@ check("install writes the package", r["ok"] and r.get("file") == "maleficium-int
 sty = os.path.join(ROOT, "maleficium-interactive.sty")
 check("installed bytes match the embedded source",
       open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
+check("first install reports installed", r.get("outcome") == "installed", str(r))
+again = call("interactive_install", {"root_id": "ip"})
+check("a second install is already-current", again["ok"] and again.get("outcome") == "already-current", str(again))
+open(sty, "ab").write(b"% local edit\n")
+mod = call("interactive_install", {"root_id": "ip"})
+check("a modified copy is kept: MCP cannot confirm an overwrite",
+      mod["ok"] and mod.get("outcome") == "needs-confirmation" and open(sty, "rb").read().endswith(b"% local edit\n"), str(mod))
+open(sty, "wb").write(open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
 bad = call("interactive_install", {"root_id": "nope"})
 check("install refuses unknown roots", not bad["ok"], str(bad))
 
