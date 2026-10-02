@@ -35,9 +35,6 @@ import { useBitmapWindow } from '../hooks/useBitmapWindow';
 import { useExternalRefresh } from '../hooks/useExternalRefresh';
 import type { PreviewSource } from '../lib/preview-bus';
 import { useSyncLock } from '../hooks/useSyncLock';
-import { NO_WIDGETS, type WidgetsModel } from '../hooks/useWidgetSession';
-import { useWidgetPlacement } from '../hooks/useWidgetPlacement';
-import { WidgetBanner } from './WidgetOverlay';
 
 export interface PreviewProps {
   pdfUrl: string | null;
@@ -54,8 +51,6 @@ export interface PreviewProps {
   onZoom?: (mode: ZoomMode, percent: number) => void;
   /** The open project's main file: watched for an outside compile while no pdf is shown. */
   mainSource?: PreviewSource | null;
-  /** The shown paper's interactive widgets. */
-  widgets?: WidgetsModel;
 }
 
 /** Page size (PDF points) assumed before a page is probed: A4. */
@@ -81,7 +76,6 @@ export default function Preview({
   zoomActionRef,
   onZoom,
   mainSource = null,
-  widgets = NO_WIDGETS,
 }: PreviewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -231,15 +225,6 @@ export default function Preview({
     scrollToShell,
   });
 
-  const renderSlots = useWidgetPlacement({
-    model: widgets,
-    scrollRef,
-    shellRefs,
-    pageSize,
-    percent: shownPercent,
-    layoutKey: `${docKey}|${JSON.stringify(zoom)}|${pane.width}x${pane.height}|${dimsVersion}|${numPages}`,
-  });
-
   const handleShellClick = (n: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (syncDisabled || !onInverse) return;
     // Text selection wins over navigation: a drag-select ending here leaves
@@ -325,7 +310,6 @@ export default function Preview({
         onZoom={zoomBy}
         onZoomMode={setZoomMode}
       />
-      <WidgetBanner model={widgets} />
       {/* The phase line floats over the pages: it never changes the pane size. */}
       <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
         {phase ? (
@@ -395,7 +379,6 @@ export default function Preview({
                   pointerEvents: 'none',
                 }}
               />
-              {renderSlots(n)}
             </div>
           ))}
         </Box>

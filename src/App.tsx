@@ -9,7 +9,6 @@ import { useDevCamera } from './hooks/useDevCamera';
 import { type EditorViewportHandle } from './components/EditorViewport';
 import EditorPane from './components/EditorPane';
 import PreviewPane from './components/PreviewPane';
-import { useWidgetSession } from './hooks/useWidgetSession';
 import SideColumn from './components/SideColumn';
 import WorkArea from './components/WorkArea';
 import { mainFileTip } from './lib/mainFileTip';
@@ -580,16 +579,6 @@ export default function App({
     pdf: previewDoc?.source ?? null,
     project: root && projectId ? { rootId: projectId, path: root } : null,
   });
-  const widgetsModel = useWidgetSession(
-    previewDoc?.source ?? null,
-    previewDoc?.stamp ?? 0,
-    themeMode === 'dark',
-  );
-  const widgetSession = widgetsModel.session;
-  const runnableWidgets =
-    widgetSession && widgetSession.unavailable.length === 0
-      ? widgetSession.entries.filter((e) => e.poster !== 'no-runtime')
-      : [];
   const menuCtx: MenuContext = {
     hasProject: root != null,
     isProjectFile: isProjectFile(fileName),
@@ -620,14 +609,6 @@ export default function App({
     theme: themeMode,
     density,
     recentProjects,
-    widgets: widgetSession
-      ? {
-          runnable: runnableWidgets.length,
-          run: widgetSession.approval.run,
-          network: widgetSession.approval.network,
-          declaresNetwork: runnableWidgets.some((e) => e.declaresNetwork),
-        }
-      : null,
   };
   const menuActions: CommandActions = {
     openProject: () => {
@@ -729,7 +710,6 @@ export default function App({
     setTheme: (m) => onThemeMode(m),
     setDensity: (d) => onDensityMode(d),
     zoomPreview: (a) => zoomActionRef.current?.(a),
-    setWidgetApproval: widgetsModel.approve,
     compile: () => {
       void compileRef.current();
     },
@@ -907,7 +887,6 @@ export default function App({
             }}
             syncDisabled={compilePhase === 'compiling'}
             zoomActionRef={zoomActionRef}
-            widgets={widgetsModel}
           />
         }
       />

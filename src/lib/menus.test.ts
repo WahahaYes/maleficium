@@ -24,7 +24,6 @@ const baseCtx: MenuContext = {
   theme: 'dark',
   density: 'comfortable',
   recentProjects: [],
-  widgets: null,
 };
 const noop = () => {};
 const actions: CommandActions = {
@@ -76,7 +75,6 @@ const actions: CommandActions = {
   exportBundleFolder: noop,
   exportBundleSingleFile: noop,
   zoomPreview: noop,
-  setWidgetApproval: noop,
   cancelCompile: noop,
   forwardSync: noop,
   showShortcuts: noop,
@@ -160,35 +158,6 @@ describe('command registry', () => {
       .commands.find((c) => c.id === 'view.zoom')!;
     expect(closed.enabled).toBe(false);
     expect(closed.children?.every((k) => !k.enabled)).toBe(true);
-  });
-  it('widget approvals are a View submenu that grants and revokes each scope', () => {
-    const calls: string[] = [];
-    const menu = (widgets: MenuContext['widgets']) =>
-      buildMenus(
-        { ...baseCtx, widgets },
-        { ...actions, setWidgetApproval: (s, g) => calls.push(`${s}:${g}`) },
-      )
-        .find((m) => m.id === 'view')!
-        .commands.find((c) => c.id === 'view.widgets')!;
-    // No widgets that can run: nothing to approve.
-    expect(menu(null).enabled).toBe(false);
-    expect(menu({ runnable: 0, run: false, network: false, declaresNetwork: false }).enabled).toBe(
-      false,
-    );
-    const off = menu({ runnable: 3, run: false, network: false, declaresNetwork: true });
-    expect(off.children?.map((k) => [k.id, k.label, k.checked, k.enabled])).toEqual([
-      ['view.widgets-run', 'Run Widgets', false, true],
-      // Network is its own approval, and only after running is approved.
-      ['view.widgets-network', 'Allow Widget Network', false, false],
-    ]);
-    void off.children?.[0].run?.();
-    const on = menu({ runnable: 3, run: true, network: true, declaresNetwork: true });
-    expect(on.children?.map((k) => [k.checked, k.enabled])).toEqual([
-      [true, true],
-      [true, true],
-    ]);
-    for (const k of on.children ?? []) void k.run?.();
-    expect(calls).toEqual(['run:true', 'run:false', 'network:false']);
   });
   it('no dead placeholder rows survive (every visible row is real)', () => {
     // Context-gated rows (Cancel while idle, Reload with nothing pending,
