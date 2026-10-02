@@ -210,6 +210,30 @@ check("widgets_status reports the mode it cannot change", s.get("autoApprove") i
 os.remove(manifest)
 open(page, "w").write(orig)
 
+# The same origin declared through the macro option instead: the folder is
+# untouched, a recompile records the option, and auto mode still leaves it
+# to the user.
+def recompile():
+    ok, r = mcp.tool("compile_run", {"root_id": "ip", "rel": "main.tex"})
+    job = (r or {}).get("job_id", "") if ok else ""
+    rec = {"status": "not-started"}
+    for _ in range(ROUNDS if job else 0):
+        time.sleep(3)
+        rec = mcp.tool("compile_poll", {"job_id": job, "tail_lines": 5})[1]
+        if rec.get("status") != "running":
+            break
+    return rec.get("status") == "success"
+main = os.path.join(ROOT, "main.tex")
+main_orig = open(main).read()
+open(main, "w").write(main_orig.replace("id=fig-demo,", "id=fig-demo, framedomains=https://player.vimeo.com,"))
+check("a recompile with framedomains= on the html widget succeeds", recompile())
+c = checked()
+good, missing = complete(c, "declared_origins_changed")
+check("an origin added by macro option alone is not auto-approved", good and c["declaredOrigins"]["frameDomains"] == ["https://player.vimeo.com"]
+      and c["digest"] != DIGEST, json.dumps(c)[:300])
+open(main, "w").write(main_orig)
+check("...and the recompile without it is approved again", recompile() and checked().get("status") == "approved")
+
 # A corrupt store fails closed.
 for bad in ["{", "", '{"format": 1}', json.dumps({"format": 2, "root": ROOT, "autoApprove": True, "widgets": {}})]:
     open(store, "w").write(bad)

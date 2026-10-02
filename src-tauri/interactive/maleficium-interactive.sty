@@ -30,6 +30,8 @@
 %   \interactivetable[pdfrows=10]{data/results.csv}
 %   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
+%   \interactive[height=6cm, alt={...},
+%     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
 %
 % Sidecar line (pipe-separated, one per widget):
 %   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
@@ -44,7 +46,13 @@
 % camera-to-world matrix, or pos=x,y,z target=x,y,z up=x,y,z), size=WxH in
 % pixels, background= (transparent or a hex colour without #, e.g. ffffff).
 % Chart: scale= (poster pixels per CSS pixel). Each is an error on any other
-% widget type. The camera's commas are recorded as spaces; the app checks
+% widget type.
+%
+% Origins (html only): framedomains= and resourcedomains= name the https
+% origins the widget may frame or load from, separated by spaces (commas are
+% recorded as spaces), as its folder's widget.json csp.frameDomains and
+% csp.resourceDomains do; the two are joined. They go into that widget's
+% policy only, and the user approves them with the widget. The camera's commas are recorded as spaces; the app checks
 % the numbers. Place the macro after the float's \caption\label for
 % label and figure capture; before it, or outside any float, they stay empty
 % rather than stale.
@@ -112,6 +120,8 @@
 \define@key{mfw}{size}{\def\mfw@p@size{#1}}
 \define@key{mfw}{background}{\def\mfw@p@background{#1}}
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
+\define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
+\define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
 \define@key{mfwsetup}{bundleurl}{\gdef\mfw@bundleurl{#1}}
 \define@key{mfwsetup}{qr}{%
   \def\mfw@tmp{#1}%
@@ -130,6 +140,7 @@
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
   \def\mfw@remote{}\def\mfw@sha{}\def\mfw@data{}\def\mfw@alt{}%
   \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
+  \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}%
 }
 \newcommand{\maleficiumsetup}[1]{\setkeys{mfwsetup}{#1}}
 % The text alternative is required: it becomes the HTML img alt.
@@ -218,6 +229,16 @@
   { \mfw_match:Nn \mfw@p@background { \A(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|transparent)\Z } }
 \cs_new_protected:Npn \mfw@check@scale
   { \mfw_match:Nn \mfw@p@scale { \A[0-9]*\.?[0-9]+\Z } }
+% Origins: commas become spaces (the sidecar splits options on commas);
+% the shape is checked here, every origin itself by the app.
+\cs_new_protected:Npn \mfw_origins:N #1 {
+  \str_set:Nx \l_mfw_cam_str { #1 }
+  \str_replace_all:Nnn \l_mfw_cam_str { , } { ~ }
+  \tl_set:Nx #1 { \l_mfw_cam_str }
+  \mfw_match:Nn #1 { \A\s*https://[a-z0-9.:\-]+(?:\s+https://[a-z0-9.:\-]+)*\s*\Z }
+}
+\cs_new_protected:Npn \mfw@check@framedomains { \mfw_origins:N \mfw@p@framedomains }
+\cs_new_protected:Npn \mfw@check@resourcedomains { \mfw_origins:N \mfw@p@resourcedomains }
 % Record strings as the poster map holds them: detokenized, every run of
 % white space one space (TeX folds them when it reads the map back).
 \str_new:N \l_mfw_fold_str
@@ -485,7 +506,7 @@
 % -- poster parameters ---------------------------------------------------------
 % #1 the keys this widget type takes (the rest must stay empty), #2 the type.
 \newcommand{\mfw@params}[2]{%
-  \@for\mfw@k:={camera,size,background,scale}\do{%
+  \@for\mfw@k:={camera,size,background,scale,framedomains,resourcedomains}\do{%
     \expandafter\ifx\csname mfw@p@\mfw@k\endcsname\empty\else
       \mfw@ifin{\mfw@k}{#1}{%
         \csname mfw@check@\mfw@k\endcsname
@@ -504,7 +525,9 @@
 }
 \def\mfw@paramhelp{Model widgets take camera={16 numbers} or
   camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600 and
-  background=ffffff or transparent; chart widgets take scale=2.}
+  background=ffffff or transparent; chart widgets take scale=2; html
+  widgets take framedomains= and resourcedomains= (https origins
+  separated by spaces).}
 % \mfw@ifin{<key macro>}{<comma list>}{<yes>}{<no>}
 \newcommand{\mfw@ifin}[4]{%
   \def\mfw@found{0}%
@@ -618,13 +641,22 @@
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{html}%
-  \mfw@params{}{html}%
+  \mfw@params{framedomains,resourcedomains}{html}%
   \mfw@needposter\mfw@needfile{#2/index.html}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \mfw@posterbox{}{bundle=#2}{\mfw@dims@opt}%
+  \def\mfw@opts{\mfw@dims@opt}%
+  \ifx\mfw@p@framedomains\empty\else
+    \expandafter\def\expandafter\mfw@opts\expandafter{%
+      \mfw@opts,framedomains=\mfw@p@framedomains}%
+  \fi
+  \ifx\mfw@p@resourcedomains\empty\else
+    \expandafter\def\expandafter\mfw@opts\expandafter{%
+      \mfw@opts,resourcedomains=\mfw@p@resourcedomains}%
+  \fi
+  \mfw@posterbox{}{bundle=#2}{\mfw@opts}%
   \mfw@record{\mfw@type}{}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{bundle=#2}{\mfw@dims@opt}%
+    {\mfw@poster}{bundle=#2}{\mfw@opts}%
   \mfw@emit
 }
 

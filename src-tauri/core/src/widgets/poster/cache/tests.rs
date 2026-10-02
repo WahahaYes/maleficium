@@ -600,6 +600,7 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
     let target = WidgetTarget {
         id: "fig-demo".into(),
         path: "widgets/demo".into(),
+        option_origins: Default::default(),
     };
     let approve = || {
         let d = widget_approval::check_at(&base, cx, &id, &target)

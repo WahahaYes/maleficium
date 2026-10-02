@@ -348,6 +348,7 @@ impl Html {
         WidgetTarget {
             id: "fig-demo".into(),
             path: "widgets/demo".into(),
+            option_origins: Default::default(),
         }
     }
     fn digest(&self) -> String {
@@ -566,7 +567,7 @@ fn auto_approval_never_covers_new_declared_origins_and_origins_stay_off() {
     std::fs::remove_file(h.marker()).unwrap();
     h.write(
         "widget.json",
-        r#"{"csp":{"connectDomains":["https://api.example.org"]}}"#,
+        r#"{"csp":{"connectDomains":["https://api.example.org"],"frameDomains":["https://embed.example.org"]}}"#,
     );
     let (res, seen) = h.run(&h.req());
     assert_eq!(
@@ -581,7 +582,10 @@ fn auto_approval_never_covers_new_declared_origins_and_origins_stay_off() {
     assert!(matches!(res, Ok(PosterOutcome::Rendered(_))), "{res:?}");
     let doc = seen.unwrap();
     assert!(
-        doc.contains("connect-src 'none'") && !doc.contains("api.example.org"),
+        doc.contains("connect-src 'none'")
+            && !doc.contains("api.example.org")
+            && !doc.contains("frame-src")
+            && !doc.contains("embed.example.org"),
         "{doc}"
     );
 }

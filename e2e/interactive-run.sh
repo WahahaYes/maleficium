@@ -208,6 +208,8 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-noalt.tex", "alt= is required"),
                       ("bad-option.tex", "`zoom' undefined in families `mfw'"),
                       ("bad-param.tex", "camera= does not apply to chart widgets"),
+                      ("bad-origins.tex", "framedomains= `http://a.example.org' is malformed"),
+                      ("bad-origins-type.tex", "framedomains= does not apply to video widgets"),
                       ("bad-size.tex", "size= `large' is malformed")]:
     fr = compile(bad_doc, rounds=15)
     flog = (fr.get("log") or "") + "\n" + "\n".join(fr.get("lines") or [])

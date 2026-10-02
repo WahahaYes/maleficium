@@ -551,3 +551,172 @@ fn build_pdf(page: &str) -> Vec<u8> {
     );
     out
 }
+
+#[test]
+fn an_origin_is_https_host_and_port_and_nothing_else() {
+    for good in [
+        "https://www.youtube-nocookie.com",
+        "https://player.vimeo.com",
+        "https://127.0.0.1:8443",
+        "https://a.org:65535",
+        "https://x",
+        &format!("https://{}.org", "a".repeat(63)),
+    ] {
+        assert!(origin_ok(good), "{good}");
+    }
+    for bad in [
+        "http://a.org",
+        "HTTPS://a.org",
+        "https://A.org",
+        "https://*.a.org",
+        "https://*",
+        "*",
+        "'self'",
+        "'none'",
+        "https:",
+        "https://",
+        "https://a.org/",
+        "https://a.org/path",
+        "https://a.org?x",
+        "https://a.org#x",
+        "https://user@a.org",
+        "https://user:pw@a.org",
+        "https://a.org:",
+        "https://a.org:0",
+        "https://a.org:0443",
+        "https://a.org:65536",
+        "https://a.org:443:1",
+        "https://a..org",
+        "https://.a.org",
+        "https://a.org.",
+        "https://-a.org",
+        "https://a-.org",
+        "https://a.org; script-src *",
+        "https://a.org https://b.org",
+        "https://a.org\n",
+        "https://[::1]",
+        "https://xn--bcher-kva.example\u{0}",
+        "data:text/html,x",
+        "blob:https://a.org/x",
+        "javascript:alert(1)",
+        "ws://a.org",
+        "wss://a.org",
+        "filesystem:https://a.org",
+        &format!("https://{}.org", "a".repeat(64)),
+        &format!("https://{}", ["abcdefghij"; 26].join(".")),
+    ] {
+        assert!(!origin_ok(bad), "{bad:?}");
+    }
+}
+
+fn html_sidecar_with(options: &str) -> String {
+    format!("mfw 1\nwidget|a-1|html||||house|p.png|bundle=w/demo/|height=1pt{options}|Demo\n")
+}
+
+/// One html widget in `w/demo/` whose sidecar options end with `options`.
+fn embed_project(cx: &Core, name: &str, options: &str) -> (String, PathBuf, PathBuf) {
+    let (id, root, out) = compiled(
+        cx,
+        name,
+        "main.tex",
+        Some(&annotated_pdf()),
+        Some(&html_sidecar_with(options)),
+    );
+    let b = root.join("w/demo");
+    std::fs::create_dir_all(&b).unwrap();
+    std::fs::write(b.join("index.html"), "x").unwrap();
+    (id, root, out)
+}
+
+#[test]
+fn macro_options_declare_frame_and_resource_origins_joined_with_widget_json() {
+    let cx = &Core::default();
+    let (id, root, out) = embed_project(
+        cx,
+        "optorigins",
+        ",framedomains=https://b.org https://a.org https://b.org,resourcedomains=https://cdn.org",
+    );
+    let b = root.join("w/demo");
+    let w = widgets(cx, &id, "main.tex").unwrap().widgets[0].clone();
+    let csp = w.csp.clone().unwrap();
+    assert_eq!(csp.frame_domains, ["https://a.org", "https://b.org"]);
+    assert_eq!(csp.resource_domains, ["https://cdn.org"]);
+    // The option itself is kept in canonical form: sorted, deduplicated.
+    assert!(w
+        .options
+        .iter()
+        .any(|o| o.key == "framedomains" && o.value == "https://a.org https://b.org"));
+
+    std::fs::write(
+        b.join("widget.json"),
+        r#"{"csp":{"frameDomains":["https://c.org","https://a.org"],"connectDomains":["https://api.org"]}}"#,
+    )
+    .unwrap();
+    let csp = widgets(cx, &id, "main.tex").unwrap().widgets[0]
+        .csp
+        .clone()
+        .unwrap();
+    assert_eq!(
+        csp.frame_domains,
+        ["https://a.org", "https://b.org", "https://c.org"]
+    );
+    assert_eq!(csp.connect_domains, ["https://api.org"]);
+    let _ = std::fs::remove_dir_all(out);
+}
+
+#[test]
+fn bad_origin_options_and_too_many_origins_fail_the_list() {
+    let many: Vec<String> = (0..MAX_ORIGINS + 1)
+        .map(|i| format!("https://h{i}.org"))
+        .collect();
+    for (i, (opts, want)) in [
+        (",framedomains=http://a.org", "only https origins"),
+        (",framedomains=https://*.a.org", "only https origins"),
+        (",resourcedomains=https://a.org/x", "only https origins"),
+        (",framedomains=data:", "only https origins"),
+        (",framedomains=https://u@a.org", "only https origins"),
+        (&format!(",framedomains={}", many.join(" ")), "at most"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cx = &Core::default();
+        let (id, _root, out) = embed_project(cx, &format!("badopt{i}"), opts);
+        let e = widgets(cx, &id, "main.tex").unwrap_err();
+        assert!(e.contains(want), "{opts}: {e}");
+        let _ = std::fs::remove_dir_all(out);
+    }
+    // Over the cap only together: options and widget.json share one budget.
+    let half: Vec<String> = (0..MAX_ORIGINS / 2 + 1)
+        .map(|i| format!("https://o{i}.org"))
+        .collect();
+    let cx = &Core::default();
+    let (id, root, out) = embed_project(cx, "budget", &format!(",framedomains={}", half.join(" ")));
+    assert!(widgets(cx, &id, "main.tex").is_ok());
+    let more: Vec<String> = (0..MAX_ORIGINS / 2)
+        .map(|i| format!("\"https://m{i}.org\""))
+        .collect();
+    std::fs::write(
+        root.join("w/demo/widget.json"),
+        format!(r#"{{"csp":{{"resourceDomains":[{}]}}}}"#, more.join(",")),
+    )
+    .unwrap();
+    let e = widgets(cx, &id, "main.tex").unwrap_err();
+    assert!(e.contains("at most"), "{e}");
+    let _ = std::fs::remove_dir_all(out);
+}
+
+#[test]
+fn origin_options_apply_only_to_html_widgets() {
+    let e = params::canonical(WidgetType::Model, "framedomains", "https://a.org").unwrap_err();
+    assert!(e.contains("does not apply"), "{e}");
+    assert_eq!(
+        params::canonical(
+            WidgetType::Html,
+            "framedomains",
+            " https://b.org  https://a.org "
+        )
+        .unwrap(),
+        "https://a.org https://b.org"
+    );
+}

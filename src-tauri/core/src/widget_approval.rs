@@ -66,13 +66,16 @@ pub enum ApprovedVia {
     Auto,
 }
 
-/// One html widget to check: its id (for people) and its folder, relative
-/// to the project root (the binding).
+/// One html widget to check: its id (for people), its folder, relative to
+/// the project root (the binding), and the origins its macro options
+/// declare (the folder's `widget.json` adds its own when snapshotted).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetTarget {
     pub id: String,
     pub path: String,
+    #[serde(default)]
+    pub option_origins: WidgetCsp,
 }
 
 impl WidgetTarget {
@@ -94,6 +97,7 @@ impl WidgetTarget {
         Ok(Some(Self {
             id: w.id.clone(),
             path: dir.to_string_lossy().replace('\\', "/"),
+            option_origins: crate::widgets::option_origins(&w.options),
         }))
     }
 }
@@ -453,7 +457,8 @@ fn rel_key(root: &Path, dir: &Path) -> Result<String, String> {
 }
 
 /// Read `target`'s folder once: confined to the project (no symlink out,
-/// no parent escape), every file hashed with the declared origins.
+/// no parent escape), every file hashed with the declared origins (its
+/// `widget.json` and its macro options together, checked again here).
 pub fn snapshot(cx: &Core, root_id: &str, target: &WidgetTarget) -> Result<WidgetSnapshot, String> {
     let id = &target.id;
     let root = crate::fs::session_root(cx, root_id)?;
@@ -466,7 +471,7 @@ pub fn snapshot(cx: &Core, root_id: &str, target: &WidgetTarget) -> Result<Widge
     let mut files = BTreeMap::new();
     let mut total = 0;
     walk(&dir, &dir, "", &mut files, &mut total).map_err(|e| format!("widget {id}: {e}"))?;
-    let origins = match files.get(crate::widgets::BUNDLE_MANIFEST) {
+    let manifest = match files.get(crate::widgets::BUNDLE_MANIFEST) {
         Some(bytes) => {
             let text = std::str::from_utf8(bytes).map_err(|_| {
                 format!(
@@ -478,7 +483,11 @@ pub fn snapshot(cx: &Core, root_id: &str, target: &WidgetTarget) -> Result<Widge
         }
         None => WidgetCsp::default(),
     };
-    let origins = normalized(&origins);
+    let origins = normalized(&crate::widgets::declared_origins(
+        id,
+        &manifest,
+        &target.option_origins,
+    )?);
     let digest = digest(&files, &origins);
     Ok(WidgetSnapshot {
         dir,
