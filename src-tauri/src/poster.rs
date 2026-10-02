@@ -10,7 +10,8 @@
 //! scheme answers only the window that owns a live job, so nothing else can
 //! read a job's sources or post its result. The core decides everything
 //! about the job (`maleficium_core::widgets::poster`); this module only runs
-//! it.
+//! it. Speculative loading is off in the window before the host loads
+//! (`crate::speculative`).
 
 use maleficium_core::widgets::poster::PosterJob;
 use std::collections::HashMap;
@@ -190,7 +191,10 @@ pub fn render<R: Runtime>(app: &AppHandle<R>, job: Arc<PosterJob>) -> Result<Str
             done: tx,
         },
     );
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::CustomProtocol(host_url()))
+    // The window opens blank; speculative loading goes off before the host
+    // page (and the widget in it) is navigated to, in the same queue.
+    let blank = tauri::Url::parse("about:blank").expect("a static url parses");
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(blank))
         .title("Maleficium poster")
         .visible(false)
         .focused(false)
@@ -204,12 +208,18 @@ pub fn render<R: Runtime>(app: &AppHandle<R>, job: Arc<PosterJob>) -> Result<Str
             "widget {widget}: cannot open the poster renderer: {e}"
         )),
         Ok(win) => {
-            let r = rx.recv_timeout(timeout).unwrap_or_else(|_| {
-                Err(format!(
-                    "widget {widget}: the runtime gave no poster within {} ms; its renderer was killed",
-                    timeout.as_millis()
-                ))
-            });
+            crate::speculative::off(&win);
+            let r = match win.navigate(host_url()) {
+                Err(e) => Err(format!(
+                    "widget {widget}: cannot load the poster host: {e}"
+                )),
+                Ok(()) => rx.recv_timeout(timeout).unwrap_or_else(|_| {
+                    Err(format!(
+                        "widget {widget}: the runtime gave no poster within {} ms; its renderer was killed",
+                        timeout.as_millis()
+                    ))
+                }),
+            };
             kill(&win);
             r
         }
