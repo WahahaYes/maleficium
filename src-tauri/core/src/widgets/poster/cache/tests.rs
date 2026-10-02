@@ -712,6 +712,43 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
 }
 
 #[test]
+fn an_html_widget_with_its_own_poster_still_asks_for_approval() {
+    let cx = &Core::default();
+    // The real sidecar: the demo keeps poster=figures/demo.png.
+    let (id, root) = project(cx, "html-explicit");
+    let base = crate::test_scratch::dir("cache-html-explicit-appdata");
+    let _ = std::fs::remove_dir_all(&base);
+    let needed = approvals_needed_at(&base, cx, &id, "main.tex");
+    assert_eq!(needed.len(), 1, "{needed:?}");
+    assert_eq!(needed[0].widget, "fig-demo");
+    assert_eq!(needed[0].path, "widgets/demo");
+    assert_eq!(
+        needed[0].cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
+    widget_approval::approve_at(
+        &base,
+        cx,
+        &widget_approval::WidgetApproveParams {
+            root_id: id.clone(),
+            main_rel: "main.tex".into(),
+            widget: "fig-demo".into(),
+            digest: needed[0].digest.clone(),
+        },
+    )
+    .unwrap();
+    assert!(approvals_needed_at(&base, cx, &id, "main.tex").is_empty());
+    std::fs::write(root.join("widgets/demo/index.html"), "<p>edited</p>").unwrap();
+    let again = approvals_needed_at(&base, cx, &id, "main.tex");
+    assert_eq!(
+        again[0].cause,
+        maleficium_events::WidgetApprovalCause::ChangedSinceApproval
+    );
+    assert_ne!(again[0].digest, needed[0].digest);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn an_html_widget_has_no_runtime_key() {
     let cx = &Core::default();
     let (id, _root) = project(cx, "htmlkey");
