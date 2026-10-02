@@ -303,6 +303,83 @@ check("previews leave the project tree unchanged (porcelain)", status_after == s
 pbad = call("preview_bundle", {"root_id": "nope", "main_rel": "main.tex"})
 check("preview of an unknown project is refused", not pbad["ok"], str(pbad)[:200])
 
+# Declared frame origins. Three https listeners on loopback (started later
+# by reader-run.mjs, one self-signed certificate) play a widget.json origin
+# (A), a macro-option origin (B) and an origin nobody declared (U). fig-embed
+# declares A in widget.json and frames A and U; fig-macro declares B with
+# framedomains= and frames B and A (A is fig-embed's, not its own).
+import socket
+EMBED = os.path.join(scratch, "embed")
+os.makedirs(EMBED, exist_ok=True)
+cert, key = os.path.join(EMBED, "cert.pem"), os.path.join(EMBED, "key.pem")
+ssl_ok = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+                         "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1"],
+                        capture_output=True).returncode == 0
+check("embed: a self-signed certificate for the loopback origins", ssl_ok)
+def free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+PA, PB, PU = free_port(), free_port(), free_port()
+A, B, U = (f"https://127.0.0.1:{p}" for p in (PA, PB, PU))
+open(os.path.join(EMBED, "ports"), "w").write(f"{PA},{PB},{PU}")
+for folder, frames in [("embed", [f"{A}/w1-declared", f"{U}/w1-undeclared"]),
+                       ("macro", [f"{B}/w2-declared", f"{A}/w2-cross"])]:
+    d = os.path.join(ROOT, "widgets", folder)
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "index.html"), "w").write(
+        f"<!doctype html><title>{folder}</title><p>{folder}</p>"
+        + "".join(f'<iframe src="{u}" width="80" height="40"></iframe>' for u in frames))
+json.dump({"csp": {"frameDomains": [A]}}, open(os.path.join(ROOT, "widgets/embed/widget.json"), "w"))
+open(os.path.join(ROOT, "embed.tex"), "w").write(r"""\documentclass{article}
+\usepackage{maleficium-interactive}
+\begin{document}
+\interactive[height=3cm, id=fig-embed, alt={Frames its declared origin and an undeclared one}]{widgets/embed/}
+
+\interactive[height=3cm, id=fig-macro, alt={Frames its macro origin and the other widget's},
+  framedomains=%s]{widgets/macro/}
+\end{document}
+""" % B)
+erec = compile("embed.tex")
+check("embed: the two-widget variant compiles", erec.get("status") == "success", str(erec)[:300])
+wl = call("widgets", {"root_id": "ip", "main_rel": "embed.tex"})
+csps = {w["id"]: w.get("csp") for w in wl.get("widgets", [])} if wl["ok"] else {}
+check("embed: the widget list carries each widget's own declared origins",
+      csps.get("fig-embed", {}).get("frameDomains") == [A] and csps.get("fig-macro", {}).get("frameDomains") == [B], str(wl)[:300])
+st = call("widgets_status", {"root_id": "ip", "main_rel": "embed.tex"})
+listed = {w["widget"]: w for w in st.get("widgets", [])} if st["ok"] else {}
+check("embed: both widgets await approval with their declared origins",
+      all(listed.get(i, {}).get("status") == "approval_required" for i in ("fig-embed", "fig-macro"))
+      and listed["fig-macro"]["declaredOrigins"]["frameDomains"] == [B], str(st)[:300])
+for profile, name in [("single-file", "embed-single.html"), ("folder", "embed-folder")]:
+    r = export(profile, name, main="embed.tex")
+    check(f"embed: {profile} export succeeds", r["ok"], str(r)[:300])
+    if not r["ok"]:
+        continue
+    dest = os.path.join(OUT, name)
+    m, html = manifest_of(profile, dest)
+    by = {w["id"]: w for w in m["widgets"]}
+    check(f"embed: {profile} manifest validates and records each widget's csp",
+          not schema_errors(m) and by["fig-embed"].get("csp") == {"connectDomains": [], "resourceDomains": [], "frameDomains": [A]}
+          and by["fig-macro"]["csp"]["frameDomains"] == [B] and "framedomains" not in by["fig-macro"].get("options", {}),
+          str(schema_errors(m)) + str(by)[:300])
+    if profile == "single-file":
+        docs = json.loads(re.search(r'<script type="application/json" id="mfw-widgets">(.*?)</script>', html, re.S).group(1))
+        reader = html
+    else:
+        docs = {w: open(os.path.join(dest, f"widgets/{w}/index.html"), encoding="utf-8").read() for w in by}
+        reader = open(os.path.join(dest, "index.html"), encoding="utf-8").read()
+    pol = {w: re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', d).group(1) for w, d in docs.items()}
+    check(f"embed: {profile} each widget's policy frames its own origin only",
+          f"frame-src {A};" in pol["fig-embed"] and B not in pol["fig-embed"]
+          and f"frame-src {B};" in pol["fig-macro"] and A not in pol["fig-macro"]
+          and all(U not in p for p in pol.values()), str(pol))
+    rpol = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', reader).group(1)
+    want = "frame-src " + " ".join(sorted([A, B])) if profile == "single-file" else "frame-src 'self'"
+    check(f"embed: {profile} reader frame-src is {want}", want in rpol and U not in rpol and rpol.count("frame-src") == 1, rpol)
+
 mcp.p.kill()
 
 # No network: the same exports in a process inside an empty network
@@ -327,10 +404,14 @@ EOF
 driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "export run failed"
 
-# The companion reader, in each headless browser, over the bundles just exported.
+# The companion reader, in each headless browser, over the bundles just
+# exported, then the declared-origin cells over the two-widget variant.
 for browser in chromium firefox webkit; do
-  timeout 300 node "$DEVROOT/e2e/reader-run.mjs" --single "$SCRATCH/out/single.html" \
-    --folder "$SCRATCH/out/folder" --browser "$browser" || fail "reader run failed in $browser"
+  timeout 400 node "$DEVROOT/e2e/reader-run.mjs" --single "$SCRATCH/out/single.html" \
+    --folder "$SCRATCH/out/folder" --browser "$browser" \
+    --embed-single "$SCRATCH/out/embed-single.html" --embed-folder "$SCRATCH/out/embed-folder" \
+    --embed-ports "$(cat "$SCRATCH/embed/ports")" \
+    --cert "$SCRATCH/embed/cert.pem" --key "$SCRATCH/embed/key.pem" || fail "reader run failed in $browser"
 done
 
 echo ""
