@@ -98,7 +98,7 @@ fn has_documentclass(content: &str) -> bool {
 }
 
 /// Folders the scan never descends into: version control, build outputs,
-/// and the trash staging dir.
+/// the trash staging dir and the poster cache.
 fn walk_tex(root: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
@@ -107,7 +107,11 @@ fn walk_tex(root: &Path, out: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name == ".git" || name == "out" || name == ".maleficium-trash" {
+            if name == ".git"
+                || name == "out"
+                || name == ".maleficium-trash"
+                || name == ".maleficium"
+            {
                 continue;
             }
             walk_tex(&path, out);
