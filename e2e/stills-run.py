@@ -1013,6 +1013,14 @@ def state10():
     window_size(1600, 900)
     open_project()
     click_editor()
+    # The first compile fails on the missing package (and caches the bundle
+    # index); the second then warns before compiling.
+    m_miss = now_ms()
+    key("ctrl+r")
+    wait_event("compile.missing", m_miss, 300)
+    wait_event("compile.finish", m_miss, 300)
+    shot("10-interactive-compile-error")
+    click_editor()
     m_warn = now_ms()
     key("ctrl+r")
     wait_event("compile.precheck", m_warn, 120)
