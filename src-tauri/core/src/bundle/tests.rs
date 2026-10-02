@@ -907,3 +907,118 @@ fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
         assert!(!outside.is_match(&html), "{name}: no external load");
     }
 }
+
+/// The fixture with its chart turned into a second html widget whose macro
+/// options declare a frame origin, beside fig-demo's `widget.json` one.
+fn two_embeds() -> Project {
+    let sidecar = REAL_SIDECAR.replace(
+        "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|",
+        "widget|fig-chart|html||||house|figures/chart.png|bundle=widgets/other/|height=142.26378pt,framedomains=https://b.example.org|",
+    );
+    assert_ne!(sidecar, REAL_SIDECAR);
+    let p = project("embeds", &sidecar);
+    std::fs::write(
+        p.root.join("widgets/demo/widget.json"),
+        r#"{"csp":{"frameDomains":["https://a.example.org:8443"]}}"#,
+    )
+    .unwrap();
+    let other = p.root.join("widgets/other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join("index.html"), "<!doctype html><p>other</p>").unwrap();
+    p
+}
+
+#[test]
+fn declared_frame_origins_reach_only_their_own_widget_and_the_reader_union() {
+    let p = two_embeds();
+    let doc_policy = |html: &str| {
+        regex::Regex::new(r#"<meta http-equiv="Content-Security-Policy" content="([^"]*)">"#)
+            .unwrap()
+            .captures(html)
+            .unwrap()[1]
+            .to_string()
+    };
+    // Folder: each widget's own document names its own origins and no other.
+    let d = dest(&p, "folder");
+    export(&p, &d, BundleProfile::Folder).unwrap();
+    let doc = |id: &str| {
+        std::fs::read_to_string(PathBuf::from(&d).join(format!("widgets/{id}/index.html"))).unwrap()
+    };
+    let demo = doc_policy(&doc("fig-demo"));
+    let other = doc_policy(&doc("fig-chart"));
+    assert!(
+        demo.contains("frame-src https://a.example.org:8443;"),
+        "{demo}"
+    );
+    assert!(!demo.contains("b.example.org"), "{demo}");
+    assert!(
+        other.contains("frame-src https://b.example.org;"),
+        "{other}"
+    );
+    assert!(!other.contains("a.example.org"), "{other}");
+    for id in ["fig-mesh", "tab-results", "fig-clip"] {
+        let pol = doc_policy(&doc(id));
+        assert!(
+            !pol.contains("frame-src") && !pol.contains("example.org"),
+            "{id}: {pol}"
+        );
+    }
+    let m = manifest_of(Path::new(&d));
+    let w = |id: &str| {
+        m["widgets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        w("fig-demo")["csp"]["frameDomains"],
+        json!(["https://a.example.org:8443"])
+    );
+    assert_eq!(
+        w("fig-chart")["csp"]["frameDomains"],
+        json!(["https://b.example.org"])
+    );
+    assert!(
+        w("fig-chart")
+            .get("options")
+            .and_then(|o| o.get("framedomains"))
+            .is_none(),
+        "origins are the csp, not a runtime option"
+    );
+    assert!(w("fig-mesh").get("csp").is_none());
+    let folder_reader = std::fs::read_to_string(PathBuf::from(&d).join("index.html")).unwrap();
+    assert_eq!(doc_policy(&folder_reader), fold::FOLDER_READER_POLICY);
+
+    // Single-file: widgets are srcdoc documents under the reader's policy,
+    // whose frame-src is exactly the union.
+    let s = dest(&p, "one.html");
+    export(&p, &s, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&s).unwrap();
+    assert_eq!(
+        doc_policy(&html),
+        format!(
+            "{}; frame-src https://a.example.org:8443 https://b.example.org",
+            fold::SINGLE_FILE_READER_POLICY
+        )
+    );
+    let docs = island_json(&html, "mfw-widgets");
+    let demo = doc_policy(docs["fig-demo"].as_str().unwrap());
+    let other = doc_policy(docs["fig-chart"].as_str().unwrap());
+    assert!(
+        demo.contains("frame-src https://a.example.org:8443;") && !demo.contains("b.example.org")
+    );
+    assert!(other.contains("frame-src https://b.example.org;") && !other.contains("a.example.org"));
+}
+
+#[test]
+fn a_bundle_without_declared_frames_keeps_the_strict_single_file_reader() {
+    let p = project("noframes", REAL_SIDECAR);
+    let s = dest(&p, "one.html");
+    export(&p, &s, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&s).unwrap();
+    assert!(html.contains(&format!("content=\"{}\"", fold::SINGLE_FILE_READER_POLICY)));
+    assert!(!html.contains("frame-src"));
+}

@@ -41,6 +41,29 @@ pub(super) struct Reader<'a> {
     pub pdf: Option<&'a [u8]>,
     /// The `<script type="application/json">` islands the page reads.
     pub islands: &'a str,
+    /// Every frame origin a widget declared, sorted and deduplicated.
+    pub frames: &'a [String],
+}
+
+/// The reader page's policy. A single-file widget is a `srcdoc` document,
+/// which inherits this policy, so a frame it embeds must pass the reader's
+/// `frame-src` as well as its own: that directive is exactly the union of
+/// the declared frame origins, and absent (`default-src 'none'`) when none
+/// is declared. Each widget's own policy still names only its origins. A
+/// folder widget is a document of its own and does not inherit, so the
+/// folder reader stays `frame-src 'self'`.
+pub(super) fn policy(folder: bool, frames: &[String]) -> String {
+    if folder {
+        return fold::FOLDER_READER_POLICY.to_string();
+    }
+    if frames.is_empty() {
+        return fold::SINGLE_FILE_READER_POLICY.to_string();
+    }
+    format!(
+        "{}; frame-src {}",
+        fold::SINGLE_FILE_READER_POLICY,
+        frames.join(" ")
+    )
 }
 
 /// The token names the house theme defines, so the page hands a widget
@@ -52,11 +75,7 @@ fn token_names(css: &str) -> Vec<String> {
 }
 
 pub(super) fn render(r: &Reader, theme_css: &str) -> String {
-    let policy = if r.folder {
-        fold::FOLDER_READER_POLICY
-    } else {
-        fold::SINGLE_FILE_READER_POLICY
-    };
+    let policy = policy(r.folder, r.frames);
     let by = r
         .authors
         .iter()
@@ -126,7 +145,7 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
         .replace("__FOLDER__", if r.folder { "true" } else { "false" })
         .replace("__TOKENS__", &tokens);
     page.push_str(&format!("<script>{js}</script></body></html>\n"));
-    fold::with_policy(&page, policy)
+    fold::with_policy(&page, &policy)
 }
 
 #[cfg(test)]
@@ -170,6 +189,7 @@ mod tests {
                 widgets,
                 pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
                 islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
+                frames: &[],
             },
             super::super::THEME_CSS,
         )
@@ -216,6 +236,21 @@ mod tests {
         assert!(folder.contains("frame-src 'self'"));
         assert!(single.contains("default-src 'none'") && single.contains("connect-src 'none'"));
         assert!(single.contains("object-src blob:"));
+    }
+
+    #[test]
+    fn the_single_file_frame_src_is_exactly_the_declared_union() {
+        let frames = [
+            "https://a.org".to_string(),
+            "https://b.org:8443".to_string(),
+        ];
+        assert_eq!(policy(false, &[]), fold::SINGLE_FILE_READER_POLICY);
+        let p = policy(false, &frames);
+        assert!(p.starts_with(fold::SINGLE_FILE_READER_POLICY));
+        assert!(p.ends_with("; frame-src https://a.org https://b.org:8443"));
+        assert_eq!(p.matches("frame-src").count(), 1);
+        // A folder widget is its own document: the reader adds nothing.
+        assert_eq!(policy(true, &frames), fold::FOLDER_READER_POLICY);
     }
 
     #[test]

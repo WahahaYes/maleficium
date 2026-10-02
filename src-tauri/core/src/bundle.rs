@@ -172,6 +172,8 @@ struct Planned {
     json: Value,
     id: String,
     doc: String,
+    /// The frame origins this widget declared (empty for runtime widgets).
+    frames: Vec<String>,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -646,7 +648,10 @@ pub(crate) fn role_keys(w: &Widget) -> Result<Vec<(String, &WidgetSource)>, Stri
 pub(crate) fn runtime_options(w: &Widget) -> Map<String, Value> {
     w.options
         .iter()
-        .filter(|o| !matches!(o.key.as_str(), "remote" | "sha256" | "inline"))
+        .filter(|o| {
+            !matches!(o.key.as_str(), "remote" | "sha256" | "inline")
+                && !crate::widgets::ORIGIN_OPTIONS.contains(&o.key.as_str())
+        })
         .map(|o| (o.key.clone(), json_number_or_string(&o.value)))
         .collect()
 }
@@ -709,12 +714,16 @@ fn plan_widget(
     }
 
     let mut sources = Map::new();
-    let policy = fold::widget_policy(w.csp.as_ref());
+    // A widget's declared origins come from the snapshot whose files are
+    // folded, never from an earlier read: the policy and the code match.
+    let mut csp: Option<crate::widgets::WidgetCsp> = None;
 
     let doc: String = if w.kind == WidgetType::Html {
         let target = crate::widget_approval::WidgetTarget::of(p.main_rel, w)?
             .ok_or_else(|| format!("widget {id}: an html widget has no bundle folder"))?;
         let snap = crate::widget_approval::snapshot(p.cx, p.root_id, &target)?;
+        csp = (!snap.origins.is_empty()).then(|| snap.origins.clone());
+        let policy = fold::widget_policy(csp.as_ref());
         let folded =
             fold::fold_bundle(&snap.files, &policy).map_err(|e| format!("widget {id}: {e}"))?;
         if !folded.unfolded.is_empty() {
@@ -777,7 +786,7 @@ fn plan_widget(
         let runtime = w.runtime.as_deref().unwrap_or("");
         let host = runtime_host(runtime)
             .ok_or_else(|| format!("widget {id}: no {runtime} runtime in this build"))?;
-        fold::with_policy(host, &policy)
+        fold::with_policy(host, &fold::widget_policy(None))
     };
     let entry =
         (p.profile != BundleProfile::SingleFile).then(|| format!("widgets/{id}/index.html"));
@@ -814,7 +823,7 @@ fn plan_widget(
     if !opts.is_empty() {
         j.insert("options".into(), Value::Object(opts));
     }
-    if let Some(c) = &w.csp {
+    if let Some(c) = &csp {
         j.insert(
             "csp".into(),
             serde_json::to_value(c).map_err(|e| e.to_string())?,
@@ -824,6 +833,7 @@ fn plan_widget(
         json: Value::Object(j),
         id,
         doc,
+        frames: csp.map(|c| c.frame_domains).unwrap_or_default(),
     })
 }
 
@@ -1299,6 +1309,13 @@ pub fn export_bundle_with(
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n";
     let authors: Vec<String> = meta.authors.iter().map(|a| a.0.clone()).collect();
 
+    // Every frame origin some widget declared: the reader's own frame-src.
+    let frames: Vec<String> = planned
+        .iter()
+        .flat_map(|p| p.frames.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let written = (|| -> Result<(), String> {
         if single {
             let mut assets = Map::new();
@@ -1337,6 +1354,7 @@ pub fn export_bundle_with(
                     widgets: reader_widgets(&list.widgets, &plan.assets)?,
                     pdf: Some(&pdf_bytes),
                     islands: &islands,
+                    frames: &frames,
                 },
                 THEME_CSS,
             );
@@ -1405,6 +1423,7 @@ pub fn export_bundle_with(
                     widgets: reader_widgets(&list.widgets, &plan.assets)?,
                     pdf: None,
                     islands: &islands,
+                    frames: &frames,
                 },
                 THEME_CSS,
             );
