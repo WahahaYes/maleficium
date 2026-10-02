@@ -61,6 +61,9 @@ export type CommandId =
   | 'view.zoom-out'
   | 'view.zoom-fit-width'
   | 'view.zoom-fit-page'
+  | 'view.widgets'
+  | 'view.widgets-run'
+  | 'view.widgets-network'
   | 'appearance.settings'
   | 'tools.compile'
   | 'tools.compile-file'
@@ -117,6 +120,17 @@ export interface MenuContext {
   density: Density;
   /** Most-recent-first project roots for File > Open Recent. */
   recentProjects: string[];
+  /** The shown paper's interactive widgets, or null without any. */
+  widgets: WidgetMenuState | null;
+}
+
+export interface WidgetMenuState {
+  /** Widgets that could run live here (a runtime, a widget host). */
+  runnable: number;
+  run: boolean;
+  network: boolean;
+  /** Some runnable widget declares origins it wants to reach. */
+  declaresNetwork: boolean;
 }
 
 export interface CommandActions {
@@ -155,6 +169,8 @@ export interface CommandActions {
   setTheme: (m: 'dark' | 'light') => void;
   setDensity: (d: Density) => void;
   zoomPreview: (a: ZoomAction) => void;
+  /** The user grants or revokes running widgets, or their network access. */
+  setWidgetApproval: (scope: 'run' | 'network', granted: boolean) => void;
   openRecent: (root: string) => void;
   clearRecents: () => void;
   compile: () => void;
@@ -564,6 +580,27 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
               label: 'Fit Page',
               enabled: ctx.pdfOpen,
               run: () => a.zoomPreview('fit-page'),
+            },
+          ],
+        },
+        {
+          id: 'view.widgets',
+          label: 'Interactive Widgets',
+          enabled: (ctx.widgets?.runnable ?? 0) > 0,
+          children: [
+            {
+              id: 'view.widgets-run',
+              label: 'Run Widgets',
+              checked: ctx.widgets?.run ?? false,
+              enabled: (ctx.widgets?.runnable ?? 0) > 0,
+              run: () => a.setWidgetApproval('run', !(ctx.widgets?.run ?? false)),
+            },
+            {
+              id: 'view.widgets-network',
+              label: 'Allow Widget Network',
+              checked: ctx.widgets?.network ?? false,
+              enabled: !!ctx.widgets?.run && !!ctx.widgets.declaresNetwork,
+              run: () => a.setWidgetApproval('network', !(ctx.widgets?.network ?? false)),
             },
           ],
         },
