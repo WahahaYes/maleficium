@@ -207,6 +207,24 @@ struct WidgetsParams {
     main_rel: String,
 }
 
+/// Unknown fields are refused: there is no approval argument for an agent
+/// to pass, so an `approve` (or anything like it) is an error.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetsStatusParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetCheckParams {
+    root_id: String,
+    main_rel: String,
+    /// The widget id, as `widgets` lists it.
+    widget: String,
+}
+
 /// Unknown fields are refused: the export has no approval argument for an
 /// agent to pass, so an `approved_fetch` (or anything like it) is an error,
 /// not something quietly ignored.
@@ -701,6 +719,77 @@ impl Maleficium {
                 maleficium_events::Actor::Agent,
             )));
             Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Approval state of every html widget (author code) of main_rel's last compile, so you can ask the user about all of them at once. approved: runs as is (via user, or via auto when the project's auto-approval covers a content change). approval_required: a normal result, not an error, with cause (never_approved, changed_since_approval, declared_origins_changed, revoked), digest, declaredOrigins, whatHappens, userAction, agentMustNot and a message to relay. unavailable: the folder cannot be approved (a symlink, a special file, too large). exempt: first-party widgets that need no approval. autoApprove is the project's setting. Only the user approves, revokes or changes auto-approval, in the app's View > Widgets: no tool can, and nothing written into the project counts.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets_status(
+        &self,
+        Parameters(p): Parameters<WidgetsStatusParams>,
+    ) -> Result<Json<core::widget_approval::WidgetsStatus>, String> {
+        self.tool("widgets_status", || {
+            let s = core::widget_approval::widgets_status(&self.cx, &p.root_id, &p.main_rel)?;
+            let changed: Vec<_> = s
+                .widgets
+                .iter()
+                .filter_map(|w| {
+                    core::widget_approval::digest_changed_event(
+                        &p.root_id,
+                        w,
+                        maleficium_events::Actor::Agent,
+                    )
+                })
+                .collect();
+            let _ = core::eventlog::append(&changed);
+            Ok(Json(s))
+        })
+    }
+
+    #[tool(
+        description = "Whether one html widget of main_rel may run: status approved, or status approval_required as a normal result (not an error) carrying the widget id, path, digest, cause, declaredOrigins, whatHappens, userAction (the user approves it in the app's View > Widgets), agentMustNot and a message to relay. Do not poll it in a loop: it only changes when the user acts. Fails (isError) for an unknown or first-party widget, which needs no approval, and for a folder that cannot be approved (a symlink, a special file, outside the project, too large).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widget_check(
+        &self,
+        Parameters(p): Parameters<WidgetCheckParams>,
+    ) -> Result<Json<core::widget_approval::WidgetApprovalStatus>, String> {
+        self.tool("widget_check", || {
+            let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
+            let w = list
+                .widgets
+                .iter()
+                .find(|w| w.id == p.widget)
+                .ok_or_else(|| format!("{} has no widget {}", p.main_rel, p.widget))?;
+            let target =
+                core::widget_approval::WidgetTarget::of(&p.main_rel, w)?.ok_or_else(|| {
+                    format!(
+                        "widget {} runs a first-party runtime: it needs no approval",
+                        p.widget
+                    )
+                })?;
+            let checked =
+                core::widget_approval::check_widget_approval(&self.cx, &p.root_id, &target)?;
+            if let Some(e) = core::widget_approval::digest_changed_event(
+                &p.root_id,
+                &checked.status,
+                maleficium_events::Actor::Agent,
+            ) {
+                let _ = core::eventlog::append(std::slice::from_ref(&e));
+            }
+            Ok(Json(checked.status))
         })
     }
 
@@ -1365,6 +1454,128 @@ mod tests {
             .err()
             .expect("an ungranted root fails");
         assert!(!err.is_empty());
+    }
+
+    /// The approval boundary: no tool approves, revokes or switches
+    /// auto-approval. No tool is named for it, no tool takes a parameter
+    /// for it (and the approval tools refuse unknown fields), and this
+    /// crate never calls the core's user-action functions.
+    #[test]
+    fn no_tool_can_approve_revoke_or_change_auto_approval() {
+        let tools = Maleficium::tool_router().list_all();
+        let banned = ["approv", "revok", "auto", "mode", "trust", "allow"];
+        for t in &tools {
+            let name = t.name.to_lowercase();
+            assert!(!banned.iter().any(|b| name.contains(b)), "tool {name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            let props = schema["properties"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for key in props.keys() {
+                let k = key.to_lowercase();
+                assert!(
+                    !banned.iter().any(|b| k.contains(b)),
+                    "tool {name} takes `{key}`"
+                );
+            }
+        }
+        for name in ["widgets_status", "widget_check"] {
+            let t = tools.iter().find(|t| t.name == name).expect(name);
+            let a = t.annotations.as_ref().expect("annotations");
+            assert_eq!(a.read_only_hint, Some(true), "{name}");
+            assert_eq!(a.open_world_hint, Some(false), "{name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            assert_eq!(schema["additionalProperties"], false, "{name}");
+        }
+        let base = serde_json::json!({"root_id": "r", "main_rel": "main.tex", "widget": "w"});
+        assert!(serde_json::from_value::<WidgetCheckParams>(base.clone()).is_ok());
+        for extra in [
+            "approve",
+            "approved",
+            "auto_approve",
+            "digest",
+            "revoke",
+            "mode",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetCheckParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"root_id": "r", "main_rel": "main.tex"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetsStatusParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+        let src = include_str!("lib.rs");
+        for f in [
+            "approve",
+            "approve_at",
+            "revoke",
+            "revoke_at",
+            "set_auto_approve",
+            "set_auto_at",
+        ] {
+            let call = format!("widget_approval::{f}(");
+            assert!(!src.contains(&call), "the MCP crate calls {call}");
+        }
+    }
+
+    /// A widget nobody approved is a normal result naming what the user
+    /// must do, never a tool error; a first-party one is an error.
+    #[test]
+    fn widget_check_returns_approval_required_as_a_normal_result() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-approval");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("widgets/demo")).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        std::fs::write(dir.join("widgets/demo/index.html"), "<p>demo</p>").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "ap", &root.to_string_lossy()).unwrap();
+        let o = core::outputs::outputs_of(&m.cx, "ap", "main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            o.outdir.join(&o.pdf_name),
+            include_bytes!("../../core/testdata/interactive/main.pdf"),
+        )
+        .unwrap();
+        std::fs::write(
+            o.outdir.join("main.mfw"),
+            include_str!("../../core/testdata/interactive/main.mfw"),
+        )
+        .unwrap();
+        let p = |widget: &str| {
+            Parameters(WidgetCheckParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+                widget: widget.into(),
+            })
+        };
+        let r = m.widget_check(p("fig-demo")).expect("a normal result").0;
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["status"], "approval_required", "{v}");
+        assert_eq!(v["widget"], "fig-demo");
+        assert_eq!(v["path"], "widgets/demo");
+        assert_eq!(v["cause"], "never_approved");
+        assert_eq!(v["digest"].as_str().unwrap().len(), 64);
+        assert!(v["userAction"].as_str().unwrap().contains("View > Widgets"));
+        assert!(m.widget_check(p("fig-mesh")).is_err());
+        assert!(m.widget_check(p("nope")).is_err());
+        let s = m
+            .widgets_status(Parameters(WidgetsStatusParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .expect("status")
+            .0;
+        assert_eq!(s.pending, 1);
+        assert_eq!(s.exempt.len(), 4);
+        let _ = std::fs::remove_dir_all(&o.outdir);
     }
 
     /// Every embedded View is a whole html page that loads nothing from
