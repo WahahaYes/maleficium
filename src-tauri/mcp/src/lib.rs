@@ -223,6 +223,24 @@ struct ExportBundleParams {
     size_cap_bytes: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PreviewBundleParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct PreviewBundleOut {
+    /// Absolute path of the single-file bundle's index.html, outside the project.
+    path: String,
+    bytes: u64,
+    widgets: u32,
+    warnings: Vec<core::bundle::BundleWarning>,
+    /// How to view it: nothing was opened.
+    hint: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -715,6 +733,38 @@ impl Maleficium {
                 maleficium_events::Actor::Agent,
             )));
             Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Preview main_rel's last compile as a paper bundle: exports the single-file profile (everything inline, opens from file://) to index.html in a scratch folder under the app data dir, never in the project, and returns its absolute path. It does not open anything: open the path in a browser yourself, or tell the user to (the app's File menu has Preview in Browser). One scratch folder per project; the next preview replaces it. Same rules as export_bundle: never fetches, no approvals, fails before any compile and for an invalid manifest. The browser sandbox is the only isolation: it is not egress-proof, so treat widgets as untrusted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn preview_bundle(
+        &self,
+        Parameters(p): Parameters<PreviewBundleParams>,
+    ) -> Result<Json<PreviewBundleOut>, String> {
+        self.tool("preview_bundle", || {
+            let r = core::bundle::preview_bundle(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                core::bundle::BundleProfile::SingleFile,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            let r = r?;
+            Ok(Json(PreviewBundleOut {
+                hint: format!("open {} in a browser to view it", r.path),
+                path: r.path,
+                bytes: r.bytes,
+                widgets: r.widgets,
+                warnings: r.warnings,
+            }))
         })
     }
 
@@ -1235,6 +1285,34 @@ mod tests {
     /// it is not read-only; it never fetches, so it is not open-world. An
     /// agent has no way to approve a download: the parameters refuse any
     /// field the schema does not list, and the tool has no approval argument.
+    /// The preview tool takes no destination (the core picks the scratch
+    /// folder) and no approval, and it only returns a path: opening it is the
+    /// app menu's job.
+    #[test]
+    fn preview_bundle_takes_a_project_and_nothing_else() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "preview_bundle")
+            .expect("preview_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(props, ["main_rel", "root_id"]);
+        assert!(serde_json::from_value::<PreviewBundleParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
+        )
+        .is_err());
+    }
+
     #[test]
     fn export_bundle_cannot_be_given_an_approval_and_fails_closed() {
         let tools = Maleficium::tool_router().list_all();
