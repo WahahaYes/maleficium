@@ -634,6 +634,13 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
     );
     assert!(!r.ran.lock().unwrap().contains(&"fig-demo".to_string()));
     assert!(!marker.exists(), "the unapproved probe ran");
+    let needed = approvals_needed_at(&base, cx, &id, "main.tex");
+    assert_eq!(needed.len(), 1, "{needed:?}");
+    assert_eq!(needed[0].widget, "fig-demo");
+    assert_eq!(
+        needed[0].cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
     assert!(!mapped());
     assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).is_none());
 
@@ -647,6 +654,10 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
         "{lines:?}"
     );
     assert!(marker.exists() && mapped());
+    assert!(
+        approvals_needed_at(&base, cx, &id, "main.tex").is_empty(),
+        "an approved widget asks nothing"
+    );
     let png = cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).unwrap();
     assert!(png.is_file());
 
@@ -662,6 +673,10 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
         "{lines:?}"
     );
     assert_eq!(r.ran.lock().unwrap().len(), n, "nothing more ran");
+    assert_eq!(
+        approvals_needed_at(&base, cx, &id, "main.tex")[0].cause,
+        maleficium_events::WidgetApprovalCause::ChangedSinceApproval
+    );
     assert!(!marker.exists());
     assert!(png.is_file(), "the old poster is still there");
     assert!(!mapped(), "a cache hit never stands in for the approval");

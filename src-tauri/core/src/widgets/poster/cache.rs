@@ -250,6 +250,33 @@ pub fn approval_line(r: &ApprovalRequired) -> String {
     )
 }
 
+/// The html widgets of the last compile's widget list that wait for the
+/// user's approval and would otherwise get a poster: the ones the window
+/// asks about.
+pub fn approvals_needed(cx: &Core, root_id: &str, main_rel: &str) -> Vec<ApprovalRequired> {
+    approvals_needed_at(&widget_approval::store_base(), cx, root_id, main_rel)
+}
+
+/// [`approvals_needed`] against the approval store at `base`.
+pub(crate) fn approvals_needed_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+) -> Vec<ApprovalRequired> {
+    let Ok(list) = widgets(cx, root_id, main_rel) else {
+        return Vec::new();
+    };
+    list.widgets
+        .iter()
+        .filter(|w| auto(w))
+        .filter_map(|w| match keyed(base, cx, root_id, main_rel, w) {
+            Ok(Keyed::Approval(r)) => Some(*r),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The cache folders of one main file's folder.
 #[derive(Debug, Clone)]
 pub struct Cache {

@@ -342,6 +342,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           log: 'compile target is outside the project: ' + activeTarget,
           failure: 'engine-error',
           missing: null,
+          approvals: [],
         };
     const logText = compileLogText(r, src?.mainRel);
     setLog(logText);
@@ -363,6 +364,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
     }
+    // The widgets this compile found waiting for the user reach the bus, where
+    // the approval prompt queue picks them up.
+    for (const e of r.approvals) emit(e);
     if (r.ok && r.pdfUrl) {
       finish('success');
       setCompileStart(null);
