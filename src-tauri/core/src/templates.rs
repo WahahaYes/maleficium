@@ -209,6 +209,7 @@ fn instantiate_in(
     }
     let (info, files) = load(base, template)?;
     let dest = parent.join(name);
+    crate::widget_approval::refuse_store_overlap(&dest, &crate::widget_approval::store_base())?;
     write_into(&dest, &files)?;
     Ok(Created {
         root: dest.to_string_lossy().to_string(),

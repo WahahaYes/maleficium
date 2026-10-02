@@ -42,6 +42,7 @@ pub(crate) fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
             "export destination is inside the project: choose a folder outside it",
         ));
     }
+    crate::widget_approval::refuse_store_overlap(&out, &crate::widget_approval::store_base())?;
     Ok(out)
 }
 
