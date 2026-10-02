@@ -19,6 +19,7 @@
 pub(crate) mod fold;
 mod reader;
 
+use crate::widgets::poster::PosterSource;
 use crate::widgets::{Widget, WidgetRect, WidgetSource, WidgetType};
 use crate::Core;
 
@@ -397,6 +398,7 @@ fn paper_meta(tex: &str, stem: &str, warnings: &mut Vec<BundleWarning>) -> Meta 
 struct Plan<'a> {
     cx: &'a Core,
     root_id: &'a str,
+    main_rel: &'a str,
     root: PathBuf,
     main_dir_rel: PathBuf,
     profile: BundleProfile,
@@ -702,17 +704,26 @@ fn plan_widget(
         ));
     }
 
-    // The poster: the table's typeset rows are cropped from the pdf.
+    // The poster is what the pdf shows: the document's own, else the
+    // cached auto-poster, else (a table's typeset rows, a placeholder)
+    // cropped from the pdf.
     let poster_key = format!("{id}-poster");
-    if w.kind == WidgetType::Table {
-        let png = crop_png(pdf, w.page, &w.rect).map_err(|e| format!("widget {id}: {e}"))?;
-        p.add_mem(poster_key.clone(), "png", png, inline_opt)?;
-    } else {
-        let rel = w
-            .poster
-            .as_deref()
-            .ok_or_else(|| format!("widget {id}: it records no poster"))?;
-        p.add_local(poster_key.clone(), &id, rel, inline_opt)?;
+    let cached = crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w);
+    match crate::widgets::poster::poster_source(w, cached.as_deref()) {
+        PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {
+            p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
+        }
+        PosterSource::Cached(png) => {
+            let name = png.file_name().map(|n| n.to_string_lossy().into_owned());
+            let rel = Path::new(crate::widgets::poster::cache::CACHE_DIR)
+                .join(crate::widgets::poster::cache::POSTERS_DIR)
+                .join(name.unwrap_or_default());
+            p.add_local(poster_key.clone(), &id, &rel.to_string_lossy(), inline_opt)?
+        }
+        _ => {
+            let png = crop_png(pdf, w.page, &w.rect).map_err(|e| format!("widget {id}: {e}"))?;
+            p.add_mem(poster_key.clone(), "png", png, inline_opt)?;
+        }
     }
 
     let mut sources = Map::new();
@@ -1203,6 +1214,7 @@ pub fn export_bundle_with(
     let mut plan = Plan {
         cx,
         root_id,
+        main_rel,
         root: root.clone(),
         main_dir_rel: Path::new(main_rel)
             .parent()
