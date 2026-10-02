@@ -19,6 +19,18 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
   || fail "cannot build maleficium-mcp"
 [ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
+# The by-hand route: scripts/playground.sh yields a folder with real media and
+# without the package (the user installs it from the app).
+sh "$DEVROOT/scripts/playground.sh" "$SCRATCH/hand" >/dev/null || fail "playground.sh failed"
+HAND="$SCRATCH/hand/interactive-paper"
+[ -f "$HAND/main.tex" ] && [ ! -e "$HAND/maleficium-interactive.sty" ] \
+  || fail "by-hand copy must hold main.tex and no package"
+[ "$(head -c 4 "$HAND/models/mesh.glb")" = "glTF" ] || fail "model is not a binary glTF"
+[ "$(dd if="$HAND/media/clip.mp4" bs=1 skip=4 count=4 2>/dev/null)" = "ftyp" ] || fail "clip is not an mp4"
+[ -s "$HAND/NOTICE" ] || fail "media provenance NOTICE missing"
+[ ! -e "$HAND/fixture.json" ] || fail "fixture.json leaked into the by-hand copy"
+pass "playground.sh yields a package-free interactive-paper with real media and a NOTICE"
+
 cp -r "$FIXTURE" "$SCRATCH/proj"
 cd "$SCRATCH/proj"
 git init -q
