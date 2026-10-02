@@ -2187,22 +2187,17 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "dunce",
- "gdkx11",
- "gtk",
  "maleficium-core",
  "maleficium-events",
  "maleficium-index",
  "maleficium-mcp",
  "maleficium-structure",
- "maleficium-widget-helper",
- "maleficium-widget-host",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
- "x11",
 ]
 
 [[package]]
@@ -2278,36 +2273,6 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "typed-path",
-]
-
-[[package]]
-name = "maleficium-widget-helper"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "gdk",
- "gdkx11",
- "gio",
- "glib",
- "gtk",
- "javascriptcore-rs",
- "libc",
- "maleficium-widget-host",
- "serde",
- "serde_json",
- "soup3",
- "webkit2gtk",
- "x11",
-]
-
-[[package]]
-name = "maleficium-widget-host"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "libc",
- "serde",
- "serde_json",
 ]
 
 [[package]]
