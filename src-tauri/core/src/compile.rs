@@ -15,6 +15,7 @@ use maleficium_structure::{
 use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
 
 use super::{engine, readiness};
+use crate::widgets::poster::cache as posters;
 
 /// One compile timeout for every adapter: the desktop streaming run and the
 /// MCP job service both give the engine this long before killing it.
@@ -169,6 +170,15 @@ pub fn failure_text(c: &engine::Compiled) -> String {
     format!("bundled tectonic failed: {}", &tail[..end])
 }
 
+/// A status line of the compile's own (not the engine's).
+fn status(text: String) -> CompileLine {
+    CompileLine {
+        stream: maleficium_events::CompileStream::Status,
+        text,
+        signal: None,
+    }
+}
+
 /// Keep what one compile showed: its engine log, and what it says about
 /// the project's offline readiness. Best effort: a failed write only costs
 /// the record, never the compile result.
@@ -269,6 +279,8 @@ pub fn run_blocking(
         signal: None,
     });
 
+    posters::before_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
+
     let id = cx.jobs().next_id();
     let child = Arc::new(Mutex::new(None));
     cx.jobs().live.lock().unwrap().insert(
@@ -302,6 +314,9 @@ pub fn run_blocking(
         }
     };
     settle(cx, root_id, main_rel, &out, &c);
+    if c.status == JobStatus::Success {
+        posters::after_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
+    }
     report(&out, &c, COMPILE_TIMEOUT_SECS)
 }
 
@@ -378,6 +393,7 @@ pub fn run(
                 job.progress.note(l.signal.as_ref());
             }
         };
+        posters::before_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
         let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
             Err(e) => JobRecord {
                 status: JobStatus::Failed,
@@ -389,6 +405,9 @@ pub fn run(
             },
             Ok(c) => {
                 settle(cx, &root_id, &rel, &out, &c);
+                if c.status == JobStatus::Success {
+                    posters::after_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
+                }
                 // The record keeps the whole stream: every run and status line.
                 let (lines, progress) = cx
                     .jobs()
