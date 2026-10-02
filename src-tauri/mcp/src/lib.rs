@@ -498,7 +498,15 @@ impl Maleficium {
 
 #[tool_router]
 impl Maleficium {
-    #[tool(description = "Grant a session project root (absolute directory, canonicalized)")]
+    #[tool(
+        description = "Grant a session project root (absolute directory, canonicalized)",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     fn grant(&self, Parameters(p): Parameters<GrantParams>) -> Result<Json<PathOut>, String> {
         self.tool("grant", || {
             let path = path_string(core::grant_root(&self.cx, &p.root_id, &p.root)?);
@@ -506,7 +514,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "Show a granted session root")]
+    #[tool(
+        description = "Show a granted session root",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     fn info(&self, Parameters(p): Parameters<RootParams>) -> Result<Json<PathOut>, String> {
         self.tool("info", || {
             let path = path_string(core::session_root(&self.cx, &p.root_id)?);
@@ -514,7 +530,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "List one directory level inside a session root")]
+    #[tool(
+        description = "List one directory level inside a session root",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<Json<ListOut>, String> {
         self.tool("list", || {
             let entries = core::list_dir(&self.cx, &p.root_id, p.rel.as_deref().unwrap_or("."))?
@@ -528,7 +552,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "Read a project file as UTF-8 text")]
+    #[tool(
+        description = "Read a project file as UTF-8 text",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     fn read(&self, Parameters(p): Parameters<FileParams>) -> Result<Json<TextOut>, String> {
         self.tool("read", || {
             let text = core::read_text(&self.cx, &p.root_id, &p.rel)?;
@@ -539,6 +571,8 @@ impl Maleficium {
     #[tool(
         description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network. rel optional: without it the job compiles the same main file the app would",
         meta = ui_meta(Some(COMPILE_VIEW_URI), &["model", "app"])
+    ,
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
     )]
     fn compile_run(
         &self,
@@ -575,7 +609,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Poll a compile job; running jobs report lines so far. Pass wait_ms (up to 60000) to wait for the job to finish instead of polling in a loop. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required"
+        description = "Poll a compile job; running jobs report lines so far. Pass wait_ms (up to 60000) to wait for the job to finish instead of polling in a loop. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn compile_poll(
         &self,
@@ -605,7 +645,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Offline readiness of a project: ready (its last compile succeeded from cached TeX files alone, and every tool and system font it used is present), needs-network, needs-tool, needs-font, blocked or unverified, with what it needs and the dependency its last compile lacked"
+        description = "Offline readiness of a project: ready (its last compile succeeded from cached TeX files alone, and every tool and system font it used is present), needs-network, needs-tool, needs-font, blocked or unverified, with what it needs and the dependency its last compile lacked",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn offline_readiness(
         &self,
@@ -619,7 +665,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Stamp of main_rel's compiled pdf (mtimeMs, bytes), or null before any compile: it changes whenever anyone recompiles, so a viewer polls it to refresh"
+        description = "Stamp of main_rel's compiled pdf (mtimeMs, bytes), or null before any compile: it changes whenever anyone recompiles, so a viewer polls it to refresh",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn output_stamp(
         &self,
@@ -633,7 +685,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Copy main_rel's compiled pdf to dest, an absolute path outside the project. Fails before any compile."
+        description = "Copy main_rel's compiled pdf to dest, an absolute path outside the project. Fails before any compile.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn export_pdf(
         &self,
@@ -650,7 +708,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Zip the project's sources to dest, an absolute path outside the project: every file but build outputs, trash, dot files and symlinks, listed root-relative in files."
+        description = "Zip the project's sources to dest, an absolute path outside the project: every file but build outputs, trash, dot files and symlinks, listed root-relative in files.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn export_zip(
         &self,
@@ -664,14 +728,26 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Project templates: the bundled set (article, report, book, letter, beamer, assignment, cv, resume, journal) and the user's own, each with name, description, category and main file"
+        description = "Project templates: the bundled set (article, report, book, letter, beamer, assignment, cv, resume, journal) and the user's own, each with name, description, category and main file",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn templates(&self) -> Result<Json<core::templates::TemplateList>, String> {
         self.tool("templates", || Ok(Json(core::templates::list())))
     }
 
     #[tool(
-        description = "Create parent_dir/name from a template (refused when that folder exists and is not empty). Returns the new root and its main file; grant the root to work in it."
+        description = "Create parent_dir/name from a template (refused when that folder exists and is not empty). Returns the new root and its main file; grant the root to work in it.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     fn new_from_template(
         &self,
@@ -687,7 +763,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path. Never replaces a modified copy (outcome needs-confirmation): only the user can confirm that, in the app."
+        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path. Never replaces a modified copy (outcome needs-confirmation): only the user can confirm that, in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn interactive_install(
         &self,
@@ -859,7 +941,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "Cancel a running compile job")]
+    #[tool(
+        description = "Cancel a running compile job",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
     fn compile_cancel(
         &self,
         Parameters(p): Parameters<CancelParams>,
@@ -871,7 +961,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Forward SyncTeX query: the PDF page showing a line of tex_rel, in the output of main_rel"
+        description = "Forward SyncTeX query: the PDF page showing a line of tex_rel, in the output of main_rel",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn synctex_forward(
         &self,
@@ -892,6 +988,8 @@ impl Maleficium {
         description = "See how part of main_rel's compiled PDF looks: the page and region where a source line (tex_rel + line), a label, or a page landed, with the source lines around it. with_image: true also returns that region rendered as a PNG; use it for layout questions (placement, width, overflow, how a figure or table looks), not to read text. stale is true when the source changed after the last compile.",
         output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Snippet>(),
         meta = ui_meta(Some(SNIPPET_VIEW_URI), &["model", "app"])
+    ,
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     fn snippet(
         &self,
@@ -923,6 +1021,8 @@ impl Maleficium {
         description = "For the snippet View only: re-render a page, or a band of it, as a PNG at another scale",
         output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Rendered>(),
         meta = ui_meta(Some(SNIPPET_VIEW_URI), &["app"])
+    ,
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     fn snippet_render(
         &self,
@@ -949,7 +1049,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Inverse SyncTeX query: the root-relative source file and line at a position in the output of main_rel"
+        description = "Inverse SyncTeX query: the root-relative source file and line at a position in the output of main_rel",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn synctex_inverse(
         &self,
@@ -968,7 +1074,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Delete a project file to the app-local trash, in two calls: without confirm it is refused with the file's absolute path; call again with that absolute path as confirm to delete."
+        description = "Delete a project file to the app-local trash, in two calls: without confirm it is refused with the file's absolute path; call again with that absolute path as confirm to delete.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<Json<DeleteOut>, String> {
         self.tool("delete", || {
@@ -978,7 +1090,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "Restore a trashed file to its original path")]
+    #[tool(
+        description = "Restore a trashed file to its original path",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
     fn undo(&self, Parameters(p): Parameters<UndoParams>) -> Result<Json<PathOut>, String> {
         self.tool("undo", || {
             let path = core::undo_trash(&self.cx, &p.root_id, &p.trash_path)?;
@@ -986,7 +1106,15 @@ impl Maleficium {
         })
     }
 
-    #[tool(description = "Tail the engine log for one main-file dir shard")]
+    #[tool(
+        description = "Tail the engine log for one main-file dir shard",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<Json<TextOut>, String> {
         self.tool("log_tail", || {
             let text = core::log_tail(&self.cx, &p.root_id, &p.rel, p.max_lines.unwrap_or(50))?;
@@ -995,7 +1123,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Outline of one saved file: sections (level 0 chapter .. 4 paragraph) with labels, figures, tables, and input boundaries as marker rows, each with its 1-based line. Reads disk, not unsaved editor buffers; revision changes when the file does."
+        description = "Outline of one saved file: sections (level 0 chapter .. 4 paragraph) with labels, figures, tables, and input boundaries as marker rows, each with its 1-based line. Reads disk, not unsaved editor buffers; revision changes when the file does.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn outline(
         &self,
@@ -1009,7 +1143,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "File graph of a document: every file reachable from main_rel over \\input/\\include/\\subfile (resolved from the main file's directory, as the engine does), with missing files and edges that leave the project flagged. Paths are root-relative."
+        description = "File graph of a document: every file reachable from main_rel over \\input/\\include/\\subfile (resolved from the main file's directory, as the engine does), with missing files and edges that leave the project flagged. Paths are root-relative.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn file_graph(
         &self,
@@ -1025,7 +1165,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Labels and references across the whole document from main_rel: each \\label with file and line (duplicate keys flagged), each \\ref-family use with whether its key is defined."
+        description = "Labels and references across the whole document from main_rel: each \\label with file and line (duplicate keys flagged), each \\ref-family use with whether its key is defined.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn labels_refs(
         &self,
@@ -1041,7 +1187,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Citations across the whole document from main_rel, checked against its \\bibliography/\\addbibresource files: each cite key with file, line, and whether a bib entry defines it."
+        description = "Citations across the whole document from main_rel, checked against its \\bibliography/\\addbibresource files: each cite key with file, line, and whether a bib entry defines it.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn citations(
         &self,
@@ -1057,7 +1209,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Dependency checks over the whole document from main_rel, before compiling: every package or class neither the project nor the TeX bundle provides (all at once), biblatex needing biber (suggests backend=bibtex), shell-escape packages and \\write18, and fontspec fonts not installed. bundleChecked is false until a first compile has cached the bundle index."
+        description = "Dependency checks over the whole document from main_rel, before compiling: every package or class neither the project nor the TeX bundle provides (all at once), biblatex needing biber (suggests backend=bibtex), shell-escape packages and \\write18, and fontspec fonts not installed. bundleChecked is false until a first compile has cached the bundle index.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn precompile_checks(
         &self,
@@ -1073,7 +1231,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Search every text file of the project for literal text (default, case-insensitive) or a regex (regex=true; may span lines). Hits carry root-relative path, 1-based line, UTF-16 column and length, and the line as preview; each file carries its revision. Files reachable from main_rel rank first. Reads saved files. truncated counts hits past max (default 1000); unsearched counts files with no text (binary, over 2 MB, not UTF-8)."
+        description = "Search every text file of the project for literal text (default, case-insensitive) or a regex (regex=true; may span lines). Hits carry root-relative path, 1-based line, UTF-16 column and length, and the line as preview; each file carries its revision. Files reachable from main_rel rank first. Reads saved files. truncated counts hits past max (default 1000); unsearched counts files with no text (binary, over 2 MB, not UTF-8).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn search(
         &self,
@@ -1097,7 +1261,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Preview replacing every match of a search (same pattern and flags as search; no cap) across the project's saved files. Writes nothing. Returns each file's revision, replacement count and before/after lines, plus a token for replace_apply. Regex replacements expand $1 / ${name}."
+        description = "Preview replacing every match of a search (same pattern and flags as search; no cap) across the project's saved files. Writes nothing. Returns each file's revision, replacement count and before/after lines, plus a token for replace_apply. Regex replacements expand $1 / ${name}.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn replace_preview(
         &self,
@@ -1121,7 +1291,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Apply a previewed replace by its token. Refused whole, with nothing written, if any file changed since the preview (preview again). Each file's prior content is kept as one history batch; returns the batch for replace_undo and the files written."
+        description = "Apply a previewed replace by its token. Refused whole, with nothing written, if any file changed since the preview (preview again). Each file's prior content is kept as one history batch; returns the batch for replace_undo and the files written.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     fn replace_apply(
         &self,
@@ -1138,7 +1314,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Undo an applied replace: every file of the batch back as it was before (the replaced state is kept in history too). Returns the files restored."
+        description = "Undo an applied replace: every file of the batch back as it was before (the replaced state is kept in history too). Returns the files restored.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     fn replace_undo(
         &self,
@@ -1152,7 +1334,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Where a label, citation key, macro or input is defined, across the project's saved files: pass kind + key, or rel + line + col to look up what sits there. Returns every definition (a duplicate label lists each) with root-relative path, line, and a one-line summary (the defining line, a bib entry's author, title and year, the macro definition, or the input's first line)."
+        description = "Where a label, citation key, macro or input is defined, across the project's saved files: pass kind + key, or rel + line + col to look up what sits there. Returns every definition (a duplicate label lists each) with root-relative path, line, and a one-line summary (the defining line, a bib entry's author, title and year, the macro definition, or the input's first line).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn definition(
         &self,
@@ -1185,7 +1373,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Find project files by fuzzy name: every query character in order, case-insensitive; file-name and segment-start matches rank first. Returns root-relative paths, best first (default 50)."
+        description = "Find project files by fuzzy name: every query character in order, case-insensitive; file-name and segment-start matches rank first. Returns root-relative paths, best first (default 50).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn find_files(
         &self,
@@ -1204,7 +1398,13 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Structured diagnostics from main_rel's last compile: the engine's errors, and TeX's warnings for undefined references and citations and duplicate labels (placed on the line that uses or defines the key), each with root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100)."
+        description = "Structured diagnostics from main_rel's last compile: the engine's errors, and TeX's warnings for undefined references and citations and duplicate labels (placed on the line that uses or defines the key), each with root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn diagnostics(
         &self,
@@ -1725,5 +1925,443 @@ mod tests {
             assert_eq!(mcp.ok().map(|j| j.0), desktop.ok());
         }
         let _ = std::fs::remove_dir_all(&out.outdir);
+    }
+
+    /// m8ven Tool annotations: every registered tool carries all four hints
+    /// explicitly, so a new tool without them fails here instead of in a rescan.
+    #[test]
+    fn every_tool_carries_all_four_hints() {
+        for t in Maleficium::tool_router().list_all() {
+            let a = t
+                .annotations
+                .as_ref()
+                .unwrap_or_else(|| panic!("tool `{}` lacks annotations", t.name));
+            assert!(
+                a.read_only_hint.is_some(),
+                "tool `{}` lacks read_only_hint",
+                t.name
+            );
+            assert!(
+                a.destructive_hint.is_some(),
+                "tool `{}` lacks destructive_hint",
+                t.name
+            );
+            assert!(
+                a.idempotent_hint.is_some(),
+                "tool `{}` lacks idempotent_hint",
+                t.name
+            );
+            assert!(
+                a.open_world_hint.is_some(),
+                "tool `{}` lacks open_world_hint",
+                t.name
+            );
+        }
+    }
+
+    /// m8ven Test coverage: every registered tool has a case below calling
+    /// its named handler. The router enumeration fails on any tool without one.
+    #[test]
+    fn every_registered_tool_has_a_case_and_runs() {
+        let m = Maleficium::default();
+        let cx = &m.cx;
+        let dir = core::test_scratch::dir("cov");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.tex"),
+            "\\section{Hi}\\label{sec:hi}\nSee~\\ref{sec:hi}.\n",
+        )
+        .unwrap();
+        let canon = dunce::canonicalize(&dir).unwrap();
+        let root = canon.to_string_lossy().to_string();
+        core::grant_root(cx, "cov", &root).unwrap();
+
+        let info = m
+            .info(Parameters(RootParams {
+                root_id: "cov".into(),
+            }))
+            .unwrap();
+        assert_eq!(info.0.path, root);
+
+        let grant = m
+            .grant(Parameters(GrantParams {
+                root_id: "cov2".into(),
+                root: root.clone(),
+            }))
+            .unwrap();
+        assert_eq!(grant.0.path, root);
+
+        let list = m
+            .list(Parameters(ListParams {
+                root_id: "cov".into(),
+                rel: None,
+            }))
+            .unwrap();
+        assert!(list.0.entries.iter().any(|e| e.name == "main.tex"));
+
+        let read = m
+            .read(Parameters(FileParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert!(read.0.text.contains("\\section{Hi}"));
+
+        assert!(m
+            .compile_run(Parameters(CompileRunParams {
+                root_id: "nope".into(),
+                rel: Some("main.tex".into()),
+                networked: None,
+            }))
+            .is_err());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert!(rt
+            .block_on(m.compile_poll(Parameters(CompilePollParams {
+                job_id: "nope".into(),
+                tail_lines: None,
+                wait_ms: Some(0),
+            })))
+            .is_err());
+
+        assert!(m
+            .offline_readiness(Parameters(RootParams {
+                root_id: "cov".into()
+            }))
+            .is_ok());
+
+        let stamp = m
+            .output_stamp(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert!(stamp.0.stamp.is_none());
+
+        let pdf_dest = dir.join("out.pdf").to_string_lossy().to_string();
+        assert!(m
+            .export_pdf(Parameters(ExportPdfParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                dest: pdf_dest,
+            }))
+            .is_err());
+
+        let zip_parent = core::test_scratch::dir("cov-zip");
+        std::fs::create_dir_all(&zip_parent).unwrap();
+        let zip_dest = zip_parent.join("sources.zip").to_string_lossy().to_string();
+        let zip = m
+            .export_zip(Parameters(ExportZipParams {
+                root_id: "cov".into(),
+                dest: zip_dest.clone(),
+            }))
+            .unwrap();
+        assert!(zip.0.files.contains(&"main.tex".to_string()));
+        assert!(std::path::Path::new(&zip_dest).is_file());
+
+        let templates = m.templates().unwrap();
+        assert!(!templates.0.templates.is_empty());
+
+        let tpl_parent = core::test_scratch::dir("cov-tpl");
+        std::fs::create_dir_all(&tpl_parent).unwrap();
+        let created = m
+            .new_from_template(Parameters(NewFromTemplateParams {
+                template: "welcome".into(),
+                parent_dir: tpl_parent.to_string_lossy().to_string(),
+                name: "proj1".into(),
+            }))
+            .unwrap();
+        assert!(std::path::Path::new(&created.0.root)
+            .join(&created.0.main)
+            .is_file());
+
+        let cancel = m.compile_cancel(Parameters(CancelParams {
+            job_id: "nope".into(),
+        }));
+        assert_eq!(cancel.err(), Some("unknown job: nope".to_string()));
+
+        assert!(m
+            .synctex_forward(Parameters(ForwardParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                tex_rel: "main.tex".into(),
+                line: 1,
+            }))
+            .is_err());
+
+        assert!(m
+            .snippet(Parameters(SnippetParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                tex_rel: None,
+                line: None,
+                label: None,
+                page: Some(1),
+                with_image: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .snippet_render(Parameters(SnippetRenderParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                page: 1,
+                region: None,
+                scale: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .synctex_inverse(Parameters(InverseParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                page: 1,
+                x: None,
+                y: None,
+            }))
+            .is_err());
+
+        std::fs::write(dir.join("victim.txt"), "bye").unwrap();
+        let unconfirmed = m.delete(Parameters(DeleteParams {
+            root_id: "cov".into(),
+            rel: "victim.txt".into(),
+            confirm: None,
+        }));
+        assert!(unconfirmed.err().unwrap().contains("victim.txt"));
+        let abs = canon.join("victim.txt").to_string_lossy().to_string();
+        let trashed = m
+            .delete(Parameters(DeleteParams {
+                root_id: "cov".into(),
+                rel: "victim.txt".into(),
+                confirm: Some(abs),
+            }))
+            .unwrap();
+        assert!(!canon.join("victim.txt").exists());
+
+        let restored = m
+            .undo(Parameters(UndoParams {
+                root_id: "cov".into(),
+                trash_path: trashed.0.trash_path,
+            }))
+            .unwrap();
+        assert!(restored.0.path.ends_with("victim.txt"));
+        assert_eq!(
+            std::fs::read_to_string(canon.join("victim.txt")).unwrap(),
+            "bye"
+        );
+
+        assert!(m
+            .log_tail(Parameters(LogTailParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into(),
+                max_lines: None,
+            }))
+            .is_err());
+
+        assert!(m
+            .outline(Parameters(FileParams {
+                root_id: "cov".into(),
+                rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .file_graph(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .labels_refs(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .citations(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+        assert!(m
+            .precompile_checks(Parameters(MainParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into()
+            }))
+            .is_ok());
+
+        let search = m
+            .search(Parameters(SearchParams {
+                root_id: "cov".into(),
+                pattern: "section".into(),
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+                max: None,
+            }))
+            .unwrap();
+        assert!(search.0.hits >= 1);
+
+        let preview = m
+            .replace_preview(Parameters(ReplacePreviewParams {
+                root_id: "cov".into(),
+                pattern: "Hi".into(),
+                replacement: "Hello".into(),
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+            }))
+            .unwrap();
+        assert_eq!(preview.0.replacements, 3);
+        let applied = m
+            .replace_apply(Parameters(ReplaceApplyParams {
+                root_id: "cov".into(),
+                token: preview.0.token,
+            }))
+            .unwrap();
+        assert!(applied.0.written.contains(&"main.tex".to_string()));
+        assert!(std::fs::read_to_string(canon.join("main.tex"))
+            .unwrap()
+            .contains("Hello"));
+        let undone = m
+            .replace_undo(Parameters(ReplaceUndoParams {
+                root_id: "cov".into(),
+                batch: applied.0.batch,
+            }))
+            .unwrap();
+        assert!(undone.0.restored.iter().any(|f| f.rel == "main.tex"));
+        assert!(std::fs::read_to_string(canon.join("main.tex"))
+            .unwrap()
+            .contains("\\section{Hi}"));
+
+        let definition = m
+            .definition(Parameters(DefinitionParams {
+                root_id: "cov".into(),
+                kind: Some(maleficium_index::definition::RefKind::Label),
+                key: Some("sec:hi".into()),
+                rel: None,
+                line: None,
+                col: None,
+                main_rel: None,
+            }))
+            .unwrap();
+        assert!(definition.0.lookup.is_some());
+
+        let found = m
+            .find_files(Parameters(FindFilesParams {
+                root_id: "cov".into(),
+                query: "main".into(),
+                max: None,
+            }))
+            .unwrap();
+        assert!(!found.0.files.is_empty());
+
+        assert!(m
+            .diagnostics(Parameters(DiagnosticsParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+                max: None,
+            }))
+            .is_err());
+
+        // Never compiled: the widget tools fail closed, none returns an empty list.
+        let main = |extra: serde_json::Value| {
+            let mut v = serde_json::json!({"root_id": "cov", "main_rel": "main.tex"});
+            v.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            v
+        };
+        assert!(m
+            .widgets(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widgets_status(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widget_check(Parameters(
+                serde_json::from_value(main(serde_json::json!({"widget": "w"}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .preview_bundle(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .export_bundle(Parameters(
+                serde_json::from_value(main(
+                    serde_json::json!({"dest": "/tmp/maleficium-cov-bundle", "profile": "folder"})
+                ))
+                .unwrap()
+            ))
+            .is_err());
+        let installed = m
+            .interactive_install(Parameters(InteractiveInstallParams {
+                root_id: "cov".into(),
+            }))
+            .unwrap();
+        assert!(
+            dir.join("maleficium-interactive.sty").exists(),
+            "{:?}",
+            installed.0
+        );
+
+        let covered = [
+            "grant",
+            "info",
+            "list",
+            "read",
+            "compile_run",
+            "compile_poll",
+            "offline_readiness",
+            "output_stamp",
+            "export_pdf",
+            "export_zip",
+            "templates",
+            "new_from_template",
+            "compile_cancel",
+            "synctex_forward",
+            "snippet",
+            "snippet_render",
+            "synctex_inverse",
+            "delete",
+            "undo",
+            "log_tail",
+            "outline",
+            "file_graph",
+            "labels_refs",
+            "citations",
+            "precompile_checks",
+            "search",
+            "replace_preview",
+            "replace_apply",
+            "replace_undo",
+            "definition",
+            "find_files",
+            "diagnostics",
+            "interactive_install",
+            "widgets",
+            "widgets_status",
+            "widget_check",
+            "export_bundle",
+            "preview_bundle",
+        ];
+        for t in Maleficium::tool_router().list_all() {
+            assert!(
+                covered.contains(&t.name.as_ref()),
+                "tool `{}` has no coverage case",
+                t.name
+            );
+        }
     }
 }
