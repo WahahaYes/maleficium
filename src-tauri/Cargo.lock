@@ -2218,6 +2218,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "webkit2gtk",
 ]
 
 [[package]]
