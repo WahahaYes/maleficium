@@ -187,6 +187,20 @@ pub enum ExportKind {
     Zip,
 }
 
+/// Why an html widget is not approved to run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum WidgetApprovalCause {
+    /// The user never approved this widget folder in this project.
+    NeverApproved,
+    /// Its content changed since the user approved it.
+    ChangedSinceApproval,
+    /// It declares an origin the user's approval did not cover.
+    DeclaredOriginsChanged,
+    /// The user revoked its approval; auto-approval does not bring it back.
+    Revoked,
+}
+
 /// The layout an exported paper bundle takes (bundle spec section 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -671,6 +685,32 @@ pub enum AppEvent {
     /// malformed sidecar, a bad bundle manifest).
     #[serde(rename = "widgets.failed")]
     WidgetsFailed { main: String, error: String },
+    /// The user approved an html widget folder at this content digest.
+    #[serde(rename = "widget.approved")]
+    WidgetApproved {
+        root_id: String,
+        path: String,
+        widget: String,
+        digest: String,
+    },
+    /// The user revoked an html widget folder's approval.
+    #[serde(rename = "widget.revoked")]
+    WidgetRevoked { root_id: String, path: String },
+    /// An approved html widget folder no longer matches its approved digest.
+    /// `autoApproved`: the project's auto-approval covers the change.
+    #[serde(rename = "widget.digest-changed")]
+    WidgetDigestChanged {
+        root_id: String,
+        path: String,
+        widget: String,
+        approved_digest: String,
+        digest: String,
+        cause: WidgetApprovalCause,
+        auto_approved: bool,
+    },
+    /// The user turned the project's widget auto-approval on or off.
+    #[serde(rename = "widgets.auto-approve")]
+    WidgetsAutoApprove { root_id: String, on: bool },
     /// An automation-surface tool call and its outcome, logged with actor
     /// `agent` through the same writer as the app's events.
     #[serde(rename = "mcp.call")]
@@ -738,6 +778,7 @@ pub fn typescript() -> String {
         CompileReport::decl(&cfg),
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
+        WidgetApprovalCause::decl(&cfg),
         BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
