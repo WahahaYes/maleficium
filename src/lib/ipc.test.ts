@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
 import { resolveMainFileTauri, setMainFile } from './mainFile.tauri';
-import { exportBundle } from './compile';
+import { exportBundle, previewInBrowser } from './compile';
 import { matchesCompile, matchesForwardSync, menuChordId, zoomChord, KEYMAP } from './keymap';
 
 function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
@@ -76,6 +76,20 @@ describe('paper bundle export adapter', () => {
     await expect(exportBundle('1a2b3c4d', 'main.tex', '/r/x', 'single-file')).rejects.toMatch(
       /inside the project/,
     );
+  });
+});
+
+describe('preview in browser', () => {
+  it('asks the desktop command for a project and main file only', async () => {
+    const done = { path: '/data/previews/ab/index.html', profile: 'single-file' };
+    vi.mocked(invoke).mockResolvedValueOnce(done);
+    expect(await previewInBrowser('1a2b3c4d', 'main.tex')).toEqual(done);
+    expect(invoke).toHaveBeenLastCalledWith('preview_in_browser', {
+      rootId: '1a2b3c4d',
+      mainRel: 'main.tex',
+    });
+    vi.mocked(invoke).mockRejectedValueOnce('main.tex has no compiled pdf');
+    await expect(previewInBrowser('1a2b3c4d', 'main.tex')).rejects.toMatch(/compiled pdf/);
   });
 });
 

@@ -725,6 +725,7 @@ export default function App({
     exportZip: () => void exporter.exportZipAs(),
     exportBundleFolder: () => void exporter.exportBundleAs('folder'),
     exportBundleSingleFile: () => void exporter.exportBundleAs('single-file'),
+    previewInBrowser: () => void exporter.previewBundle(),
     newFromTemplate: () => setTemplateMode('gallery'),
     saveAsTemplate: () => setTemplateMode('save'),
     importTemplate: () => setTemplateMode('import'),

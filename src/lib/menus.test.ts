@@ -74,6 +74,7 @@ const actions: CommandActions = {
   exportZip: noop,
   exportBundleFolder: noop,
   exportBundleSingleFile: noop,
+  previewInBrowser: noop,
   zoomPreview: noop,
   cancelCompile: noop,
   forwardSync: noop,
@@ -110,6 +111,21 @@ describe('command registry', () => {
     // Leaf ids stay unique even counting submenu children.
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+  it('preview in browser is a File command that needs a compiled pdf', () => {
+    const calls: string[] = [];
+    const a = { ...actions, previewInBrowser: () => calls.push('preview') };
+    const find = (ctx: typeof baseCtx) =>
+      buildMenus(ctx, a)
+        .find((m) => m.id === 'file')!
+        .commands.find((c) => c.id === 'file.preview-in-browser')!;
+    const open = find({ ...baseCtx, pdfOpen: true });
+    expect(open.label).toBe('Preview in Browser');
+    expect(open.enabled).toBe(true);
+    void open.run?.();
+    expect(calls).toEqual(['preview']);
+    // Red control: no compiled pdf, no preview.
+    expect(find({ ...baseCtx, pdfOpen: false }).enabled).toBe(false);
   });
   it('paper bundle export is a File submenu that needs a compiled pdf', () => {
     const calls: string[] = [];

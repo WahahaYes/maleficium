@@ -2,7 +2,7 @@
 // a place the user picks outside the project.
 
 import { dialog } from '../lib/fs-provider';
-import { exportBundle, exportPdf, exportZip } from '../lib/compile';
+import { exportBundle, exportPdf, exportZip, previewInBrowser } from '../lib/compile';
 import { emit } from '../lib/events';
 import type { BundleProfile, ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
@@ -113,5 +113,48 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     }
   }
 
-  return { exportPdfAs, exportZipAs, exportBundleAs };
+  /** One command: export the single-file bundle to a scratch folder and open it. */
+  async function previewBundle() {
+    const src = deps.pdf;
+    const profile: BundleProfile = 'single-file';
+    if (!src) {
+      emit({
+        scope: 'app',
+        kind: 'error',
+        actor: 'user',
+        message: 'preview failed: no compiled pdf to preview: compile first',
+        event: { action: 'bundle.failed', main: '', profile, error: 'no compiled pdf' },
+      });
+      return;
+    }
+    try {
+      const r = await previewInBrowser(src.rootId, src.mainRel);
+      emit({
+        scope: 'app',
+        kind: r.warnings.length > 0 ? 'warn' : 'success',
+        actor: 'user',
+        message: `opened a preview of ${src.mainRel} in the browser (${r.path})`.slice(0, 400),
+        event: {
+          action: 'bundle.exported',
+          main: src.mainRel,
+          profile,
+          path: r.path,
+          bytes: r.bytes,
+          widgets: r.widgets,
+          warnings: r.warnings.length,
+        },
+      });
+    } catch (err) {
+      const error = String(err).slice(0, 300);
+      emit({
+        scope: 'app',
+        kind: 'error',
+        actor: 'user',
+        message: `preview failed: ${error}`.slice(0, 240),
+        event: { action: 'bundle.failed', main: src.mainRel, profile, error },
+      });
+    }
+  }
+
+  return { exportPdfAs, exportZipAs, exportBundleAs, previewBundle };
 }

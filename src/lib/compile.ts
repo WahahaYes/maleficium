@@ -1,4 +1,9 @@
-import { cancelCompileRun, runCompileTex, subscribeCompileLines } from './compile.tauri';
+import {
+  cancelCompileRun,
+  openPreview,
+  runCompileTex,
+  subscribeCompileLines,
+} from './compile.tauri';
 import { request } from './core-request.tauri';
 import type { CompileFailure, CompileLine, EventKind, OfflineReadiness } from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
@@ -184,6 +189,15 @@ export async function exportBundle(
   sizeCapBytes: number | null = null,
 ): Promise<BundleExported> {
   return await request('exportBundle', { rootId, mainRel, dest, profile, sizeCapBytes });
+}
+
+/**
+ * Export the single-file bundle of main_rel's last compile to the app's
+ * scratch folder for this project and open it in the OS default browser.
+ * Desktop only; the previous preview is replaced.
+ */
+export async function previewInBrowser(rootId: string, mainRel: string): Promise<BundleExported> {
+  return await openPreview(rootId, mainRel);
 }
 
 /** Whether a previous compile left a pdf. Never throws. */
