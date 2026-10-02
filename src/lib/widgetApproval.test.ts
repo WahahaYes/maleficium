@@ -197,6 +197,54 @@ describe('bus events', () => {
     expect(promptFromEvent(changed(false, 'other'), 'r')).toBeNull();
   });
 
+  const needed = (rootId = 'r', digest = 'b') =>
+    ev({
+      action: 'widget.approval-required',
+      rootId,
+      path: 'figs/sim',
+      widget: 'sim',
+      digest,
+      cause: 'never_approved',
+      connectDomains: ['api.example.org'],
+      resourceDomains: [],
+      frameDomains: [],
+    });
+
+  it('prompts, origins included, for a widget a compile found waiting', () => {
+    const p = promptFromEvent(needed(), 'r');
+    expect(p).toMatchObject({ widget: 'sim', digest: 'b', cause: 'never_approved' });
+    expect(p?.origins).toEqual(['connect: api.example.org']);
+    expect(promptFromEvent(needed('other'), 'r')).toBeNull();
+  });
+
+  it('asks once per widget version: a skip holds until the digest changes', () => {
+    const q = createPromptQueue({ approve: vi.fn() }, 'r', 'main.tex');
+    const feed = (e: BusEvent) => {
+      const p = promptFromEvent(e, 'r');
+      if (p) q.enqueue(p);
+    };
+    feed(needed());
+    feed(needed());
+    expect(q.current()?.digest).toBe('b');
+    q.skip();
+    expect(q.current()).toBeNull();
+    feed(needed());
+    expect(q.current()).toBeNull();
+    feed(needed('r', 'c'));
+    expect(q.current()?.digest).toBe('c');
+  });
+
+  it('forgets a skip once the user acts on the folder elsewhere', () => {
+    const q = createPromptQueue({ approve: vi.fn() }, 'r', 'main.tex');
+    q.enqueue(promptFromEvent(needed(), 'r')!);
+    q.skip();
+    q.settled('figs/sim');
+    q.enqueue(promptFromEvent(needed(), 'r')!);
+    expect(q.current()?.digest).toBe('b');
+    q.settled('figs/sim');
+    expect(q.current()).toBeNull();
+  });
+
   it('flags approval, revoke and auto-approval events for this project as panel refreshes', () => {
     expect(widgetEventFor(ev({ action: 'widget.revoked', rootId: 'r', path: 'p' }), 'r')).toBe(
       true,

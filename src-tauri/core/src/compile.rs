@@ -12,7 +12,9 @@ use maleficium_structure::{
     CompilePhase, FetchOutcome, LineSignal, MissingDependency, MissingReason,
 };
 
-use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
+use maleficium_events::{
+    Actor, BusEvent, CompileFailure, CompileLine, CompileReport, OfflineReadiness,
+};
 
 use super::{engine, readiness};
 use crate::widgets::poster::cache as posters;
@@ -223,6 +225,7 @@ pub fn report(
         failure: Some(failure),
         missing: c.missing.clone(),
         message,
+        approvals: Vec::new(),
     };
     Ok(match c.status {
         JobStatus::Success => CompileReport {
@@ -236,6 +239,7 @@ pub fn report(
             failure: None,
             missing: c.missing.clone(),
             message: String::new(),
+            approvals: Vec::new(),
         },
         JobStatus::Failed if c.missing.is_some() => {
             failed(CompileFailure::MissingDependency, failure_text(c))
@@ -252,6 +256,15 @@ pub fn report(
             return Err(String::from("compile cancelled"))
         }
     })
+}
+
+/// One `widget.approval-required` event per html widget the finished
+/// compile found waiting for the user.
+fn approval_events(cx: &Core, root_id: &str, main_rel: &str, actor: Actor) -> Vec<BusEvent> {
+    posters::approvals_needed(cx, root_id, main_rel)
+        .iter()
+        .map(|r| crate::widget_approval::approval_required_event(root_id, r, actor))
+        .collect()
 }
 
 /// A foreground compile for adapters that stream lines themselves: resolves
@@ -310,14 +323,19 @@ pub fn run_blocking(
                 failure: Some(CompileFailure::SpawnFailed),
                 missing: None,
                 message,
+                approvals: Vec::new(),
             })
         }
     };
     settle(cx, root_id, main_rel, &out, &c);
+    let mut approvals = Vec::new();
     if c.status == JobStatus::Success {
         posters::after_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
+        approvals = approval_events(cx, root_id, main_rel, Actor::System);
     }
-    report(&out, &c, COMPILE_TIMEOUT_SECS)
+    let mut rep = report(&out, &c, COMPILE_TIMEOUT_SECS)?;
+    rep.approvals = approvals;
+    Ok(rep)
 }
 
 /// Cancel the foreground compile, if one is running: the adapter's Cancel
@@ -407,6 +425,9 @@ pub fn run(
                 settle(cx, &root_id, &rel, &out, &c);
                 if c.status == JobStatus::Success {
                     posters::after_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
+                    // No window hears this run: the log carries the request.
+                    let _ =
+                        crate::eventlog::append(&approval_events(cx, &root_id, &rel, Actor::Agent));
                 }
                 // The record keeps the whole stream: every run and status line.
                 let (lines, progress) = cx

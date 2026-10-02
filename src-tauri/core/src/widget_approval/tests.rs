@@ -698,6 +698,24 @@ fn digest_changes_and_user_actions_become_typed_events() {
     ));
     let never = project("events-never");
     assert!(digest_changed_event(&never.id, &never.check().status, Actor::User).is_none());
+    let WidgetApprovalStatus::ApprovalRequired(r) = never.check().status else {
+        panic!("never approved must need approval");
+    };
+    let e = approval_required_event(&never.id, &r, Actor::System);
+    assert_eq!(e.actor, Actor::System);
+    let AppEvent::WidgetApprovalRequired {
+        ref widget,
+        ref digest,
+        cause,
+        ..
+    } = e.event
+    else {
+        panic!("{e:?}");
+    };
+    assert_eq!((widget, digest), (&r.widget, &r.digest));
+    assert_eq!(cause, WidgetApprovalCause::NeverApproved);
+    let line = crate::eventlog::serialize(&e);
+    assert!(line.contains("\"widget.approval-required\""), "{line}");
 
     let line = crate::eventlog::serialize(&revoked_event(&p.id, "widgets/demo"));
     assert!(line.contains("\"widget.revoked\""), "{line}");

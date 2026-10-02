@@ -355,6 +355,14 @@ check("compile: an edited probe gets an approval_required line, not a render",
       and not any(l.startswith("poster html-probe: rendered") for l in lines),
       str([l for l in lines if "poster" in l])[:400])
 check("...and no map entry: its cached poster does not stand in for the approval", not mapped())
+# The finished compile also asked the app: a typed event in the log, which the
+# window turns into its Approve | Skip prompt.
+log = os.path.join(DATA, "io.github.wahahayes.maleficium", "maleficium-log", "events.jsonl")
+asked = [l for l in (json.loads(x) for x in open(log)) if (l.get("event") or {}).get("action") == "widget.approval-required"] if os.path.isfile(log) else []
+check("compile: the unapproved html widget is logged as widget.approval-required for the app",
+      any(l["event"].get("widget") == "html-probe" and l["event"].get("cause") == "changed_since_approval"
+          and l["event"].get("digest") and l["actor"] == "agent" for l in asked),
+      str(asked)[:400])
 mcp.p.kill()
 sys.exit(1 if fails else 0)
 EOF

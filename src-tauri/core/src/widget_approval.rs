@@ -1105,6 +1105,26 @@ pub fn auto_event(root_id: &str, on: bool) -> BusEvent {
     )
 }
 
+/// A compile found an html widget waiting for the user: the window opens its
+/// approval prompt from this.
+pub fn approval_required_event(root_id: &str, r: &ApprovalRequired, actor: Actor) -> BusEvent {
+    bus(
+        EventKind::Warn,
+        actor,
+        format!("widget {} needs approval", r.widget),
+        AppEvent::WidgetApprovalRequired {
+            root_id: root_id.to_string(),
+            path: r.path.clone(),
+            widget: r.widget.clone(),
+            digest: r.digest.clone(),
+            cause: r.cause,
+            connect_domains: r.declared_origins.connect_domains.clone(),
+            resource_domains: r.declared_origins.resource_domains.clone(),
+            frame_domains: r.declared_origins.frame_domains.clone(),
+        },
+    )
+}
+
 /// A widget no longer matches its approved digest; `None` otherwise.
 /// Observed by whoever checked (`actor`), so the log shows who saw it.
 pub fn digest_changed_event(

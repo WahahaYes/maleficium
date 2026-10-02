@@ -16,7 +16,7 @@ import type {
 } from './generated/api';
 import type { BusEvent } from './generated/events';
 import { eventOf } from './events';
-import { type ApprovalPrompt, promptFrom, WIDGETS_PANEL_PATH } from './widgets.view';
+import { type ApprovalPrompt, originLines, promptFrom, WIDGETS_PANEL_PATH } from './widgets.view';
 
 export interface WidgetsIo {
   status(rootId: string, mainRel: string): Promise<WidgetsStatus>;
@@ -163,8 +163,27 @@ export type WidgetsModel = ReturnType<typeof createWidgetsModel>;
 
 // ---- Approval prompt ---------------------------------------------------
 
-/** The prompt a bus event asks for: an html widget changed and is not auto-approved. */
+/**
+ * The prompt a bus event asks for: a compile found an html widget waiting for
+ * approval, or one changed and is not auto-approved.
+ */
 export function promptFromEvent(e: BusEvent, rootId: string): ApprovalPrompt | null {
+  const need = eventOf(e, 'widget.approval-required');
+  if (need) {
+    if (need.rootId !== rootId) return null;
+    return {
+      key: `${need.path}@${need.digest}`,
+      widget: need.widget,
+      path: need.path,
+      digest: need.digest,
+      cause: need.cause,
+      origins: originLines({
+        connectDomains: need.connectDomains,
+        resourceDomains: need.resourceDomains,
+        frameDomains: need.frameDomains,
+      }),
+    };
+  }
   const ev = eventOf(e, 'widget.digest-changed');
   if (!ev || ev.rootId !== rootId || ev.autoApproved) return null;
   return {
@@ -186,10 +205,15 @@ export function widgetEventFor(e: BusEvent, rootId: string): boolean {
   return false;
 }
 
-/** The queue of prompts the user is asked about, one per widget version. */
+/**
+ * The queue of prompts the user is asked about, one per widget version. A
+ * skipped version is not asked about again; a changed folder is a new
+ * version and is.
+ */
 export function createPromptQueue(io: Pick<WidgetsIo, 'approve'>, rootId: string, mainRel: string) {
   let queue: readonly ApprovalPrompt[] = [];
   let failure: string | null = null;
+  const skipped = new Set<string>();
   const subs = new Set<() => void>();
   const set = (q: readonly ApprovalPrompt[], f: string | null) => {
     queue = q;
@@ -197,11 +221,11 @@ export function createPromptQueue(io: Pick<WidgetsIo, 'approve'>, rootId: string
     subs.forEach((cb) => cb());
   };
   const enqueue = (p: ApprovalPrompt) => {
-    if (queue.some((q) => q.key === p.key)) return;
+    if (skipped.has(p.key) || queue.some((q) => q.key === p.key)) return;
     set([...queue, p], null);
   };
   return {
-    /** Entry point for the poster renderer (ip.43): an html widget needs approval. */
+    /** Entry point for the poster renderer: an html widget needs approval. */
     onApprovalRequired: (r: ApprovalRequired) => enqueue(promptFrom(r)),
     enqueue,
     current: (): ApprovalPrompt | null => queue[0] ?? null,
@@ -218,7 +242,18 @@ export function createPromptQueue(io: Pick<WidgetsIo, 'approve'>, rootId: string
       }
     },
     skip() {
+      if (queue[0]) skipped.add(queue[0].key);
       set(queue.slice(1), null);
+    },
+    /**
+     * The user acted on this widget folder elsewhere (approved or revoked it
+     * in the panel): what was skipped or queued for it is stale.
+     */
+    settled(path: string) {
+      const stale = (k: string) => k.startsWith(`${path}@`);
+      [...skipped].filter(stale).forEach((k) => skipped.delete(k));
+      const rest = queue.filter((q) => !stale(q.key));
+      if (rest.length !== queue.length) set(rest, failure);
     },
     clearFailure() {
       set(queue, null);
