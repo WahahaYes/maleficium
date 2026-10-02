@@ -2187,17 +2187,22 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "dunce",
+ "gdkx11",
+ "gtk",
  "maleficium-core",
  "maleficium-events",
  "maleficium-index",
  "maleficium-mcp",
  "maleficium-structure",
+ "maleficium-widget-helper",
+ "maleficium-widget-host",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "x11",
 ]
 
 [[package]]

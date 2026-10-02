@@ -209,31 +209,8 @@ fn a_frozen_widget_is_killed_then_quarantined_on_the_second_kill() {
 
 #[test]
 fn an_unsupported_platform_runs_nothing() {
-    struct None_;
-    impl WidgetBackend for None_ {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::unsupported("windows")
-        }
-        fn launch(&mut self, _: &WidgetSpec, _: Placement) -> Result<Option<u32>, String> {
-            panic!("launched on an unsupported platform")
-        }
-        fn send(&mut self, _: &str, _: &ToHelper) -> Result<(), String> {
-            Ok(())
-        }
-        fn stop(&mut self, _: &str) {}
-        fn disconnect(&mut self, _: &str) {}
-        fn residue(&self, _: &str) -> usize {
-            0
-        }
-        fn memory_kib(&self, _: &str) -> Option<u64> {
-            None
-        }
-        fn poll(&mut self, _: Duration) -> Vec<BackendEvent> {
-            Vec::new()
-        }
-    }
     let mut h = WidgetHost::new(
-        Box::new(None_),
+        Box::new(crate::Unavailable("windows")),
         Arc::new(crate::SystemClock::default()),
         HostConfig::default(),
     );

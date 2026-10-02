@@ -1,6 +1,19 @@
-//! The toolkit-free half of the widget helper: the host page, the bridge
-//! relay script, the prefilter for what the relay reports, and assembly of
-//! the content the host streams in. The GTK and WebKit half is `main.rs`.
+//! The widget helper: one widget in its own process. This file is the
+//! toolkit-free half (the host page, the bridge relay script, the prefilter
+//! for what the relay reports, and assembly of the content the host streams
+//! in); `gtk_helper` is the GTK and WebKit half, entered through [`run`].
+
+#[cfg(target_os = "linux")]
+mod gtk_helper;
+#[cfg(target_os = "linux")]
+pub use gtk_helper::run;
+
+/// Widgets run in a helper only on Linux; elsewhere the helper refuses.
+#[cfg(not(target_os = "linux"))]
+pub fn run() {
+    eprintln!("maleficium-widget-helper: no widget helper on this platform");
+    std::process::exit(2);
+}
 
 use base64::Engine;
 use maleficium_widget_host::proto::{FromHelper, Theme, ToHelper};

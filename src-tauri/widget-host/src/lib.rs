@@ -22,6 +22,34 @@ pub mod conformance;
 pub mod linux;
 
 pub use caps::Capabilities;
+
+/// The backend of a platform without a widget host: every capability is
+/// reported missing and nothing ever runs.
+pub struct Unavailable(pub &'static str);
+
+impl WidgetBackend for Unavailable {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities::unsupported(self.0)
+    }
+    fn launch(&mut self, _: &WidgetSpec, _: proto::Placement) -> Result<Option<u32>, String> {
+        Err(format!("no widget host on {}", self.0))
+    }
+    fn send(&mut self, _: &str, _: &proto::ToHelper) -> Result<(), String> {
+        Err(format!("no widget host on {}", self.0))
+    }
+    fn stop(&mut self, _: &str) {}
+    fn disconnect(&mut self, _: &str) {}
+    fn residue(&self, _: &str) -> usize {
+        0
+    }
+    fn memory_kib(&self, _: &str) -> Option<u64> {
+        None
+    }
+    fn poll(&mut self, wait: std::time::Duration) -> Vec<BackendEvent> {
+        std::thread::sleep(wait);
+        Vec::new()
+    }
+}
 pub use host::*;
 
 /// One runtime input, delivered to the widget as bytes in `init`.

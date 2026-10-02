@@ -107,3 +107,15 @@ export function nearPane(slot: CssBox, pane: CssBox, margin: number): boolean {
 export function centreDistance(slot: CssBox, pane: CssBox): number {
   return Math.abs(slot.top + slot.height / 2 - (pane.top + pane.height / 2));
 }
+
+/** The widget's box as percentages of its page box: it follows any zoom with no re-layout. */
+export function slotPercent(rect: PdfRect, page: PageSize): CssBox {
+  const w = Math.max(1, page.width);
+  const h = Math.max(1, page.height);
+  return {
+    left: (rect.x0 / w) * 100,
+    top: ((page.height - rect.y1) / h) * 100,
+    width: ((rect.x1 - rect.x0) / w) * 100,
+    height: ((rect.y1 - rect.y0) / h) * 100,
+  };
+}

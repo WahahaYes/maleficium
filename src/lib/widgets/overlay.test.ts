@@ -7,6 +7,7 @@ import {
   placement,
   rectOfSlot,
   slotInPage,
+  slotPercent,
   toDevice,
   type CssBox,
 } from './overlay';
@@ -91,6 +92,20 @@ describe('slotInPage across zoom modes', () => {
     const b = slotInPage({ x0: 0, y0: 0, x1: 61.2, y1: 79.2 }, LETTER, 612);
     expect(b.left).toBe(0);
     expect(b.top + b.height).toBeCloseTo(792, 9);
+  });
+});
+
+describe('slotPercent', () => {
+  it('agrees with slotInPage at every page width', () => {
+    const pct = slotPercent(RECT, LETTER);
+    for (const w of [300, 612, 816, 1700]) {
+      const b = slotInPage(RECT, LETTER, w);
+      const h = (w * LETTER.height) / LETTER.width;
+      expect((pct.left / 100) * w).toBeCloseTo(b.left, 9);
+      expect((pct.top / 100) * h).toBeCloseTo(b.top, 9);
+      expect((pct.width / 100) * w).toBeCloseTo(b.width, 9);
+      expect((pct.height / 100) * h).toBeCloseTo(b.height, 9);
+    }
   });
 });
 
