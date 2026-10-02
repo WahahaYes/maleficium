@@ -12,10 +12,12 @@
 %   \maleficiumsetup{bundleurl=https://...}    % optional; link per widget, one QR
 %   \maleficiumsetup{qr=none}                 % qr=footer (default) | none
 %   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
+%   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
+%     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
 %   \interactivevideo[poster=figures/clip.png,
 %     remote=https://cdn.example.org/clip.mp4, sha256=<hex>]{media/clip.mp4}
 %   \interactivetable[pdfrows=10]{data/results.csv}
-%   \interactivechart[poster=figures/chart.pdf]{charts/ablation.vl.json}
+%   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %
 % Sidecar line (pipe-separated, one per widget):
@@ -24,7 +26,15 @@
 % Recorded values never contain |, # or braces; dimensions ride as pt.
 % Every widget declares its text alternative with alt= (used as the HTML
 % img alt); there is no caption fallback because the exporter cannot read
-% caption text back. Place the macro after the float's \caption\label for
+% caption text back.
+%
+% Poster parameters say what the app's rendered poster shows and where a
+% live view starts. Model: camera= (braced: 16 numbers of a column-major
+% camera-to-world matrix, or pos=x,y,z target=x,y,z up=x,y,z), size=WxH in
+% pixels, background= (transparent or a hex colour without #, e.g. ffffff).
+% Chart: scale= (poster pixels per CSS pixel). Each is an error on any other
+% widget type. The camera's commas are recorded as spaces; the app checks
+% the numbers. Place the macro after the float's \caption\label for
 % label and figure capture; before it, or outside any float, they stay empty
 % rather than stale.
 
@@ -77,6 +87,10 @@
 \define@key{mfw}{sha256}{\def\mfw@sha{#1}}
 \define@key{mfw}{data}{\def\mfw@data{#1}}
 \define@key{mfw}{alt}{\def\mfw@alt{#1}}
+\define@key{mfw}{camera}{\def\mfw@p@camera{#1}}
+\define@key{mfw}{size}{\def\mfw@p@size{#1}}
+\define@key{mfw}{background}{\def\mfw@p@background{#1}}
+\define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
 \define@key{mfwsetup}{bundleurl}{\gdef\mfw@bundleurl{#1}}
 \define@key{mfwsetup}{qr}{%
   \def\mfw@tmp{#1}%
@@ -94,6 +108,7 @@
   \def\mfw@poster{}\def\mfw@height{6cm}\def\mfw@width{}%
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
   \def\mfw@remote{}\def\mfw@sha{}\def\mfw@data{}\def\mfw@alt{}%
+  \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
 }
 \newcommand{\maleficiumsetup}[1]{\setkeys{mfwsetup}{#1}}
 % The text alternative is required: it becomes the HTML img alt.
@@ -162,6 +177,26 @@
     { \bool_set_true:N \l_mfw_ok_bool }
   \mfw_syncok:
 }
+\str_new:N \l_mfw_cam_str
+\cs_new_protected:Npn \mfw_match:Nn #1 #2 {
+  \exp_args:NnV \regex_match:nnTF {#2} #1
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+% Poster parameter shapes; the app parses the values themselves.
+\cs_new_protected:Npn \mfw@check@camera {
+  \str_set:Nx \l_mfw_cam_str { \mfw@p@camera }
+  \str_replace_all:Nnn \l_mfw_cam_str { , } { ~ }
+  \tl_set:Nx \mfw@p@camera { \l_mfw_cam_str }
+  \mfw_match:Nn \mfw@p@camera { \A(?:[0-9eE.+\-\s]|pos=|target=|up=)+\Z }
+}
+\cs_new_protected:Npn \mfw@check@size
+  { \mfw_match:Nn \mfw@p@size { \A[0-9]+x[0-9]+\Z } }
+\cs_new_protected:Npn \mfw@check@background
+  { \mfw_match:Nn \mfw@p@background { \A(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|transparent)\Z } }
+\cs_new_protected:Npn \mfw@check@scale
+  { \mfw_match:Nn \mfw@p@scale { \A[0-9]*\.?[0-9]+\Z } }
 % Plain-name entry points for the LaTeX2e body below.
 \cs_new_protected:Npn \mfw@slugify { \mfw_slugify: }
 \cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
@@ -363,17 +398,49 @@
   \fi
 }
 
+% -- poster parameters ---------------------------------------------------------
+% #1 the keys this widget type takes (the rest must stay empty), #2 the type.
+\newcommand{\mfw@params}[2]{%
+  \@for\mfw@k:={camera,size,background,scale}\do{%
+    \expandafter\ifx\csname mfw@p@\mfw@k\endcsname\empty\else
+      \mfw@ifin{\mfw@k}{#1}{%
+        \csname mfw@check@\mfw@k\endcsname
+        \ifmfw@ok\else
+          \PackageError{maleficium-interactive}%
+            {\mfw@k= `\csname mfw@p@\mfw@k\endcsname' is malformed}%
+            {\mfw@paramhelp}%
+        \fi
+      }{%
+        \PackageError{maleficium-interactive}%
+          {\mfw@k= does not apply to #2 widgets}%
+          {Remove it. \mfw@paramhelp}%
+      }%
+    \fi
+  }%
+}
+\def\mfw@paramhelp{Model widgets take camera={16 numbers} or
+  camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600 and
+  background=ffffff or transparent; chart widgets take scale=2.}
+% \mfw@ifin{<key macro>}{<comma list>}{<yes>}{<no>}
+\newcommand{\mfw@ifin}[4]{%
+  \def\mfw@found{0}%
+  \@for\mfw@x:=#2\do{\ifx\mfw@x#1\def\mfw@found{1}\fi}%
+  \if1\mfw@found #3\else #4\fi
+}
+
 % -- the macros --------------------------------------------------------------
 \newcommand{\interactivemodel}[2][]{%
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
+  \mfw@params{camera,size,background}{model}%
   \mfw@needfile{\mfw@poster}\mfw@needfile{#2}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
   \mfw@sbox@graphic{\mfw@poster}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{model=#2}{\mfw@dims@opt}%
+    {\mfw@poster}{model=#2}%
+    {\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
   \mfw@emit
 }
 
@@ -381,6 +448,7 @@
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{video}\ifx\mfw@runtime\empty\def\mfw@runtime{video@1}\fi
+  \mfw@params{}{video}%
   \mfw@needfile{\mfw@poster}%
   \IfFileExists{#2}{%
     \def\mfw@vidsrc{#2}%
@@ -409,6 +477,7 @@
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{table}\ifx\mfw@runtime\empty\def\mfw@runtime{table@1}\fi
+  \mfw@params{}{table}%
   \ifx\mfw@poster\empty\else
     \PackageWarning{maleficium-interactive}%
       {poster= is ignored for tables; the typeset rows are the poster}%
@@ -443,6 +512,7 @@
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
+  \mfw@params{scale}{chart}%
   \mfw@needfile{\mfw@poster}\mfw@needfile{#2}%
   \def\mfw@srcs{spec=#2}%
   \ifx\mfw@data\empty\else
@@ -455,7 +525,7 @@
   \mfw@snap@fig%
   \mfw@sbox@graphic{\mfw@poster}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{\mfw@srcs}{\mfw@dims@opt}%
+    {\mfw@poster}{\mfw@srcs}{\mfw@dims@opt,scale=\mfw@p@scale}%
   \mfw@emit
 }
 
@@ -463,6 +533,7 @@
   \mfw@resetkeys\setkeys{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{html}%
+  \mfw@params{}{html}%
   \mfw@needfile{\mfw@poster}\mfw@needfile{#2/index.html}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
