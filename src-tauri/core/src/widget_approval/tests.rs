@@ -723,3 +723,42 @@ fn the_target_of_a_listed_widget_is_its_bundle_folder_from_the_main_file() {
     assert_eq!(WidgetTarget::of("main.tex", mesh).unwrap(), None);
     drop(cx);
 }
+
+#[test]
+fn no_session_root_may_reach_the_approval_store() {
+    let base = crate::test_scratch::dir("store-guard/data/maleficium-widgets");
+    std::fs::create_dir_all(base.join("approvals/abc")).unwrap();
+    let canon = |p: &Path| dunce::canonicalize(p).unwrap();
+    let data = canon(base.parent().unwrap());
+    // The store itself, a project dir in it, and anything containing it.
+    for root in [
+        canon(&base),
+        canon(&base.join("approvals/abc")),
+        data.clone(),
+        canon(&data.join("..")),
+    ] {
+        let e = refuse_store_overlap(&root, &base).unwrap_err();
+        assert!(e.contains("widget approvals"), "{}: {e}", root.display());
+    }
+    // A sibling of the store, and an unrelated project, are fine.
+    std::fs::create_dir_all(data.join("maleficium-untitled")).unwrap();
+    assert!(refuse_store_overlap(&data.join("maleficium-untitled"), &base).is_ok());
+    let p = project("guard-elsewhere");
+    assert!(refuse_store_overlap(&p.root, &base).is_ok());
+    // A store base that does not exist yet still resolves through its
+    // existing ancestors.
+    let later = data.join("not-yet/maleficium-widgets");
+    assert!(refuse_store_overlap(&data, &later).is_err());
+}
+
+/// The real grant applies it: the app's own store base cannot be granted.
+#[test]
+fn grant_refuses_the_real_approval_store() {
+    let base = store_base();
+    if std::fs::create_dir_all(&base).is_err() {
+        return;
+    }
+    let cx = Core::default();
+    let e = crate::fs::grant_root(&cx, "store", &base.to_string_lossy()).unwrap_err();
+    assert!(e.contains("widget approvals"), "{e}");
+}

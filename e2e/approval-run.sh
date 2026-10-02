@@ -175,6 +175,11 @@ def checked():
     return call("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})[1]
 
 write_store(False, DIGEST)
+# No session root may reach the store: a granted one would let a replace
+# or restore rewrite approvals.
+for label, d in [("the project's store folder", store_dir), ("the app data dir holding it", DATA)]:
+    ok, e = mcp.tool("grant", {"root_id": "store", "root": d})
+    check(f"grant refuses {label}", not ok and "widget approvals" in e, str(e)[:200])
 c = checked()
 check("approved at its digest", c.get("status") == "approved" and c.get("via") == "user" and c.get("digest") == DIGEST, json.dumps(c)[:200])
 _, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
