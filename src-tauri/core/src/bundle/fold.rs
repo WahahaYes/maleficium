@@ -12,8 +12,7 @@ use crate::widgets::WidgetCsp;
 
 use base64::Engine;
 use regex::{Captures, Regex};
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The widget document's policy before any declared origins: inline only.
 /// Sources reach a runtime as bytes over `postMessage`, so nothing here
@@ -162,21 +161,42 @@ pub struct Folded {
 }
 
 struct Folder<'a> {
-    /// The canonical bundle folder: nothing outside it is ever read.
-    dir: &'a Path,
-    inlined: BTreeSet<PathBuf>,
+    /// The bundle's files by `/`-separated path: nothing else is ever read.
+    files: &'a BTreeMap<String, Vec<u8>>,
+    inlined: BTreeSet<String>,
     external: BTreeSet<String>,
     notes: Vec<String>,
 }
 
-const MAX_FOLD_FILE: u64 = 64 * 1024 * 1024;
+/// The folder part of a `/`-separated path (`""` for the bundle's top).
+fn parent(p: &str) -> &str {
+    p.rsplit_once('/').map_or("", |(d, _)| d)
+}
 
-impl Folder<'_> {
+/// A relative reference made from `from_dir`, as a bundle path: `None` when
+/// it is absolute or climbs out of the bundle.
+fn join(from_dir: &str, reference: &str) -> Option<String> {
+    if reference.starts_with('/') || reference.contains('\\') || reference.contains(':') {
+        return None;
+    }
+    let mut parts: Vec<&str> = from_dir.split('/').filter(|s| !s.is_empty()).collect();
+    for seg in reference.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+impl<'a> Folder<'a> {
     /// The bytes of a local reference made from a file in `from_dir`, or
-    /// `None` when it is not a plain local file inside the bundle folder (a
-    /// url, an anchor, a data url, a symlink out). The first reading is
-    /// recorded as inlined.
-    fn read(&mut self, from_dir: &Path, reference: &str) -> Option<(PathBuf, Vec<u8>)> {
+    /// `None` when it is not one of the bundle's files (a url, an anchor, a
+    /// data url, a path out). The first reading is recorded as inlined.
+    fn read(&mut self, from_dir: &str, reference: &str) -> Option<(String, &'a [u8])> {
         let r = reference.trim();
         if r.is_empty() || r.starts_with('#') {
             return None;
@@ -195,30 +215,21 @@ impl Folder<'_> {
             return None;
         }
         let path_part = r.split(['?', '#']).next().unwrap_or(r);
-        let decoded = percent_decode(path_part);
-        let canon = dunce::canonicalize(from_dir.join(decoded)).ok()?;
-        if !canon.starts_with(self.dir) || !canon.is_file() {
-            return None;
-        }
-        if std::fs::metadata(&canon).ok()?.len() > MAX_FOLD_FILE {
-            self.notes
-                .push(format!("{reference} is too large to fold and was left out"));
-            return None;
-        }
-        let bytes = std::fs::read(&canon).ok()?;
-        self.inlined.insert(canon.clone());
-        Some((canon, bytes))
+        let path = join(from_dir, &percent_decode(path_part))?;
+        let bytes = self.files.get(&path)?;
+        self.inlined.insert(path.clone());
+        Some((path, bytes.as_slice()))
     }
 
-    fn as_data_url(&mut self, from_dir: &Path, reference: &str) -> Option<String> {
-        let (canon, bytes) = self.read(from_dir, reference)?;
-        let ext = canon.extension().and_then(|e| e.to_str()).unwrap_or("");
-        Some(data_url(mime_for(ext), &bytes))
+    fn as_data_url(&mut self, from_dir: &str, reference: &str) -> Option<String> {
+        let (path, bytes) = self.read(from_dir, reference)?;
+        let ext = path.rsplit_once('.').map_or("", |(_, e)| e);
+        Some(data_url(mime_for(ext), bytes))
     }
 
     /// `url(...)` references in css, rewritten to data URLs relative to the
     /// css file's own folder.
-    fn css(&mut self, css: &str, css_dir: &Path) -> String {
+    fn css(&mut self, css: &str, css_dir: &str) -> String {
         let url = Regex::new(r#"(?i)url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)"#).unwrap();
         let out = url.replace_all(css, |c: &Captures| {
             let r = c
@@ -289,48 +300,28 @@ fn without_attr(attrs: &str, name: &str) -> String {
     .into_owned()
 }
 
-fn rel_name(dir: &Path, p: &Path) -> String {
-    p.strip_prefix(dir)
-        .unwrap_or(p)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
+/// The bundle's entry page.
+pub const ENTRY: &str = "index.html";
 
-fn list_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = rd.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for e in entries {
-        let Ok(t) = e.file_type() else { continue };
-        let p = e.path();
-        if t.is_dir() {
-            list_files(&p, out);
-        } else if t.is_file() {
-            out.push(p);
-        }
-    }
-}
-
-/// Folds the author bundle at `dir` (already resolved inside the project)
-/// into one document. `entry` is the bundle's `index.html`.
-pub fn fold_bundle(dir: &Path, entry: &Path, policy: &str) -> Result<Folded, String> {
-    let dir = dunce::canonicalize(dir).map_err(|e| format!("bundle folder: {e}"))?;
-    let entry = dunce::canonicalize(entry).map_err(|e| format!("bundle entry: {e}"))?;
-    if !entry.starts_with(&dir) {
-        return Err("bundle entry resolves outside its folder".to_string());
-    }
-    let html = std::fs::read_to_string(&entry)
-        .map_err(|e| format!("cannot read the bundle's index.html: {e}"))?;
-    let entry_dir = entry.parent().unwrap_or(&dir).to_path_buf();
+/// Folds an author bundle into one document. `files` is the bundle read
+/// once (a [`crate::widget_approval::WidgetSnapshot`]'s files): the fold
+/// reads nothing else, so the document holds exactly the bytes that were
+/// hashed.
+pub fn fold_bundle(files: &BTreeMap<String, Vec<u8>>, policy: &str) -> Result<Folded, String> {
+    let html = files
+        .get(ENTRY)
+        .ok_or_else(|| format!("the bundle has no {ENTRY}"))?;
+    let html = std::str::from_utf8(html)
+        .map_err(|_| format!("the bundle's {ENTRY} is not UTF-8"))?
+        .to_string();
+    let entry_dir = parent(ENTRY).to_string();
     let mut f = Folder {
-        dir: &dir,
+        files,
         inlined: BTreeSet::new(),
         external: BTreeSet::new(),
         notes: Vec::new(),
     };
-    f.inlined.insert(entry.clone());
+    f.inlined.insert(ENTRY.to_string());
 
     // <script src=...></script>
     let script = Regex::new(r"(?is)<script\b([^>]*)>\s*</script\s*>").map_err(|e| e.to_string())?;
@@ -343,7 +334,7 @@ pub fn fold_bundle(dir: &Path, entry: &Path, policy: &str) -> Result<Folded, Str
             let Some((_, bytes)) = f.read(&entry_dir, &src) else {
                 return c[0].to_string();
             };
-            let body = String::from_utf8_lossy(&bytes).into_owned();
+            let body = String::from_utf8_lossy(bytes).into_owned();
             let is_module = attr_value(&attrs, "type").is_some_and(|t| t.eq_ignore_ascii_case("module"));
             if is_module
                 && Regex::new(r#"(?m)\bimport\s*(?:[\w{*]|["'(])"#)
@@ -371,11 +362,10 @@ pub fn fold_bundle(dir: &Path, entry: &Path, policy: &str) -> Result<Folded, Str
                 .unwrap_or_default()
                 .to_ascii_lowercase();
             if rel.split_whitespace().any(|r| r == "stylesheet") {
-                let Some((canon, bytes)) = f.read(&entry_dir, &href) else {
+                let Some((path, bytes)) = f.read(&entry_dir, &href) else {
                     return c[0].to_string();
                 };
-                let css_dir = canon.parent().unwrap_or(&entry_dir).to_path_buf();
-                let css = f.css(&String::from_utf8_lossy(&bytes), &css_dir);
+                let css = f.css(&String::from_utf8_lossy(bytes), parent(&path));
                 let media = attr_value(&attrs, "media")
                     .map(|m| format!(" media=\"{}\"", attr(&m)))
                     .unwrap_or_default();
@@ -417,13 +407,10 @@ pub fn fold_bundle(dir: &Path, entry: &Path, policy: &str) -> Result<Folded, Str
         })
         .into_owned();
 
-    let mut all = Vec::new();
-    list_files(&dir, &mut all);
-    let unfolded: Vec<String> = all
-        .iter()
-        .filter(|p| !f.inlined.contains(*p))
-        .map(|p| rel_name(&dir, p))
-        .filter(|n| n != "widget.json")
+    let unfolded: Vec<String> = files
+        .keys()
+        .filter(|p| !f.inlined.contains(*p) && p.as_str() != crate::widgets::BUNDLE_MANIFEST)
+        .cloned()
         .collect();
 
     Ok(Folded {
