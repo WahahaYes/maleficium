@@ -8,6 +8,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `history-surface.sh` | no | The revision history surface is wired up and restores exact bytes |
 | `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
+| `poster-run.sh` | Xvfb (own display) | Widget posters render headlessly from their camera, size, background and scale, and a hanging runtime is killed at its time limit |
 | `stills-run.py` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `papers-run.py` | no | How many vendored real papers compile error-free, and what blocks the rest |
 | `package-smoke.py` | Linux: Xvfb in Docker | This host's packages install, compile with the bundled engine, and launch into the welcome project |
@@ -59,7 +60,7 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 
 ### interactive-run.sh
 
-Drives the sidecar through grant → `interactive_install` → compile → poll against `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the four failing documents, and that only the installed package landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
+Drives the sidecar through grant → `interactive_install` → compile → poll against `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the failing documents (bad ids, missing files, no alt, an unknown option, a poster parameter on the wrong widget type, a malformed size), and that only the installed package landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
 
 ### export-run.sh
 
@@ -68,6 +69,10 @@ Drives the sidecar through grant → install → compile of a scratch copy of `f
 ### playground-run.sh
 
 Drives the sidecar over `fixtures/playground/`, the showcase paper for interactive features: one source that compiles to a PDF now and is meant to become HTML later. The paper uses every widget macro the package offers (`\interactivemodel`, `\interactivevideo`, `\interactivetable` from CSV, `\interactivechart` from a Vega-Lite spec, `\interactive` for an HTML folder) with alt text and posters, captioned and uncaptioned floats, plain figures, `subcaption` subfigures, display math, a theorem and proof, citations from `refs.bib`, cross-references, and a section explaining each widget. The run installs the package, compiles with `networked` (so the first run can fetch `subcaption`; later runs are offline), then asserts a clean PDF (no TeX errors, no undefined references, bibliography resolved), the `.mfw` sidecar, one named annotation per widget, the MCP `widgets` list (all seven widgets, all five types, rects, sources, options, labels), and that only the installed package landed in the project. Poster images are generated placeholders; the `.glb` (a colored cube) and `.mp4` (a test pattern) are small real files written by `fixtures/gen-media.py` (CC0, no third-party asset). The table text checks need `mutool` and skip with a reason without it. `POLL_ROUNDS` bounds polling.
+
+### poster-run.sh
+
+Compiles `fixtures/interactive/posters.tex` over the sidecar and checks the canonical poster parameters in the `widgets` list, then starts its own Xvfb display and drives the app's headless renderer (`maleficium --render-posters <root>`: one JSON request per stdin line, one JSON result per stdout line; no editor window, each render in a hidden window destroyed afterwards). Checks: the fixture model from a `pos/target/up` camera and from a matrix camera gives two different, non-blank 320x240 PNGs; `background=ffffff` paints white and `background=transparent` leaves alpha 0; the chart fills its frame at `scale=2`; the debug-only `hang@test` runtime is stopped at a 3000 ms limit with no PNG written, its WebKit web process is gone, and the next render still works; html and table widgets are refused; the renderer exits non-zero after a failure; the project, explicit posters included, is unchanged. Needs `Xvfb` and a debug build (the hanging runtime does not exist in release builds). `POSTER_SHOTS=<dir>` keeps the PNGs.
 
 ### reader-run.mjs
 

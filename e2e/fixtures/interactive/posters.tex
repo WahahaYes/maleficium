@@ -1,0 +1,26 @@
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\begin{document}
+% Two cameras on one model: pos/target/up and a column-major matrix.
+\interactivemodel[poster=figures/mesh.png, height=4cm, id=cam-front, size=320x240,
+  background=ffffff, camera={pos=0,0,3 target=0,0,0 up=0,1,0},
+  alt={The mesh from the front}]{models/mesh.glb}
+
+\interactivemodel[poster=figures/mesh.png, height=4cm, id=cam-oblique, size=320x240,
+  background=transparent,
+  camera={0.707107,0,-0.707107,0, -0.331295,0.883452,-0.331295,0,
+    0.624695,0.468521,0.624695,0, 2,1.5,2,1},
+  alt={The mesh from above and to the side}]{models/mesh.glb}
+
+\interactivechart[poster=figures/chart.png, height=4cm, id=chart, scale=2,
+  alt={Ablation chart}]{charts/ablation.vl.json}
+
+% A test-only runtime (debug builds) that never answers.
+\interactivemodel[poster=figures/mesh.png, height=3cm, id=hang, runtime=hang@test,
+  alt={A runtime that never answers}]{models/mesh.glb}
+
+\interactive[poster=figures/demo.png, height=3cm, id=html-demo,
+  alt={Live demo widget}]{widgets/demo/}
+
+\interactivetable[pdfrows=2, id=tab, alt={Scores}]{data/results.csv}
+\end{document}
