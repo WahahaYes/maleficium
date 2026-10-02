@@ -307,10 +307,17 @@ fn the_single_file_profile_is_one_file_with_everything_inline() {
             .unwrap();
         assert_eq!(sha_of(&b), a["sha256"], "{key}");
     }
-    let pdf = engine
-        .decode(island_json(&html, "mfw-pdf").as_str().unwrap())
+    let href = html
+        .split("id=\"pdf-link\" href=\"data:application/pdf;base64,")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
         .unwrap();
-    assert_eq!(pdf, REAL_PDF);
+    assert_eq!(
+        engine.decode(href).unwrap(),
+        REAL_PDF,
+        "one copy, in the link"
+    );
+    assert!(!html.contains("mfw-pdf"));
     let widgets = island_json(&html, "mfw-widgets");
     assert_eq!(widgets.as_object().unwrap().len(), 5);
     assert!(widgets["fig-demo"]
@@ -854,4 +861,49 @@ fn a_failed_preview_leaves_no_stale_folder() {
     let r = preview_bundle_in(&p.cx, &p.id, "nothere.tex", &base);
     assert!(r.is_err());
     assert!(std::fs::read_dir(&base).map(|d| d.count()).unwrap_or(0) == 0);
+}
+
+#[test]
+fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
+    let p = project("reader", REAL_SIDECAR);
+    let outside = regex::Regex::new(r#"(?:src|href|data|action)=\"https?://"#).unwrap();
+    for (name, profile) in [
+        ("one.html", BundleProfile::SingleFile),
+        ("folder", BundleProfile::Folder),
+    ] {
+        let d = dest(&p, name);
+        export(&p, &d, profile).unwrap();
+        let path = if profile == BundleProfile::Folder {
+            PathBuf::from(&d).join("index.html")
+        } else {
+            PathBuf::from(&d)
+        };
+        let html = std::fs::read_to_string(&path).unwrap();
+        let m = island_json(&html, "mfw-manifest");
+        let ids: Vec<String> = m["widgets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| w["id"].as_str().unwrap().to_string())
+            .collect();
+        let at: Vec<usize> = ids
+            .iter()
+            .map(|i| {
+                html.find(&format!("<figure id=\"{i}\" data-widget=\"{i}\""))
+                    .unwrap()
+            })
+            .collect();
+        assert!(at.windows(2).all(|w| w[0] < w[1]), "{name}: manifest order");
+        assert_eq!(html.matches("<figure ").count(), ids.len());
+        assert_eq!(html.matches("class=\"poster\"").count(), ids.len());
+        assert!(!html.contains("allow-same-origin"));
+        assert_eq!(
+            html.matches("setAttribute(\"sandbox\", \"allow-scripts\")")
+                .count(),
+            1
+        );
+        assert!(html.find("Content-Security-Policy").unwrap() < html.find("<title>").unwrap());
+        // The only urls are the css and the widgets' own policies' origins.
+        assert!(!outside.is_match(&html), "{name}: no external load");
+    }
 }

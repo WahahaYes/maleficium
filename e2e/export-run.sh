@@ -182,8 +182,8 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
         check("single-file: every asset inline, no entry, pdf inlined",
               all(a["mode"] == "inline" for a in m["assets"].values()) and m["pdf"]["path"] is None
               and all("entry" not in w for w in m["widgets"]))
-        pdf_b64 = json.loads(re.search(r'<script type="application/json" id="mfw-pdf">(.*?)</script>', html, re.S).group(1))
-        check("single-file: embedded pdf is the compiled pdf", base64.b64decode(pdf_b64) == pdf_bytes)
+        pdf_b64 = re.search(r'id="pdf-link" href="data:application/pdf;base64,([^"]*)"', html).group(1)
+        check("single-file: embedded pdf (the reader's download link) is the compiled pdf", base64.b64decode(pdf_b64) == pdf_bytes)
         docs = json.loads(re.search(r'<script type="application/json" id="mfw-widgets">(.*?)</script>', html, re.S).group(1))
         check("single-file: one document per widget", sorted(docs) == sorted(WIDGETS))
     else:
@@ -292,7 +292,7 @@ if pv["ok"]:
     check("preview is outside the project", not os.path.realpath(pp).startswith(os.path.realpath(ROOT) + os.sep), pp)
     check("preview is under the app data dir", os.path.realpath(pp).startswith(os.path.realpath(os.environ["XDG_DATA_HOME"]) + os.sep), pp)
     html = open(pp, encoding="utf-8").read()
-    check("preview is the self-contained single-file bundle", 'id="mfw-manifest"' in html and 'id="mfw-pdf"' in html and pv["widgets"] == 5)
+    check("preview is the self-contained single-file bundle", 'id="mfw-manifest"' in html and 'id="pdf-link"' in html and pv["widgets"] == 5)
     check("preview returns a hint and opens nothing itself", pp in pv["hint"])
     stale = os.path.join(os.path.dirname(pp), "stale.txt")
     open(stale, "w").write("old")

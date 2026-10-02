@@ -17,6 +17,7 @@
 //! 2026-09-30 browser export spike): see [`fold`].
 
 pub(crate) mod fold;
+mod reader;
 
 use crate::widgets::{Widget, WidgetRect, WidgetSource, WidgetType};
 use crate::Core;
@@ -943,31 +944,49 @@ fn island(id: &str, v: &Value) -> String {
     format!("<script type=\"application/json\" id=\"{id}\">{s}</script>")
 }
 
-fn placeholder_reader(title: &str, authors: &[String], folder: bool, islands: &str) -> String {
-    let policy = if folder {
-        fold::FOLDER_READER_POLICY
-    } else {
-        fold::SINGLE_FILE_READER_POLICY
-    };
-    let pdf = if folder {
-        "<p><a href=\"paper.pdf\">paper.pdf</a> is the version of record.</p>"
-    } else {
-        "<p>The version of record is embedded in this file.</p>"
-    };
-    let by = authors
-        .iter()
-        .filter(|a| !a.is_empty())
-        .map(|a| fold::text(a))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let head = fold::with_policy(
-        &format!(
-            "<!doctype html><html lang=\"en\"><head><title>{0}</title></head><body><main><h1>{0}</h1><p>{by}</p><p>This bundle's reader is not part of this build. The manifest, the paper and every widget are complete.</p>{pdf}</main>",
-            fold::text(title)
-        ),
-        policy,
-    );
-    format!("{head}{islands}</body></html>\n")
+/// The page's view of each widget, in manifest order: caption fields from the
+/// widget list, and the poster as a bundled path or an inline `data:` url.
+fn reader_widgets<'a>(
+    list: &'a [Widget],
+    assets: &BTreeMap<String, Asset>,
+) -> Result<Vec<reader::ReaderWidget<'a>>, String> {
+    list.iter()
+        .map(|w| {
+            let key = format!("{}-poster", w.id);
+            let a = assets
+                .get(&key)
+                .ok_or_else(|| format!("widget {}: it has no poster asset", w.id))?;
+            let poster = match (a.mode, &a.data) {
+                (Mode::Bundled, _) => a.path(),
+                (_, Bytes::File(p)) => data_url(&a.mime, &read_verified(p, &a.sha)?),
+                (_, Bytes::Mem(b)) => data_url(&a.mime, b),
+                _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
+            };
+            Ok(reader::ReaderWidget {
+                id: &w.id,
+                kind: match w.kind {
+                    WidgetType::Model => "model",
+                    WidgetType::Video => "video",
+                    WidgetType::Table => "table",
+                    WidgetType::Chart => "chart",
+                    WidgetType::Html => "html",
+                },
+                figure: w.figure.as_deref(),
+                label: w.label.as_deref(),
+                alt: &w.alt,
+                width: w.rect.x1 - w.rect.x0,
+                height: w.rect.y1 - w.rect.y0,
+                poster,
+            })
+        })
+        .collect()
+}
+
+fn data_url(mime: &str, bytes: &[u8]) -> String {
+    format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
 }
 
 fn read_verified(path: &Path, sha: &str) -> Result<Vec<u8>, String> {
@@ -1311,15 +1330,20 @@ pub fn export_bundle_with(
                 island("mfw-manifest", &manifest),
                 island("mfw-widgets", &Value::Object(widgets)),
                 island("mfw-assets", &Value::Object(assets)),
-                island(
-                    "mfw-pdf",
-                    &base64::engine::general_purpose::STANDARD
-                        .encode(&pdf_bytes)
-                        .into(),
-                ),
             ]
             .concat();
-            let html = placeholder_reader(&meta.title, &authors, false, &islands);
+            let html = reader::render(
+                &reader::Reader {
+                    title: &meta.title,
+                    authors: &authors,
+                    abstract_text: meta.abstract_text.as_deref(),
+                    folder: false,
+                    widgets: reader_widgets(&list.widgets, &plan.assets)?,
+                    pdf: Some(&pdf_bytes),
+                    islands: &islands,
+                },
+                THEME_CSS,
+            );
             std::fs::write(&stage, html.as_bytes())
                 .map_err(|e| format!("cannot write {}: {e}", stage.display()))?;
             total = html.len() as u64;
@@ -1376,7 +1400,18 @@ pub fn export_bundle_with(
                 },
             ]
             .concat();
-            let html = placeholder_reader(&meta.title, &authors, true, &islands);
+            let html = reader::render(
+                &reader::Reader {
+                    title: &meta.title,
+                    authors: &authors,
+                    abstract_text: meta.abstract_text.as_deref(),
+                    folder: true,
+                    widgets: reader_widgets(&list.widgets, &plan.assets)?,
+                    pdf: None,
+                    islands: &islands,
+                },
+                THEME_CSS,
+            );
             put(&stage, "index.html", html.as_bytes(), &mut total)?;
         }
         Ok(())

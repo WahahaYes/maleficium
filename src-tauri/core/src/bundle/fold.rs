@@ -22,12 +22,12 @@ const WIDGET_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'{res}
 
 /// The reader page of a folder or hosted bundle. Its `frame-src 'self'` is
 /// what stops a widget navigating its own frame off-site.
-pub const FOLDER_READER_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; form-action 'none'; base-uri 'none'";
+pub const FOLDER_READER_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'self'; form-action 'none'; base-uri 'none'";
 
 /// The reader page of a single-file bundle. No `frame-src`: it falls back
 /// to `'none'`, which admits srcdoc frames and blocks `data:` ones and any
 /// navigation.
-pub const SINGLE_FILE_READER_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'";
+pub const SINGLE_FILE_READER_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; object-src blob:; form-action 'none'; base-uri 'none'";
 
 /// The policy a widget document carries: strict, plus the origins its
 /// `widget.json` declared (an origin is already checked as `https` by the
