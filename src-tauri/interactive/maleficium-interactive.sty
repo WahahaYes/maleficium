@@ -7,8 +7,9 @@
 % and records the widget in the \jobname.mfw sidecar the compile leaves in
 % the outdir. Needs the XeTeX engine (xdvipdfmx specials).
 %
-% Posters: poster= is the document's own and always wins. Model and chart
-% widgets may leave it out: Maleficium then renders one into the project's
+% Posters: poster= is the document's own and always wins. Model, chart and
+% html widgets may leave it out: Maleficium then renders one (an html
+% widget's only once the user approved its folder) into the project's
 % .maleficium/posters/ folder and lists it in .maleficium/posters/
 % \jobname.map, which this package reads. A widget uses its listed poster
 % only while its recorded runtime, sources and options match the list;
@@ -404,7 +405,8 @@
   \IfFileExists{#1}{}{\PackageError{maleficium-interactive}%
     {File `#1' not found}{Put it in the project or fix the path.}}%
 }
-% A poster= given must exist; model and chart widgets may leave it out.
+% A poster= given must exist; model, chart and html widgets may leave it out
+% (an html widget's auto-poster exists only once the user approved it).
 \newcommand{\mfw@needposter}{\ifx\mfw@poster\empty\else\mfw@needfile{\mfw@poster}\fi}
 % Canonicalize height/width through a length: \linewidth resolves, garbage
 % fails here, and the sidecar records unambiguous pt.
@@ -617,10 +619,10 @@
   \mfw@needalt%
   \def\mfw@type{html}%
   \mfw@params{}{html}%
-  \mfw@needfile{\mfw@poster}\mfw@needfile{#2/index.html}%
+  \mfw@needposter\mfw@needfile{#2/index.html}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \mfw@sbox@graphic{\mfw@poster}%
+  \mfw@posterbox{}{bundle=#2}{\mfw@dims@opt}%
   \mfw@record{\mfw@type}{}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{bundle=#2}{\mfw@dims@opt}%
   \mfw@emit
