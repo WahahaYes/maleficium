@@ -10,7 +10,7 @@ const src = (name: string, text: string, mime = ''): SourceBytes => ({
   sha256: '',
   bytes: bytes(text),
 });
-// The ip.5 fixture spec: one inline value, a bar mark.
+// The fixture spec: one inline value, a bar mark.
 const fixtureText = readFileSync('e2e/fixtures/interactive/charts/ablation.vl.json', 'utf8');
 const fixture = () => resolveData(parseSpec(src('ablation.vl.json', fixtureText)), {});
 

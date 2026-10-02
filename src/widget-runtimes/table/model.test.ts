@@ -10,7 +10,7 @@ import {
   visibleRows,
 } from './model';
 
-// The ip.5 fixture: name,score with alpha..epsilon scoring 10..50.
+// The fixture: name,score with alpha..epsilon scoring 10..50.
 const csv = readFileSync('e2e/fixtures/interactive/data/results.csv', 'utf8');
 const table = buildTable(csv);
 const names = (idx: number[]) => idx.map((i) => table.rows[i][0].raw);
