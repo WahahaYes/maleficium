@@ -5,7 +5,6 @@
 // Presentational: the model decides what each action does. Approve passes
 // the digest that was reviewed and is refused if the folder changed since.
 
-import { useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -103,7 +102,9 @@ function Diff({ id, state }: { id: string; state: WidgetsState }) {
 
 function Row({ row, model, state }: { row: WidgetRow; model: WidgetsModel; state: WidgetsState }) {
   const busy = state.busy.includes(row.id);
-  const [open, setOpen] = useState(false);
+  // A review is open exactly while its source is loaded; approving, revoking
+  // or a change on disk drops it.
+  const open = state.reviews[row.id] !== undefined;
   return (
     <Box
       data-testid={`widget-row-${row.id}`}
@@ -126,8 +127,8 @@ function Row({ row, model, state }: { row: WidgetRow; model: WidgetsModel; state
             disabled={busy}
             data-testid={`widget-review-${row.id}`}
             onClick={() => {
-              setOpen(!open);
-              if (!open) void model.loadReview(row.id);
+              if (open) model.hideReview(row.id);
+              else void model.loadReview(row.id);
             }}
           >
             {open ? 'Hide source' : row.hasApproved ? 'Review changes' : 'Review source'}

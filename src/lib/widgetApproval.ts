@@ -90,6 +90,10 @@ export function createWidgetsModel(io: WidgetsIo, rootId: string, mainRel: strin
     });
   }
 
+  function hideReview(id: string): void {
+    set({ reviews: dropReview(id) });
+  }
+
   /** The digest the user last looked at: the loaded review, else the listing. */
   function reviewedDigest(id: string): string | null {
     return (
@@ -148,6 +152,7 @@ export function createWidgetsModel(io: WidgetsIo, rootId: string, mainRel: strin
     },
     refresh,
     loadReview,
+    hideReview,
     approve,
     revoke,
     setAutoApprove,
