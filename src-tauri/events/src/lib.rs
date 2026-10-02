@@ -160,14 +160,17 @@ pub struct CompileLine {
 /// How a desktop compile ended. `pdfUrl` is set on success; `failure` says
 /// why there is none. `missing` names the dependency the run lacked, and is
 /// also set beside a pdf when the pinned bundle changed under it. `message`
-/// is the human-readable failure, empty on success.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+/// is the human-readable failure, empty on success. `approvals` are the
+/// `widget.approval-required` events of the html widgets the compile found
+/// waiting for the user, for the window to publish on its bus.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CompileReport {
     pub pdf_url: Option<String>,
     pub failure: Option<CompileFailure>,
     pub missing: Option<MissingDependency>,
     pub message: String,
+    pub approvals: Vec<BusEvent>,
 }
 
 /// How the preview sizes pages.
@@ -727,6 +730,21 @@ pub enum AppEvent {
         digest: String,
         cause: WidgetApprovalCause,
         auto_approved: bool,
+    },
+    /// A compile found an html widget waiting for the user's approval (never
+    /// approved, changed, revoked, or declaring origins the approval did not
+    /// cover). The window asks about it; the declared origins are the
+    /// domains the widget would be allowed to reach.
+    #[serde(rename = "widget.approval-required")]
+    WidgetApprovalRequired {
+        root_id: String,
+        path: String,
+        widget: String,
+        digest: String,
+        cause: WidgetApprovalCause,
+        connect_domains: Vec<String>,
+        resource_domains: Vec<String>,
+        frame_domains: Vec<String>,
     },
     /// The user turned the project's widget auto-approval on or off.
     #[serde(rename = "widgets.auto-approve")]
