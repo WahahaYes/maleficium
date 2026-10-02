@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn frames_are_sandboxed_to_scripts_only() {
         let h = page(false);
-        assert!(h.contains("setAttribute(\"sandbox\", \"allow-scripts\")"));
+        assert!(h.contains("setAttribute('sandbox', 'allow-scripts')"));
         assert!(!h.contains("allow-same-origin"));
         assert!(
             !h.contains("<iframe"),

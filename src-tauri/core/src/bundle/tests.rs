@@ -898,7 +898,7 @@ fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
         assert_eq!(html.matches("class=\"poster\"").count(), ids.len());
         assert!(!html.contains("allow-same-origin"));
         assert_eq!(
-            html.matches("setAttribute(\"sandbox\", \"allow-scripts\")")
+            html.matches("setAttribute('sandbox', 'allow-scripts')")
                 .count(),
             1
         );
