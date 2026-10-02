@@ -2,7 +2,7 @@
 // change the Rust types, then run
 //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace
 
-import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange } from './events';
+import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';
 import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';
 import type { Diagnostic, Finding, Outline } from './structure';
 
@@ -146,6 +146,93 @@ csp?: WidgetCsp, };
 
 export type WidgetList = { widgets: Array<Widget>, };
 
+export type WidgetsStatusParams = { rootId: string, mainRel: string, };
+
+export type WidgetReviewParams = { rootId: string, mainRel: string, widget: string, };
+
+export type ApprovalKind = "html_widget";
+
+export type ApprovedVia = "user" | "auto";
+
+export type WidgetApproved = { kind: ApprovalKind, widget: string, path: string, digest: string, via: ApprovedVia, declaredOrigins: WidgetCsp, 
+/**
+ * The digest the user last approved, when it differs (auto-approved).
+ */
+approvedDigest?: string, autoApprove: boolean, };
+
+export type ApprovalRequired = { kind: ApprovalKind, widget: string, path: string, digest: string, cause: WidgetApprovalCause, declaredOrigins: WidgetCsp, 
+/**
+ * The digest the user last approved, if any.
+ */
+approvedDigest?: string, 
+/**
+ * The origins that approval covered, if any.
+ */
+approvedOrigins?: WidgetCsp, autoApprove: boolean, 
+/**
+ * Where in the app the user approves it.
+ */
+panel: string, 
+/**
+ * What the calling operation did instead of running the widget.
+ */
+whatHappens: string, userAction: string, agentMustNot: Array<string>, 
+/**
+ * Plain language an agent can relay to the user.
+ */
+message: string, };
+
+export type WidgetApprovalStatus = { "status": "approved" } & WidgetApproved | { "status": "approval_required" } & ApprovalRequired;
+
+export type WidgetUnavailable = { widget: string, path: string, error: string, };
+
+export type WidgetsStatus = { 
+/**
+ * The project's auto-approval setting (only the user changes it).
+ */
+autoApprove: boolean, 
+/**
+ * How many widgets wait for the user.
+ */
+pending: number, widgets: Array<WidgetApprovalStatus>, unavailable: Array<WidgetUnavailable>, 
+/**
+ * First-party runtime widgets: they need no approval.
+ */
+exempt: Array<string>, 
+/**
+ * Set when the approval store could not be read: it counts as empty.
+ */
+storeError?: string, };
+
+export type FileChange = "added" | "removed" | "modified" | "unchanged";
+
+export type ReviewFile = { path: string, change: FileChange, 
+/**
+ * Approved text; absent for an added, binary or large file.
+ */
+before?: string, 
+/**
+ * Current text; absent for a removed, binary or large file.
+ */
+after?: string, 
+/**
+ * Shown without text: not UTF-8, or over the review size.
+ */
+binary: boolean, };
+
+export type WidgetReview = { status: WidgetApprovalStatus, files: Array<ReviewFile>, };
+
+export type WidgetApproveParams = { rootId: string, mainRel: string, widget: string, 
+/**
+ * The digest shown for review: approval is refused if the folder no
+ * longer hashes to it.
+ */
+digest: string, };
+
+export type WidgetRevokeParams = { rootId: string, path: string, };
+
+export type WidgetAutoApproveParams = { rootId: string, on: boolean, };
+
 export type ExportBundleParams = { rootId: string, mainRel: string, dest: string, profile: BundleProfile, sizeCapBytes: number | null, };
 
 export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
@@ -238,9 +325,9 @@ export type EventRotateParams = Record<symbol, never>;
 
 export type RotateReport = { path: string, kept: number, dropped: number, };
 
-export type Request = { "op": "grantProjectAccess", "params": GrantProjectParams } | { "op": "grantUntitledAccess", "params": GrantUntitledParams } | { "op": "compileDiagnostics", "params": CompileDiagnosticsParams } | { "op": "offlineReadiness", "params": OfflineReadinessParams } | { "op": "precompileChecks", "params": PrecompileChecksParams } | { "op": "outputStamp", "params": OutputStampParams } | { "op": "outputPdf", "params": OutputPdfParams } | { "op": "exportPdf", "params": ExportPdfParams } | { "op": "exportZip", "params": ExportZipParams } | { "op": "outputsFresh", "params": OutputsFreshParams } | { "op": "cleanOutputs", "params": CleanOutputsParams } | { "op": "templatesList", "params": TemplatesListParams } | { "op": "templateInstantiate", "params": TemplateInstantiateParams } | { "op": "templateSaveProject", "params": TemplateSaveProjectParams } | { "op": "templateImportFolder", "params": TemplateImportFolderParams } | { "op": "templateWelcome", "params": TemplateWelcomeParams } | { "op": "interactiveInstall", "params": InteractiveInstallParams } | { "op": "widgets", "params": WidgetsParams } | { "op": "exportBundle", "params": ExportBundleParams } | { "op": "forwardSync", "params": ForwardSyncParams } | { "op": "inverseSync", "params": InverseSyncParams } | { "op": "structureOutline", "params": StructureOutlineParams } | { "op": "structureDiagnostics", "params": StructureDiagnosticsParams } | { "op": "historyRecord", "params": HistoryRecordParams } | { "op": "historyList", "params": HistoryListParams } | { "op": "historyRetention", "params": HistoryRetentionParams } | { "op": "historyBatchFiles", "params": HistoryBatchFilesParams } | { "op": "indexOpen", "params": IndexOpenParams } | { "op": "indexWatched", "params": IndexWatchedParams } | { "op": "indexTouch", "params": IndexTouchParams } | { "op": "watchStart", "params": WatchStartParams } | { "op": "watchPoll", "params": WatchPollParams } | { "op": "watchStop", "params": WatchStopParams } | { "op": "indexOverlay", "params": IndexOverlayParams } | { "op": "indexSearch", "params": IndexSearchParams } | { "op": "indexFindFiles", "params": IndexFindFilesParams } | { "op": "indexReplacePreview", "params": IndexReplacePreviewParams } | { "op": "indexReplaceApply", "params": IndexReplaceApplyParams } | { "op": "fuzzyRank", "params": FuzzyRankParams } | { "op": "indexDefinitionAt", "params": IndexDefinitionAtParams } | { "op": "mainResolve", "params": MainResolveParams } | { "op": "mainSetAssociation", "params": MainSetAssociationParams } | { "op": "fileRead", "params": FileReadParams } | { "op": "fileReadBytes", "params": FileReadBytesParams } | { "op": "fileWrite", "params": FileWriteParams } | { "op": "fileSave", "params": FileSaveParams } | { "op": "fileList", "params": FileListParams } | { "op": "fileRename", "params": FileRenameParams } | { "op": "fileMkdir", "params": FileMkdirParams } | { "op": "fileRemove", "params": FileRemoveParams } | { "op": "fileStat", "params": FileStatParams } | { "op": "fileTrash", "params": FileTrashParams } | { "op": "fileUndoTrash", "params": FileUndoTrashParams } | { "op": "eventAppend", "params": EventAppendParams } | { "op": "eventRotate", "params": EventRotateParams };
+export type Request = { "op": "grantProjectAccess", "params": GrantProjectParams } | { "op": "grantUntitledAccess", "params": GrantUntitledParams } | { "op": "compileDiagnostics", "params": CompileDiagnosticsParams } | { "op": "offlineReadiness", "params": OfflineReadinessParams } | { "op": "precompileChecks", "params": PrecompileChecksParams } | { "op": "outputStamp", "params": OutputStampParams } | { "op": "outputPdf", "params": OutputPdfParams } | { "op": "exportPdf", "params": ExportPdfParams } | { "op": "exportZip", "params": ExportZipParams } | { "op": "outputsFresh", "params": OutputsFreshParams } | { "op": "cleanOutputs", "params": CleanOutputsParams } | { "op": "templatesList", "params": TemplatesListParams } | { "op": "templateInstantiate", "params": TemplateInstantiateParams } | { "op": "templateSaveProject", "params": TemplateSaveProjectParams } | { "op": "templateImportFolder", "params": TemplateImportFolderParams } | { "op": "templateWelcome", "params": TemplateWelcomeParams } | { "op": "interactiveInstall", "params": InteractiveInstallParams } | { "op": "widgets", "params": WidgetsParams } | { "op": "widgetsStatus", "params": WidgetsStatusParams } | { "op": "widgetReview", "params": WidgetReviewParams } | { "op": "exportBundle", "params": ExportBundleParams } | { "op": "forwardSync", "params": ForwardSyncParams } | { "op": "inverseSync", "params": InverseSyncParams } | { "op": "structureOutline", "params": StructureOutlineParams } | { "op": "structureDiagnostics", "params": StructureDiagnosticsParams } | { "op": "historyRecord", "params": HistoryRecordParams } | { "op": "historyList", "params": HistoryListParams } | { "op": "historyRetention", "params": HistoryRetentionParams } | { "op": "historyBatchFiles", "params": HistoryBatchFilesParams } | { "op": "indexOpen", "params": IndexOpenParams } | { "op": "indexWatched", "params": IndexWatchedParams } | { "op": "indexTouch", "params": IndexTouchParams } | { "op": "watchStart", "params": WatchStartParams } | { "op": "watchPoll", "params": WatchPollParams } | { "op": "watchStop", "params": WatchStopParams } | { "op": "indexOverlay", "params": IndexOverlayParams } | { "op": "indexSearch", "params": IndexSearchParams } | { "op": "indexFindFiles", "params": IndexFindFilesParams } | { "op": "indexReplacePreview", "params": IndexReplacePreviewParams } | { "op": "indexReplaceApply", "params": IndexReplaceApplyParams } | { "op": "fuzzyRank", "params": FuzzyRankParams } | { "op": "indexDefinitionAt", "params": IndexDefinitionAtParams } | { "op": "mainResolve", "params": MainResolveParams } | { "op": "mainSetAssociation", "params": MainSetAssociationParams } | { "op": "fileRead", "params": FileReadParams } | { "op": "fileReadBytes", "params": FileReadBytesParams } | { "op": "fileWrite", "params": FileWriteParams } | { "op": "fileSave", "params": FileSaveParams } | { "op": "fileList", "params": FileListParams } | { "op": "fileRename", "params": FileRenameParams } | { "op": "fileMkdir", "params": FileMkdirParams } | { "op": "fileRemove", "params": FileRemoveParams } | { "op": "fileStat", "params": FileStatParams } | { "op": "fileTrash", "params": FileTrashParams } | { "op": "fileUndoTrash", "params": FileUndoTrashParams } | { "op": "eventAppend", "params": EventAppendParams } | { "op": "eventRotate", "params": EventRotateParams };
 
-export type Response = { "op": "grantProjectAccess", "result": ProjectGrant } | { "op": "grantUntitledAccess", "result": ProjectGrant } | { "op": "compileDiagnostics", "result": Array<Diagnostic> } | { "op": "offlineReadiness", "result": OfflineReadiness } | { "op": "precompileChecks", "result": Precheck } | { "op": "outputStamp", "result": OutputStamp | null } | { "op": "outputPdf", "result": string | null } | { "op": "exportPdf", "result": Exported } | { "op": "exportZip", "result": Exported } | { "op": "outputsFresh", "result": boolean } | { "op": "cleanOutputs", "result": number } | { "op": "templatesList", "result": TemplateList } | { "op": "templateInstantiate", "result": Created } | { "op": "templateSaveProject", "result": TemplateInfo } | { "op": "templateImportFolder", "result": TemplateInfo } | { "op": "templateWelcome", "result": Created } | { "op": "interactiveInstall", "result": Installed } | { "op": "widgets", "result": WidgetList } | { "op": "exportBundle", "result": BundleExported } | { "op": "forwardSync", "result": ForwardHit } | { "op": "inverseSync", "result": InverseHit } | { "op": "structureOutline", "result": Outline } | { "op": "structureDiagnostics", "result": Array<Diagnostic> } | { "op": "historyRecord", "result": RecordOutcome } | { "op": "historyList", "result": Array<Revision> } | { "op": "historyRetention", "result": RetentionInfo } | { "op": "historyBatchFiles", "result": Array<BatchFile> } | { "op": "indexOpen", "result": number } | { "op": "indexWatched", "result": null } | { "op": "indexTouch", "result": null } | { "op": "watchStart", "result": null } | { "op": "watchPoll", "result": Array<WatchEvent> } | { "op": "watchStop", "result": null } | { "op": "indexOverlay", "result": null } | { "op": "indexSearch", "result": SearchResult } | { "op": "indexFindFiles", "result": Array<FileMatch> } | { "op": "indexReplacePreview", "result": ReplacePreview } | { "op": "indexReplaceApply", "result": ReplaceApplied } | { "op": "fuzzyRank", "result": Array<Ranked> } | { "op": "indexDefinitionAt", "result": Lookup | null } | { "op": "mainResolve", "result": MainResolution } | { "op": "mainSetAssociation", "result": null } | { "op": "fileRead", "result": string } | { "op": "fileReadBytes", "result": string } | { "op": "fileWrite", "result": null } | { "op": "fileSave", "result": RecordOutcome } | { "op": "fileList", "result": Array<FileEntry> } | { "op": "fileRename", "result": null } | { "op": "fileMkdir", "result": null } | { "op": "fileRemove", "result": null } | { "op": "fileStat", "result": FileStat | null } | { "op": "fileTrash", "result": string } | { "op": "fileUndoTrash", "result": string } | { "op": "eventAppend", "result": null } | { "op": "eventRotate", "result": RotateReport };
+export type Response = { "op": "grantProjectAccess", "result": ProjectGrant } | { "op": "grantUntitledAccess", "result": ProjectGrant } | { "op": "compileDiagnostics", "result": Array<Diagnostic> } | { "op": "offlineReadiness", "result": OfflineReadiness } | { "op": "precompileChecks", "result": Precheck } | { "op": "outputStamp", "result": OutputStamp | null } | { "op": "outputPdf", "result": string | null } | { "op": "exportPdf", "result": Exported } | { "op": "exportZip", "result": Exported } | { "op": "outputsFresh", "result": boolean } | { "op": "cleanOutputs", "result": number } | { "op": "templatesList", "result": TemplateList } | { "op": "templateInstantiate", "result": Created } | { "op": "templateSaveProject", "result": TemplateInfo } | { "op": "templateImportFolder", "result": TemplateInfo } | { "op": "templateWelcome", "result": Created } | { "op": "interactiveInstall", "result": Installed } | { "op": "widgets", "result": WidgetList } | { "op": "widgetsStatus", "result": WidgetsStatus } | { "op": "widgetReview", "result": WidgetReview } | { "op": "exportBundle", "result": BundleExported } | { "op": "forwardSync", "result": ForwardHit } | { "op": "inverseSync", "result": InverseHit } | { "op": "structureOutline", "result": Outline } | { "op": "structureDiagnostics", "result": Array<Diagnostic> } | { "op": "historyRecord", "result": RecordOutcome } | { "op": "historyList", "result": Array<Revision> } | { "op": "historyRetention", "result": RetentionInfo } | { "op": "historyBatchFiles", "result": Array<BatchFile> } | { "op": "indexOpen", "result": number } | { "op": "indexWatched", "result": null } | { "op": "indexTouch", "result": null } | { "op": "watchStart", "result": null } | { "op": "watchPoll", "result": Array<WatchEvent> } | { "op": "watchStop", "result": null } | { "op": "indexOverlay", "result": null } | { "op": "indexSearch", "result": SearchResult } | { "op": "indexFindFiles", "result": Array<FileMatch> } | { "op": "indexReplacePreview", "result": ReplacePreview } | { "op": "indexReplaceApply", "result": ReplaceApplied } | { "op": "fuzzyRank", "result": Array<Ranked> } | { "op": "indexDefinitionAt", "result": Lookup | null } | { "op": "mainResolve", "result": MainResolution } | { "op": "mainSetAssociation", "result": null } | { "op": "fileRead", "result": string } | { "op": "fileReadBytes", "result": string } | { "op": "fileWrite", "result": null } | { "op": "fileSave", "result": RecordOutcome } | { "op": "fileList", "result": Array<FileEntry> } | { "op": "fileRename", "result": null } | { "op": "fileMkdir", "result": null } | { "op": "fileRemove", "result": null } | { "op": "fileStat", "result": FileStat | null } | { "op": "fileTrash", "result": string } | { "op": "fileUndoTrash", "result": string } | { "op": "eventAppend", "result": null } | { "op": "eventRotate", "result": RotateReport };
 
 /** Params by operation name, derived from `Request`. */
 export type OpParams = { [R in Request as R["op"]]: R["params"] };
