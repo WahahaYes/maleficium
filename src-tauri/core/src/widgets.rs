@@ -11,6 +11,7 @@
 use crate::Core;
 
 pub mod params;
+pub mod poster;
 
 use hayro::hayro_syntax::object::{Array, Dict, Rect, String as PdfString};
 use hayro::hayro_syntax::Pdf;
