@@ -30,6 +30,7 @@ fn validate_root_id(id: &str) -> Result<&str, String> {
 pub fn grant_root(cx: &Core, id: &str, root: &str) -> Result<PathBuf, String> {
     validate_root_id(id)?;
     let canon = crate::guard::canonical_root(root)?;
+    crate::widget_approval::refuse_store_overlap(&canon, &crate::widget_approval::store_base())?;
     cx.sessions()
         .0
         .lock()

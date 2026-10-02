@@ -550,11 +550,26 @@ fn resolved(p: &Path) -> PathBuf {
     }
 }
 
+/// Refuse a project root that overlaps the approval store (`base`): inside
+/// it, or containing it. Granting one would let any tool that writes
+/// project files (a replace, a restore) rewrite approvals, so no session
+/// root may reach the store.
+pub(crate) fn refuse_store_overlap(root: &Path, base: &Path) -> Result<(), String> {
+    let store = resolved(base);
+    if root.starts_with(&store) || store.starts_with(root) {
+        return Err(format!(
+            "forbidden path (holds the app's widget approvals): {}",
+            root.display()
+        ));
+    }
+    Ok(())
+}
+
 /// `<base>/approvals/<sha256(root)[..32]>`. Refused when it would sit
 /// inside the project (an app-data dir under the project root): approvals
 /// must never live in the project tree.
 fn project_dir(base: &Path, root: &Path) -> Result<PathBuf, String> {
-    let key = crate::bundle::sha_of(root.to_string_lossy().as_bytes());
+    let key = crate::bundle::sha_of(root.as_os_str().as_encoded_bytes());
     let dir = base.join("approvals").join(&key[..32]);
     if resolved(base).starts_with(root) || dir.starts_with(root) {
         return Err(format!(
