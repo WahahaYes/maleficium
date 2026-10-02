@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- **One QR code per paper, in the page footer.** `maleficium-interactive.sty` drew a 2cm QR code under every widget when `bundleurl` was set. It now draws one 1.5cm QR code with the URL in the footer of the first page, and each widget keeps a one-line "Interactive version" mark that links to the bundle URL. Floats no longer grow by 2cm and widget rects are unchanged. `\maleficiumsetup{qr=none}` turns the footer QR off.
+
 ### Fixes
 
 - **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
