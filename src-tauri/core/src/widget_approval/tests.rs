@@ -761,4 +761,12 @@ fn grant_refuses_the_real_approval_store() {
     let cx = Core::default();
     let e = crate::fs::grant_root(&cx, "store", &base.to_string_lossy()).unwrap_err();
     assert!(e.contains("widget approvals"), "{e}");
+    // Nor can an export or a new project be written into it.
+    let p = project("store-writes");
+    let into = base.join("store.json");
+    let e = crate::export::destination(&p.root, &into.to_string_lossy()).unwrap_err();
+    assert!(e.contains("widget approvals"), "{e}");
+    let e =
+        crate::templates::instantiate("article", &base.to_string_lossy(), "approvals").unwrap_err();
+    assert!(e.contains("widget approvals"), "{e}");
 }
