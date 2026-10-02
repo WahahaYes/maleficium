@@ -58,7 +58,7 @@ Give the widget a `poster=`. The app renders posters with every declared origin 
 ## What the declaration does
 
 - **One widget, one policy.** The origins go into that widget's own content security policy (`frame-src` for `frameDomains`). No other widget in the bundle gets them, so another widget cannot frame your player's origin.
-- **The reader allows only the union.** A single-file bundle runs each widget inside the reader page, and that page's policy applies too. Its `frame-src` is exactly the set of frame origins your widgets declared, and nothing else. A folder or hosted bundle loads each widget as a document of its own, so the reader page needs no frame origins and its policy stays `frame-src 'self'`.
+- **The reader allows only the union.** A single-file bundle runs each widget inside the reader page, and that page's policy applies too. Its `frame-src` is exactly the set of frame origins your widgets declared, and nothing else. A folder bundle loads each widget as a document of its own, so the reader page needs no frame origins and its policy stays `frame-src 'self'`.
 - **The origins are part of the approval.** An `html` widget runs only after you approve it in View > Widgets, which shows the declared origins. The approval covers the folder's files and the declared origins together. Changing either one, in `widget.json` or in the macro option, makes the widget need approval again. Auto-approval never covers an origin the last approval did not include.
 - **The PDF is not affected.** The PDF shows the poster. The declaration matters only in the exported bundle.
 
