@@ -49,8 +49,10 @@ pub(super) struct Reader<'a> {
 /// which inherits this policy, so a frame it embeds must pass the reader's
 /// `frame-src` as well as its own: that directive is exactly the union of
 /// the declared frame origins, and absent (`default-src 'none'`) when none
-/// is declared. Each widget's own policy still names only its origins. A
-/// folder widget is a document of its own and does not inherit, so the
+/// is declared. Each widget's own policy still names only its origins, and
+/// `reader.js` mounts each widget inside a wrapper document whose
+/// `frame-src` names only that widget's, so a widget cannot navigate its own
+/// frame to another widget's origin. A folder widget is a document of its own and does not inherit, so the
 /// folder reader stays `frame-src 'self'`.
 pub(super) fn policy(folder: bool, frames: &[String]) -> String {
     if folder {
