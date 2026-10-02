@@ -13,9 +13,19 @@
 //
 // e2e/export-run.sh produces both bundles and calls this with them. Needs a
 // browser for playwright-core (npx playwright-core install firefox chromium webkit).
+//
+// With --embed-single, --embed-folder, --embed-ports A,B,U, --cert and --key it
+// also runs the declared-origin cells over the two-widget embed variant:
+// three https listeners on 127.0.0.1 (one self-signed certificate, which the
+// browser context is told to accept) play fig-embed's widget.json origin (A),
+// fig-macro's macro-option origin (B) and an origin nobody declared (U).
+// Declared frames must load and render; U, and A framed by fig-macro, must
+// not, and copies of the bundles with each policy removed show which layer
+// holds (red controls).
 import { chromium, firefox, webkit } from 'playwright-core';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { extname, join, normalize } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,6 +34,9 @@ const arg = (name) => {
   return i < 0 ? null : process.argv[i + 1];
 };
 const singleFile = arg('--single');
+const embedSingle = arg('--embed-single');
+const embedFolder = arg('--embed-folder');
+const embedPorts = arg('--embed-ports');
 const folderDir = arg('--folder');
 const engines = { chromium, firefox, webkit };
 const engineName = arg('--browser') ?? 'firefox';
@@ -370,6 +383,185 @@ check(
   leaks.every((u) => u === '/nav'),
   leaks.join(','),
 );
+
+// ---- declared origins: an embed variant with two html widgets ----
+if (embedSingle && embedFolder && embedPorts) {
+  const tls = { cert: readFileSync(arg('--cert')), key: readFileSync(arg('--key')) };
+  const [pa, pb, pu] = embedPorts.split(',').map(Number);
+  // Each listener records the paths it served; a page it serves loads one
+  // image from its own origin, so `<path>.rendered` proves the frame rendered.
+  const hits = { A: [], B: [], U: [] };
+  const origins = {};
+  const listeners = [];
+  for (const [name, port] of [
+    ['A', pa],
+    ['B', pb],
+    ['U', pu],
+  ]) {
+    const server = createHttpsServer(tls, (req, res) => {
+      const path = new URL(req.url, 'https://x').pathname;
+      hits[name].push(path);
+      if (path.endsWith('.rendered')) {
+        res.setHeader('content-type', 'image/png');
+        res.end(
+          Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+            'base64',
+          ),
+        );
+        return;
+      }
+      res.setHeader('content-type', 'text/html');
+      res.end(`<!doctype html><title>${name}</title><img src="${path}.rendered">`);
+    });
+    await new Promise((r) => server.listen(port, '127.0.0.1', r));
+    listeners.push(server);
+    origins[name] = `https://127.0.0.1:${port}`;
+  }
+
+  const CSP_META = /<meta http-equiv="Content-Security-Policy"[^>]*>/;
+  const noReaderCsp = (html) => html.replace(CSP_META, '');
+  // Single-file: the widget documents ride in the mfw-widgets island.
+  const noWidgetCsp = (html) =>
+    html.replace(
+      /(<script type="application\/json" id="mfw-widgets">)(.*?)(<\/script>)/s,
+      (_, open, body, close) => {
+        const docs = JSON.parse(body);
+        for (const k of Object.keys(docs)) docs[k] = docs[k].replace(CSP_META, '');
+        return open + JSON.stringify(docs).replace(/</g, '\\u003c') + close;
+      },
+    );
+  const singleText = readFileSync(embedSingle, 'utf8');
+  const singleVariants = {
+    '/': singleText,
+    '/nowidgetcsp.html': noWidgetCsp(singleText),
+    '/noreadercsp.html': noReaderCsp(singleText),
+    '/nocsp.html': noReaderCsp(noWidgetCsp(singleText)),
+    // The reader policy without its frame-src: what a reader that ignored
+    // the declared origins would ship.
+    '/nounion.html': singleText.replace(/; frame-src [^"]*"/, '"'),
+  };
+  const serve = (handler) => {
+    const server = createServer((req, res) => {
+      const r = handler(decodeURIComponent(new URL(req.url, 'http://x').pathname));
+      if (!r) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+      res.setHeader('content-type', r.type);
+      res.end(r.body);
+    });
+    return new Promise((r) =>
+      server.listen(0, '127.0.0.1', () =>
+        r({ server, origin: `http://127.0.0.1:${server.address().port}` }),
+      ),
+    );
+  };
+  const eSingle = await serve((p) =>
+    singleVariants[p] ? { type: 'text/html', body: singleVariants[p] } : null,
+  );
+  // Folder: under /nwc/ the same bundle is served with every widget
+  // document's own policy removed (the reader page keeps its own).
+  const eFolder = await serve((p) => {
+    const strip = p.startsWith('/nwc/');
+    let rel = strip ? p.slice(4) : p;
+    if (rel === '/') rel = '/index.html';
+    const file = join(embedFolder, normalize(rel));
+    if (!file.startsWith(embedFolder) || !existsSync(file) || !statSync(file).isFile()) return null;
+    const type = MIME[extname(file)] ?? 'application/octet-stream';
+    if (strip && /^\/widgets\//.test(rel)) {
+      return { type, body: readFileSync(file, 'utf8').replace(CSP_META, '') };
+    }
+    return { type, body: readFileSync(file) };
+  });
+
+  const seen = (o, path) => hits[o].includes(path);
+  async function cell(label, url, expect) {
+    for (const k of Object.keys(hits)) hits[k].length = 0;
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await ctx.newPage();
+    await page.goto(url);
+    const mounted = await until(async () => {
+      const n = await page.evaluate(
+        () =>
+          [...document.querySelectorAll('figure[data-widget] iframe')].filter(
+            (f) => f.srcdoc || f.getAttribute('src'),
+          ).length,
+      );
+      return n === 2;
+    });
+    check(`${label}: both embed widgets are mounted`, !!mounted);
+    // Wait for every frame that should load to render, then a quiet spell
+    // for any that should not.
+    const want = Object.entries(expect).filter(([, v]) => v);
+    await until(
+      async () => want.every(([k]) => seen(k.split(' ')[0], `${k.split(' ')[1]}.rendered`)),
+      15_000,
+    );
+    await new Promise((r) => setTimeout(r, 2000));
+    for (const [k, should] of Object.entries(expect)) {
+      const [o, path] = k.split(' ');
+      const got = seen(o, path);
+      const rendered = seen(o, `${path}.rendered`);
+      check(
+        `${label}: ${path} on ${o} ${should ? 'loads and renders' : 'is blocked (no request)'}`,
+        should ? got && rendered : !got && !rendered,
+        JSON.stringify(hits),
+      );
+    }
+    await ctx.close();
+  }
+  const GREEN = {
+    'A /w1-declared': true,
+    'U /w1-undeclared': false,
+    'B /w2-declared': true,
+    'A /w2-cross': false,
+  };
+  await cell('embed single-file over http', `${eSingle.origin}/`, GREEN);
+  await cell('embed single-file from file://', pathToFileURL(embedSingle).href, GREEN);
+  await cell('embed folder over http', `${eFolder.origin}/`, GREEN);
+  // Red controls: remove one policy at a time.
+  await cell('embed single-file without widget CSPs', `${eSingle.origin}/nowidgetcsp.html`, {
+    'A /w1-declared': true,
+    'U /w1-undeclared': false, // the reader's frame-src, inherited by the srcdoc widget
+    'B /w2-declared': true,
+    'A /w2-cross': true, // red: only fig-macro's own policy keeps fig-embed's origin out
+  });
+  await cell('embed single-file without the reader CSP', `${eSingle.origin}/noreadercsp.html`, {
+    'A /w1-declared': true,
+    'U /w1-undeclared': false, // the widget's own policy alone holds
+    'B /w2-declared': true,
+    'A /w2-cross': false,
+  });
+  await cell(
+    'embed single-file whose reader lacks the frame-src union',
+    `${eSingle.origin}/nounion.html`,
+    {
+      'A /w1-declared': false, // a srcdoc widget inherits the reader's policy
+      'U /w1-undeclared': false,
+      'B /w2-declared': false,
+      'A /w2-cross': false,
+    },
+  );
+  await cell('embed single-file with no CSP at all', `${eSingle.origin}/nocsp.html`, {
+    'A /w1-declared': true,
+    'U /w1-undeclared': true, // red: the undeclared origin loads
+    'B /w2-declared': true,
+    'A /w2-cross': true,
+  });
+  await cell('embed folder without widget CSPs', `${eFolder.origin}/nwc/`, {
+    'A /w1-declared': true,
+    'U /w1-undeclared': true, // red: a folder widget does not inherit the reader policy
+    'B /w2-declared': true,
+    'A /w2-cross': true,
+  });
+  for (const s of listeners) s.close();
+  eSingle.server.close();
+  eFolder.server.close();
+} else if (embedSingle || embedFolder || embedPorts) {
+  check('embed cells need --embed-single, --embed-folder and --embed-ports together', false);
+}
 
 await browser.close();
 single.server.close();
