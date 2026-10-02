@@ -801,3 +801,57 @@ fn the_events_name_the_profile_and_the_outcome() {
     assert_eq!(j["event"]["action"], "bundle.failed");
     assert_eq!(j["event"]["profile"], "single-file");
 }
+
+#[test]
+fn a_preview_lands_in_a_scratch_folder_outside_the_project_and_the_next_run_replaces_it() {
+    let p = project("preview", REAL_SIDECAR);
+    let base = p.out.join("previews");
+    let before = files_under(&p.root);
+
+    let r = preview_bundle_in(&p.cx, &p.id, "main.tex", &base).unwrap();
+    let html = PathBuf::from(&r.path);
+    assert_eq!(html.file_name().unwrap(), "index.html");
+    assert!(html.is_file());
+    assert!(!html.starts_with(&p.root), "never inside the project");
+    assert!(html.starts_with(&base));
+    assert!(std::fs::read_to_string(&html)
+        .unwrap()
+        .contains("mfw-manifest"));
+    assert_eq!(files_under(&p.root), before, "the project is untouched");
+
+    // A stray file in the project's scratch folder is gone after the next run.
+    let dir = html.parent().unwrap().to_path_buf();
+    std::fs::write(dir.join("stale.txt"), "old").unwrap();
+    let again = preview_bundle_in(&p.cx, &p.id, "main.tex", &base).unwrap();
+    assert_eq!(again.path, r.path, "same folder per project");
+    assert!(!dir.join("stale.txt").exists(), "only the latest is kept");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+}
+
+#[test]
+fn a_preview_base_that_overlaps_the_project_is_refused() {
+    let p = project("preview-inside", REAL_SIDECAR);
+    let r = preview_bundle_in(&p.cx, &p.id, "main.tex", &p.root.join("previews"));
+    assert!(r.unwrap_err().contains("overlaps the project"));
+    assert!(!p.root.join("previews").exists());
+}
+
+#[test]
+fn previews_of_different_projects_do_not_share_a_folder() {
+    let a = project("preview-a", REAL_SIDECAR);
+    let b = project("preview-b", REAL_SIDECAR);
+    let base = a.out.join("previews");
+    let ra = preview_bundle_in(&a.cx, &a.id, "main.tex", &base).unwrap();
+    let rb = preview_bundle_in(&b.cx, &b.id, "main.tex", &base).unwrap();
+    assert_ne!(ra.path, rb.path);
+    assert!(PathBuf::from(&ra.path).is_file(), "b did not clear a");
+}
+
+#[test]
+fn a_failed_preview_leaves_no_stale_folder() {
+    let p = project("preview-fail", REAL_SIDECAR);
+    let base = p.out.join("previews");
+    let r = preview_bundle_in(&p.cx, &p.id, "nothere.tex", &base);
+    assert!(r.is_err());
+    assert!(std::fs::read_dir(&base).map(|d| d.count()).unwrap_or(0) == 0);
+}

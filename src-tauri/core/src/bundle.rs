@@ -1076,6 +1076,68 @@ pub fn export_bundle(
     )
 }
 
+/// The browser preview: the single-file bundle of `main_rel`'s last compile,
+/// written as `index.html` into a scratch folder under the OS app-data dir
+/// (never in the project). One folder per project, replaced on the next run,
+/// so only the latest preview is kept. The caller decides whether to open it.
+pub fn preview_bundle(cx: &Core, root_id: &str, main_rel: &str) -> Result<BundleExported, String> {
+    preview_bundle_in(
+        cx,
+        root_id,
+        main_rel,
+        &crate::data_base_dir().join("bundle-previews"),
+    )
+}
+
+/// `preview_bundle` with the scratch base chosen by the caller.
+pub(crate) fn preview_bundle_in(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    base: &Path,
+) -> Result<BundleExported, String> {
+    let root = crate::fs::session_root(cx, root_id)?;
+    let dir = preview_dir(base, &root);
+    if dir.starts_with(&root) || root.starts_with(&dir) {
+        return Err(format!(
+            "the preview folder {} overlaps the project: refusing to write there",
+            dir.display()
+        ));
+    }
+    // Clean the previous preview first, so a failed export leaves nothing stale.
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| format!("cannot clear the old preview {}: {e}", dir.display()))?;
+    }
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("cannot create the preview folder {}: {e}", dir.display()))?;
+    let dest = dir.join("index.html");
+    let r = export_bundle(
+        cx,
+        root_id,
+        main_rel,
+        &dest.to_string_lossy(),
+        BundleProfile::SingleFile,
+        None,
+    );
+    if r.is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    r
+}
+
+/// `<base>/<first 16 hex of sha256(project root)>`: stable per project.
+fn preview_dir(base: &Path, root: &Path) -> PathBuf {
+    let digest = Sha256::digest(root.to_string_lossy().as_bytes());
+    base.join(
+        digest
+            .iter()
+            .take(8)
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
+    )
+}
+
 /// Exports a paper bundle of `main_rel`'s last compile to `dest`, outside the
 /// project.
 pub fn export_bundle_with(
