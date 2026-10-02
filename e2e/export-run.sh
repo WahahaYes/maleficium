@@ -307,7 +307,8 @@ check("preview of an unknown project is refused", not pbad["ok"], str(pbad)[:200
 # by reader-run.mjs, one self-signed certificate) play a widget.json origin
 # (A), a macro-option origin (B) and an origin nobody declared (U). fig-embed
 # declares A in widget.json and frames A and U; fig-macro declares B with
-# framedomains= and frames B and A (A is fig-embed's, not its own).
+# framedomains= and frames B and A (A is fig-embed's, not its own), then
+# navigates its own frame to A (allowed by the single-file reader's union).
 import socket
 EMBED = os.path.join(scratch, "embed")
 os.makedirs(EMBED, exist_ok=True)
@@ -331,7 +332,9 @@ for folder, frames in [("embed", [f"{A}/w1-declared", f"{U}/w1-undeclared"]),
     os.makedirs(d, exist_ok=True)
     open(os.path.join(d, "index.html"), "w").write(
         f"<!doctype html><title>{folder}</title><p>{folder}</p>"
-        + "".join(f'<iframe src="{u}" width="80" height="40"></iframe>' for u in frames))
+        + "".join(f'<iframe src="{u}" width="80" height="40"></iframe>' for u in frames)
+        + (f'<script>setTimeout(function () {{ location.href = "{A}/w2-selfnav"; }}, 1000)</script>'
+           if folder == "macro" else ""))
 json.dump({"csp": {"frameDomains": [A]}}, open(os.path.join(ROOT, "widgets/embed/widget.json"), "w"))
 open(os.path.join(ROOT, "embed.tex"), "w").write(r"""\documentclass{article}
 \usepackage{maleficium-interactive}

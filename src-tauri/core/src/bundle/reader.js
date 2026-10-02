@@ -132,6 +132,37 @@
         f.win.postMessage({ mfw: 1, type: 'theme', mode: t.mode, tokens: t.tokens }, '*');
     });
   });
+  // A single-file widget is mounted inside a wrapper document of its own.
+  // Navigating a frame is checked against its parent's frame-src, and the
+  // reader's is the union of every widget's frame origins; the wrapper's
+  // names this widget's only, so a widget cannot navigate its own frame to
+  // another widget's origin. The wrapper relays the bridge both ways (the
+  // widget's parent is the wrapper) and keeps the widget's sandbox.
+  var WRAP_DIRECTIVE = 'frame-src';
+  var RELAY =
+    'addEventListener("message",function(e){var f=document.querySelector("iframe");if(!f)return;' +
+    'var d=e.data,t=[];if(e.source===f.contentWindow){parent.postMessage(d,"*");return}' +
+    'if(e.source!==parent)return;if(d&&d.sources)for(var k in d.sources)' +
+    'if(d.sources[k]&&d.sources[k].bytes instanceof ArrayBuffer)t.push(d.sources[k].bytes);' +
+    'f.contentWindow.postMessage(d,"*",t)})';
+  function attr(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function wrap(w, doc) {
+    var origins = ((w.csp || {}).frameDomains || []).join(' ') || "'none'";
+    return (
+      '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' +
+      attr(WRAP_DIRECTIVE + ' ' + origins) +
+      '"><style>html,body{margin:0;height:100%;overflow:hidden}' +
+      'iframe{border:0;display:block;width:100%;height:100%}</style><script>' +
+      RELAY +
+      '<\/script><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="' +
+      attr(w.alt || w.id) +
+      '" srcdoc="' +
+      attr(doc) +
+      '"></iframe>'
+    );
+  }
   Array.prototype.forEach.call(document.querySelectorAll('figure[data-widget]'), function (fig) {
     var w = widgets[fig.getAttribute('data-widget')];
     if (!w) return;
@@ -150,6 +181,6 @@
       });
     }
     if (FOLDER) f.src = w.entry;
-    else f.srcdoc = docs[w.id];
+    else f.srcdoc = wrap(w, docs[w.id]);
   });
 })();
