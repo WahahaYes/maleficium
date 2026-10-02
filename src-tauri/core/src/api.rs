@@ -551,6 +551,8 @@ pub fn typescript() -> String {
         crate::widget_approval::WidgetApproveParams::decl(&cfg),
         crate::widget_approval::WidgetRevokeParams::decl(&cfg),
         crate::widget_approval::WidgetAutoApproveParams::decl(&cfg),
+        crate::widgets::poster::PosterRequest::decl(&cfg),
+        crate::widgets::poster::PosterRendered::decl(&cfg),
         ExportBundleParams::decl(&cfg),
         crate::bundle::BundleWarningKind::decl(&cfg),
         crate::bundle::BundleWarning::decl(&cfg),
