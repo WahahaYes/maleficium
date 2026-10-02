@@ -1,0 +1,3 @@
+{
+  "csp": { "connectDomains": ["https://example.org"] }
+}
