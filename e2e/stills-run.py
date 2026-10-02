@@ -14,7 +14,7 @@ probes measure that case.
 
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
-STILLS_STATES (default "1 2 3 4 5 6 7 8 9"), STILLS_MIRROR_PORT /
+STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10"), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -41,7 +41,7 @@ OUT = os.environ.get("STILLS_OUT") or tempfile.mkdtemp(prefix="maleficium-stills
 FAKEHOME = os.environ.get("STILLS_HOME") or tempfile.mkdtemp(prefix="maleficium-stills-home-", dir="/tmp")
 DISP = os.environ.get("STILLS_DISPLAY", ":99")
 PORT = int(os.environ.get("STILLS_PORT", "1420"))
-STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9").split()
+STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9 10").split()
 
 os.makedirs(OUT, exist_ok=True)
 os.makedirs(FAKEHOME, exist_ok=True)
@@ -996,6 +996,81 @@ def state9():
 # ---- run --------------------------------------------------------------------
 
 
+def state10():
+    """Install the interactive package from the app. A copy of the playground
+    without maleficium-interactive.sty warns on Ctrl+R; the command palette
+    installs it (one write, the shipped bytes), the next compile succeeds, a
+    second install is a no-op, and a modified copy is kept when the confirm
+    dialog is cancelled and replaced when it is confirmed."""
+    proj = FIX + "/interactive"
+    shutil.copytree(ROOT + "/e2e/fixtures/playground", proj)
+    sty = proj + "/maleficium-interactive.sty"
+    if os.path.exists(sty):
+        os.remove(sty)
+    shipped = open(ROOT + "/src-tauri/interactive/maleficium-interactive.sty", "rb").read()
+    start_app(proj)
+    wait_window(300)
+    window_size(1600, 900)
+    open_project()
+    click_editor()
+    m_warn = now_ms()
+    key("ctrl+r")
+    wait_event("compile.precheck", m_warn, 120)
+    wait_event("compile.finish", m_warn, 300)
+    if os.path.exists(sty):
+        die("the compile wrote the package into the project")
+    shot("10-interactive-missing")
+    m_install = now_ms()
+    palette("install interactive package", x=800)
+    wait_event("interactive.install", m_install, 30)
+    time.sleep(1)
+    if not os.path.exists(sty) or open(sty, "rb").read() != shipped:
+        die("the palette install did not write the shipped package")
+    click_editor()
+    m_ok = now_ms()
+    key("ctrl+r")
+    wait_event("compile.finish", m_ok, 300)
+    m_again = now_ms()
+    palette("install interactive package", x=800)
+    wait_event("interactive.install", m_again, 30)
+    # A modified copy: cancel keeps it, confirm replaces it.
+    with open(sty, "wb") as f:
+        f.write(b"% my edits\n")
+    time.sleep(2)
+    m_mod = now_ms()
+    palette("install interactive package", x=800)
+    wait_event("interactive.install", m_mod, 30)
+    time.sleep(2)
+    shot("10-interactive-confirm")
+    key("Escape")
+    time.sleep(1)
+    if open(sty, "rb").read() != b"% my edits\n":
+        die("cancelling the confirm dialog still replaced the modified package")
+    m_conf = now_ms()
+    palette("install interactive package", x=800)
+    wait_event("interactive.install", m_conf, 30)
+    time.sleep(2)
+    m_rep = now_ms()
+    key("Tab")
+    key("Tab")
+    key("Return")
+    wait_event("interactive.install", m_rep, 30)
+    time.sleep(1)
+    stop_app()
+
+    evs = APPLOG.events()
+    inst = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "interactive.install" and e["at"] > m_install]
+    outcomes = [e["outcome"] for e in inst]
+    if outcomes[:4] != ["installed", "already-current", "needs-confirmation", "needs-confirmation"] or "installed" not in outcomes[4:]:
+        die("interactive install outcomes: %s" % outcomes)
+    fin = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "compile.finish" and e["at"] > m_ok]
+    if not fin or fin[0].get("ok") is not True:
+        die("the compile after install failed: %s" % fin[:1])
+    if open(sty, "rb").read() != shipped:
+        die("confirming did not replace the modified package")
+    print("stills: interactive package installed from the app (%s), compiled, modified copy kept then replaced" % ",".join(outcomes))
+
+
 def main():
     global FIX, BIN_DIR
     atexit.register(cleanup)
@@ -1040,7 +1115,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 10):
+    for n in range(1, 11):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)

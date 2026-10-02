@@ -687,14 +687,16 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path."
+        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path. Never replaces a modified copy (outcome needs-confirmation): only the user can confirm that, in the app."
     )]
     fn interactive_install(
         &self,
         Parameters(p): Parameters<InteractiveInstallParams>,
-    ) -> Result<Json<core::interactive::Installed>, String> {
+    ) -> Result<Json<core::interactive::InstallResult>, String> {
         self.tool("interactive_install", || {
-            Ok(Json(core::interactive::install(&self.cx, &p.root_id)?))
+            Ok(Json(core::interactive::install_checked(
+                &self.cx, &p.root_id, false,
+            )?))
         })
     }
 
