@@ -7,11 +7,21 @@
 % and records the widget in the \jobname.mfw sidecar the compile leaves in
 % the outdir. Needs the XeTeX engine (xdvipdfmx specials).
 %
+% Posters: poster= is the document's own and always wins. Model and chart
+% widgets may leave it out: Maleficium then renders one into the project's
+% .maleficium/posters/ folder and lists it in .maleficium/posters/
+% \jobname.map, which this package reads. A widget uses its listed poster
+% only while its recorded runtime, sources and options match the list;
+% otherwise, or with no list (another LaTeX setup, a first compile), it
+% shows a placeholder box of the same size. A box without width= is 4:3,
+% or a model's size= aspect, so the poster replacing it keeps the layout.
+%
 % Usage:
 %   \maleficiumtheme{house}                    % optional; house is default
 %   \maleficiumsetup{bundleurl=https://...}    % optional; link per widget, one QR
 %   \maleficiumsetup{qr=none}                 % qr=footer (default) | none
 %   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
+%   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
 %   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
 %     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
 %   \interactivevideo[poster=figures/clip.png,
@@ -75,6 +85,16 @@
 \newwrite\mfw@sidecar
 \newif\ifmfw@sidecar@open
 \newsavebox{\mfw@box}
+
+% -- poster map ----------------------------------------------------------------
+% Written by the app: \mfw@postermap{<id>}{<runtime>|<sources>|<options>}{<sha256>}
+% per widget whose rendered poster exists. The record is kept as a string
+% with space runs folded, the same form \mfw@makekey gives the widget's own.
+\newcommand{\mfw@postermap}[3]{%
+  \mfw@foldspaces{#2}%
+  \expandafter\xdef\csname mfw@pm@r@#1\endcsname{\mfw@folded}%
+  \expandafter\xdef\csname mfw@pm@k@#1\endcsname{\detokenize{#3}}%
+}
 
 % -- keys --------------------------------------------------------------------
 \define@key{mfw}{poster}{\def\mfw@poster{#1}}
@@ -197,6 +217,19 @@
   { \mfw_match:Nn \mfw@p@background { \A(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|transparent)\Z } }
 \cs_new_protected:Npn \mfw@check@scale
   { \mfw_match:Nn \mfw@p@scale { \A[0-9]*\.?[0-9]+\Z } }
+% Record strings as the poster map holds them: detokenized, every run of
+% white space one space (TeX folds them when it reads the map back).
+\str_new:N \l_mfw_fold_str
+\cs_new_protected:Npn \mfw@foldspaces #1 {
+  \str_set:Nn \l_mfw_fold_str {#1}
+  \regex_replace_all:nnN { \s+ } { \  } \l_mfw_fold_str
+  \tl_set:Nx \mfw@folded { \l_mfw_fold_str }
+}
+\cs_new_protected:Npn \mfw@foldspaces@x #1 {
+  \str_set:Nx \l_mfw_fold_str {#1}
+  \regex_replace_all:nnN { \s+ } { \  } \l_mfw_fold_str
+  \tl_set:Nx \mfw@folded { \l_mfw_fold_str }
+}
 % Plain-name entry points for the LaTeX2e body below.
 \cs_new_protected:Npn \mfw@slugify { \mfw_slugify: }
 \cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
@@ -371,6 +404,8 @@
   \IfFileExists{#1}{}{\PackageError{maleficium-interactive}%
     {File `#1' not found}{Put it in the project or fix the path.}}%
 }
+% A poster= given must exist; model and chart widgets may leave it out.
+\newcommand{\mfw@needposter}{\ifx\mfw@poster\empty\else\mfw@needfile{\mfw@poster}\fi}
 % Canonicalize height/width through a length: \linewidth resolves, garbage
 % fails here, and the sidecar records unambiguous pt.
 \newcommand{\mfw@sizecanon}{%
@@ -396,6 +431,53 @@
   \else
     \sbox{\mfw@box}{\includegraphics[height=\mfw@height,width=\mfw@width,keepaspectratio]{#1}}%
   \fi
+}
+
+% -- posters ------------------------------------------------------------------
+% #1 runtime, #2 sources, #3 options, exactly as \mfw@record gets them. Sets
+% \mfw@box: the document's poster=, else the mapped auto-poster when the
+% widget's record still matches and the file is there, else a placeholder.
+\newcommand{\mfw@posterbox}[3]{%
+  \ifx\mfw@poster\empty
+    \def\mfw@auto{}%
+    \ifcsname mfw@pm@r@\mfw@id\endcsname
+      \mfw@safe{#1}{mfw@k@rt}\mfw@safe{#2}{mfw@k@src}\mfw@safe{#3}{mfw@k@opt}%
+      \mfw@foldspaces@x{\mfw@k@rt|\mfw@k@src|\mfw@k@opt}%
+      \expandafter\ifx\csname mfw@pm@r@\mfw@id\endcsname\mfw@folded
+        \edef\mfw@auto{.maleficium/posters/\csname mfw@pm@k@\mfw@id\endcsname.png}%
+        \IfFileExists{\mfw@auto}{}{\def\mfw@auto{}}%
+      \fi
+    \fi
+    \ifx\mfw@auto\empty\mfw@placeholder\else\mfw@sbox@graphic{\mfw@auto}\fi
+  \else
+    \mfw@sbox@graphic{\mfw@poster}%
+  \fi
+}
+% The placeholder: height=, by width= or else 4:3 (a model's size= aspect).
+\def\mfw@aspect#1x#2\@nil{\setlength{\mfw@dimw}{\dimexpr\mfw@dim*#1/#2\relax}}
+\newcommand{\mfw@placeholder}{%
+  \setlength{\mfw@dim}{\mfw@height}%
+  \ifx\mfw@width\empty
+    \ifx\mfw@p@size\empty
+      \setlength{\mfw@dimw}{\dimexpr\mfw@dim*4/3\relax}%
+    \else
+      \expandafter\mfw@aspect\mfw@p@size\@nil
+    \fi
+  \else
+    \setlength{\mfw@dimw}{\mfw@width}%
+  \fi
+  \sbox{\mfw@box}{%
+    \begin{tikzpicture}
+      \useasboundingbox (0pt,0pt) rectangle (\the\mfw@dimw,\the\mfw@dim);
+      \filldraw[fill=mfwaccent!6, draw=mfwmuted!70, line width=0.4pt]
+        (0.2pt,0.2pt) rectangle
+        (\the\dimexpr\mfw@dimw-0.2pt\relax,\the\dimexpr\mfw@dim-0.2pt\relax);
+      \node[align=center, font=\sffamily\scriptsize,
+          text width=\the\dimexpr\mfw@dimw-8pt\relax]
+        at (\the\dimexpr\mfw@dimw/2\relax,\the\dimexpr\mfw@dim/2\relax)
+        {\textcolor{mfwaccent}{\bfseries Interactive \mfw@type}\\
+         \textcolor{mfwmuted}{poster pending}};
+    \end{tikzpicture}}%
 }
 
 % -- poster parameters ---------------------------------------------------------
@@ -434,13 +516,13 @@
   \mfw@needalt%
   \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
   \mfw@params{camera,size,background}{model}%
-  \mfw@needfile{\mfw@poster}\mfw@needfile{#2}%
+  \mfw@needposter\mfw@needfile{#2}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \mfw@sbox@graphic{\mfw@poster}%
+  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
+  \mfw@posterbox{\mfw@runtime}{model=#2}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{model=#2}%
-    {\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
+    {\mfw@poster}{model=#2}{\mfw@opts}%
   \mfw@emit
 }
 
@@ -513,7 +595,7 @@
   \mfw@needalt%
   \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
   \mfw@params{scale}{chart}%
-  \mfw@needfile{\mfw@poster}\mfw@needfile{#2}%
+  \mfw@needposter\mfw@needfile{#2}%
   \def\mfw@srcs{spec=#2}%
   \ifx\mfw@data\empty\else
     \@for\mfw@f:=\mfw@data\do{%
@@ -523,9 +605,10 @@
   \fi
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \mfw@sbox@graphic{\mfw@poster}%
+  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale}%
+  \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{\mfw@srcs}{\mfw@dims@opt,scale=\mfw@p@scale}%
+    {\mfw@poster}{\mfw@srcs}{\mfw@opts}%
   \mfw@emit
 }
 
@@ -542,5 +625,8 @@
     {\mfw@poster}{bundle=#2}{\mfw@dims@opt}%
   \mfw@emit
 }
+
+% The app's poster map for this job, when there is one.
+\InputIfFileExists{.maleficium/posters/\jobname.map}{}{}
 
 \endinput
