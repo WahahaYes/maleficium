@@ -83,7 +83,7 @@ On first launch Maleficium opens a short welcome project. After that:
 
 ## Use with an AI agent
 
-Maleficium includes a local [MCP](https://modelcontextprotocol.io) server that speaks over stdio. Start it with `maleficium --mcp`, the app binary with one flag. Linux packages also install it as `maleficium-mcp`; both run the same server. It needs no network beyond the engine's first-compile download, and nothing runs until your agent starts it.
+Maleficium includes a local [MCP](https://modelcontextprotocol.io) server that speaks over stdio. Start it with `maleficium --mcp`, the app binary with one flag. Linux packages also install it as `maleficium-mcp`; both run the same server. It needs no network beyond the engine's first-compile download, and nothing runs until your agent starts it. See the [privacy policy](PRIVACY.md) for what the server reads, writes, and sends.
 
 Where the command lives:
 
@@ -155,6 +155,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 - [Contributing](docs/CONTRIBUTING.md): setup, checks, and house rules
 - [Test harnesses](e2e/README.md)
 - [Built-in templates](src-tauri/templates/README.md): origins and license
+- [Privacy](PRIVACY.md): what the app and its MCP server store, read, and send
 
 ## Contributing and license
 
