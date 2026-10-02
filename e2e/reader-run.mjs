@@ -20,8 +20,10 @@
 // browser context is told to accept) play fig-embed's widget.json origin (A),
 // fig-macro's macro-option origin (B) and an origin nobody declared (U).
 // Declared frames must load and render; U, and A framed by fig-macro, must
-// not, and copies of the bundles with each policy removed show which layer
-// holds (red controls).
+// not; fig-macro navigating its own frame to A must not either (the
+// single-file reader's frame-src is the union, so a per-widget wrapper
+// policy holds it). Copies of the bundles with each policy removed show
+// which layer holds (red controls).
 import { chromium, firefox, webkit } from 'playwright-core';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -420,6 +422,10 @@ if (embedSingle && embedFolder && embedPorts) {
   }
 
   const CSP_META = /<meta http-equiv="Content-Security-Policy"[^>]*>/;
+  // The reader script's wrapper policy for a single-file widget; its
+  // directive name plus ` *` admits every origin.
+  const WRAPPER_POLICY = "var WRAP_DIRECTIVE = 'frame-src";
+  const noWrapper = (html) => html.replace(WRAPPER_POLICY, WRAPPER_POLICY + ' *');
   const noReaderCsp = (html) => html.replace(CSP_META, '');
   // Single-file: the widget documents ride in the mfw-widgets island.
   const noWidgetCsp = (html) =>
@@ -436,11 +442,18 @@ if (embedSingle && embedFolder && embedPorts) {
     '/': singleText,
     '/nowidgetcsp.html': noWidgetCsp(singleText),
     '/noreadercsp.html': noReaderCsp(singleText),
-    '/nocsp.html': noReaderCsp(noWidgetCsp(singleText)),
+    '/nocsp.html': noReaderCsp(noWidgetCsp(noWrapper(singleText))),
     // The reader policy without its frame-src: what a reader that ignored
     // the declared origins would ship.
     '/nounion.html': singleText.replace(/; frame-src [^"]*"/, '"'),
+    // Each widget's wrapper document without its own policy: what a reader
+    // that mounted widgets straight under the union would allow.
+    '/nowrapper.html': noWrapper(singleText),
   };
+  check(
+    'embed: the wrapper-policy red control changes the reader',
+    singleVariants['/nowrapper.html'] !== singleText,
+  );
   const serve = (handler) => {
     const server = createServer((req, res) => {
       const r = handler(decodeURIComponent(new URL(req.url, 'http://x').pathname));
@@ -517,22 +530,32 @@ if (embedSingle && embedFolder && embedPorts) {
     'U /w1-undeclared': false,
     'B /w2-declared': true,
     'A /w2-cross': false,
+    'A /w2-selfnav': false, // the wrapper's frame-src names fig-macro's origin only
   };
   await cell('embed single-file over http', `${eSingle.origin}/`, GREEN);
   await cell('embed single-file from file://', pathToFileURL(embedSingle).href, GREEN);
-  await cell('embed folder over http', `${eFolder.origin}/`, GREEN);
+  await cell('embed folder over http', `${eFolder.origin}/`, GREEN); // frame-src 'self'
   // Red controls: remove one policy at a time.
   await cell('embed single-file without widget CSPs', `${eSingle.origin}/nowidgetcsp.html`, {
     'A /w1-declared': true,
     'U /w1-undeclared': false, // the reader's frame-src, inherited by the srcdoc widget
     'B /w2-declared': true,
-    'A /w2-cross': true, // red: only fig-macro's own policy keeps fig-embed's origin out
+    'A /w2-cross': false, // the wrapper's policy, inherited too
+    'A /w2-selfnav': false,
   });
   await cell('embed single-file without the reader CSP', `${eSingle.origin}/noreadercsp.html`, {
     'A /w1-declared': true,
-    'U /w1-undeclared': false, // the widget's own policy alone holds
+    'U /w1-undeclared': false, // the widget's own policy and its wrapper's hold
     'B /w2-declared': true,
     'A /w2-cross': false,
+    'A /w2-selfnav': false, // the wrapper alone holds
+  });
+  await cell('embed single-file without the wrapper policy', `${eSingle.origin}/nowrapper.html`, {
+    'A /w1-declared': true,
+    'U /w1-undeclared': false,
+    'B /w2-declared': true,
+    'A /w2-cross': false, // fig-macro's own policy
+    'A /w2-selfnav': true, // red: the reader's union admits fig-embed's origin
   });
   await cell(
     'embed single-file whose reader lacks the frame-src union',
@@ -542,6 +565,7 @@ if (embedSingle && embedFolder && embedPorts) {
       'U /w1-undeclared': false,
       'B /w2-declared': false,
       'A /w2-cross': false,
+      'A /w2-selfnav': false,
     },
   );
   await cell('embed single-file with no CSP at all', `${eSingle.origin}/nocsp.html`, {
@@ -549,12 +573,14 @@ if (embedSingle && embedFolder && embedPorts) {
     'U /w1-undeclared': true, // red: the undeclared origin loads
     'B /w2-declared': true,
     'A /w2-cross': true,
+    'A /w2-selfnav': true,
   });
   await cell('embed folder without widget CSPs', `${eFolder.origin}/nwc/`, {
     'A /w1-declared': true,
     'U /w1-undeclared': true, // red: a folder widget does not inherit the reader policy
     'B /w2-declared': true,
     'A /w2-cross': true,
+    'A /w2-selfnav': false, // the folder reader's frame-src 'self'
   });
   for (const s of listeners) s.close();
   eSingle.server.close();

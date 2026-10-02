@@ -464,6 +464,30 @@ fn an_html_widgets_csp_comes_from_its_bundle_manifest_beside_the_main_file() {
         let e = widgets(cx, &id, "paper/main.tex").unwrap_err();
         assert!(e.contains(want), "{bad}: {e}");
     }
+
+    // A manifest is small: at the cap it is read, one byte over it is
+    // refused by name, before any parse.
+    let padded = |len: usize| {
+        let shell = r#"{"csp":{"frameDomains":["https://x.org"]},"name":""}"#;
+        let mut s = shell.replace(
+            r#""name":"""#,
+            &format!(r#""name":"{}""#, "a".repeat(len - shell.len())),
+        );
+        s.truncate(len);
+        s
+    };
+    put(&padded(MAX_MANIFEST_BYTES));
+    let csp = widgets(cx, &id, "paper/main.tex").unwrap().widgets[0]
+        .csp
+        .clone()
+        .unwrap();
+    assert_eq!(csp.frame_domains, ["https://x.org"]);
+    put(&padded(MAX_MANIFEST_BYTES + 1));
+    let e = widgets(cx, &id, "paper/main.tex").unwrap_err();
+    assert!(e.contains("widget.json is larger than 64 KiB"), "{e}");
+    // The approval snapshot parses the same text through the same check.
+    let e = manifest_csp("a-1", &padded(MAX_MANIFEST_BYTES + 1)).unwrap_err();
+    assert!(e.contains("larger than 64 KiB"), "{e}");
     let _ = std::fs::remove_dir_all(out);
 }
 
@@ -552,19 +576,21 @@ fn build_pdf(page: &str) -> Vec<u8> {
     out
 }
 
-#[test]
-fn an_origin_is_https_host_and_port_and_nothing_else() {
-    for good in [
+fn good_origins() -> Vec<String> {
+    [
         "https://www.youtube-nocookie.com",
         "https://player.vimeo.com",
         "https://127.0.0.1:8443",
         "https://a.org:65535",
         "https://x",
         &format!("https://{}.org", "a".repeat(63)),
-    ] {
-        assert!(origin_ok(good), "{good}");
-    }
-    for bad in [
+    ]
+    .map(str::to_string)
+    .to_vec()
+}
+
+fn bad_origins() -> Vec<String> {
+    [
         "http://a.org",
         "HTTPS://a.org",
         "https://A.org",
@@ -604,8 +630,56 @@ fn an_origin_is_https_host_and_port_and_nothing_else() {
         "filesystem:https://a.org",
         &format!("https://{}.org", "a".repeat(64)),
         &format!("https://{}", ["abcdefghij"; 26].join(".")),
-    ] {
-        assert!(!origin_ok(bad), "{bad:?}");
+    ]
+    .map(str::to_string)
+    .to_vec()
+}
+
+#[test]
+fn an_origin_is_https_host_and_port_and_nothing_else() {
+    for good in good_origins() {
+        assert!(origin_ok(&good), "{good}");
+    }
+    for bad in bad_origins() {
+        assert!(!origin_ok(&bad), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_manifest_schema_accepts_exactly_the_origins_the_product_does() {
+    let schema: serde_json::Value = serde_json::from_str(crate::bundle::MANIFEST_SCHEMA).unwrap();
+    let defs = schema["$defs"].clone();
+    let origin = jsonschema::validator_for(&serde_json::json!({
+        "$defs": defs.clone(), "$ref": "#/$defs/origin"
+    }))
+    .unwrap();
+    for good in good_origins() {
+        assert!(
+            origin.is_valid(&good.clone().into()),
+            "schema refuses {good}"
+        );
+    }
+    for bad in bad_origins() {
+        assert!(
+            !origin.is_valid(&bad.clone().into()),
+            "schema accepts {bad:?}"
+        );
+    }
+    // Each directive lists at most MAX_ORIGINS, as the product caps them.
+    let csp = jsonschema::validator_for(&serde_json::json!({
+        "$defs": defs, "$ref": "#/$defs/csp"
+    }))
+    .unwrap();
+    let list = |n: usize| -> Vec<String> { (0..n).map(|i| format!("https://o{i}.org")).collect() };
+    for key in ["connectDomains", "resourceDomains", "frameDomains"] {
+        assert!(
+            csp.is_valid(&serde_json::json!({ key: list(MAX_ORIGINS) })),
+            "{key}"
+        );
+        assert!(
+            !csp.is_valid(&serde_json::json!({ key: list(MAX_ORIGINS + 1) })),
+            "{key}"
+        );
     }
 }
 

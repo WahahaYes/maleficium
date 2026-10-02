@@ -17,6 +17,10 @@
 # folder no longer has refuses. Then the two-pass compile: an approved probe
 # is rendered into .maleficium/posters and mapped, an edited one gets an
 # approval_required line and no map entry.
+#
+# Speculative loading: an approved widget with static and scripted
+# preconnect links to a loopback listener renders, and the listener sees no
+# TCP connection (the renderer turns LinkPreconnect off in its webview).
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -58,8 +62,9 @@ addEventListener("message", function (e) {
 });
 parent.postMessage({ mfw: 1, type: "ready" }, "*");
 JS
-sed -i 's|^\\interactivetable|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactivetable|' "$SCRATCH/proj/posters.tex"
+sed -i 's|^\\interactivetable|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactive[height=3cm, id=html-pc, alt={Preconnect probe}]{widgets/pc/}\n\n\\interactivetable|' "$SCRATCH/proj/posters.tex"
 grep -q "id=html-probe" "$SCRATCH/proj/posters.tex" || fail "cannot add the probe widget"
+grep -q "id=html-pc" "$SCRATCH/proj/posters.tex" || fail "cannot add the preconnect probe widget"
 
 # A private display: the renderer's window is never shown, but GTK needs one.
 exec 3< <(Xvfb -displayfd 1 -screen 0 1280x800x24 -nolisten tcp 2>/dev/null & echo "pid $!")
@@ -84,6 +89,45 @@ def check(name, cond, detail=""):
 
 sys.path.insert(0, os.path.join(os.environ["DEVROOT"], "e2e"))
 from mcp_client import McpClient
+
+# The preconnect probe: an html widget whose markup asks the engine to
+# preconnect to a loopback listener (static links, as a hostile widget would
+# write them, plus one made by script). Its strict policy does not stop that
+# in WebKit; only the renderer turning LinkPreconnect off does. Any TCP accept
+# on the listener is the leak.
+import socket, threading
+pc_sock = socket.socket()
+pc_sock.bind(("127.0.0.1", 0))
+pc_sock.listen(16)
+PC_PORT, pc_hits = pc_sock.getsockname()[1], []
+def pc_accept():
+    while True:
+        try:
+            c, _ = pc_sock.accept()
+        except OSError:
+            return
+        pc_hits.append(time.time())
+        c.close()
+threading.Thread(target=pc_accept, daemon=True).start()
+os.makedirs(os.path.join(ROOT, "widgets/pc"), exist_ok=True)
+open(os.path.join(ROOT, "widgets/pc/index.html"), "w").write(f"""<!doctype html><html><head><meta charset="utf-8">
+<link rel="preconnect" href="http://127.0.0.1:{PC_PORT}">
+<link rel="preconnect" href="http://127.0.0.1:{PC_PORT}" crossorigin>
+</head><body><link rel="preconnect" href="http://localhost:{PC_PORT}">
+<canvas id="c" width="32" height="24"></canvas><script src="pc.js"></script></body></html>
+""")
+open(os.path.join(ROOT, "widgets/pc/pc.js"), "w").write(f"""var l = document.createElement("link");
+l.rel = "preconnect"; l.href = "http://127.0.0.1:{PC_PORT}/js"; document.head.appendChild(l);
+var c = document.getElementById("c"), g = c.getContext("2d");
+g.fillStyle = "#00ffff"; g.fillRect(0, 0, 32, 24);
+addEventListener("message", function (e) {{
+  if (e.source !== parent || !e.data || e.data.mfw !== 1) return;
+  if (e.data.type === "init") setTimeout(function () {{ parent.postMessage({{ mfw: 1, type: "status", state: "loaded" }}, "*"); }}, 500);
+  else if (e.data.type === "snapshot-request")
+    parent.postMessage({{ mfw: 1, type: "snapshot", requestId: e.data.requestId, png: c.toDataURL("image/png") }}, "*");
+}});
+parent.postMessage({{ mfw: 1, type: "ready" }}, "*");
+""")
 
 def tree(root):
     out = {}
@@ -243,12 +287,13 @@ REAL = os.path.realpath(ROOT)
 DATA = os.environ["XDG_DATA_HOME"]
 store_dir = os.path.join(DATA, "io.github.wahahayes.maleficium", "maleficium-widgets", "approvals",
                          hashlib.sha256(REAL.encode()).hexdigest()[:32])
-def approve(digest):
+approved = {}
+def approve(digest, folder="widgets/probe", widget="html-probe"):
     """The approval the desktop's Approve writes (MCP and the renderer cannot)."""
     os.makedirs(store_dir, exist_ok=True)
-    json.dump({"format": 1, "root": REAL, "autoApprove": False,
-               "widgets": {"widgets/probe": {"widget": "html-probe", "digest": digest, "origins": {},
-                                             "files": {}, "approvedAt": 1, "revoked": False}}},
+    approved[folder] = {"widget": widget, "digest": digest, "origins": {},
+                        "files": {}, "approvedAt": 1, "revoked": False}
+    json.dump({"format": 1, "root": REAL, "autoApprove": False, "widgets": approved},
               open(os.path.join(store_dir, "store.json"), "w"))
 def outcome(r):
     return (r.get("result") or {}).get("status") if r.get("ok") else None
@@ -276,6 +321,21 @@ r, _ = render("html-probe", "probe-approved.png")
 check("the approved probe renders", outcome(r) == "rendered", str(r)[:300])
 check("...its script ran: the poster is its magenta 64x48 snapshot", marker("probe-approved.png"),
       str(png_info(os.path.join(OUT, "probe-approved.png")) if os.path.exists(os.path.join(OUT, "probe-approved.png")) else None))
+
+r, _ = render("html-pc", "pc-unapproved.png")
+check("the unapproved preconnect probe returns approval_required", outcome(r) == "approval_required", str(r)[:300])
+approve((r.get("result") or {}).get("digest", ""), "widgets/pc", "html-pc")
+r, _ = render("html-pc", "pc.png")
+check("the approved preconnect probe renders (its script ran)", outcome(r) == "rendered"
+      and (png_info(os.path.join(OUT, "pc.png")) or [0] * 5)[4][:3] == (0, 255, 255), str(r)[:300])
+time.sleep(2)
+check("the poster renderer opens no preconnect: LinkPreconnect is off in its webview",
+      not pc_hits, f"{len(pc_hits)} TCP accepts on 127.0.0.1:{PC_PORT}")
+applied = [l for l in open(os.path.join(OUT, "app.log")) if l.startswith("speculative loading off in poster-")]
+check("...and every render window reports LinkPreconnect off",
+      applied and all("LinkPreconnect," in l for l in applied), str(applied[:2]))
+pc_sock.close()
+approved.pop("widgets/pc")  # the next approve() drops it: the compile below counts one poster
 
 js = os.path.join(ROOT, "widgets/probe/probe.js")
 orig = open(js).read()
