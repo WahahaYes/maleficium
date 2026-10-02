@@ -233,6 +233,22 @@ export type WidgetRevokeParams = { rootId: string, path: string, };
 
 export type WidgetAutoApproveParams = { rootId: string, on: boolean, };
 
+export type PosterRequest = { rootId: string, 
+/**
+ * The compiled main file, relative to the root.
+ */
+mainRel: string, widgetId: string, 
+/**
+ * Absolute path of the PNG to write; its folder must exist.
+ */
+outPath: string, 
+/**
+ * Hard limit for the whole render, in milliseconds (default 20000).
+ */
+timeoutMs?: number, };
+
+export type PosterRendered = { widgetId: string, path: string, width: number, height: number, sha256: string, };
+
 export type ExportBundleParams = { rootId: string, mainRel: string, dest: string, profile: BundleProfile, sizeCapBytes: number | null, };
 
 export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
