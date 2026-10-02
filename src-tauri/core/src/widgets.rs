@@ -10,6 +10,8 @@
 
 use crate::Core;
 
+pub mod params;
+
 use hayro::hayro_syntax::object::{Array, Dict, Rect, String as PdfString};
 use hayro::hayro_syntax::Pdf;
 use serde::{Deserialize, Serialize};
@@ -23,7 +25,7 @@ const SIDECAR_HEADER: &str = "mfw 1";
 /// Fields of one `widget|...` line, the tag included.
 const SIDECAR_FIELDS: usize = 11;
 /// The optional per-bundle declaration beside an `html` widget's entry.
-const BUNDLE_MANIFEST: &str = "widget.json";
+pub(crate) const BUNDLE_MANIFEST: &str = "widget.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
@@ -89,7 +91,7 @@ pub struct WidgetCsp {
 }
 
 impl WidgetCsp {
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.connect_domains.is_empty()
             && self.resource_domains.is_empty()
             && self.frame_domains.is_empty()
@@ -248,8 +250,12 @@ fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
                 .collect(),
             options: pairs(f[9], "option", id)?
                 .into_iter()
-                .map(|(key, value)| WidgetOption { key, value })
-                .collect(),
+                .map(|(key, value)| {
+                    params::canonical(kind, &key, &value)
+                        .map(|value| WidgetOption { key, value })
+                        .map_err(|e| format!("widget {id}: {e}"))
+                })
+                .collect::<Result<_, _>>()?,
             alt: f[10].to_string(),
         });
     }
@@ -349,7 +355,13 @@ fn bundle_csp(
         .map_err(|e| format!("widget {id}: {BUNDLE_MANIFEST}: {e}"))?;
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("widget {id}: cannot read {BUNDLE_MANIFEST}: {e}"))?;
-    let json: serde_json::Value = serde_json::from_str(&text)
+    manifest_csp(id, &text)
+}
+
+/// The `csp` a bundle's `widget.json` text declares, validated: one parser
+/// for the widget list and the approval digest.
+pub(crate) fn manifest_csp(id: &str, text: &str) -> Result<Option<WidgetCsp>, String> {
+    let json: serde_json::Value = serde_json::from_str(text)
         .map_err(|e| format!("widget {id}: {BUNDLE_MANIFEST} is not valid JSON: {e}"))?;
     let Some(csp) = json.get("csp") else {
         return Ok(None);
