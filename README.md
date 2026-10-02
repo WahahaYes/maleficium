@@ -8,7 +8,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 ## Why Maleficium
 
-**It runs locally.** There's no account, server, or cloud copy. Your projects stay in your own folders, and the app never writes its build files, history, or logs into them. The bundled Tectonic engine downloads its support files on the first compile; after that, everything works offline. That download is the only network traffic the app makes: no telemetry, no auto-updater.
+**It runs locally.** There's no account, server, or cloud copy. Your projects stay in your own folders, and the app never writes its build files, history, or logs into them. The one thing a compile may add is a `.maleficium/` poster cache, only when your paper uses interactive widgets without a poster of their own (see [Interactive papers](#interactive-papers)). The bundled Tectonic engine downloads its support files on the first compile; after that, everything works offline. That download is the only network traffic the app makes: no telemetry, no auto-updater.
 
 **It's open source, so you can make it yours.** Maleficium is Apache 2.0 and built to be changed at the source: fork it and shape it to the way you work. Menus and the command palette are built from one command registry, so a new action shows up in both from a single entry. A template is just a folder, a color theme is a standard VS Code theme file, and the Rust core behind the editor is the same one its automation tools use. [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) gets you from clone to running app. No fork needed for the everyday cases: save any project as a template, or import a folder as one, and it joins the gallery beside the CC0 built-ins.
 
@@ -22,6 +22,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 - **Search and replace across the project.** Every replacement is previewed before it is applied, and the whole replace undoes in one step.
 - **Revision history.** Every save keeps a revision you can restore (Ctrl+H).
 - **Templates and themes.** Nine built-in starter templates, from articles and books to slides and a CV, plus 18 bundled VS Code themes, dark and light.
+- **Interactive papers.** Keep the PDF, and also export a web bundle with 3D models, charts, sortable tables and video that opens in any browser ([details](#interactive-papers)).
 
 <p>
   <img src="docs/screenshots/search.png" width="49%" alt="Project-wide search in the dark theme, with matches grouped by file">
@@ -80,6 +81,20 @@ On first launch Maleficium opens a short welcome project. After that:
 1. **File > Open Project** (Ctrl+O) opens any folder of `.tex` files, or **File > New Project from Template** starts a new one.
 2. Press **Ctrl+R** to compile. Maleficium finds the main file itself. To choose a different one, right-click a `.tex` file in the tree and pick **Set as Main File**.
 3. Press **?** to see every keyboard shortcut.
+
+## Interactive papers
+
+A paper can stay a normal LaTeX document that compiles to the PDF a venue wants, and also export to a self-contained web bundle with interactive figures.
+
+1. **Tools > Install Interactive Package** adds `maleficium-interactive.sty` to the project. The compile also offers the same fix when the package is missing.
+2. Use the macros in your source: `\interactivemodel` (glTF or GLB), `\interactivevideo`, `\interactivetable` (CSV), `\interactivechart` (Vega-Lite) and `\interactive` (a folder of your own HTML). Each needs an `alt=` text. In the PDF each one is its poster, or a placeholder box until it has one, plus a one-line "Interactive version" mark. With `\maleficiumsetup{bundleurl=...}` the first page also gets one QR code in the footer (`qr=none` turns it off).
+3. **File > Preview in Browser** opens the bundle in your default browser. **File > Export Paper Bundle** writes it as a folder (for a web server) or as one file (for email, archives, or opening from disk), always outside the project.
+
+**Posters.** A model, chart, or HTML widget without `poster=` gets a poster that Maleficium renders itself. The posters are cached in a `.maleficium/` folder beside your main file, written when you compile. It is safe to delete (the next compile makes the posters again) and you may commit it, so the paper still compiles with its posters without Maleficium. A widget that is new in a compile shows a placeholder until the compile after it. Video widgets use `poster=` or a placeholder for now.
+
+**Your own HTML widgets need your approval.** A widget folder is code, so Maleficium renders its poster only after you approve that exact content in **View > Widgets**. Any edit asks again, and an AI agent cannot approve for you. An optional auto-approval setting (off by default) approves content changes to a widget you already approved, and new widgets that declare no origins; it never approves a new origin. A widget can declare the `https` origins it may frame or load; see [Embedding a YouTube or Vimeo video](docs/VIDEO-EMBEDS.md).
+
+The bundle's `index.html` is a companion page: the title, authors and abstract, the PDF, then each widget in order. Preview and export never write into your project.
 
 ## Use with an AI agent
 
@@ -148,6 +163,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 - No automatic updates. Check the releases page for new versions.
 - Until 1.0, settings and history may not carry over between versions.
 - The engine is Tectonic only. Documents that need `biber` or shell escape depend on tools outside the app, and the pre-compile check flags them.
+- Interactive papers are checked on Linux. Poster rendering on macOS and Windows is untested, and video widgets have no automatic poster.
 - Exported paper bundles keep widgets offline, or limited to the origins a widget declares, through the browser's content security policy. Browsers are not egress-proof: some open connections the policy does not stop (preconnects, prerenders), so a bundle limits what loads, not every connection.
 
 ## Documentation
