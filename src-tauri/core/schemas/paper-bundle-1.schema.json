@@ -103,7 +103,11 @@
       "pattern": "^[a-z0-9][a-z0-9._-]*$",
       "description": "key into assets"
     },
-    "origin": { "type": "string", "pattern": "^https://[a-z0-9.-]+(:\\d+)?$" },
+    "origin": {
+      "type": "string",
+      "description": "https, a lowercase DNS name or IPv4 address (labels of 1-63, host at most 253), an optional port 1-65535 without leading zeros; no wildcard, path or credentials",
+      "pattern": "^https://(?=[a-z0-9.-]{1,253}(?::|$))[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
     "rect": {
       "type": "array",
       "minItems": 4,
@@ -146,9 +150,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "connectDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } },
-        "resourceDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } },
-        "frameDomains": { "type": "array", "items": { "$ref": "#/$defs/origin" } }
+        "connectDomains": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/origin" }
+        },
+        "resourceDomains": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/origin" }
+        },
+        "frameDomains": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/origin" } }
       }
     },
     "widget": {

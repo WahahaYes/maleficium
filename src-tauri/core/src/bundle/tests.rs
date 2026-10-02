@@ -327,7 +327,7 @@ fn the_single_file_profile_is_one_file_with_everything_inline() {
     // The reader carries the single-file policy, and a document string can
     // never close its island.
     assert!(html.contains("<meta http-equiv=\"Content-Security-Policy\""));
-    assert!(!html.contains("frame-src"));
+    assert!(!fold::policy_of(&html).contains("frame-src"));
     assert_eq!(html.matches("</script>").count(), 4);
 }
 
@@ -1020,5 +1020,5 @@ fn a_bundle_without_declared_frames_keeps_the_strict_single_file_reader() {
     export(&p, &s, BundleProfile::SingleFile).unwrap();
     let html = std::fs::read_to_string(&s).unwrap();
     assert!(html.contains(&format!("content=\"{}\"", fold::SINGLE_FILE_READER_POLICY)));
-    assert!(!html.contains("frame-src"));
+    assert!(!fold::policy_of(&html).contains("frame-src"));
 }

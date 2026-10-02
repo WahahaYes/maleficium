@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod commands;
 mod poster;
+mod speculative;
 
 /// The app's one context: assets and config are embedded once.
 fn context() -> tauri::Context {
@@ -17,6 +18,11 @@ pub fn run() {
         .manage(poster::Renders::default())
         .register_asynchronous_uri_scheme_protocol(poster::SCHEME, poster::protocol)
         .setup(|app| {
+            // The editor window from the config: it loads no widget or
+            // author content before setup, so the flags are set first.
+            for win in app.webview_windows().values() {
+                speculative::off(win);
+            }
             // Compiles render missing auto-posters in this process.
             let renderer = commands::poster::AppRenderer(app.handle().clone());
             app.state::<maleficium_core::Core>()

@@ -49,8 +49,10 @@ pub(super) struct Reader<'a> {
 /// which inherits this policy, so a frame it embeds must pass the reader's
 /// `frame-src` as well as its own: that directive is exactly the union of
 /// the declared frame origins, and absent (`default-src 'none'`) when none
-/// is declared. Each widget's own policy still names only its origins. A
-/// folder widget is a document of its own and does not inherit, so the
+/// is declared. Each widget's own policy still names only its origins, and
+/// `reader.js` mounts each widget inside a wrapper document whose
+/// `frame-src` names only that widget's, so a widget cannot navigate its own
+/// frame to another widget's origin. A folder widget is a document of its own and does not inherit, so the
 /// folder reader stays `frame-src 'self'`.
 pub(super) fn policy(folder: bool, frames: &[String]) -> String {
     if folder {
@@ -217,10 +219,15 @@ mod tests {
         let h = page(false);
         assert!(h.contains("setAttribute('sandbox', 'allow-scripts')"));
         assert!(!h.contains("allow-same-origin"));
+        let (markup, script) = h.split_once("<script>").unwrap();
         assert!(
-            !h.contains("<iframe"),
+            !markup.contains("<iframe"),
             "frames are made by the page's own script, after its listener"
         );
+        // A single-file widget's wrapper frames it with the same sandbox and
+        // names only its own frame origins.
+        assert!(script.contains("<iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\""));
+        assert!(script.contains("var WRAP_DIRECTIVE = 'frame-src';"));
     }
 
     #[test]
@@ -232,8 +239,8 @@ mod tests {
         }
         assert!(single.contains(&format!("content=\"{}\"", fold::SINGLE_FILE_READER_POLICY)));
         assert!(folder.contains(&format!("content=\"{}\"", fold::FOLDER_READER_POLICY)));
-        assert!(!single.contains("frame-src"));
-        assert!(folder.contains("frame-src 'self'"));
+        assert!(!fold::policy_of(&single).contains("frame-src"));
+        assert!(fold::policy_of(&folder).contains("frame-src 'self'"));
         assert!(single.contains("default-src 'none'") && single.contains("connect-src 'none'"));
         assert!(single.contains("object-src blob:"));
     }
