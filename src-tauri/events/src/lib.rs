@@ -179,56 +179,6 @@ pub enum ZoomKind {
     Percent,
 }
 
-/// What a widget approval covers: running a project's widgets, or letting
-/// them reach the origins they declare.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-#[serde(rename_all = "lowercase")]
-pub enum WidgetApprovalScope {
-    Run,
-    Network,
-}
-
-/// Why a live widget gave up its process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-#[serde(rename_all = "kebab-case")]
-pub enum WidgetSuspendReason {
-    /// The live-widget cap needed its slot for a widget in view.
-    Evicted,
-    Requested,
-}
-
-/// Why the host killed a widget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-#[serde(rename_all = "kebab-case")]
-pub enum WidgetKillReason {
-    /// No heartbeat for the kill threshold.
-    Frozen,
-    /// The helper broke the protocol.
-    Protocol,
-}
-
-/// A box in device px of the app window.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-pub struct DeviceBox {
-    pub x: i32,
-    pub y: i32,
-    pub w: i32,
-    pub h: i32,
-}
-
-/// Where one widget's slot sits: the slot, its page's box, and the page size
-/// in PDF points, so the mapping can be checked from outside.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct WidgetSlotLayout {
-    pub id: String,
-    pub page: u32,
-    pub slot: DeviceBox,
-    pub page_box: DeviceBox,
-    pub page_width_pt: f64,
-    pub page_height_pt: f64,
-}
-
 /// What an export wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
@@ -721,87 +671,6 @@ pub enum AppEvent {
     /// malformed sidecar, a bad bundle manifest).
     #[serde(rename = "widgets.failed")]
     WidgetsFailed { main: String, error: String },
-    /// A widget approval was granted or revoked by the user; `run` and
-    /// `network` are the project's approvals after the change.
-    #[serde(rename = "widgets.approval")]
-    WidgetsApproval {
-        root_id: String,
-        scope: WidgetApprovalScope,
-        granted: bool,
-        run: bool,
-        network: bool,
-    },
-    /// Widgets cannot run live here: the widget host lacks these
-    /// capabilities, so every widget stays its poster.
-    #[serde(rename = "widgets.unavailable")]
-    WidgetsUnavailable { missing: Vec<String> },
-    /// Widget slots after the preview layout settled (zoom, scroll, resize),
-    /// in-view widgets only.
-    #[serde(rename = "widgets.layout")]
-    WidgetsLayout {
-        percent: u32,
-        slots: Vec<WidgetSlotLayout>,
-    },
-    /// A widget started in its own process. `network`: it may reach its
-    /// declared origins; `contained`: its egress is cut off below the engine.
-    #[serde(rename = "widget.launched")]
-    WidgetLaunched {
-        id: String,
-        network: bool,
-        contained: bool,
-    },
-    /// A widget's view finished loading, `ms` after its launch.
-    #[serde(rename = "widget.loaded")]
-    WidgetLoaded { id: String, ms: u64 },
-    /// A runtime's own status message.
-    #[serde(rename = "widget.status")]
-    WidgetStatus {
-        id: String,
-        state: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        message: Option<String>,
-    },
-    /// A message from a widget was refused (`by` the helper's prefilter or
-    /// the host validator).
-    #[serde(rename = "widget.dropped")]
-    WidgetDropped {
-        id: String,
-        by: String,
-        reason: String,
-    },
-    /// No heartbeat for the badge threshold: shown as not responding.
-    #[serde(rename = "widget.unresponsive")]
-    WidgetUnresponsive { id: String, gap_ms: u64 },
-    #[serde(rename = "widget.responsive")]
-    WidgetResponsive { id: String },
-    #[serde(rename = "widget.killed")]
-    WidgetKilled {
-        id: String,
-        reason: WidgetKillReason,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        gap_ms: Option<u64>,
-        kills: u32,
-    },
-    /// Killed too often this session: the widget stays its poster.
-    #[serde(rename = "widget.quarantined")]
-    WidgetQuarantined { id: String },
-    #[serde(rename = "widget.suspended")]
-    WidgetSuspended {
-        id: String,
-        reason: WidgetSuspendReason,
-    },
-    #[serde(rename = "widget.resumed")]
-    WidgetResumed { id: String },
-    /// A widget took input (`on`) or gave it back; `why` is host, escape or
-    /// blur.
-    #[serde(rename = "widget.active")]
-    WidgetActive { id: String, on: bool, why: String },
-    #[serde(rename = "widget.exited")]
-    WidgetExited { id: String, why: String },
-    #[serde(rename = "widget.launch-failed")]
-    WidgetLaunchFailed { id: String, error: String },
     /// An automation-surface tool call and its outcome, logged with actor
     /// `agent` through the same writer as the app's events.
     #[serde(rename = "mcp.call")]
@@ -869,11 +738,6 @@ pub fn typescript() -> String {
         CompileReport::decl(&cfg),
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
-        WidgetApprovalScope::decl(&cfg),
-        WidgetSuspendReason::decl(&cfg),
-        WidgetKillReason::decl(&cfg),
-        DeviceBox::decl(&cfg),
-        WidgetSlotLayout::decl(&cfg),
         BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),

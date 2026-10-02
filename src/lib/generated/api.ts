@@ -146,34 +146,6 @@ csp?: WidgetCsp, };
 
 export type WidgetList = { widgets: Array<Widget>, };
 
-export type WidgetApproval = { 
-/**
- * Widgets may run live (otherwise they stay posters).
- */
-run: boolean, 
-/**
- * Live widgets may reach the origins they declare.
- */
-network: boolean, };
-
-export type PosterReason = "not-approved" | "no-runtime";
-
-export type WidgetPlanEntry = { id: string, 
-/**
- * Absent when the widget can run.
- */
-poster?: PosterReason, 
-/**
- * The widget declares origins it wants to reach.
- */
-declaresNetwork: boolean, 
-/**
- * It may reach them (declared and approved).
- */
-network: boolean, };
-
-export type WidgetSession = { approval: WidgetApproval, entries: Array<WidgetPlanEntry>, unavailable: Array<string>, };
-
 export type ExportBundleParams = { rootId: string, mainRel: string, dest: string, profile: BundleProfile, sizeCapBytes: number | null, };
 
 export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
