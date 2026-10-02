@@ -5,7 +5,13 @@ import {
   subscribeCompileLines,
 } from './compile.tauri';
 import { request } from './core-request.tauri';
-import type { CompileFailure, CompileLine, EventKind, OfflineReadiness } from './generated/events';
+import type {
+  BusEvent,
+  CompileFailure,
+  CompileLine,
+  EventKind,
+  OfflineReadiness,
+} from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
 import type { BundleExported, Exported } from './generated/api';
 import type { BundleProfile } from './generated/events';
@@ -28,6 +34,8 @@ export type CompileResult = {
   log: string;
   failure: CompileFailure | null;
   missing: MissingDependency | null;
+  /** `widget.approval-required` events for the bus: html widgets awaiting the user. */
+  approvals: BusEvent[];
 };
 
 export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => void> {
@@ -51,10 +59,18 @@ export async function compileTex(
       log: r.message,
       failure: r.failure,
       missing: r.missing,
+      approvals: r.approvals,
     };
   } catch (e) {
     // Refused before the engine ran (target outside the root) or cancelled.
-    return { ok: false, pdfUrl: null, log: String(e), failure: 'engine-error', missing: null };
+    return {
+      ok: false,
+      pdfUrl: null,
+      log: String(e),
+      failure: 'engine-error',
+      missing: null,
+      approvals: [],
+    };
   }
 }
 

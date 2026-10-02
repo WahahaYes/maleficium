@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { desktopWidgetsIo } from '../lib/widgetApproval.tauri';
 import { transport } from '../lib/event-transport';
+import { eventOf } from '../lib/events';
 import {
   createPromptQueue,
   createWidgetsModel,
@@ -34,6 +35,8 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
     return transport().subscribe((e) => {
       const p = promptFromEvent(e, projectId);
       if (p) prompts.enqueue(p);
+      const acted = eventOf(e, 'widget.approved') ?? eventOf(e, 'widget.revoked');
+      if (acted && acted.rootId === projectId) prompts.settled(acted.path);
       if (widgetEventFor(e, projectId) && panelOpen) void model.refresh();
     });
   }, [model, prompts, projectId, panelOpen]);
@@ -59,7 +62,7 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
     model,
     state,
     prompts,
-    /** Entry point for the poster renderer (ip.43). */
+    /** Entry point for the poster renderer. */
     onApprovalRequired: prompts ? prompts.onApprovalRequired : null,
   };
 }
