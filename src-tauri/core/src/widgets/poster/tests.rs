@@ -43,6 +43,22 @@ fn req(id: &str, widget: &str, out: &Path) -> PosterRequest {
         widget_id: widget.into(),
         out_path: out.join(format!("{widget}.png")).to_string_lossy().into(),
         timeout_ms: None,
+        digest: None,
+    }
+}
+
+/// An approval store home no test shares (stands in for app data).
+fn store(name: &str) -> PathBuf {
+    let base = crate::test_scratch::dir(&format!("poster-{name}-appdata"));
+    let _ = std::fs::remove_dir_all(&base);
+    base
+}
+
+/// The job a request builds, against an empty approval store.
+fn job_of(cx: &Core, r: &PosterRequest) -> PosterJob {
+    match prepare_at(&store("jobs"), cx, r).unwrap() {
+        Prepared::Job(j) => j,
+        Prepared::ApprovalRequired(a) => panic!("expected a job, got {a:?}"),
     }
 }
 
@@ -54,7 +70,7 @@ fn a_model_job_carries_its_camera_size_sources_theme_and_policy() {
         "model",
         "height=170.71652pt,camera=pos=0 0 3 target=0 0 0,size=320x240,background=fff",
     );
-    let job = prepare(cx, &req(&id, "fig-mesh", &out)).unwrap();
+    let job = job_of(cx, &req(&id, "fig-mesh", &out));
     assert_eq!(job.frame, (320, 240));
     assert_eq!(job.expect, Some((320, 240)));
     assert_eq!(job.timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS));
@@ -84,7 +100,7 @@ fn a_model_without_size_gets_one_from_its_box_and_a_chart_gets_scale_2() {
     let (id, _root, out) = project(cx, "defaults", "height=170.71652pt");
     let w = widgets(cx, &id, "main.tex").unwrap();
     let mesh = w.widgets.iter().find(|w| w.id == "fig-mesh").unwrap();
-    let job = prepare(cx, &req(&id, "fig-mesh", &out)).unwrap();
+    let job = job_of(cx, &req(&id, "fig-mesh", &out));
     let want = (
         clamp_side((mesh.rect.x1 - mesh.rect.x0) * CSS_PER_PT * 2.0),
         clamp_side((mesh.rect.y1 - mesh.rect.y0) * CSS_PER_PT * 2.0),
@@ -97,7 +113,7 @@ fn a_model_without_size_gets_one_from_its_box_and_a_chart_gets_scale_2() {
     );
     assert!(job.init["options"].get("camera").is_none());
 
-    let chart = prepare(cx, &req(&id, "fig-chart", &out)).unwrap();
+    let chart = job_of(cx, &req(&id, "fig-chart", &out));
     assert_eq!(chart.init["options"]["scale"], 2);
     assert_eq!(chart.expect, None);
     assert_eq!(chart.init["sources"]["spec"]["mime"], "application/json");
@@ -105,11 +121,10 @@ fn a_model_without_size_gets_one_from_its_box_and_a_chart_gets_scale_2() {
 }
 
 #[test]
-fn html_table_and_video_widgets_are_never_rendered() {
+fn table_and_video_widgets_are_never_rendered() {
     let cx = &Core::default();
     let (id, _root, out) = project(cx, "refused", "height=170.71652pt");
     for (w, want) in [
-        ("fig-demo", "html widgets are not rendered"),
         ("tab-results", "typeset rows"),
         ("fig-clip", "video posters"),
         ("ghost", "no widget `ghost`"),
@@ -142,12 +157,12 @@ fn bad_output_paths_and_timeouts_are_handled() {
     let mut r = req(&id, "fig-mesh", &out);
     r.timeout_ms = Some(1);
     assert_eq!(
-        prepare(cx, &r).unwrap().timeout,
+        job_of(cx, &r).timeout,
         Duration::from_millis(MIN_TIMEOUT_MS)
     );
     r.timeout_ms = Some(10_000_000);
     assert_eq!(
-        prepare(cx, &r).unwrap().timeout,
+        job_of(cx, &r).timeout,
         Duration::from_millis(MAX_TIMEOUT_MS)
     );
 }
@@ -170,7 +185,7 @@ fn only_shipped_runtimes_render_and_the_hang_runtime_is_debug_only() {
         side.replace("|model|model@1|", &format!("|model|{TEST_HANG_RUNTIME}|")),
     )
     .unwrap();
-    let job = prepare(cx, &req(&id, "fig-mesh", &out)).unwrap();
+    let job = job_of(cx, &req(&id, "fig-mesh", &out));
     assert!(job.document.contains("for(;;){}"));
 }
 
@@ -278,4 +293,347 @@ fn the_light_tokens_come_from_the_house_theme() {
     assert_eq!(t["--m-color-text"], "#1e1b24");
     assert!(t.keys().all(|k| k.starts_with("--m-")));
     assert!(!t.contains_key("--m-color-target") || t["--m-color-target"] == "#fff4c2");
+}
+
+// ---- html widgets: the approval gate ------------------------------------
+
+/// The probe's script: if a renderer ever runs it, it leaves its marker.
+const PROBE_JS: &str = "window.__probe='MARKER-RAN';";
+
+/// An html widget project whose demo bundle loads the probe script, with
+/// its own approval store.
+struct Html {
+    cx: Core,
+    id: String,
+    root: PathBuf,
+    out: PathBuf,
+    base: PathBuf,
+}
+
+impl Html {
+    fn new(name: &str) -> Self {
+        let cx = Core::default();
+        let (id, root, out) = project(&cx, name, "height=170.71652pt");
+        // No poster= of its own: the auto-poster is the only picture.
+        let o = crate::outputs::outputs_of(&cx, &id, "main.tex").unwrap();
+        let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+        std::fs::write(
+            o.outdir.join("main.mfw"),
+            side.replace("|figures/demo.png|", "||"),
+        )
+        .unwrap();
+        let h = Html {
+            cx,
+            id,
+            root,
+            out,
+            base: store(name),
+        };
+        h.write(
+            "index.html",
+            "<!doctype html><title>probe</title><script src=\"probe.js\"></script>",
+        );
+        h.write("probe.js", PROBE_JS);
+        h
+    }
+    fn write(&self, rel: &str, text: &str) {
+        let p = self.root.join("widgets/demo").join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    fn req(&self) -> PosterRequest {
+        req(&self.id, "fig-demo", &self.out)
+    }
+    fn target(&self) -> WidgetTarget {
+        WidgetTarget {
+            id: "fig-demo".into(),
+            path: "widgets/demo".into(),
+        }
+    }
+    fn digest(&self) -> String {
+        widget_approval::check_at(&self.base, &self.cx, &self.id, &self.target())
+            .unwrap()
+            .snapshot
+            .digest
+    }
+    fn approve(&self) {
+        widget_approval::approve_at(
+            &self.base,
+            &self.cx,
+            &widget_approval::WidgetApproveParams {
+                root_id: self.id.clone(),
+                main_rel: "main.tex".into(),
+                widget: "fig-demo".into(),
+                digest: self.digest(),
+            },
+        )
+        .unwrap();
+    }
+    fn marker(&self) -> PathBuf {
+        self.out.join("probe.marker")
+    }
+    fn png(&self) -> PathBuf {
+        self.out.join("fig-demo.png")
+    }
+    /// Runs the request through a stand-in renderer that executes what it
+    /// is given: a document carrying the probe's script writes the marker
+    /// (the webview would run it). Returns the outcome and the document
+    /// the renderer received, if it was reached at all.
+    fn run(&self, r: &PosterRequest) -> (Result<PosterOutcome, String>, Option<String>) {
+        let mut seen = None;
+        let res = run_at(&self.base, &self.cx, r, |job| {
+            seen = Some(job.document.clone());
+            if job.document.contains("MARKER-RAN") {
+                std::fs::write(self.marker(), "ran").unwrap();
+            }
+            Ok(data_url(&png(4, 3)))
+        });
+        (res, seen)
+    }
+}
+
+impl Drop for Html {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+fn approval(o: &Result<PosterOutcome, String>) -> &ApprovalRequired {
+    match o {
+        Ok(PosterOutcome::ApprovalRequired(r)) => r,
+        other => panic!("expected approval_required, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_unapproved_html_widget_never_reaches_the_renderer() {
+    let h = Html::new("html-unapproved");
+    let (res, seen) = h.run(&h.req());
+    let r = approval(&res);
+    assert_eq!(r.widget, "fig-demo");
+    assert_eq!(
+        r.cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
+    assert_eq!(r.digest, h.digest());
+    assert!(seen.is_none(), "the renderer was reached");
+    assert!(!h.marker().exists(), "the probe ran");
+    assert!(!h.png().exists(), "a poster was written");
+    // prepare alone says the same and builds no job.
+    assert!(matches!(
+        prepare_at(&h.base, &h.cx, &h.req()).unwrap(),
+        Prepared::ApprovalRequired(_)
+    ));
+}
+
+#[test]
+fn an_approved_html_widget_renders_the_bytes_that_were_approved() {
+    let h = Html::new("html-approved");
+    h.approve();
+    let (res, seen) = h.run(&h.req());
+    match res {
+        Ok(PosterOutcome::Rendered(p)) => assert_eq!((p.width, p.height), (4, 3)),
+        other => panic!("expected rendered, got {other:?}"),
+    }
+    assert!(h.marker().exists(), "the approved probe ran");
+    assert!(h.png().is_file());
+    let doc = seen.unwrap();
+    assert!(
+        doc.contains(&format!("<script>{PROBE_JS}</script>")),
+        "{doc}"
+    );
+    assert!(
+        doc.contains("connect-src 'none'"),
+        "a poster render never reaches the network: {doc}"
+    );
+    let j = match prepare_at(&h.base, &h.cx, &h.req()).unwrap() {
+        Prepared::Job(j) => j,
+        Prepared::ApprovalRequired(a) => panic!("{a:?}"),
+    };
+    assert_eq!(j.init["runtime"], HTML_RUNTIME);
+    assert_eq!(j.init["widgetId"], "fig-demo");
+    assert!(j.sources.is_empty() && j.expect.is_none());
+}
+
+#[test]
+fn an_edit_after_approval_stops_rendering_until_it_is_approved_again() {
+    let h = Html::new("html-edited");
+    h.approve();
+    h.write("probe.js", "window.__probe='MARKER-RAN'; /* edited */");
+    let (res, seen) = h.run(&h.req());
+    let r = approval(&res);
+    assert_eq!(
+        r.cause,
+        maleficium_events::WidgetApprovalCause::ChangedSinceApproval
+    );
+    assert!(seen.is_none() && !h.marker().exists() && !h.png().exists());
+    h.approve();
+    let (res, seen) = h.run(&h.req());
+    assert!(matches!(res, Ok(PosterOutcome::Rendered(_))), "{res:?}");
+    assert!(seen.unwrap().contains("/* edited */"));
+    assert!(h.marker().exists());
+    // Revoked: nothing runs, auto-approval included.
+    std::fs::remove_file(h.marker()).unwrap();
+    widget_approval::revoke_at(
+        &h.base,
+        &h.cx,
+        &widget_approval::WidgetRevokeParams {
+            root_id: h.id.clone(),
+            path: "widgets/demo".into(),
+        },
+    )
+    .unwrap();
+    let (res, seen) = h.run(&h.req());
+    assert_eq!(
+        approval(&res).cause,
+        maleficium_events::WidgetApprovalCause::Revoked
+    );
+    assert!(seen.is_none() && !h.marker().exists());
+}
+
+#[test]
+fn the_renderer_runs_the_snapshot_it_was_judged_on() {
+    let h = Html::new("html-snapshot");
+    h.approve();
+    // The folder changes once the job is built: what runs is still the
+    // approved snapshot, never a second read.
+    let mut seen = None;
+    let res = run_at(&h.base, &h.cx, &h.req(), |job| {
+        h.write("probe.js", "window.__probe='SWAPPED';");
+        seen = Some(job.document.clone());
+        Ok(data_url(&png(4, 3)))
+    });
+    assert!(matches!(res, Ok(PosterOutcome::Rendered(_))), "{res:?}");
+    let doc = seen.unwrap();
+    assert!(
+        doc.contains("MARKER-RAN") && !doc.contains("SWAPPED"),
+        "{doc}"
+    );
+    // And the swapped folder is unapproved for the next render.
+    assert!(matches!(
+        h.run(&h.req()).0,
+        Ok(PosterOutcome::ApprovalRequired(_))
+    ));
+}
+
+#[test]
+fn a_request_for_another_digest_than_the_folder_has_is_refused() {
+    let h = Html::new("html-digest");
+    // Auto-approval covers the edit, but the request was made for the
+    // digest the cache key came from.
+    widget_approval::set_auto_at(
+        &h.base,
+        &h.cx,
+        &widget_approval::WidgetAutoApproveParams {
+            root_id: h.id.clone(),
+            on: true,
+        },
+    )
+    .unwrap();
+    let asked = h.digest();
+    h.write("probe.js", "window.__probe='MARKER-RAN'; /* later */");
+    let mut r = h.req();
+    r.digest = Some(asked);
+    let (res, seen) = h.run(&r);
+    assert!(res.unwrap_err().contains("changed since"), "refused");
+    assert!(seen.is_none() && !h.marker().exists());
+    // At the current digest, auto-approval lets it render.
+    r.digest = Some(h.digest());
+    assert!(matches!(h.run(&r).0, Ok(PosterOutcome::Rendered(_))));
+    // A digest on a first-party widget is a mistake, not ignored.
+    let mut m = req(&h.id, "fig-mesh", &h.out);
+    m.digest = Some("0".repeat(64));
+    assert!(prepare_at(&h.base, &h.cx, &m)
+        .unwrap_err()
+        .contains("html widgets only"));
+}
+
+#[test]
+fn auto_approval_never_covers_new_declared_origins_and_origins_stay_off() {
+    let h = Html::new("html-origins");
+    widget_approval::set_auto_at(
+        &h.base,
+        &h.cx,
+        &widget_approval::WidgetAutoApproveParams {
+            root_id: h.id.clone(),
+            on: true,
+        },
+    )
+    .unwrap();
+    // Never approved, no origins: auto mode lets it run.
+    assert!(matches!(h.run(&h.req()).0, Ok(PosterOutcome::Rendered(_))));
+    std::fs::remove_file(h.marker()).unwrap();
+    h.write(
+        "widget.json",
+        r#"{"csp":{"connectDomains":["https://api.example.org"]}}"#,
+    );
+    let (res, seen) = h.run(&h.req());
+    assert_eq!(
+        approval(&res).cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
+    assert!(seen.is_none() && !h.marker().exists());
+    // The user approves it with its origins: a poster render still gets
+    // none of them.
+    h.approve();
+    let (res, seen) = h.run(&h.req());
+    assert!(matches!(res, Ok(PosterOutcome::Rendered(_))), "{res:?}");
+    let doc = seen.unwrap();
+    assert!(
+        doc.contains("connect-src 'none'") && !doc.contains("api.example.org"),
+        "{doc}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinks_special_files_and_oversize_folders_never_run() {
+    let h = Html::new("html-refuse");
+    h.approve();
+    let demo = h.root.join("widgets/demo");
+    std::os::unix::fs::symlink("/etc/hostname", demo.join("leak.txt")).unwrap();
+    let (res, seen) = h.run(&h.req());
+    assert!(res.unwrap_err().contains("symlink"));
+    assert!(seen.is_none() && !h.marker().exists());
+    std::fs::remove_file(demo.join("leak.txt")).unwrap();
+
+    let fifo = std::ffi::CString::new(demo.join("pipe").to_string_lossy().as_bytes()).unwrap();
+    // SAFETY: a plain mkfifo on a path we own.
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+    let (res, seen) = h.run(&h.req());
+    assert!(res.unwrap_err().contains("not a regular file"));
+    assert!(seen.is_none() && !h.marker().exists());
+    std::fs::remove_file(demo.join("pipe")).unwrap();
+
+    std::fs::create_dir_all(demo.join("many")).unwrap();
+    for i in 0..widget_approval::MAX_FILES {
+        std::fs::write(demo.join(format!("many/{i}")), "").unwrap();
+    }
+    let (res, seen) = h.run(&h.req());
+    assert!(res.unwrap_err().contains("more than"));
+    assert!(seen.is_none() && !h.marker().exists());
+    std::fs::remove_dir_all(demo.join("many")).unwrap();
+
+    // Back as approved: it runs again.
+    assert!(matches!(h.run(&h.req()).0, Ok(PosterOutcome::Rendered(_))));
+    assert!(h.marker().exists());
+}
+
+#[test]
+fn first_party_runtime_widgets_render_without_any_approval() {
+    let h = Html::new("html-exempt");
+    for w in ["fig-mesh", "fig-chart"] {
+        let mut ran = false;
+        let res = run_at(&h.base, &h.cx, &req(&h.id, w, &h.out), |job| {
+            ran = true;
+            let (pw, ph) = job.expect.unwrap_or((4, 3));
+            Ok(data_url(&png(pw, ph)))
+        });
+        assert!(ran, "{w}");
+        assert!(
+            matches!(res, Ok(PosterOutcome::Rendered(_))),
+            "{w}: {res:?}"
+        );
+    }
 }

@@ -1,38 +1,32 @@
 use super::*;
 
-fn write(dir: &Path, rel: &str, body: &[u8]) {
-    let p = dir.join(rel);
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(p, body).unwrap();
+/// A bundle as the fold receives it: files by path, read once.
+fn files(pairs: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
+    pairs
+        .iter()
+        .map(|(p, b)| (p.to_string(), b.to_vec()))
+        .collect()
 }
 
-fn bundle(name: &str) -> PathBuf {
-    let d = crate::test_scratch::dir(&format!("fold-{name}"));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    dunce::canonicalize(&d).unwrap()
-}
-
-fn fold(dir: &Path) -> Folded {
-    fold_bundle(dir, &dir.join("index.html"), &widget_policy(None)).unwrap()
+fn fold(f: &BTreeMap<String, Vec<u8>>) -> Folded {
+    fold_bundle(f, &widget_policy(None)).unwrap()
 }
 
 #[test]
 fn scripts_styles_and_images_are_inlined_and_files_nothing_read_are_listed() {
-    let d = bundle("basic");
-    write(
-        &d,
-        "index.html",
-        br#"<!doctype html><html><head><title>t</title>
+    let f = fold(&files(&[
+        (
+            "index.html",
+            br#"<!doctype html><html><head><title>t</title>
 <link rel="stylesheet" href="css/a.css"><script src="js/app.js" defer></script></head>
 <body><img src="img/p.png" alt="p"/><video poster='img/p.png' src="v.mp4"></video></body></html>"#,
-    );
-    write(&d, "css/a.css", b"body{background:url(../img/p.png)}");
-    write(&d, "js/app.js", b"document.title='</script>x';");
-    write(&d, "img/p.png", b"\x89PNG");
-    write(&d, "data/extra.json", b"{}");
-    write(&d, "widget.json", b"{}");
-    let f = fold(&d);
+        ),
+        ("css/a.css", b"body{background:url(../img/p.png)}"),
+        ("js/app.js", b"document.title='</script>x';"),
+        ("img/p.png", b"\x89PNG"),
+        ("data/extra.json", b"{}"),
+        ("widget.json", b"{}"),
+    ]));
     assert!(!f.html.contains("href=\"css/a.css\""));
     assert!(!f.html.contains("src=\"js/app.js\""));
     assert!(
@@ -116,39 +110,35 @@ fn declared_origins_widen_only_the_directives_they_name() {
 }
 
 #[test]
-fn nothing_outside_the_bundle_folder_is_read() {
-    let root = bundle("escape");
-    let d = root.join("w");
-    write(&root, "secret.js", b"alert('secret')");
-    write(
-        &d,
+fn nothing_outside_the_given_files_is_read() {
+    let f = fold(&files(&[(
         "index.html",
-        b"<script src=\"../secret.js\"></script><img src=\"/etc/hostname\">",
-    );
-    let f = fold(&d);
+        b"<script src=\"../secret.js\"></script><img src=\"/etc/hostname\"><img src=\"sub/../../x.png\">",
+    )]));
     assert!(
         f.html.contains("src=\"../secret.js\""),
         "left as written, not inlined"
     );
-    assert!(!f.html.contains("alert('secret')"));
     assert!(!f.html.contains("base64,"));
-    // A symlink pointing out is not followed either.
-    std::os::unix::fs::symlink(root.join("secret.js"), d.join("link.js")).unwrap();
-    write(&d, "index.html", b"<script src=\"link.js\"></script>");
-    let f = fold(&d);
-    assert!(!f.html.contains("secret"), "{}", f.html);
+    assert_eq!(join("", "../x"), None);
+    assert_eq!(join("a", "../b/./c.js"), Some("b/c.js".into()));
+    assert_eq!(join("", "/etc/hostname"), None);
+    assert_eq!(join("", "C:/x"), None);
+    let e = fold_bundle(&files(&[("other.html", b"x")]), "p").unwrap_err();
+    assert!(e.contains("no index.html"), "{e}");
+    let e = fold_bundle(&files(&[("index.html", b"\xff")]), "p").unwrap_err();
+    assert!(e.contains("not UTF-8"), "{e}");
 }
 
 #[test]
 fn external_references_and_module_imports_are_reported() {
-    let d = bundle("external");
-    write(
-        &d,
-        "index.html",
-        b"<script src=\"https://cdn.example.org/x.js\"></script><script type=\"module\" src=\"m.js\"></script><style>@import 'x.css';</style>",
-    );
-    write(&d, "m.js", b"import {a} from './a.js'; a();");
-    let f = fold(&d);
+    let f = fold(&files(&[
+        (
+            "index.html",
+            b"<script src=\"https://cdn.example.org/x.js\"></script><script type=\"module\" src=\"m.js\"></script><style>@import 'x.css';</style>",
+        ),
+        ("m.js", b"import {a} from './a.js'; a();"),
+    ]));
     assert_eq!(f.external, ["https://cdn.example.org/x.js"]);
     assert!(
         f.notes.iter().any(|n| n.contains("imports")),

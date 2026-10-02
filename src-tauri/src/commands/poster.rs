@@ -1,12 +1,13 @@
-//! Render one widget's poster: the core builds the job, the one-shot hidden
-//! renderer runs it, the core checks the PNG and writes it where the caller
-//! asked.
+//! Render one widget's poster: the core prepares the job (checking an html
+//! widget's approval on the snapshot the job is built from), the one-shot
+//! hidden renderer runs it, the core checks the PNG and writes it where the
+//! caller asked. An unapproved html widget comes back as approval_required
+//! and no window opens.
 
 use crate::poster;
 use maleficium_core::widgets::poster::cache::PosterRenderer;
-use maleficium_core::widgets::poster::{finish, prepare, PosterRendered, PosterRequest};
+use maleficium_core::widgets::poster::{PosterOutcome, PosterRequest};
 use maleficium_core::Core;
-use std::sync::Arc;
 use tauri::{AppHandle, Runtime, State};
 
 /// Prepare, render and write one poster. Blocks a worker thread, never the
@@ -15,10 +16,8 @@ pub fn run<R: Runtime>(
     app: &AppHandle<R>,
     cx: &Core,
     req: &PosterRequest,
-) -> Result<PosterRendered, String> {
-    let job = Arc::new(prepare(cx, req)?);
-    let png = poster::render(app, job.clone())?;
-    finish(&job, &png)
+) -> Result<PosterOutcome, String> {
+    maleficium_core::widgets::poster::run(cx, req, |job| poster::render(app, job))
 }
 
 /// The desktop app's compile-time renderer: the same one-shot hidden
@@ -26,7 +25,7 @@ pub fn run<R: Runtime>(
 pub struct AppRenderer<R: Runtime>(pub AppHandle<R>);
 
 impl<R: Runtime> PosterRenderer for AppRenderer<R> {
-    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>> {
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
         reqs.iter().map(|r| run(&self.0, cx, r)).collect()
     }
 }
@@ -36,7 +35,7 @@ pub async fn render_poster<R: Runtime>(
     app: AppHandle<R>,
     cx: State<'_, Core>,
     req: PosterRequest,
-) -> Result<PosterRendered, String> {
+) -> Result<PosterOutcome, String> {
     let cx = cx.inner().clone();
     tauri::async_runtime::spawn_blocking(move || run(&app, &cx, &req))
         .await
