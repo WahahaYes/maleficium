@@ -6,8 +6,17 @@
 # a matrix) gives two distinct non-blank PNGs of the requested size; a chart
 # renders at its scale; a deliberately hanging debug-only runtime is killed
 # at its time limit, its web process is gone, and the next render still
-# works; html and table widgets are refused; the project, explicit posters
+# works; a table widget is refused; the project, explicit posters
 # included, is never written.
+#
+# The html gate, with a probe widget (no poster=) whose script, if it ever
+# runs, paints the poster magenta (its marker): unapproved it returns
+# approval_required and writes nothing; approved in the app data store (as
+# the desktop's Approve writes it) it renders the marker; an edit stops it
+# until re-approved; a symlink in its folder or a request for a digest the
+# folder no longer has refuses. Then the two-pass compile: an approved probe
+# is rendered into .maleficium/posters and mapped, an edited one gets an
+# approval_required line and no map entry.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,6 +40,26 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
 mkdir "$SCRATCH/out"
+# The probe: an html widget with no poster= whose script, when run, answers
+# the bridge with a magenta snapshot.
+mkdir -p "$SCRATCH/proj/widgets/probe"
+cat > "$SCRATCH/proj/widgets/probe/index.html" <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"></head>
+<body><canvas id="c" width="64" height="48"></canvas><script src="probe.js"></script></body></html>
+HTML
+cat > "$SCRATCH/proj/widgets/probe/probe.js" <<'JS'
+var c = document.getElementById("c"), g = c.getContext("2d");
+g.fillStyle = "#ff00ff"; g.fillRect(0, 0, 64, 48);
+addEventListener("message", function (e) {
+  if (e.source !== parent || !e.data || e.data.mfw !== 1) return;
+  if (e.data.type === "init") parent.postMessage({ mfw: 1, type: "status", state: "loaded" }, "*");
+  else if (e.data.type === "snapshot-request")
+    parent.postMessage({ mfw: 1, type: "snapshot", requestId: e.data.requestId, png: c.toDataURL("image/png") }, "*");
+});
+parent.postMessage({ mfw: 1, type: "ready" }, "*");
+JS
+sed -i 's|^\\interactivetable|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactivetable|' "$SCRATCH/proj/posters.tex"
+grep -q "id=html-probe" "$SCRATCH/proj/posters.tex" || fail "cannot add the probe widget"
 
 # A private display: the renderer's window is never shown, but GTK needs one.
 exec 3< <(Xvfb -displayfd 1 -screen 0 1280x800x24 -nolisten tcp 2>/dev/null & echo "pid $!")
@@ -206,9 +235,78 @@ check("the hanging runtime's web process is gone", not left, str(left))
 again, _ = render("cam-front", "again.png")
 check("the renderer still works after a kill", again["ok"], str(again)[:300])
 
-for widget, want in [("html-demo", "html widgets are not rendered"), ("tab", "typeset rows")]:
-    r, _ = render(widget, widget + ".png")
-    check(f"{widget} is refused", not r["ok"] and want in r.get("error", ""), str(r)[:300])
+r, _ = render("tab", "tab.png")
+check("tab is refused", not r["ok"] and "typeset rows" in r.get("error", ""), str(r)[:300])
+
+# --- the html gate -----------------------------------------------------------
+REAL = os.path.realpath(ROOT)
+DATA = os.environ["XDG_DATA_HOME"]
+store_dir = os.path.join(DATA, "io.github.wahahayes.maleficium", "maleficium-widgets", "approvals",
+                         hashlib.sha256(REAL.encode()).hexdigest()[:32])
+def approve(digest):
+    """The approval the desktop's Approve writes (MCP and the renderer cannot)."""
+    os.makedirs(store_dir, exist_ok=True)
+    json.dump({"format": 1, "root": REAL, "autoApprove": False,
+               "widgets": {"widgets/probe": {"widget": "html-probe", "digest": digest, "origins": {},
+                                             "files": {}, "approvedAt": 1, "revoked": False}}},
+              open(os.path.join(store_dir, "store.json"), "w"))
+def outcome(r):
+    return (r.get("result") or {}).get("status") if r.get("ok") else None
+MAGENTA = (255, 0, 255)
+def marker(name):
+    """The probe ran: its magenta 64x48 snapshot is the poster."""
+    i = png_info(os.path.join(OUT, name)) if os.path.exists(os.path.join(OUT, name)) else None
+    return i is not None and i[:2] == (64, 48) and i[4][:3] == MAGENTA
+
+r, _ = render("html-demo", "html-demo.png")
+check("an unapproved html widget (poster= or not) returns approval_required, not an error",
+      outcome(r) == "approval_required" and r["result"].get("cause") == "never_approved"
+      and r["result"].get("panel") == "View > Widgets", str(r)[:300])
+check("...and writes nothing", not os.path.exists(os.path.join(OUT, "html-demo.png")))
+
+r, _ = render("html-probe", "probe-unapproved.png")
+check("the unapproved probe returns approval_required", outcome(r) == "approval_required"
+      and r["result"].get("widget") == "html-probe" and r["result"].get("path") == "widgets/probe", str(r)[:300])
+check("...and its script never ran (no marker)", not os.path.exists(os.path.join(OUT, "probe-unapproved.png")))
+DIGEST = (r.get("result") or {}).get("digest", "")
+check("...naming the digest the user would approve", len(DIGEST) == 64, DIGEST)
+
+approve(DIGEST)
+r, _ = render("html-probe", "probe-approved.png")
+check("the approved probe renders", outcome(r) == "rendered", str(r)[:300])
+check("...its script ran: the poster is its magenta 64x48 snapshot", marker("probe-approved.png"),
+      str(png_info(os.path.join(OUT, "probe-approved.png")) if os.path.exists(os.path.join(OUT, "probe-approved.png")) else None))
+
+js = os.path.join(ROOT, "widgets/probe/probe.js")
+orig = open(js).read()
+open(js, "a").write("// edited after approval\n")
+r, _ = render("html-probe", "probe-edited.png")
+check("an edit after approval stops it: approval_required (changed_since_approval)",
+      outcome(r) == "approval_required" and r["result"].get("cause") == "changed_since_approval"
+      and r["result"].get("approvedDigest") == DIGEST, str(r)[:300])
+check("...and nothing ran", not os.path.exists(os.path.join(OUT, "probe-edited.png")))
+EDITED = (r.get("result") or {}).get("digest", "")
+approve(EDITED)
+r, _ = render("html-probe", "probe-reapproved.png")
+check("re-approved at its new digest, it renders again", outcome(r) == "rendered" and marker("probe-reapproved.png"),
+      str(r)[:300])
+
+req = {"mainRel": "posters.tex", "widgetId": "html-probe", "outPath": os.path.join(OUT, "probe-stale.png"),
+       "digest": DIGEST}
+app.stdin.write(json.dumps(req) + "\n")
+app.stdin.flush()
+r = json.loads(app.stdout.readline() or '{"ok": false, "error": "the app exited"}')
+check("a request for a digest the folder no longer has is refused",
+      not r["ok"] and "changed since" in r.get("error", ""), str(r)[:300])
+check("...and nothing ran", not os.path.exists(os.path.join(OUT, "probe-stale.png")))
+
+link = os.path.join(ROOT, "widgets/probe/leak.txt")
+os.symlink("/etc/hostname", link)
+r, _ = render("html-probe", "probe-symlink.png")
+check("a symlink in an approved widget's folder refuses the render",
+      not r["ok"] and "symlink" in r.get("error", ""), str(r)[:300])
+check("...and nothing ran", not os.path.exists(os.path.join(OUT, "probe-symlink.png")))
+os.remove(link)
 
 app.stdin.close()
 try:
@@ -217,10 +315,47 @@ except subprocess.TimeoutExpired:
     app.kill()
     code = None
 check("the renderer exits at end of input, non-zero after failures", code == 1, str(code))
-after = {k: v for k, v in tree(ROOT).items() if k != "maleficium-interactive.sty"}
+after = {k: v for k, v in tree(ROOT).items() if k not in ("maleficium-interactive.sty", "widgets/probe/probe.js")}
 check("the project is untouched, explicit posters included",
-      after == {k: v for k, v in before.items() if k != "maleficium-interactive.sty"},
+      after == {k: v for k, v in before.items() if k not in ("maleficium-interactive.sty", "widgets/probe/probe.js")},
       str(set(after.items()) ^ set(before.items()))[:300])
+
+# --- the two-pass compile ------------------------------------------------------
+# The sidecar renders missing auto-posters through the app binary beside it;
+# the probe is approved at its current (edited) digest.
+mcp = McpClient([os.environ["MCP_BIN"]], "posters-compile")
+check("grant project root again", call("grant", {"root_id": "pp", "root": ROOT})["ok"])
+def compile_lines():
+    r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
+    rec = {"status": "not-started", "log": str(r)}
+    for _ in range(120 if r.get("job_id") else 0):
+        time.sleep(2)
+        rec = call("compile_poll", {"job_id": r["job_id"], "tail_lines": 400})
+        if rec.get("status") != "running":
+            break
+    return rec
+MAP = os.path.join(ROOT, ".maleficium", "posters", "posters.map")
+def mapped():
+    return os.path.isfile(MAP) and "\\mfw@postermap{html-probe}" in open(MAP).read()
+rec = compile_lines()
+lines = rec.get("lines") or []
+check("compile: the approved probe is rendered before the engine runs",
+      rec.get("status") == "success" and any(l.startswith("poster html-probe: rendered") for l in lines),
+      str([l for l in lines if "poster" in l])[:400])
+check("...and mapped", mapped())
+pngs = [f for f in os.listdir(os.path.dirname(MAP)) if f.endswith(".png")] if os.path.isfile(MAP) else []
+check("...its cached poster is the probe's magenta snapshot",
+      len(pngs) == 1 and (png_info(os.path.join(os.path.dirname(MAP), pngs[0])) or [0] * 5)[4][:3] == MAGENTA, str(pngs))
+open(js, "w").write(orig + "// edited again\n")
+rec = compile_lines()
+lines = rec.get("lines") or []
+check("compile: an edited probe gets an approval_required line, not a render",
+      rec.get("status") == "success"
+      and any(l.startswith("poster html-probe: approval_required (changed_since_approval)") for l in lines)
+      and not any(l.startswith("poster html-probe: rendered") for l in lines),
+      str([l for l in lines if "poster" in l])[:400])
+check("...and no map entry: its cached poster does not stand in for the approval", not mapped())
+mcp.p.kill()
 sys.exit(1 if fails else 0)
 EOF
 echo ""
