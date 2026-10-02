@@ -27,6 +27,8 @@ const SIDECAR_HEADER: &str = "mfw 1";
 const SIDECAR_FIELDS: usize = 11;
 /// The optional per-bundle declaration beside an `html` widget's entry.
 pub(crate) const BUNDLE_MANIFEST: &str = "widget.json";
+/// The largest `widget.json` read: it declares a few origins, nothing more.
+pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
@@ -468,14 +470,36 @@ fn bundle_csp(
     let rel = dir_rel.join(BUNDLE_MANIFEST);
     let path = crate::fs::resolve_in(cx, root_id, &rel.to_string_lossy())
         .map_err(|e| format!("widget {id}: {BUNDLE_MANIFEST}: {e}"))?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| format!("widget {id}: cannot read {BUNDLE_MANIFEST}: {e}"))?;
+    use std::io::Read as _;
+    let cant = |e: std::io::Error| format!("widget {id}: cannot read {BUNDLE_MANIFEST}: {e}");
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)
+        .map_err(cant)?
+        .take(MAX_MANIFEST_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(cant)?;
+    if bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(too_big(id));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|_| format!("widget {id}: {BUNDLE_MANIFEST} is not UTF-8"))?;
     manifest_csp(id, &text)
 }
 
+fn too_big(id: &str) -> String {
+    format!(
+        "widget {id}: {BUNDLE_MANIFEST} is larger than {} KiB",
+        MAX_MANIFEST_BYTES / 1024
+    )
+}
+
 /// The `csp` a bundle's `widget.json` text declares, validated: one parser
-/// for the widget list and the approval digest.
+/// for the widget list and the approval digest. Text over
+/// [`MAX_MANIFEST_BYTES`] is refused before it is parsed.
 pub(crate) fn manifest_csp(id: &str, text: &str) -> Result<Option<WidgetCsp>, String> {
+    if text.len() > MAX_MANIFEST_BYTES {
+        return Err(too_big(id));
+    }
     let json: serde_json::Value = serde_json::from_str(text)
         .map_err(|e| format!("widget {id}: {BUNDLE_MANIFEST} is not valid JSON: {e}"))?;
     let Some(csp) = json.get("csp") else {
