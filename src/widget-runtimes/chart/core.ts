@@ -151,3 +151,9 @@ export function createView(vega: Spec, renderer: 'none' | 'svg' | 'canvas' = 'no
 export function parseSpec(src: SourceBytes): unknown {
   return JSON.parse(new TextDecoder('utf-8').decode(src.bytes));
 }
+
+/** The `scale` option: snapshot pixels per CSS pixel, above 0 and at most 8; 1 otherwise. */
+export function parseScale(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 && n <= 8 ? n : 1;
+}

@@ -1,13 +1,15 @@
 // The chart runtime (`chart@1`): renders the widget's Vega-Lite spec, with the
-// data files it names, from bytes delivered in `init`. See ./core.ts.
+// data files it names, from bytes delivered in `init`. See ./core.ts. Option:
+// `scale`, the snapshot's pixels per CSS pixel.
 import { applyTheme, startBridge, status, type Init, type Theme } from '../bridge';
-import { compileSpec, createView, parseSpec, resolveData } from './core';
+import { compileSpec, createView, parseScale, parseSpec, resolveData } from './core';
 import type { View } from 'vega';
 
 const host = document.getElementById('chart') as HTMLElement;
 let spec: Record<string, unknown> | null = null;
 let theme: Theme | null = null;
 let view: View | null = null;
+let scale = 1;
 
 function fail(message: string): void {
   host.textContent = '';
@@ -31,6 +33,7 @@ async function draw(): Promise<boolean> {
 
 async function init(msg: Init): Promise<void> {
   theme = msg.theme;
+  scale = parseScale(msg.options.scale);
   applyTheme(theme);
   host.setAttribute('aria-label', msg.alt);
   status('loading');
@@ -39,6 +42,8 @@ async function init(msg: Init): Promise<void> {
     if (!src) return fail('the chart has no "spec" source');
     spec = resolveData(parseSpec(src), msg.sources);
     await draw();
+    // A snapshot can be asked for as soon as `loaded` arrives: have one ready.
+    await capture();
     status('loaded');
   } catch (err) {
     fail(err instanceof Error ? err.message : 'the chart failed to render');
@@ -51,11 +56,11 @@ function snapshot(): string | null {
 }
 let lastPng: string | null = null;
 async function capture(): Promise<void> {
-  if (view) lastPng = await view.toImageURL('png');
+  if (view) lastPng = await view.toImageURL('png', scale);
 }
 
 startBridge({
-  onInit: (m) => void init(m).then(capture),
+  onInit: (m) => void init(m),
   onTheme: (t) => {
     theme = t;
     applyTheme(t);
