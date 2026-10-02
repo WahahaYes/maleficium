@@ -21,6 +21,7 @@ export type CommandId =
   | 'file.export-bundle'
   | 'file.export-bundle-folder'
   | 'file.export-bundle-single-file'
+  | 'file.preview-in-browser'
   | 'file.reload'
   | 'file.keep-mine'
   | 'file.clean'
@@ -170,6 +171,7 @@ export interface CommandActions {
   exportZip: () => void;
   exportBundleFolder: () => void;
   exportBundleSingleFile: () => void;
+  previewInBrowser: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -291,6 +293,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
               run: a.exportBundleSingleFile,
             },
           ],
+        },
+        {
+          id: 'file.preview-in-browser',
+          label: 'Preview in Browser',
+          enabled: ctx.pdfOpen,
+          run: a.previewInBrowser,
         },
         {
           id: 'file.set-main',

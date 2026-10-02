@@ -35,6 +35,7 @@ maleficium-mcp = { path = "mcp" }
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 maleficium-index = { path = "index" }
+open = "5.4.4"
 
 [dev-dependencies]
 maleficium-core = { path = "core", features = ["test-support"] }

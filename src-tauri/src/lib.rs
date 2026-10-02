@@ -13,7 +13,8 @@ pub fn run() {
             commands::compile::compile_tex,
             commands::compile::cancel_compile,
             commands::history::history_get,
-            commands::history::history_restore
+            commands::history::history_restore,
+            commands::preview::preview_in_browser
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

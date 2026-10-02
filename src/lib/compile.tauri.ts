@@ -6,6 +6,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { BundleExported } from './generated/api';
 import type { CompileLine, CompileReport } from './generated/events';
 
 /** Start one streaming compile; lines arrive on compile-line events. */
@@ -25,4 +26,9 @@ export function cancelCompileRun(): Promise<string> {
 /** Subscribe to compile lines; the resolver unsubscribes. */
 export function subscribeCompileLines(cb: (line: CompileLine) => void): Promise<() => void> {
   return listen<CompileLine>('compile-line', (e) => cb(e.payload));
+}
+
+/** Export the project's single-file bundle to its scratch folder and open it. */
+export function openPreview(rootId: string, mainRel: string): Promise<BundleExported> {
+  return invoke<BundleExported>('preview_in_browser', { rootId, mainRel });
 }
