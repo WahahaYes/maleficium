@@ -8,6 +8,13 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `history-surface.sh` | no | The revision history surface is wired up and restores exact bytes |
 | `search-run.sh` | no | Project search, structure tools, and replace over the sidecar |
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
+| `interactive-run.sh` | no | The interactive package installs, compiles, and the widget list, sidecar and annotations are right |
+| `export-run.sh` | no | Paper bundle export in every profile, preview in browser, declared origins, and the reader in Chromium, Firefox and WebKit |
+| `playground-run.sh` | no | The showcase paper compiles with every widget macro |
+| `approval-run.sh` | no | Html widget approval over the sidecar: nothing can approve over MCP, and the app-side store is what counts |
+| `posters-cache-run.sh` | Xvfb (own display) | The `.maleficium/posters` cache: two-pass compile, regeneration, cleanup, source zips and bundle export |
+| `reader-run.mjs` | no | The companion page in headless Chromium, Firefox and WebKit (run by `export-run.sh`) |
+| `widget-runtimes/run.mjs` | no | The model and video runtimes in a sandboxed frame in headless Firefox |
 | `poster-run.sh` | Xvfb (own display) | Widget posters render headlessly from their camera, size, background and scale, and a hanging runtime is killed at its time limit |
 | `stills-run.py` | Xvfb | Screenshots of each app state, and the app's own event log |
 | `papers-run.py` | no | How many vendored real papers compile error-free, and what blocks the rest |
@@ -73,6 +80,14 @@ Drives the sidecar over `fixtures/playground/`, the showcase paper for interacti
 ### poster-run.sh
 
 Compiles `fixtures/interactive/posters.tex` over the sidecar and checks the canonical poster parameters in the `widgets` list, then starts its own Xvfb display and drives the app's headless renderer (`maleficium --render-posters <root>`: one JSON request per stdin line, one JSON result per stdout line; no editor window, each render in a hidden window destroyed afterwards). Checks: the fixture model from a `pos/target/up` camera and from a matrix camera gives two different, non-blank 320x240 PNGs; `background=ffffff` paints white and `background=transparent` leaves alpha 0; the chart fills its frame at `scale=2`; the debug-only `hang@test` runtime is stopped at a 3000 ms limit with no PNG written, its WebKit web process is gone, and the next render still works; html and table widgets are refused; the renderer exits non-zero after a failure; the project, explicit posters included, is unchanged. Needs `Xvfb` and a debug build (the hanging runtime does not exist in release builds). `POSTER_SHOTS=<dir>` keeps the PNGs.
+
+### approval-run.sh
+
+Spawns `maleficium-mcp`, compiles a scratch copy of `fixtures/interactive/`, and checks the approval boundary for html widgets end to end: `widgets_status` and `widget_check` report an unapproved html widget as `approval_required` (a normal result, never an error) with the cause, panel and what the agent must not do; no tool or parameter can approve, revoke or set auto-approval; files in the project that claim approval are ignored; and the approval store in the app data dir (written the way the desktop app's Approve writes it) is what counts: approved, edited, auto mode, a widened origin, and a corrupt store failing closed. The project is never written.
+
+### posters-cache-run.sh
+
+Compiles a scratch project (the interactive fixture plus `auto.tex`, whose model and chart have no `poster=`) over the sidecar with the app's headless renderer beside it, under a private Xvfb. Checks: the first compile shows placeholders and writes nothing, the second renders both posters into `.maleficium/posters/` and embeds them (`pdfimages`) with a README and a map; an unchanged compile renders nothing; deleting `.maleficium` regenerates it; an edited chart shows its placeholder, its old poster is collected and the next compile renders the new one; the project shows only the package and `.maleficium/`, search and `find_files` never list the cache, and a hand-edited README survives; `export_zip` carries the cache and the unzipped paper compiles with its posters with no app and no display; the bundle export takes the cached posters. Needs `Xvfb` and `pdfimages` (poppler-utils). The watcher half runs as a core test.
 
 ### reader-run.mjs
 
