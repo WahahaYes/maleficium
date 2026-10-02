@@ -16,9 +16,9 @@
 //! Widgets are folded into one inline document each in every profile (the
 //! 2026-09-30 browser export spike): see [`fold`].
 
-mod fold;
+pub(crate) mod fold;
 
-use crate::widgets::{Widget, WidgetRect, WidgetType};
+use crate::widgets::{Widget, WidgetRect, WidgetSource, WidgetType};
 use crate::Core;
 
 pub use maleficium_events::BundleProfile;
@@ -181,7 +181,7 @@ fn hex(bytes: &[u8]) -> String {
     })
 }
 
-fn sha_of(bytes: &[u8]) -> String {
+pub(crate) fn sha_of(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
 
@@ -599,12 +599,70 @@ fn crop_png(pdf: &hayro::hayro_syntax::Pdf, page: u32, r: &WidgetRect) -> Result
     .map_err(|_| format!("the renderer failed on page {page}"))?
 }
 
-fn runtime_host(runtime: &str) -> Option<&'static str> {
+/// The generated host document of a built-in runtime this build ships.
+pub(crate) fn runtime_host(runtime: &str) -> Option<&'static str> {
     match runtime {
         "table@1" => Some(TABLE_HOST),
         "chart@1" => Some(CHART_HOST),
         _ => None,
     }
+}
+
+/// A widget's local sources keyed by role; a repeated role gets `-2`,
+/// `-3`, ... in document order.
+pub(crate) fn role_keys(w: &Widget) -> Result<Vec<(String, &WidgetSource)>, String> {
+    let mut seen: BTreeMap<&str, u32> = BTreeMap::new();
+    let mut out = Vec::new();
+    for s in &w.sources {
+        if s.role.is_empty()
+            || !s
+                .role
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        {
+            return Err(format!(
+                "widget {}: source role `{}` is not a plain word",
+                w.id, s.role
+            ));
+        }
+        let n = seen.entry(&s.role).or_insert(0);
+        *n += 1;
+        let key = if *n == 1 {
+            s.role.clone()
+        } else {
+            format!("{}-{}", s.role, n)
+        };
+        out.push((key, s));
+    }
+    Ok(out)
+}
+
+/// The options a runtime receives: everything but the export-only keys,
+/// digits as numbers.
+pub(crate) fn runtime_options(w: &Widget) -> Map<String, Value> {
+    w.options
+        .iter()
+        .filter(|o| !matches!(o.key.as_str(), "remote" | "sha256" | "inline"))
+        .map(|o| (o.key.clone(), json_number_or_string(&o.value)))
+        .collect()
+}
+
+/// An `html` widget's bundle folder, resolved inside the project.
+pub(crate) fn bundle_folder(
+    cx: &Core,
+    root_id: &str,
+    main_dir_rel: &Path,
+    w: &Widget,
+) -> Result<PathBuf, String> {
+    let rel = w
+        .sources
+        .iter()
+        .find(|s| s.role == "bundle")
+        .map(|s| s.path.trim_end_matches('/').to_string())
+        .ok_or_else(|| format!("widget {}: an html widget records no bundle", w.id))?;
+    let joined = main_dir_rel.join(&rel);
+    crate::fs::resolve_in(cx, root_id, &joined.to_string_lossy())
+        .map_err(|e| format!("widget {}: bundle folder {rel}: {e}", w.id))
 }
 
 /// A widget document that shows the poster: what a widget exports as when
@@ -682,15 +740,7 @@ fn plan_widget(
     let policy = fold::widget_policy(w.csp.as_ref());
 
     let doc: String = if w.kind == WidgetType::Html {
-        let rel = w
-            .sources
-            .iter()
-            .find(|s| s.role == "bundle")
-            .map(|s| s.path.trim_end_matches('/').to_string())
-            .ok_or_else(|| format!("widget {id}: an html widget records no bundle"))?;
-        let joined = p.main_dir_rel.join(&rel);
-        let dir = crate::fs::resolve_in(p.cx, p.root_id, &joined.to_string_lossy())
-            .map_err(|e| format!("widget {id}: bundle folder {rel}: {e}"))?;
+        let dir = bundle_folder(p.cx, p.root_id, &p.main_dir_rel, w)?;
         let folded = fold::fold_bundle(&dir, &dir.join("index.html"), &policy)
             .map_err(|e| format!("widget {id}: {e}"))?;
         if !folded.unfolded.is_empty() {
@@ -716,28 +766,8 @@ fn plan_widget(
         }
         folded.html
     } else {
-        // Local sources by role; a repeated role gets -2, -3, ...
-        let mut seen: BTreeMap<&str, u32> = BTreeMap::new();
         let mut video_local: Option<&str> = None;
-        for s in &w.sources {
-            if !s
-                .role
-                .bytes()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-                || s.role.is_empty()
-            {
-                return Err(format!(
-                    "widget {id}: source role `{}` is not a plain word",
-                    s.role
-                ));
-            }
-            let n = seen.entry(&s.role).or_insert(0);
-            *n += 1;
-            let role_key = if *n == 1 {
-                s.role.clone()
-            } else {
-                format!("{}-{}", s.role, n)
-            };
+        for (role_key, s) in role_keys(w)? {
             if w.kind == WidgetType::Video && s.role == "video" && remote.is_some() {
                 video_local = Some(&s.path);
                 continue;
@@ -817,12 +847,7 @@ fn plan_widget(
     if w.kind != WidgetType::Html {
         j.insert("sources".into(), Value::Object(sources));
     }
-    let mut opts = Map::new();
-    for o in &w.options {
-        if !matches!(o.key.as_str(), "remote" | "sha256" | "inline") {
-            opts.insert(o.key.clone(), json_number_or_string(&o.value));
-        }
-    }
+    let opts = runtime_options(w);
     if !opts.is_empty() {
         j.insert("options".into(), Value::Object(opts));
     }
@@ -841,7 +866,7 @@ fn plan_widget(
 
 // ---- the house theme ----------------------------------------------------
 
-const THEME_CSS: &str = ".m-reader{--m-font-body:\"Libertinus Serif\",Georgia,serif;--m-font-heading:\"Libertinus Sans\",system-ui,sans-serif;--m-font-mono:\"Libertinus Mono\",ui-monospace,monospace;--m-font-math:\"Libertinus Math\",math;--m-size-base:1.0625rem;--m-scale:1.2;--m-size-small:0.875em;--m-leading:1.6;--m-measure:68ch;--m-figure-max:min(100%,64rem);--m-space-1:0.25rem;--m-space-2:0.5rem;--m-space-3:1rem;--m-space-4:1.5rem;--m-space-5:2.5rem;--m-space-6:4rem;--m-radius:6px;--m-color-bg:#fbfaf7;--m-color-surface:#f1efe9;--m-color-text:#1e1b24;--m-color-muted:#6b6676;--m-color-rule:#d9d5e0;--m-color-link:#5b2a86;--m-color-accent:#5b2a86;--m-color-target:#fff4c2;--m-figure-bg:#ffffff}\n.m-reader[data-theme=\"dark\"]{--m-color-bg:#16181d;--m-color-surface:#1f2229;--m-color-text:#dfe1e6;--m-color-muted:#9aa1ad;--m-color-rule:#343944;--m-color-link:#b79ad4;--m-color-accent:#b79ad4;--m-color-target:#3a3420}\n";
+pub(crate) const THEME_CSS: &str = ".m-reader{--m-font-body:\"Libertinus Serif\",Georgia,serif;--m-font-heading:\"Libertinus Sans\",system-ui,sans-serif;--m-font-mono:\"Libertinus Mono\",ui-monospace,monospace;--m-font-math:\"Libertinus Math\",math;--m-size-base:1.0625rem;--m-scale:1.2;--m-size-small:0.875em;--m-leading:1.6;--m-measure:68ch;--m-figure-max:min(100%,64rem);--m-space-1:0.25rem;--m-space-2:0.5rem;--m-space-3:1rem;--m-space-4:1.5rem;--m-space-5:2.5rem;--m-space-6:4rem;--m-radius:6px;--m-color-bg:#fbfaf7;--m-color-surface:#f1efe9;--m-color-text:#1e1b24;--m-color-muted:#6b6676;--m-color-rule:#d9d5e0;--m-color-link:#5b2a86;--m-color-accent:#5b2a86;--m-color-target:#fff4c2;--m-figure-bg:#ffffff}\n.m-reader[data-theme=\"dark\"]{--m-color-bg:#16181d;--m-color-surface:#1f2229;--m-color-text:#dfe1e6;--m-color-muted:#9aa1ad;--m-color-rule:#343944;--m-color-link:#b79ad4;--m-color-accent:#b79ad4;--m-color-target:#3a3420}\n";
 
 fn theme_json(id: &str) -> String {
     let v = json!({

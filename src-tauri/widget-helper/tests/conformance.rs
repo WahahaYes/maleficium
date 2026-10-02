@@ -21,6 +21,7 @@ impl Platform for Linux {
     fn host(&mut self, cfg: HostConfig) -> WidgetHost {
         let b = LinuxBackend::new(LinuxConfig {
             helper: env!("CARGO_BIN_EXE_maleficium-widget-helper").into(),
+            helper_args: Vec::new(),
             parent: self.parent,
             network_namespaces: self.netns,
         });

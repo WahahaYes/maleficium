@@ -23,8 +23,9 @@ pub const TAG_VAR: &str = "MALEFICIUM_WIDGET_TAG";
 
 #[derive(Debug, Clone)]
 pub struct LinuxConfig {
-    /// The helper binary.
+    /// The helper binary, and the arguments that select the helper in it.
     pub helper: PathBuf,
+    pub helper_args: Vec<String>,
     /// The editor window's X11 id.
     pub parent: u64,
     /// Use an empty network namespace where the system allows one; off
@@ -238,10 +239,13 @@ impl WidgetBackend for LinuxBackend {
         let mut cmd = if contain {
             let mut c = Command::new("unshare");
             c.args(["--user", "--map-root-user", "--net", "--"])
-                .arg(&self.cfg.helper);
+                .arg(&self.cfg.helper)
+                .args(&self.cfg.helper_args);
             c
         } else {
-            Command::new(&self.cfg.helper)
+            let mut c = Command::new(&self.cfg.helper);
+            c.args(&self.cfg.helper_args);
+            c
         };
         cmd.args(["--fd", "3"])
             .env(TAG_VAR, &tag)

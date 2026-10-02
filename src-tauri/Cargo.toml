@@ -35,6 +35,13 @@ maleficium-mcp = { path = "mcp" }
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 maleficium-index = { path = "index" }
+maleficium-widget-host = { path = "widget-host" }
+maleficium-widget-helper = { path = "widget-helper" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18.2"
+gdkx11 = "0.18.2"
+x11 = { version = "2.21.0", features = ["xlib"] }
 
 [dev-dependencies]
 maleficium-core = { path = "core", features = ["test-support"] }

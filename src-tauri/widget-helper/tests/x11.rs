@@ -123,6 +123,7 @@ fn the_embedded_view_draws_its_slot_and_routes_input_by_activation() {
     let mut h = WidgetHost::new(
         Box::new(LinuxBackend::new(LinuxConfig {
             helper: env!("CARGO_BIN_EXE_maleficium-widget-helper").into(),
+            helper_args: Vec::new(),
             parent: x.parent,
             network_namespaces: true,
         })),

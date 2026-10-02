@@ -18,6 +18,8 @@ import { setProjectIndex } from './lib/project-index';
 import { desktopProjectIndex } from './lib/project-index.tauri';
 import { setWatchBackend } from './lib/watch-backend';
 import { desktopWatch } from './lib/watch-backend.tauri';
+import { setWidgetSurface } from './lib/widgets/surface';
+import { desktopWidgets } from './lib/widgets/surface.tauri';
 import './App.css';
 
 setAppStore(localAppStore);
@@ -26,6 +28,7 @@ setStructure(desktopStructure);
 setWatchBackend(desktopWatch);
 setHistoryStore(desktopHistory);
 setProjectIndex(desktopProjectIndex);
+setWidgetSurface(desktopWidgets);
 
 export function Root() {
   const [prefs, setPrefs] = React.useState<AppearancePrefs>(loadAppearance);
