@@ -1,5 +1,5 @@
-// WidgetApprovalPrompt.tsx — asked when the poster renderer meets an html
-// widget the user has not approved: Approve | Skip. Approving here covers
+// WidgetApprovalPrompt.tsx — asked when a compile finds an html widget the
+// user has not approved: Approve | Skip. Approving here covers
 // exactly the version named; View > Widgets has the source diff.
 
 import Button from '@mui/material/Button';
@@ -38,7 +38,7 @@ export default function WidgetApprovalPrompt({
             <DialogTitle>Approve widget &lsquo;{prompt.widget}&rsquo;?</DialogTitle>
             <DialogContent>
               <Typography gutterBottom>
-                This widget&rsquo;s own HTML and scripts run when its poster is generated.{' '}
+                This widget&rsquo;s own HTML and scripts run when the app renders it.{' '}
                 {causeDetail(prompt.cause)}
               </Typography>
               <Typography variant="caption" component="div">

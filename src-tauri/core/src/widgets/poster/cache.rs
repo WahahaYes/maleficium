@@ -251,8 +251,9 @@ pub fn approval_line(r: &ApprovalRequired) -> String {
 }
 
 /// The html widgets of the last compile's widget list that wait for the
-/// user's approval and would otherwise get a poster: the ones the window
-/// asks about.
+/// user's approval: the ones the window asks about. A widget whose document
+/// gives its own poster is asked about too: it still runs when the app
+/// renders it, and View > Widgets lists it as pending.
 pub fn approvals_needed(cx: &Core, root_id: &str, main_rel: &str) -> Vec<ApprovalRequired> {
     approvals_needed_at(&widget_approval::store_base(), cx, root_id, main_rel)
 }
@@ -269,10 +270,13 @@ pub(crate) fn approvals_needed_at(
     };
     list.widgets
         .iter()
-        .filter(|w| auto(w))
-        .filter_map(|w| match keyed(base, cx, root_id, main_rel, w) {
-            Ok(Keyed::Approval(r)) => Some(*r),
-            _ => None,
+        .filter_map(|w| WidgetTarget::of(main_rel, w).ok().flatten())
+        .filter_map(|t| match widget_approval::check_at(base, cx, root_id, &t) {
+            Ok(c) => match c.status {
+                WidgetApprovalStatus::ApprovalRequired(r) => Some(r),
+                WidgetApprovalStatus::Approved(_) => None,
+            },
+            Err(_) => None,
         })
         .collect()
 }
