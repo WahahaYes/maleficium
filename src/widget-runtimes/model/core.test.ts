@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkGlb, frame } from './core';
+import { checkGlb, clip, frame, parseBackground, parseCamera, parseSize } from './core';
 
 const fixture = () => {
   const b = readFileSync('e2e/fixtures/interactive/models/mesh.glb');
@@ -61,5 +61,40 @@ describe('frame', () => {
   it('survives a degenerate radius', () => {
     expect(frame(0, 45, 1).distance).toBeGreaterThan(0);
     expect(Number.isFinite(frame(NaN, 45, 1).distance)).toBe(true);
+  });
+});
+
+describe('poster options', () => {
+  const id = '1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1';
+  it('reads a canonical camera matrix, with commas or as an array', () => {
+    expect(parseCamera(id)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 5, 1]);
+    expect(parseCamera(id.split(' ').join(','))).toEqual(parseCamera(id));
+    expect(parseCamera([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 5, 1])).toEqual(parseCamera(id));
+  });
+  it('ignores a malformed or degenerate camera', () => {
+    expect(parseCamera(undefined)).toBeNull();
+    expect(parseCamera('1 0 0')).toBeNull();
+    expect(parseCamera(id.replace('5', 'x'))).toBeNull();
+    expect(parseCamera('1 0 0 0 0 0 0 0 0 0 1 0 0 0 5 1')).toBeNull();
+    expect(parseCamera('pos=0,0,5 target=0,0,0')).toBeNull();
+  });
+  it('reads size and background', () => {
+    expect(parseSize('320x240')).toEqual({ width: 320, height: 240 });
+    for (const bad of ['320', '8x8', '5000x10', '320X240', 320, null]) {
+      expect(parseSize(bad)).toBeNull();
+    }
+    expect(parseBackground('#FFFFFF')).toBe('#ffffff');
+    expect(parseBackground('transparent')).toBe('transparent');
+    expect(parseBackground('ffffff')).toBeNull();
+    expect(parseBackground('red')).toBeNull();
+  });
+  it('keeps the sphere between the clip planes, also from inside it', () => {
+    const outside = clip(10, 1);
+    expect(outside.near).toBeLessThan(9);
+    expect(outside.far).toBeGreaterThan(11);
+    const inside = clip(0.2, 1);
+    expect(inside.near).toBeGreaterThan(0);
+    expect(inside.near).toBeLessThan(0.01);
+    expect(inside.far).toBeGreaterThan(1.2);
   });
 });

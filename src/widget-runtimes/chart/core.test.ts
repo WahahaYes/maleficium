@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compileSpec, createView, csvRows, parseSpec, resolveData } from './core';
+import { compileSpec, createView, csvRows, parseScale, parseSpec, resolveData } from './core';
 import type { SourceBytes } from '../bridge';
 
 const bytes = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer;
@@ -127,5 +127,13 @@ describe('chart runtime', () => {
 
   it('reads CSV rows with numbers typed', () => {
     expect(csvRows('a,b\n1,x\n')).toEqual([{ a: 1, b: 'x' }]);
+  });
+});
+
+describe('chart poster options', () => {
+  it('reads scale as a number or text, and falls back to 1', () => {
+    expect(parseScale(2)).toBe(2);
+    expect(parseScale('1.5')).toBe(1.5);
+    for (const bad of [undefined, '', '0', -1, 9, 'two']) expect(parseScale(bad)).toBe(1);
   });
 });

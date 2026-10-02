@@ -58,3 +58,50 @@ export function frame(radius: number, fovDeg: number, aspect: number): Framing {
   const distance = (r / Math.sin(Math.min(half, hfov))) * 1.1;
   return { distance, near: distance / 100, far: distance * 100 };
 }
+
+/**
+ * The `camera` option: a camera-to-world matrix, 16 numbers in column-major
+ * order (glTF's and three.js's), as the app canonicalizes it (space
+ * separated). Null when absent or malformed: the view then frames the model.
+ */
+export function parseCamera(v: unknown): number[] | null {
+  const parts = Array.isArray(v)
+    ? v
+    : typeof v === 'string'
+      ? v.split(/[\s,]+/).filter((t) => t !== '')
+      : [];
+  const m = parts.map((t) => (typeof t === 'number' ? t : Number(t)));
+  if (m.length !== 16 || !m.every(Number.isFinite)) return null;
+  // The forward (-z) and up columns must point somewhere.
+  const len = (i: number) => Math.hypot(m[i], m[i + 1], m[i + 2]);
+  return len(4) > 1e-9 && len(8) > 1e-9 ? m : null;
+}
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** The `size` option, `WxH` in pixels (16 to 4096 a side); null otherwise. */
+export function parseSize(v: unknown): Size | null {
+  const m = typeof v === 'string' ? /^(\d{1,4})x(\d{1,4})$/.exec(v.trim()) : null;
+  if (!m) return null;
+  const [width, height] = [Number(m[1]), Number(m[2])];
+  const ok = (n: number) => n >= 16 && n <= 4096;
+  return ok(width) && ok(height) ? { width, height } : null;
+}
+
+/** The `background` option: `transparent` or `#rrggbb`; null otherwise. */
+export function parseBackground(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().toLowerCase();
+  return t === 'transparent' || /^#[0-9a-f]{6}$/.test(t) ? t : null;
+}
+
+/** Clip planes for a camera `distance` from the centre of a bounding sphere of `radius`. */
+export function clip(distance: number, radius: number): { near: number; far: number } {
+  const r = radius > 0 && Number.isFinite(radius) ? radius : 1;
+  const d = Number.isFinite(distance) ? Math.max(distance, 0) : r * 3;
+  const near = Math.max(d - r * 1.5, r / 1000, d / 1000);
+  return { near, far: d + r * 2 };
+}
