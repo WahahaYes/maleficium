@@ -151,7 +151,7 @@ def asset_bytes(profile, dest, m, a, html):
     blobs = json.loads(re.search(r'<script type="application/json" id="mfw-assets">(.*?)</script>', html, re.S).group(1))
     return base64.b64decode(blobs[a["sha256"]])
 
-WIDGETS = ["fig-mesh", "tab-results", "fig-clip", "fig-chart", "fig-demo"]
+WIDGETS = ["fig-mesh", "tab-results", "fig-chart", "fig-clip", "fig-demo"]
 for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("hosted", "hosted")]:
     dest = os.path.join(OUT, name)
     r = export(profile, name)
@@ -274,6 +274,34 @@ os.makedirs(os.path.join(OUT, "mine"))
 open(os.path.join(OUT, "mine", "keep.txt"), "w").write("keep")
 foreign = export("folder", "mine")
 check("a non-empty foreign folder is refused and untouched", not foreign["ok"] and os.path.isfile(os.path.join(OUT, "mine", "keep.txt")), str(foreign)[:200])
+
+# Preview: the same single-file export, written by the core to a scratch
+# folder under the app data dir (XDG_DATA_HOME here), path returned, nothing
+# opened, project untouched, next run replaces the previous preview.
+ptool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "preview_bundle"), {})
+pann = ptool.get("annotations") or {}
+check("preview_bundle takes only a project and main file, and never reaches the network",
+      sorted(ptool.get("inputSchema", {}).get("properties", {})) == ["main_rel", "root_id"]
+      and pann.get("openWorldHint") is False and pann.get("readOnlyHint") is False, str(ptool)[:300])
+status_before = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
+pv = call("preview_bundle", {"root_id": "ip", "main_rel": "main.tex"})
+check("preview_bundle succeeds", pv["ok"], str(pv)[:300])
+if pv["ok"]:
+    pp = pv["path"]
+    check("preview path is an existing index.html", os.path.isabs(pp) and os.path.basename(pp) == "index.html" and os.path.isfile(pp), pp)
+    check("preview is outside the project", not os.path.realpath(pp).startswith(os.path.realpath(ROOT) + os.sep), pp)
+    check("preview is under the app data dir", os.path.realpath(pp).startswith(os.path.realpath(os.environ["XDG_DATA_HOME"]) + os.sep), pp)
+    html = open(pp, encoding="utf-8").read()
+    check("preview is the self-contained single-file bundle", 'id="mfw-manifest"' in html and 'id="mfw-pdf"' in html and pv["widgets"] == 5)
+    check("preview returns a hint and opens nothing itself", pp in pv["hint"])
+    stale = os.path.join(os.path.dirname(pp), "stale.txt")
+    open(stale, "w").write("old")
+    pv2 = call("preview_bundle", {"root_id": "ip", "main_rel": "main.tex"})
+    check("the next preview reuses the folder and cleans the last one", pv2["ok"] and pv2["path"] == pp and not os.path.exists(stale) and os.listdir(os.path.dirname(pp)) == ["index.html"], str(pv2)[:200])
+status_after = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
+check("previews leave the project tree unchanged (porcelain)", status_after == status_before == before, repr(status_after))
+pbad = call("preview_bundle", {"root_id": "nope", "main_rel": "main.tex"})
+check("preview of an unknown project is refused", not pbad["ok"], str(pbad)[:200])
 
 mcp.p.kill()
 
