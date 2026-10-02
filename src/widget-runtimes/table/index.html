@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Table</title>
     <style>
+      /* an element's own display must never beat the hidden attribute */
+      [hidden] {
+        display: none !important;
+      }
       html,
       body {
         margin: 0;
@@ -26,6 +30,12 @@
         gap: var(--m-space-2, 8px);
         padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
         border-bottom: 1px solid var(--m-color-rule, #d1d9e0);
+      }
+      /* a slot a few rows tall has room for the rows, not the filter box */
+      @media (max-height: 100px) {
+        .bar {
+          display: none;
+        }
       }
       .bar input {
         flex: 1;

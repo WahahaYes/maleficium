@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chart</title>
     <style>
+      /* an element's own display must never beat the hidden attribute */
+      [hidden] {
+        display: none !important;
+      }
       html,
       body {
         margin: 0;
