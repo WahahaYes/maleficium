@@ -827,12 +827,6 @@ pub(crate) fn check_at(
     })
 }
 
-/// The project's auto-approval setting (off when the store is unreadable).
-pub fn auto_approve(cx: &Core, root_id: &str) -> Result<bool, String> {
-    let root = crate::fs::session_root(cx, root_id)?;
-    Ok(load(&store_base(), &root).0.auto_approve)
-}
-
 /// Every html widget of `main_rel`'s last compile with its approval state.
 pub fn widgets_status(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetsStatus, String> {
     status_at(&store_base(), cx, root_id, main_rel)
