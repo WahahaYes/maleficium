@@ -19,7 +19,7 @@ export const WIDGETS_PANEL_PATH = `View > ${WIDGETS_PANEL_TITLE}`;
 
 /** Shown beside the auto-approval toggle, always. */
 export const AUTO_APPROVE_WARNING =
-  'Agents can then change widget code that runs when posters are generated; origin changes still need approval.';
+  'Agents can then change widget code that runs when the app renders it; origin changes still need approval.';
 
 export const WIDGETS_EMPTY = 'This project has no HTML widgets that need approval.';
 export const WIDGETS_NEEDS_MAIN = 'Choose a main file and compile it to list its widgets.';
