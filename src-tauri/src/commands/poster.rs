@@ -3,6 +3,7 @@
 //! asked.
 
 use crate::poster;
+use maleficium_core::widgets::poster::cache::PosterRenderer;
 use maleficium_core::widgets::poster::{finish, prepare, PosterRendered, PosterRequest};
 use maleficium_core::Core;
 use std::sync::Arc;
@@ -18,6 +19,16 @@ pub fn run<R: Runtime>(
     let job = Arc::new(prepare(cx, req)?);
     let png = poster::render(app, job.clone())?;
     finish(&job, &png)
+}
+
+/// The desktop app's compile-time renderer: the same one-shot hidden
+/// window as the command, run in-process.
+pub struct AppRenderer<R: Runtime>(pub AppHandle<R>);
+
+impl<R: Runtime> PosterRenderer for AppRenderer<R> {
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>> {
+        reqs.iter().map(|r| run(&self.0, cx, r)).collect()
+    }
 }
 
 #[tauri::command]
