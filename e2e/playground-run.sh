@@ -146,6 +146,9 @@ check("widget sources and options are typed",
       wby["fig-model"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
       and {"key": "pdfrows", "value": "3"} in wby["tab-results"]["options"]
       and wby["fig-html"]["sources"][0]["role"] == "bundle", str(wl)[:300])
+check("the html widget declares the origin it wants, nothing else does",
+      wby["fig-html"].get("csp", {}).get("connectDomains") == ["https://example.org"]
+      and all("csp" not in wby[i] for i in wby if i != "fig-html"), str(wby["fig-html"].get("csp")))
 check("uncaptioned and floatless widgets list no label",
       all("label" not in wby[i] for i in ("chart-bare", "chart-inline")), str([wby[i] for i in ("chart-bare", "chart-inline")]))
 
