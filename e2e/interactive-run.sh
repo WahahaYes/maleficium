@@ -2,8 +2,9 @@
 # Interactive-widgets run over the stdio sidecar. Spawns `maleficium-mcp`,
 # scripts grant -> interactive_install -> compile -> poll against a scratch
 # copy of e2e/fixtures/interactive/, then asserts the sidecar, the named
-# PDF annotations, the table row cap, porcelain discipline, and the four
-# failing documents.
+# PDF annotations, the table row cap, porcelain discipline, and the failing
+# documents (bad ids, files, alt, unknown options, misplaced or malformed
+# poster parameters).
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -196,7 +197,10 @@ else:
 for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-id.tex", "must match [a-z0-9]"),
                       ("bad-missing.tex", "not found"),
-                      ("bad-noalt.tex", "alt= is required")]:
+                      ("bad-noalt.tex", "alt= is required"),
+                      ("bad-option.tex", "`zoom' undefined in families `mfw'"),
+                      ("bad-param.tex", "camera= does not apply to chart widgets"),
+                      ("bad-size.tex", "size= `large' is malformed")]:
     fr = compile(bad_doc, rounds=15)
     flog = (fr.get("log") or "") + "\n" + "\n".join(fr.get("lines") or [])
     check(f"{bad_doc} fails", fr.get("status") == "failed", str(fr)[:200])
