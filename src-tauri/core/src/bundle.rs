@@ -651,24 +651,6 @@ pub(crate) fn runtime_options(w: &Widget) -> Map<String, Value> {
         .collect()
 }
 
-/// An `html` widget's bundle folder, resolved inside the project.
-pub(crate) fn bundle_folder(
-    cx: &Core,
-    root_id: &str,
-    main_dir_rel: &Path,
-    w: &Widget,
-) -> Result<PathBuf, String> {
-    let rel = w
-        .sources
-        .iter()
-        .find(|s| s.role == "bundle")
-        .map(|s| s.path.trim_end_matches('/').to_string())
-        .ok_or_else(|| format!("widget {}: an html widget records no bundle", w.id))?;
-    let joined = main_dir_rel.join(&rel);
-    crate::fs::resolve_in(cx, root_id, &joined.to_string_lossy())
-        .map_err(|e| format!("widget {}: bundle folder {rel}: {e}", w.id))
-}
-
 fn plan_widget(
     p: &mut Plan,
     w: &Widget,
@@ -730,9 +712,11 @@ fn plan_widget(
     let policy = fold::widget_policy(w.csp.as_ref());
 
     let doc: String = if w.kind == WidgetType::Html {
-        let dir = bundle_folder(p.cx, p.root_id, &p.main_dir_rel, w)?;
-        let folded = fold::fold_bundle(&dir, &dir.join("index.html"), &policy)
-            .map_err(|e| format!("widget {id}: {e}"))?;
+        let target = crate::widget_approval::WidgetTarget::of(p.main_rel, w)?
+            .ok_or_else(|| format!("widget {id}: an html widget has no bundle folder"))?;
+        let snap = crate::widget_approval::snapshot(p.cx, p.root_id, &target)?;
+        let folded =
+            fold::fold_bundle(&snap.files, &policy).map_err(|e| format!("widget {id}: {e}"))?;
         if !folded.unfolded.is_empty() {
             let shown: Vec<_> = folded.unfolded.iter().take(8).cloned().collect();
             let more = folded.unfolded.len() - shown.len();
