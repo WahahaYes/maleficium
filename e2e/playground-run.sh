@@ -130,6 +130,11 @@ blob = b"\n".join(blobs)
 marks = re.findall(rb"/NM\s*\(mfw:([^)]+)\)", blob)
 check("pdf carries one annotation per widget", sorted(marks) == sorted(i.encode() for i in EXPECT), str(marks))
 
+uris = re.findall(rb"/URI\s*\(https://example\.org/papers/playground\)>>/Rect\[[\d.]+ ([\d.]+) ", blob)
+# Footer link rects sit under 40pt (a wrapped url makes one per line); widget links sit above.
+check("one text link per widget", len([y for y in uris if float(y) >= 40]) == len(EXPECT), str(uris))
+check("the footer link sits at the page foot", any(float(y) < 40 for y in uris), str(uris))
+
 w = call("widgets", {"root_id": "pg", "main_rel": "main.tex"})
 check("widgets lists the compiled paper", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
@@ -155,6 +160,8 @@ check("uncaptioned and floatless widgets list no label",
 import shutil, subprocess
 if shutil.which("mutool"):
     txt = subprocess.run(["mutool", "draw", "-F", "txt", "-o", "-", pdf], capture_output=True).stdout.decode("utf-8", "replace")
+    check("footer shows the bundle url exactly once", txt.count("example.org/papers/playground") == 1, str(txt.count("example.org/papers/playground")))
+    check("every widget keeps a one-line mark", txt.count("Interactive version") == len(EXPECT), str(txt.count("Interactive version")))
     check("bibliography resolved in the pdf", "theory of communication" in txt.lower() and "[1]" in txt, txt[-300:])
     check("table keeps pdfrows rows", "ours-base" in txt and "ours-large" not in txt, txt[:200])
     check("subfigure captions print", "First panel" in txt and "Second panel" in txt)
