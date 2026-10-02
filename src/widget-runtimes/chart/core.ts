@@ -114,8 +114,9 @@ export function compileSpec(spec: Json, tokens: Tokens, size?: Size): Spec {
   const vl: Json = { ...spec };
   const composed = COMPOSED.some((k) => k in vl);
   if (size && !composed) {
-    if (vl.width === undefined) vl.width = Math.max(50, Math.floor(size.width - 80));
-    if (vl.height === undefined) vl.height = Math.max(50, Math.floor(size.height - 80));
+    // `fit` with `contains: padding` sizes the whole view, axes included.
+    if (vl.width === undefined) vl.width = Math.max(50, Math.floor(size.width));
+    if (vl.height === undefined) vl.height = Math.max(50, Math.floor(size.height));
     if (vl.autosize === undefined) vl.autosize = { type: 'fit', contains: 'padding' };
   }
   const config = { ...themeConfig(tokens), ...(isObject(vl.config) ? vl.config : {}) };
