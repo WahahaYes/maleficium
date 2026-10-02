@@ -14,6 +14,9 @@
 //! - `background` (model): `transparent` or an HTML hex colour without `#`
 //!   (the package cannot carry `#`). Canonical: `transparent` or `#rrggbb`.
 //! - `scale` (chart): the poster's pixels per CSS pixel.
+//! - `framedomains`, `resourcedomains` (html): origins the widget declares,
+//!   space separated, as `widget.json`'s `frameDomains` and
+//!   `resourceDomains`. Canonical: sorted, deduplicated, space separated.
 
 use super::WidgetType;
 
@@ -208,6 +211,7 @@ fn applies(key: &str) -> Option<&'static [WidgetType]> {
     match key {
         "camera" | "size" | "background" => Some(&[WidgetType::Model]),
         "scale" => Some(&[WidgetType::Chart]),
+        "framedomains" | "resourcedomains" => Some(&[WidgetType::Html]),
         _ => None,
     }
 }
@@ -232,6 +236,7 @@ pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, Str
             format!("{w}x{h}")
         }
         "background" => background(value)?,
+        "framedomains" | "resourcedomains" => super::canonical_origins(key, value)?,
         _ => num(scale(value)?),
     })
 }

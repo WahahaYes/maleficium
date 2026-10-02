@@ -29,6 +29,7 @@ impl Project {
         WidgetTarget {
             id: "fig-demo".into(),
             path: "widgets/demo".into(),
+            option_origins: Default::default(),
         }
     }
     fn check(&self) -> Checked {
@@ -194,6 +195,7 @@ fn a_snapshot_reads_the_folder_once_and_names_it_canonically() {
     let via = WidgetTarget {
         id: "fig-demo".into(),
         path: "widgets/../widgets/demo/".into(),
+        option_origins: Default::default(),
     };
     let again = check_at(&p.base, &p.cx, &p.id, &via).unwrap().snapshot;
     assert_eq!(again.path, "widgets/demo");
@@ -227,6 +229,7 @@ fn a_widget_path_outside_the_project_is_refused() {
         let t = WidgetTarget {
             id: "fig-demo".into(),
             path: path.clone(),
+            option_origins: Default::default(),
         };
         assert!(check_at(&p.base, &p.cx, &p.id, &t).is_err(), "{path:?}");
     }
@@ -769,4 +772,100 @@ fn grant_refuses_the_real_approval_store() {
     let e =
         crate::templates::instantiate("article", &base.to_string_lossy(), "approvals").unwrap_err();
     assert!(e.contains("widget approvals"), "{e}");
+}
+
+impl Project {
+    /// Rewrite fig-demo's sidecar options, as a recompile with other macro
+    /// options would.
+    fn demo_options(&self, extra: &str) {
+        let line = "|bundle=widgets/demo/|height=227.62204pt|";
+        assert!(REAL_SIDECAR.contains(line));
+        let side = REAL_SIDECAR.replace(
+            line,
+            &format!("|bundle=widgets/demo/|height=227.62204pt{extra}|"),
+        );
+        std::fs::write(self.out.join("main.mfw"), side).unwrap();
+    }
+    fn demo_status(&self) -> WidgetApprovalStatus {
+        let s = self.status();
+        assert!(s.unavailable.is_empty(), "{:?}", s.unavailable);
+        s.widgets.into_iter().next().unwrap()
+    }
+    fn approve_listed(&self) -> WidgetApprovalStatus {
+        let digest = match self.demo_status() {
+            WidgetApprovalStatus::Approved(a) => a.digest,
+            WidgetApprovalStatus::ApprovalRequired(r) => r.digest,
+        };
+        approve_at(&self.base, &self.cx, &self.approve_params(&digest)).unwrap()
+    }
+}
+
+#[test]
+fn origins_declared_in_macro_options_are_part_of_the_digest_and_never_auto_approved() {
+    let p = project("macro-origins");
+    p.approve_listed();
+    p.auto(true);
+    assert_eq!(approved(&p.demo_status()).via, ApprovedVia::User);
+
+    // A recompile that adds a frame origin through the macro alone: the
+    // folder is unchanged, the widget is not.
+    p.demo_options(",framedomains=https://www.youtube-nocookie.com");
+    let s = p.demo_status();
+    let r = required(&s);
+    assert_eq!(r.cause, WidgetApprovalCause::DeclaredOriginsChanged);
+    assert_eq!(
+        r.declared_origins.frame_domains,
+        ["https://www.youtube-nocookie.com"]
+    );
+    assert_ne!(Some(&r.digest), r.approved_digest.as_ref());
+
+    // The user approves it; the same origin moved into widget.json is the
+    // same policy but other content: approved again only by auto mode.
+    assert!(p.approve_listed().is_approved());
+    p.demo_options("");
+    p.write(
+        "widget.json",
+        r#"{"csp":{"frameDomains":["https://www.youtube-nocookie.com"]}}"#,
+    );
+    assert_eq!(approved(&p.demo_status()).via, ApprovedVia::Auto);
+    p.auto(false);
+    assert_eq!(
+        required(&p.demo_status()).cause,
+        WidgetApprovalCause::ChangedSinceApproval
+    );
+
+    // Declared in both places at once: one origin, one digest.
+    p.approve_listed();
+    p.demo_options(",framedomains=https://www.youtube-nocookie.com");
+    assert_eq!(approved(&p.demo_status()).via, ApprovedVia::User);
+
+    // A second origin through the macro, even with auto on: the user's.
+    p.auto(true);
+    p.demo_options(",framedomains=https://www.youtube-nocookie.com https://player.vimeo.com");
+    assert_eq!(
+        required(&p.demo_status()).cause,
+        WidgetApprovalCause::DeclaredOriginsChanged
+    );
+}
+
+#[test]
+fn the_digest_covers_macro_origins_on_top_of_the_files() {
+    let p = project("macro-digest");
+    let plain = p.check().snapshot;
+    let mut t = p.target();
+    t.option_origins.frame_domains = vec!["https://a.org".into()];
+    let framed = check_at(&p.base, &p.cx, &p.id, &t).unwrap().snapshot;
+    assert_eq!(plain.files, framed.files);
+    assert_ne!(plain.digest, framed.digest);
+    assert_eq!(framed.origins.frame_domains, ["https://a.org"]);
+    // The same origin as a resource is another policy and another digest.
+    let mut r = p.target();
+    r.option_origins.resource_domains = vec!["https://a.org".into()];
+    let res = check_at(&p.base, &p.cx, &p.id, &r).unwrap().snapshot;
+    assert_ne!(res.digest, framed.digest);
+    // A target carrying an origin the list would have refused is refused
+    // here too: the snapshot checks again.
+    let mut bad = p.target();
+    bad.option_origins.frame_domains = vec!["https://*.a.org".into()];
+    assert!(check_at(&p.base, &p.cx, &p.id, &bad).is_err());
 }

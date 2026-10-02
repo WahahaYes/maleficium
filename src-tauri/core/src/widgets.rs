@@ -78,9 +78,11 @@ pub struct WidgetOption {
     pub value: String,
 }
 
-/// Extra origins a widget declares it needs, as `widget.json` writes them.
-/// A host renders these into a header; they widen nothing before the user
-/// approves network access.
+/// Extra origins a widget declares it needs, as `widget.json` writes them
+/// (an `html` widget may also give frame and resource origins as macro
+/// options). A host renders these into that widget's policy only; they are
+/// part of the approval digest, so they widen nothing the user has not
+/// approved.
 #[derive(
     Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS,
 )]
@@ -318,7 +320,21 @@ fn marks(bytes: Vec<u8>) -> Result<Vec<Mark>, String> {
     Ok(out)
 }
 
-fn origin_ok(s: &str) -> bool {
+/// The most origins one widget may declare, all directives together.
+pub const MAX_ORIGINS: usize = 16;
+/// The longest origin accepted: `https://`, a full-length DNS name, a port.
+const MAX_ORIGIN_LEN: usize = 8 + 253 + 6;
+
+/// One declared origin: `https://` then a lowercase DNS name (or IPv4
+/// address) of 1-63 character labels, and an optional port 1-65535 written
+/// without leading zeros. Nothing else: no other scheme (`http:`, `data:`,
+/// `blob:`, `javascript:`), no wildcard, no credentials, path, query or
+/// trailing dot, and no character that could end a directive or a policy.
+/// The origin lands verbatim in a content security policy.
+pub(crate) fn origin_ok(s: &str) -> bool {
+    if s.len() > MAX_ORIGIN_LEN {
+        return false;
+    }
     let Some(rest) = s.strip_prefix("https://") else {
         return false;
     };
@@ -326,11 +342,109 @@ fn origin_ok(s: &str) -> bool {
         Some((h, p)) => (h, Some(p)),
         None => (rest, None),
     };
-    !host.is_empty()
-        && host
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
-        && port.is_none_or(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
+    let label_ok = |l: &str| {
+        let b = l.as_bytes();
+        !b.is_empty()
+            && b.len() <= 63
+            && b[0] != b'-'
+            && b[b.len() - 1] != b'-'
+            && b.iter()
+                .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    };
+    let port_ok = |p: &str| {
+        !p.is_empty()
+            && p.len() <= 5
+            && !p.starts_with('0')
+            && p.bytes().all(|c| c.is_ascii_digit())
+            && p.parse::<u32>().is_ok_and(|n| (1..=65535).contains(&n))
+    };
+    host.len() <= 253 && host.split('.').all(label_ok) && port.is_none_or(port_ok)
+}
+
+/// The option keys an `html` widget may declare origins with in its macro,
+/// and the directive each one feeds. Values are origins separated by spaces.
+pub const ORIGIN_OPTIONS: [&str; 2] = ["framedomains", "resourcedomains"];
+
+/// One origin option's value checked and in canonical form: sorted,
+/// deduplicated, space separated.
+pub(crate) fn canonical_origins(key: &str, value: &str) -> Result<String, String> {
+    let mut list: Vec<&str> = value.split_whitespace().collect();
+    if list.is_empty() {
+        return Err(format!("{key}= names no origin"));
+    }
+    for o in &list {
+        if !origin_ok(o) {
+            return Err(format!(
+                "{key}= names `{o}`; only https origins (lowercase host and optional port) are allowed"
+            ));
+        }
+    }
+    list.sort_unstable();
+    list.dedup();
+    if list.len() > MAX_ORIGINS {
+        return Err(format!(
+            "{key}= names {} origins; at most {MAX_ORIGINS}",
+            list.len()
+        ));
+    }
+    Ok(list.join(" "))
+}
+
+/// The origins a widget's macro options declare (already canonical: the
+/// widget list checked them).
+pub(crate) fn option_origins(options: &[WidgetOption]) -> WidgetCsp {
+    let list = |key: &str| -> Vec<String> {
+        options
+            .iter()
+            .filter(|o| o.key == key)
+            .flat_map(|o| o.value.split_whitespace().map(str::to_string))
+            .collect()
+    };
+    WidgetCsp {
+        connect_domains: Vec::new(),
+        resource_domains: list("resourcedomains"),
+        frame_domains: list("framedomains"),
+    }
+}
+
+/// The origins a widget declares, `widget.json` and macro options together:
+/// every origin checked again, each directive sorted and deduplicated, and
+/// at most [`MAX_ORIGINS`] in all. The one place the two sources meet, for
+/// the widget list and the approval snapshot alike.
+pub(crate) fn declared_origins(
+    id: &str,
+    manifest: &WidgetCsp,
+    options: &WidgetCsp,
+) -> Result<WidgetCsp, String> {
+    let join = |a: &Vec<String>, b: &Vec<String>| {
+        let mut v: Vec<String> = a.iter().chain(b).cloned().collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let out = WidgetCsp {
+        connect_domains: join(&manifest.connect_domains, &options.connect_domains),
+        resource_domains: join(&manifest.resource_domains, &options.resource_domains),
+        frame_domains: join(&manifest.frame_domains, &options.frame_domains),
+    };
+    let all: Vec<&String> = out
+        .connect_domains
+        .iter()
+        .chain(&out.resource_domains)
+        .chain(&out.frame_domains)
+        .collect();
+    if let Some(bad) = all.iter().find(|o| !origin_ok(o)) {
+        return Err(format!(
+            "widget {id}: declares `{bad}`; only https origins (lowercase host and optional port) are allowed"
+        ));
+    }
+    if all.len() > MAX_ORIGINS {
+        return Err(format!(
+            "widget {id}: declares {} origins; at most {MAX_ORIGINS}",
+            all.len()
+        ));
+    }
+    Ok(out)
 }
 
 /// The `csp` of an `html` widget's bundle folder: `widget.json` beside its
@@ -377,10 +491,12 @@ pub(crate) fn manifest_csp(id: &str, text: &str) -> Result<Option<WidgetCsp>, St
     {
         if !origin_ok(origin) {
             return Err(format!(
-                "widget {id}: {BUNDLE_MANIFEST} declares `{origin}`; only https origins (host and optional port) are allowed"
+                "widget {id}: {BUNDLE_MANIFEST} declares `{origin}`; only https origins (lowercase host and optional port) are allowed"
             ));
         }
     }
+    let csp = declared_origins(id, &csp, &WidgetCsp::default())
+        .map_err(|e| format!("{e} ({BUNDLE_MANIFEST})"))?;
     Ok((!csp.is_empty()).then_some(csp))
 }
 
@@ -464,13 +580,21 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
     for (r, m) in join(records, found).map_err(|e| format!("{main_rel}: {e}"))? {
         let csp = match r.kind {
             WidgetType::Html => match r.sources.iter().find(|s| s.role == "bundle") {
-                Some(s) => bundle_csp(
-                    cx,
-                    root_id,
-                    &main_dir_rel,
-                    &r.id,
-                    s.path.trim_end_matches('/'),
-                )?,
+                Some(s) => {
+                    let file = bundle_csp(
+                        cx,
+                        root_id,
+                        &main_dir_rel,
+                        &r.id,
+                        s.path.trim_end_matches('/'),
+                    )?;
+                    let all = declared_origins(
+                        &r.id,
+                        &file.unwrap_or_default(),
+                        &option_origins(&r.options),
+                    )?;
+                    (!all.is_empty()).then_some(all)
+                }
                 None => return Err(format!("widget {}: an html widget records no bundle", r.id)),
             },
             _ => None,
