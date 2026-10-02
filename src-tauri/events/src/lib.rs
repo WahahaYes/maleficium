@@ -201,6 +201,20 @@ pub enum WidgetApprovalCause {
     Revoked,
 }
 
+/// What the app's install of the interactive package did. The app asks
+/// before replacing a modified copy; only `NeedsConfirmation` left the
+/// project untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallOutcome {
+    /// The package was written (new, or a confirmed replacement).
+    Installed,
+    /// The project already holds the shipped package; nothing was written.
+    AlreadyCurrent,
+    /// A modified copy is there; nothing was written until confirmed.
+    NeedsConfirmation,
+}
+
 /// The layout an exported paper bundle takes (bundle spec section 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -573,6 +587,12 @@ pub enum AppEvent {
     },
     #[serde(rename = "export.failed")]
     ExportFailed { kind: ExportKind, error: String },
+    /// The user asked the app to install the interactive package into the
+    /// project (command palette, or the fix on a missing-package warning).
+    #[serde(rename = "interactive.install")]
+    InteractiveInstall { outcome: InstallOutcome },
+    #[serde(rename = "interactive.install-failed")]
+    InteractiveInstallFailed { error: String },
     /// A paper bundle was written outside the project: how many widgets and
     /// bytes it holds and how many warnings the export raised.
     #[serde(rename = "bundle.exported")]
@@ -779,6 +799,7 @@ pub fn typescript() -> String {
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
         WidgetApprovalCause::decl(&cfg),
+        InstallOutcome::decl(&cfg),
         BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),

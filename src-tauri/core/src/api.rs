@@ -26,7 +26,7 @@ use crate::bundle::BundleExported;
 use crate::eventlog::RotateReport;
 use crate::export::Exported;
 use crate::fs::FileStat;
-use crate::interactive::Installed;
+use crate::interactive::InstallResult;
 use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
@@ -72,7 +72,7 @@ params! {
     TemplateSaveProjectParams { root_id: String, info: TemplateInfo },
     TemplateImportFolderParams { dir: String, info: TemplateInfo },
     TemplateWelcomeParams {},
-    InteractiveInstallParams { root_id: String },
+    InteractiveInstallParams { root_id: String, overwrite: bool },
     WidgetsParams { root_id: String, main_rel: String },
     WidgetsStatusParams { root_id: String, main_rel: String },
     WidgetReviewParams { root_id: String, main_rel: String, widget: String },
@@ -159,7 +159,7 @@ operations! {
     TemplateSaveProject via template_save_project(TemplateSaveProjectParams) -> TemplateInfo,
     TemplateImportFolder via template_import_folder(TemplateImportFolderParams) -> TemplateInfo,
     TemplateWelcome via template_welcome(TemplateWelcomeParams) -> Created,
-    InteractiveInstall via interactive_install(InteractiveInstallParams) -> Installed,
+    InteractiveInstall via interactive_install(InteractiveInstallParams) -> InstallResult,
     Widgets via widgets(WidgetsParams) -> WidgetList,
     WidgetsStatus via widgets_status(WidgetsStatusParams) -> WidgetsStatus,
     WidgetReview via widget_review(WidgetReviewParams) -> Box<WidgetReview>,
@@ -277,8 +277,8 @@ fn template_welcome(_cx: &Core, _p: TemplateWelcomeParams) -> Result<Created, St
     crate::templates::welcome()
 }
 
-fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<Installed, String> {
-    crate::interactive::install(cx, &p.root_id)
+fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<InstallResult, String> {
+    crate::interactive::install_checked(cx, &p.root_id, p.overwrite)
 }
 
 fn export_bundle(cx: &Core, p: ExportBundleParams) -> Result<BundleExported, String> {
@@ -527,7 +527,7 @@ pub fn typescript() -> String {
         TemplateImportFolderParams::decl(&cfg),
         TemplateWelcomeParams::decl(&cfg),
         InteractiveInstallParams::decl(&cfg),
-        Installed::decl(&cfg),
+        InstallResult::decl(&cfg),
         WidgetsParams::decl(&cfg),
         crate::widgets::WidgetType::decl(&cfg),
         crate::widgets::WidgetRect::decl(&cfg),
@@ -600,7 +600,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';\n\
+         import type { BatchFile, BundleProfile, BusEvent, InstallOutcome, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );
@@ -659,6 +659,7 @@ mod tests {
             cx,
             Request::InteractiveInstall(InteractiveInstallParams {
                 root_id: "nope".into(),
+                overwrite: false,
             }),
         )
         .unwrap_err();

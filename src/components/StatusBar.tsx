@@ -24,6 +24,7 @@ export default function StatusBar({
   offline,
   warnings,
   onOpenWarnings,
+  onInstallInteractive,
 }: {
   mainFile?: string | null;
   mainFileTitle?: string | null;
@@ -43,6 +44,8 @@ export default function StatusBar({
   /** Pre-compile findings of the latest run; the chip opens their panel. */
   warnings?: number;
   onOpenWarnings?: () => void;
+  /** Set when maleficium-interactive.sty is missing: one-click install. */
+  onInstallInteractive?: () => void;
 }) {
   const color =
     phase === 'success'
@@ -78,6 +81,25 @@ export default function StatusBar({
         {phase}
         {phase === 'compiling' ? ` ${timer}s` : ''} · {message}
       </Typography>
+      {onInstallInteractive ? (
+        <ButtonBase
+          onClick={onInstallInteractive}
+          data-testid="install-interactive-status"
+          title="Add maleficium-interactive.sty to this project"
+          sx={{
+            flexShrink: 0,
+            px: 0.75,
+            border: 1,
+            borderRadius: 1,
+            borderColor: 'divider',
+            typography: 'caption',
+            color: 'primary.main',
+            '&:hover': { bgcolor: 'action.hover' },
+          }}
+        >
+          Install interactive package
+        </ButtonBase>
+      ) : null}
       {onOpenWarnings && warnings != null && warnings > 0 ? (
         <ButtonBase
           onClick={onOpenWarnings}

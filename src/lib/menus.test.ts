@@ -65,6 +65,7 @@ const actions: CommandActions = {
   compileFile: noop,
   makeOffline: noop,
   showPrecheck: noop,
+  installInteractive: noop,
   toggleAutoCompile: noop,
   exportPdf: noop,
   newFromTemplate: noop,
@@ -308,5 +309,19 @@ describe('command registry', () => {
     expect(find({ ...baseCtx, canUndoDelete: false }, 'edit.undo-delete').enabled).toBe(false);
     expect(find({ ...baseCtx, reloadPending: true }, 'file.reload').visible).toBe(true);
     expect(find(baseCtx, 'file.reload').visible).toBe(false);
+  });
+});
+
+describe('install interactive package command', () => {
+  it('is a Tools command enabled with a project and listed in the palette', async () => {
+    const { paletteCommands } = await import('./palette');
+    const find = (ctx: MenuContext) =>
+      buildMenus(ctx, actions)
+        .find((s) => s.id === 'tools')!
+        .commands.find((c) => c.id === 'tools.install-interactive')!;
+    expect(find(baseCtx).enabled).toBe(true);
+    expect(find({ ...baseCtx, hasProject: false }).enabled).toBe(false);
+    const ids = paletteCommands(buildMenus(baseCtx, actions)).map((c) => c.id);
+    expect(ids).toContain('tools.install-interactive');
   });
 });
