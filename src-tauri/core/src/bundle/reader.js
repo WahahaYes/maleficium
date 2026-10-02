@@ -142,6 +142,13 @@
     fig.querySelector('.frame').appendChild(f);
     var rec = { id: w.id, fig: fig, win: f.contentWindow, started: false };
     frames.push(rec);
+    // An author bundle need not speak the host protocol: it is shown once it has loaded.
+    if (w.type === 'html') {
+      f.addEventListener('load', function () {
+        fig.classList.add('live');
+        fig.setAttribute('data-state', 'ready');
+      });
+    }
     if (FOLDER) f.src = w.entry;
     else f.srcdoc = docs[w.id];
   });
