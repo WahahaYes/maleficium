@@ -26,8 +26,20 @@
 //! options as the package wrote them); the package uses a poster only when
 //! the record it is about to write matches, so an edited widget shows its
 //! placeholder until its new poster exists, never a stale one.
+//!
+//! An html widget (author code) takes part only while the user's approval
+//! covers its folder: its key is made from the approval digest of the
+//! folder, so any edit names a poster that does not exist yet, and an
+//! unapproved, revoked or changed widget gets no map entry at all, cached
+//! file or not. The renderer checks the approval again when it runs the
+//! job (see [`super::prepare`]); the check here only decides what to ask
+//! for and what to map.
 
-use super::{poster_source, read_sources, PosterRendered, PosterRequest, PosterSource};
+use super::{
+    poster_source, read_sources, PosterOutcome, PosterRequest, PosterSource, HTML_RUNTIME,
+};
+use crate::bundle::fold;
+use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::widgets::{sidecar_guards, widgets, Widget, WidgetType};
 use crate::Core;
 use sha2::{Digest, Sha256};
@@ -51,12 +63,15 @@ const README_NAME: &str = "README.md";
 const MAP_EXT: &str = "map";
 /// Process start and window setup on top of the per-render limits.
 const PROCESS_SLACK_MS: u64 = 30_000;
+/// A compile's time limit for one html widget's poster: author code that
+/// never answers the snapshot request costs each compile this long.
+const HTML_TIMEOUT_MS: u64 = 5_000;
 
 /// Renders poster requests. The desktop app renders in-process; elsewhere
 /// the app binary's headless mode does ([`ProcessRenderer`]).
 pub trait PosterRenderer: Send + Sync {
     /// One result per request, in order.
-    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>>;
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>>;
 }
 
 /// The renderer a compile uses: the one the adapter installed, else the
@@ -116,43 +131,123 @@ pub(crate) fn digest(
 }
 
 /// Whether a widget's poster can come from the cache: first-party model and
-/// chart runtimes only, and never when the document gives its own poster.
+/// chart runtimes and html widgets (the latter only while approved, see
+/// [`keyed`]), and never when the document gives its own poster.
 fn auto(w: &Widget) -> bool {
-    matches!(w.kind, WidgetType::Model | WidgetType::Chart)
-        && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+    matches!(
+        w.kind,
+        WidgetType::Model | WidgetType::Chart | WidgetType::Html
+    ) && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
-/// The cache key of one widget of `main_rel`'s last compile.
-pub fn poster_key(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Result<String, String> {
-    let runtime = w.runtime.as_deref().unwrap_or("");
-    let doc = super::host_document(runtime)
-        .ok_or_else(|| format!("widget {}: no {runtime} runtime in this build", w.id))?;
-    let options: Vec<(String, String)> = w
-        .options
+fn key_options(w: &Widget) -> Vec<(String, String)> {
+    w.options
         .iter()
         .map(|o| (o.key.clone(), o.value.clone()))
-        .collect();
-    let sources: Vec<KeySource> = read_sources(cx, root_id, main_rel, w)?
-        .into_iter()
-        .map(|(k, s, b)| (k, s.path.clone(), b))
-        .collect();
+        .collect()
+}
+
+fn key_tokens() -> String {
     let mut tokens: Vec<(String, String)> = super::light_tokens()
         .into_iter()
         .map(|(k, v)| (k, v.as_str().unwrap_or("").to_string()))
         .collect();
     tokens.sort();
-    let tokens = tokens
+    tokens
         .iter()
         .map(|(k, v)| format!("{k}:{v};"))
-        .collect::<String>();
+        .collect::<String>()
+}
+
+/// The cache key of one first-party runtime widget of `main_rel`'s last
+/// compile. An html widget has none of its own: see [`html_key`].
+pub fn poster_key(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Result<String, String> {
     let kind = match w.kind {
         WidgetType::Model => "model",
         WidgetType::Chart => "chart",
         WidgetType::Video => "video",
         WidgetType::Table => "table",
-        WidgetType::Html => "html",
+        WidgetType::Html => {
+            return Err(format!(
+                "widget {}: an html widget's poster is keyed by its approval digest",
+                w.id
+            ))
+        }
     };
-    Ok(digest(kind, runtime, doc, &options, &sources, &tokens))
+    let runtime = w.runtime.as_deref().unwrap_or("");
+    let doc = super::host_document(runtime)
+        .ok_or_else(|| format!("widget {}: no {runtime} runtime in this build", w.id))?;
+    let sources: Vec<KeySource> = read_sources(cx, root_id, main_rel, w)?
+        .into_iter()
+        .map(|(k, s, b)| (k, s.path.clone(), b))
+        .collect();
+    Ok(digest(
+        kind,
+        runtime,
+        doc,
+        &key_options(w),
+        &sources,
+        &key_tokens(),
+    ))
+}
+
+/// The cache key of an html widget whose folder hashes to `approval_digest`
+/// (every file and the declared origins): any edit changes it.
+pub fn html_key(w: &Widget, folder: &str, approval_digest: &str) -> String {
+    let sources: Vec<KeySource> = vec![(
+        "bundle".to_string(),
+        folder.to_string(),
+        approval_digest.as_bytes().to_vec(),
+    )];
+    digest(
+        "html",
+        HTML_RUNTIME,
+        &fold::widget_policy(None),
+        &key_options(w),
+        &sources,
+        &key_tokens(),
+    )
+}
+
+/// How a widget stands with the cache.
+enum Keyed {
+    /// Its poster's key, and for an html widget the approval digest the key
+    /// was made from.
+    Key(String, Option<String>),
+    /// An html widget the user has not approved: no key, no poster.
+    Approval(Box<ApprovalRequired>),
+}
+
+fn keyed(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+) -> Result<Keyed, String> {
+    let Some(target) = WidgetTarget::of(main_rel, w)? else {
+        return poster_key(cx, root_id, main_rel, w).map(|k| Keyed::Key(k, None));
+    };
+    let checked = widget_approval::check_at(base, cx, root_id, &target)?;
+    Ok(match checked.status {
+        WidgetApprovalStatus::Approved(_) => {
+            let d = checked.snapshot.digest;
+            Keyed::Key(html_key(w, &checked.snapshot.path, &d), Some(d))
+        }
+        WidgetApprovalStatus::ApprovalRequired(r) => Keyed::Approval(Box::new(r)),
+    })
+}
+
+/// The compile line for an html widget that waits for the user.
+pub fn approval_line(r: &ApprovalRequired) -> String {
+    let cause = serde_json::to_value(r.cause)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    format!(
+        "poster {}: approval_required ({cause}): {}",
+        r.widget, r.message
+    )
 }
 
 /// The cache folders of one main file's folder.
@@ -215,7 +310,8 @@ pub const README: &str = "# .maleficium
 
 Maleficium writes this folder when it compiles a paper that uses
 `maleficium-interactive.sty`. It holds auto-posters: still images of the
-interactive model and chart widgets that have no `poster=` of their own.
+interactive model and chart widgets that have no `poster=` of their own,
+and of html widgets without one that you approved in View > Widgets.
 
 - `posters/<sha256>.png` is one poster. Its name is a hash of the widget's
   source files, its options, the runtime and the renderer version, so any
@@ -430,30 +526,36 @@ struct Wanted<'w> {
     widget: &'w Widget,
     key: String,
     png: PathBuf,
+    /// An html widget's approval digest, which the render must still match.
+    digest: Option<String>,
 }
 
+/// The widgets the cache provides for, and the html widgets that wait for
+/// the user's approval (they get no poster and no map entry).
 fn wanted<'w>(
+    base: &Path,
     cx: &Core,
     root_id: &str,
     main_rel: &str,
     list: &'w [Widget],
     c: &Cache,
     say: &mut dyn FnMut(String),
-) -> Vec<Wanted<'w>> {
-    list.iter()
-        .filter(|w| auto(w))
-        .filter_map(|w| match poster_key(cx, root_id, main_rel, w) {
-            Ok(key) => Some(Wanted {
+) -> (Vec<Wanted<'w>>, Vec<ApprovalRequired>) {
+    let mut want = Vec::new();
+    let mut pending = Vec::new();
+    for w in list.iter().filter(|w| auto(w)) {
+        match keyed(base, cx, root_id, main_rel, w) {
+            Ok(Keyed::Key(key, digest)) => want.push(Wanted {
                 widget: w,
                 png: c.png(&key),
                 key,
+                digest,
             }),
-            Err(e) => {
-                say(format!("poster {}: {e}", w.id));
-                None
-            }
-        })
-        .collect()
+            Ok(Keyed::Approval(r)) => pending.push(*r),
+            Err(e) => say(format!("poster {}: {e}", w.id)),
+        }
+    }
+    (want, pending)
 }
 
 fn entries(
@@ -488,8 +590,20 @@ fn job_of(main_file: &str) -> &str {
 /// The first pass: render the posters the previous compile's widgets lack
 /// and write the map. Does nothing before a first compile (no widget list),
 /// and creates the cache only when a widget needs it. Never fails the
-/// compile: problems are reported through `say`.
+/// compile: problems, and html widgets waiting for approval (each as an
+/// `approval_required` line), are reported through `say`.
 pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnMut(String)) {
+    before_compile_at(&widget_approval::store_base(), cx, root_id, main_rel, say)
+}
+
+/// [`before_compile`] against the approval store at `base`.
+pub(crate) fn before_compile_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    say: &mut dyn FnMut(String),
+) {
     let Ok(list) = widgets(cx, root_id, main_rel) else {
         return;
     };
@@ -497,7 +611,10 @@ pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn Fn
         return;
     };
     let c = Cache::at(&o.dir);
-    let want = wanted(cx, root_id, main_rel, &list.widgets, &c, say);
+    let (want, pending) = wanted(base, cx, root_id, main_rel, &list.widgets, &c, say);
+    for r in &pending {
+        say(approval_line(r));
+    }
     if want.is_empty() && !c.present() {
         return;
     }
@@ -521,7 +638,8 @@ pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn Fn
                 main_rel: main_rel.to_string(),
                 widget_id: w.widget.id.clone(),
                 out_path: w.png.to_string_lossy().into_owned(),
-                timeout_ms: None,
+                timeout_ms: w.digest.as_ref().map(|_| HTML_TIMEOUT_MS),
+                digest: w.digest.clone(),
             })
             .collect();
         match renderer(cx) {
@@ -532,17 +650,18 @@ pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn Fn
             Some(r) => {
                 for (w, res) in missing.iter().zip(r.render(cx, &reqs)) {
                     match res {
-                        Ok(p) if Path::new(&p.path) == w.png => {
+                        Ok(PosterOutcome::Rendered(p)) if Path::new(&p.path) == w.png => {
                             rendered += 1;
                             say(format!(
                                 "poster {}: rendered {}x{}",
                                 w.widget.id, p.width, p.height
                             ));
                         }
-                        Ok(p) => say(format!(
+                        Ok(PosterOutcome::Rendered(p)) => say(format!(
                             "poster {}: the renderer wrote {} instead of the cache; ignored",
                             w.widget.id, p.path
                         )),
+                        Ok(PosterOutcome::ApprovalRequired(r)) => say(approval_line(&r)),
                         Err(e) => say(format!("poster {}: {e}", w.widget.id)),
                     }
                 }
@@ -554,8 +673,13 @@ pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn Fn
     if let Err(e) = write_map(&c, job_of(&o.main_file), &o.main_file, &map) {
         say(format!("posters: {e}"));
     }
+    let waiting = if pending.is_empty() {
+        String::new()
+    } else {
+        format!(", {} awaiting approval", pending.len())
+    };
     say(format!(
-        "posters: {} cached, {rendered} rendered, {} placeholder",
+        "posters: {} cached, {rendered} rendered, {} placeholder{waiting}",
         want.len() - missing.len(),
         want.len() - map.len()
     ));
@@ -565,6 +689,17 @@ pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn Fn
 /// new widget list and collect garbage. Does nothing when the cache does
 /// not exist.
 pub fn after_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnMut(String)) {
+    after_compile_at(&widget_approval::store_base(), cx, root_id, main_rel, say)
+}
+
+/// [`after_compile`] against the approval store at `base`.
+pub(crate) fn after_compile_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    say: &mut dyn FnMut(String),
+) {
     let Ok(o) = crate::outputs::outputs_of(cx, root_id, main_rel) else {
         return;
     };
@@ -575,7 +710,7 @@ pub fn after_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnM
     let Ok(list) = widgets(cx, root_id, main_rel) else {
         return;
     };
-    let want = wanted(cx, root_id, main_rel, &list.widgets, &c, say);
+    let (want, _) = wanted(base, cx, root_id, main_rel, &list.widgets, &c, say);
     let guards = sidecar_guards(cx, root_id, main_rel).unwrap_or_default();
     let map = entries(&want, &guards, say);
     let job = job_of(&o.main_file);
@@ -605,14 +740,29 @@ pub fn after_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnM
 }
 
 /// The poster file of a widget the cache provides, when it exists: for the
-/// bundle export and anything else that wants the PDF's picture.
+/// bundle export and anything else that wants the PDF's picture. An html
+/// widget's only while it is approved as it is now.
 pub fn cached_poster(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Option<PathBuf> {
+    cached_poster_at(&widget_approval::store_base(), cx, root_id, main_rel, w)
+}
+
+/// [`cached_poster`] against the approval store at `base`.
+pub(crate) fn cached_poster_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+) -> Option<PathBuf> {
     if !auto(w) {
         return None;
     }
+    let Keyed::Key(key, _) = keyed(base, cx, root_id, main_rel, w).ok()? else {
+        return None;
+    };
     let o = crate::outputs::outputs_of(cx, root_id, main_rel).ok()?;
     let c = Cache::at(&o.dir);
-    let png = c.png(&poster_key(cx, root_id, main_rel, w).ok()?);
+    let png = c.png(&key);
     (c.present() && png.is_file()).then_some(png)
 }
 
@@ -654,8 +804,8 @@ fn display_available() -> bool {
 }
 
 impl PosterRenderer for ProcessRenderer {
-    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>> {
-        let all = |e: String| -> Vec<Result<PosterRendered, String>> {
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
+        let all = |e: String| -> Vec<Result<PosterOutcome, String>> {
             reqs.iter().map(|_| Err(e.clone())).collect()
         };
         if reqs.is_empty() {
@@ -676,7 +826,7 @@ fn run_process(
     exe: &Path,
     root: &Path,
     reqs: &[PosterRequest],
-) -> Result<Vec<Result<PosterRendered, String>>, String> {
+) -> Result<Vec<Result<PosterOutcome, String>>, String> {
     use std::io::{BufRead, Write};
     use std::process::Stdio;
     let mut child = crate::quiet_command(exe)
@@ -722,7 +872,7 @@ fn run_process(
         };
         let v: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
         out.push(if v["ok"] == serde_json::Value::Bool(true) {
-            serde_json::from_value::<PosterRendered>(v["result"].clone())
+            serde_json::from_value::<PosterOutcome>(v["result"].clone())
                 .map_err(|e| format!("the poster renderer answered oddly: {e}"))
         } else {
             Err(v["error"]

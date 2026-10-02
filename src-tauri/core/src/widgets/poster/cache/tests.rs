@@ -1,4 +1,5 @@
 use super::*;
+use crate::widgets::poster::PosterRendered;
 use std::sync::Mutex;
 
 const REAL_PDF: &[u8] = include_bytes!("../../../../testdata/interactive/main.pdf");
@@ -52,7 +53,7 @@ struct Fake {
 }
 
 impl PosterRenderer for Fake {
-    fn render(&self, _cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>> {
+    fn render(&self, _cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
         reqs.iter()
             .map(|r| {
                 self.seen.lock().unwrap().push(r.widget_id.clone());
@@ -61,13 +62,13 @@ impl PosterRenderer for Fake {
                     .clone()
                     .unwrap_or_else(|| PathBuf::from(&r.out_path));
                 std::fs::write(&path, b"\x89PNG fake").map_err(|e| e.to_string())?;
-                Ok(PosterRendered {
+                Ok(PosterOutcome::Rendered(PosterRendered {
                     widget_id: r.widget_id.clone(),
                     path: path.to_string_lossy().into_owned(),
                     width: 4,
                     height: 3,
                     sha256: String::new(),
-                })
+                }))
             })
             .collect()
     }
@@ -510,8 +511,201 @@ fn without_a_renderer_posters_stay_placeholders() {
         widget_id: "fig-mesh".into(),
         out_path: "/tmp/x.png".into(),
         timeout_ms: Some(500),
+        digest: None,
     };
     let out = r.render(cx, &[req.clone(), req]);
     assert_eq!(out.len(), 2);
     assert!(out.iter().all(|r| r.is_err()));
+}
+
+// ---- html widgets: only approved ones render, map or come from the cache --
+
+/// A renderer that goes through the core's run (approval checked on the
+/// snapshot), executing what reaches it: the probe's script, if present,
+/// leaves its marker.
+struct Executing {
+    base: PathBuf,
+    marker: PathBuf,
+    ran: Mutex<Vec<String>>,
+}
+
+impl PosterRenderer for Executing {
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
+        reqs.iter()
+            .map(|r| {
+                super::super::run_at(&self.base, cx, r, |job| {
+                    self.ran.lock().unwrap().push(job.widget_id.clone());
+                    if job.document.contains("MARKER-RAN") {
+                        std::fs::write(&self.marker, "ran").unwrap();
+                    }
+                    let (w, h) = job.expect.unwrap_or((4, 3));
+                    let mut b = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+                    b.extend_from_slice(&w.to_be_bytes());
+                    b.extend_from_slice(&h.to_be_bytes());
+                    b.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
+                    use base64::Engine;
+                    Ok(format!(
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(b)
+                    ))
+                })
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn an_html_widget_gets_an_auto_poster_only_while_approved() {
+    let cx = &Core::default();
+    let (id, root) = project(cx, "html");
+    // The demo gives no poster= and loads the probe.
+    set_sidecar(cx, &id, |s| s.replace("|figures/demo.png|", "||"));
+    let demo = root.join("widgets/demo");
+    std::fs::write(
+        demo.join("index.html"),
+        "<!doctype html><script src=\"probe.js\"></script>",
+    )
+    .unwrap();
+    std::fs::write(demo.join("probe.js"), "window.p='MARKER-RAN';").unwrap();
+    let base = crate::test_scratch::dir("cache-html-appdata");
+    let _ = std::fs::remove_dir_all(&base);
+    let marker = crate::test_scratch::dir("cache-html-marker").join("probe.marker");
+    std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&marker);
+    let r = Arc::new(Executing {
+        base: base.clone(),
+        marker: marker.clone(),
+        ran: Mutex::new(Vec::new()),
+    });
+    cx.set_poster_renderer(r.clone());
+    let before = |cx: &Core| {
+        let mut lines = Vec::new();
+        before_compile_at(&base, cx, &id, "main.tex", &mut |l| lines.push(l));
+        lines
+    };
+    let demo_w = || {
+        widgets(cx, &id, "main.tex")
+            .unwrap()
+            .widgets
+            .into_iter()
+            .find(|w| w.id == "fig-demo")
+            .unwrap()
+    };
+    let c = Cache::at(&root);
+    let mapped = || {
+        parse_map(&std::fs::read_to_string(c.map("main")).unwrap_or_default())
+            .into_iter()
+            .any(|e| e.id == "fig-demo")
+    };
+    let target = WidgetTarget {
+        id: "fig-demo".into(),
+        path: "widgets/demo".into(),
+    };
+    let approve = || {
+        let d = widget_approval::check_at(&base, cx, &id, &target)
+            .unwrap()
+            .snapshot
+            .digest;
+        widget_approval::approve_at(
+            &base,
+            cx,
+            &widget_approval::WidgetApproveParams {
+                root_id: id.clone(),
+                main_rel: "main.tex".into(),
+                widget: "fig-demo".into(),
+                digest: d,
+            },
+        )
+        .unwrap();
+    };
+
+    // Never approved: the compile says so, nothing runs, it keeps its
+    // placeholder.
+    let lines = before(cx);
+    assert!(
+        lines.iter().any(|l| l
+            .starts_with("poster fig-demo: approval_required (never_approved): Widget 'fig-demo'")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.ends_with(", 1 awaiting approval")),
+        "{lines:?}"
+    );
+    assert!(!r.ran.lock().unwrap().contains(&"fig-demo".to_string()));
+    assert!(!marker.exists(), "the unapproved probe ran");
+    assert!(!mapped());
+    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).is_none());
+
+    // Approved: it renders into the cache and is mapped.
+    approve();
+    let lines = before(cx);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("poster fig-demo: rendered")),
+        "{lines:?}"
+    );
+    assert!(marker.exists() && mapped());
+    let png = cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).unwrap();
+    assert!(png.is_file());
+
+    // Edited: its old poster stays on disk but is never used for it.
+    std::fs::remove_file(&marker).unwrap();
+    std::fs::write(demo.join("probe.js"), "window.p='MARKER-RAN'; // v2").unwrap();
+    let n = r.ran.lock().unwrap().len();
+    let lines = before(cx);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("poster fig-demo: approval_required (changed_since_approval)")),
+        "{lines:?}"
+    );
+    assert_eq!(r.ran.lock().unwrap().len(), n, "nothing more ran");
+    assert!(!marker.exists());
+    assert!(png.is_file(), "the old poster is still there");
+    assert!(!mapped(), "a cache hit never stands in for the approval");
+    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).is_none());
+    let mut lines = Vec::new();
+    after_compile_at(&base, cx, &id, "main.tex", &mut |l| lines.push(l));
+    assert!(!mapped(), "{lines:?}");
+
+    // Edited back to the approved bytes: the same key again, mapped again
+    // (rendered anew, since the collection above dropped the unused file).
+    std::fs::write(demo.join("probe.js"), "window.p='MARKER-RAN';").unwrap();
+    let lines = before(cx);
+    assert!(mapped(), "{lines:?}");
+    let _ = std::fs::remove_file(&marker);
+
+    // Revoked: unmapped, cached file or not.
+    widget_approval::revoke_at(
+        &base,
+        cx,
+        &widget_approval::WidgetRevokeParams {
+            root_id: id.clone(),
+            path: "widgets/demo".into(),
+        },
+    )
+    .unwrap();
+    let lines = before(cx);
+    assert!(!mapped(), "{lines:?}");
+    assert!(lines
+        .iter()
+        .any(|l| l.starts_with("poster fig-demo: approval_required (revoked)")));
+    assert!(!marker.exists());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn an_html_widget_has_no_runtime_key() {
+    let cx = &Core::default();
+    let (id, _root) = project(cx, "htmlkey");
+    let l = widgets(cx, &id, "main.tex").unwrap();
+    let demo = l.widgets.iter().find(|w| w.id == "fig-demo").unwrap();
+    assert!(poster_key(cx, &id, "main.tex", demo)
+        .unwrap_err()
+        .contains("approval digest"));
+    let a = html_key(demo, "widgets/demo", &"a".repeat(64));
+    assert_ne!(a, html_key(demo, "widgets/demo", &"b".repeat(64)));
+    assert_ne!(a, html_key(demo, "widgets/other", &"a".repeat(64)));
+    assert!(is_key(&a));
 }

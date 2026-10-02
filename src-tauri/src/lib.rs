@@ -48,10 +48,12 @@ pub fn run() {
 
 /// `maleficium --render-posters <project root>`: renders posters with no
 /// editor window. Reads one JSON request per stdin line (`mainRel`,
-/// `widgetId`, `outPath`, optional `timeoutMs`, against the given root),
-/// writes one JSON result per stdout line (`{"ok":true,...}` with the
-/// written poster, or `{"ok":false,"error":...}`), and exits at end of
-/// input: 0 when every render succeeded, 1 otherwise.
+/// `widgetId`, `outPath`, optional `timeoutMs` and `digest`, against the
+/// given root), writes one JSON result per stdout line (`{"ok":true,
+/// "result":...}` with the outcome: `status` `rendered` and the written
+/// poster, or `approval_required` for an html widget the user has not
+/// approved, which ran nothing; or `{"ok":false,"error":...}`), and exits
+/// at end of input: 0 when every request rendered, 1 otherwise.
 pub fn render_posters(root: &str) -> anyhow::Result<i32> {
     use maleficium_core::widgets::poster::PosterRequest;
     use std::io::{BufRead, Write};
@@ -84,12 +86,15 @@ pub fn render_posters(root: &str) -> anyhow::Result<i32> {
                                 .map_err(|e| format!("bad request: {e}"))
                         })
                         .and_then(|req| commands::poster::run(&handle, &cx, &req));
+                    if !matches!(
+                        res,
+                        Ok(maleficium_core::widgets::poster::PosterOutcome::Rendered(_))
+                    ) {
+                        failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                     let out = match res {
                         Ok(r) => serde_json::json!({ "ok": true, "result": r }),
-                        Err(e) => {
-                            failed.store(true, std::sync::atomic::Ordering::Relaxed);
-                            serde_json::json!({ "ok": false, "error": e })
-                        }
+                        Err(e) => serde_json::json!({ "ok": false, "error": e }),
                     };
                     let mut o = std::io::stdout().lock();
                     let _ = writeln!(o, "{out}");

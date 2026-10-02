@@ -1,20 +1,27 @@
 //! Auto-posters: everything about rendering one widget to a still image
-//! except the webview. The app's one-shot renderer asks [`prepare`] for a
-//! job (the runtime document under its widget policy, the bridge `init`
-//! body, the source bytes, the frame size and the time limit), runs it in a
-//! hidden window that is destroyed afterwards, and hands the snapshot back
-//! to [`finish`], which checks it and writes the PNG to the caller's path.
+//! except the webview. The app's one-shot renderer asks [`run`] to render a
+//! request: [`prepare`] builds the job (the runtime document under its
+//! widget policy, the bridge `init` body, the source bytes, the frame size
+//! and the time limit), the renderer runs it in a hidden window that is
+//! destroyed afterwards, and [`finish`] checks the snapshot and writes the
+//! PNG to the caller's path.
 //!
-//! Only first-party runtimes render: `model@1` and `chart@1`. An `html`
-//! widget is never auto-rendered here (running author code needs approval);
-//! a table's poster is its typeset rows, and video posters are a separate
-//! question.
+//! First-party runtimes render without approval: `model@1` and `chart@1`
+//! (a table's poster is its typeset rows, and video posters are a separate
+//! question). An `html` widget is author code: it renders only when
+//! [`crate::widget_approval`] approves its folder, and the check is made
+//! here, at execution time, on one snapshot of the folder whose bytes are
+//! folded into the job's document; nothing reads the folder again. Not
+//! approved, the request comes back as `approval_required` and nothing
+//! runs. An approved html widget runs under the strict widget policy: its
+//! declared origins are not reachable from a poster render.
 //!
 //! Poster precedence for a widget is [`poster_source`]: an explicit
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
 use super::{params, widgets, Widget, WidgetSource, WidgetType};
 use crate::bundle::{fold, role_keys, runtime_host, runtime_options, sha_of, THEME_CSS};
+use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::Core;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -57,6 +64,11 @@ pub struct PosterRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub timeout_ms: Option<u64>,
+    /// An html widget only: render it only while its folder hashes to this
+    /// approval digest (the one the poster's cache key was made from).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub digest: Option<String>,
 }
 
 /// A written poster.
@@ -68,6 +80,23 @@ pub struct PosterRendered {
     pub width: u32,
     pub height: u32,
     pub sha256: String,
+}
+
+/// What a poster request came to: a written poster, or an html widget the
+/// user has not approved (a normal result: nothing ran and nothing was
+/// written).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PosterOutcome {
+    Rendered(PosterRendered),
+    ApprovalRequired(Box<ApprovalRequired>),
+}
+
+/// A request made ready: a job to run, or the approval it lacks.
+#[derive(Debug, Clone)]
+pub enum Prepared {
+    Job(PosterJob),
+    ApprovalRequired(ApprovalRequired),
 }
 
 /// One source the runtime receives as bytes, under its role key.
@@ -189,8 +218,14 @@ fn read_sources<'w>(
     Ok(out)
 }
 
-/// Builds the render job for one widget of a compiled main file.
-pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
+/// Builds the render job for one widget of a compiled main file. An html
+/// widget's approval is checked here, on the snapshot the job is built from.
+pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<Prepared, String> {
+    prepare_at(&widget_approval::store_base(), cx, req)
+}
+
+/// [`prepare`] against the approval store at `base`.
+pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<Prepared, String> {
     let out = out_path(&req.out_path)?;
     let timeout = Duration::from_millis(
         req.timeout_ms
@@ -211,11 +246,7 @@ pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
     let id = &w.id;
     match w.kind {
         WidgetType::Model | WidgetType::Chart => {}
-        WidgetType::Html => {
-            return Err(format!(
-                "widget {id}: html widgets are not rendered to posters; give it poster="
-            ))
-        }
+        WidgetType::Html => return html_job(base, cx, req, w, out, timeout),
         WidgetType::Table => {
             return Err(format!(
                 "widget {id}: a table's poster is its typeset rows, nothing to render"
@@ -226,6 +257,11 @@ pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
                 "widget {id}: video posters are not rendered yet; give it poster="
             ))
         }
+    }
+    if req.digest.is_some() {
+        return Err(format!(
+            "widget {id}: a digest applies to html widgets only"
+        ));
     }
     let runtime = w.runtime.as_deref().unwrap_or("");
     let host = host_document(runtime)
@@ -251,10 +287,7 @@ pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
     }
 
     let mut options = runtime_options(w);
-    let rect_css = (
-        (w.rect.x1 - w.rect.x0) * CSS_PER_PT,
-        (w.rect.y1 - w.rect.y0) * CSS_PER_PT,
-    );
+    let rect_css = rect_css(w);
     let (frame, expect) = if w.kind == WidgetType::Model {
         let size = match options.get("size").and_then(Value::as_str) {
             Some(s) => params::size(s).map_err(|e| format!("widget {id}: {e}"))?,
@@ -275,26 +308,124 @@ pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
         ((clamp_side(rect_css.0), clamp_side(rect_css.1)), None)
     };
 
-    let init = json!({
-        "type": "init",
-        "protocol": 1,
-        "widgetId": id,
-        "runtime": runtime,
-        "alt": w.alt,
-        "options": options,
-        "theme": { "mode": "light", "tokens": light_tokens() },
-        "sources": meta,
-    });
-    Ok(PosterJob {
+    Ok(Prepared::Job(PosterJob {
         widget_id: id.clone(),
         document,
-        init,
+        init: init(w, runtime, options, meta),
         sources,
         frame,
         expect,
         timeout,
         out,
+    }))
+}
+
+/// The widget's box in CSS pixels.
+fn rect_css(w: &Widget) -> (f64, f64) {
+    (
+        (w.rect.x1 - w.rect.x0) * CSS_PER_PT,
+        (w.rect.y1 - w.rect.y0) * CSS_PER_PT,
+    )
+}
+
+/// The bridge `init` body.
+fn init(
+    w: &Widget,
+    runtime: &str,
+    options: Map<String, Value>,
+    sources: Map<String, Value>,
+) -> Value {
+    json!({
+        "type": "init",
+        "protocol": 1,
+        "widgetId": w.id,
+        "runtime": runtime,
+        "alt": w.alt,
+        "options": options,
+        "theme": { "mode": "light", "tokens": light_tokens() },
+        "sources": sources,
     })
+}
+
+/// The runtime name an html widget's job announces.
+pub const HTML_RUNTIME: &str = "html";
+
+/// An html widget's job, built only when its folder is approved, from the
+/// one snapshot the approval was judged on: the document is the folded
+/// snapshot, so the bytes that run are the bytes that were approved. A
+/// folder that cannot be snapshotted (a symlink, a special file, too
+/// large, outside the project) fails; an unapproved one comes back as
+/// approval_required.
+fn html_job(
+    base: &Path,
+    cx: &Core,
+    req: &PosterRequest,
+    w: &Widget,
+    out: PathBuf,
+    timeout: Duration,
+) -> Result<Prepared, String> {
+    let id = &w.id;
+    let target = WidgetTarget::of(&req.main_rel, w)?
+        .ok_or_else(|| format!("widget {id}: an html widget has no bundle folder"))?;
+    let checked = widget_approval::check_at(base, cx, &req.root_id, &target)?;
+    if let Some(want) = &req.digest {
+        if *want != checked.snapshot.digest {
+            return Err(format!(
+                "widget {id}: its folder changed since the poster was asked for; the next compile renders it"
+            ));
+        }
+    }
+    match checked.status {
+        WidgetApprovalStatus::ApprovalRequired(r) => Ok(Prepared::ApprovalRequired(r)),
+        WidgetApprovalStatus::Approved(_) => {
+            let folded = fold::fold_bundle(&checked.snapshot.files, &fold::widget_policy(None))
+                .map_err(|e| format!("widget {id}: {e}"))?;
+            let rect_css = rect_css(w);
+            let mut options = runtime_options(w);
+            options
+                .entry("scale")
+                .or_insert_with(|| DEFAULT_DENSITY.into());
+            Ok(Prepared::Job(PosterJob {
+                widget_id: id.clone(),
+                document: folded.html,
+                init: init(w, HTML_RUNTIME, options, Map::new()),
+                sources: Vec::new(),
+                frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
+                expect: None,
+                timeout,
+                out,
+            }))
+        }
+    }
+}
+
+/// Prepares, executes and finishes one request. `exec` runs a job and
+/// returns the runtime's PNG data URL; it is reached only with a job that
+/// may run (a first-party runtime, or an html widget approved at the
+/// snapshot the job holds).
+pub fn run(
+    cx: &Core,
+    req: &PosterRequest,
+    exec: impl FnOnce(std::sync::Arc<PosterJob>) -> Result<String, String>,
+) -> Result<PosterOutcome, String> {
+    run_at(&widget_approval::store_base(), cx, req, exec)
+}
+
+/// [`run`] against the approval store at `base`.
+pub(crate) fn run_at(
+    base: &Path,
+    cx: &Core,
+    req: &PosterRequest,
+    exec: impl FnOnce(std::sync::Arc<PosterJob>) -> Result<String, String>,
+) -> Result<PosterOutcome, String> {
+    match prepare_at(base, cx, req)? {
+        Prepared::ApprovalRequired(r) => Ok(PosterOutcome::ApprovalRequired(Box::new(r))),
+        Prepared::Job(job) => {
+            let job = std::sync::Arc::new(job);
+            let png = exec(job.clone())?;
+            finish(&job, &png).map(PosterOutcome::Rendered)
+        }
+    }
 }
 
 /// Width and height from a PNG's IHDR, or None when it is not a PNG.

@@ -245,9 +245,16 @@ outPath: string,
 /**
  * Hard limit for the whole render, in milliseconds (default 20000).
  */
-timeoutMs?: number, };
+timeoutMs?: number, 
+/**
+ * An html widget only: render it only while its folder hashes to this
+ * approval digest (the one the poster's cache key was made from).
+ */
+digest?: string, };
 
 export type PosterRendered = { widgetId: string, path: string, width: number, height: number, sha256: string, };
+
+export type PosterOutcome = { "status": "rendered" } & PosterRendered | { "status": "approval_required" } & ApprovalRequired;
 
 export type ExportBundleParams = { rootId: string, mainRel: string, dest: string, profile: BundleProfile, sizeCapBytes: number | null, };
 
