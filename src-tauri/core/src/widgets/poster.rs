@@ -13,7 +13,7 @@
 //! Poster precedence for a widget is [`poster_source`]: an explicit
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
-use super::{params, widgets, Widget, WidgetType};
+use super::{params, widgets, Widget, WidgetSource, WidgetType};
 use crate::bundle::{fold, role_keys, runtime_host, runtime_options, sha_of, THEME_CSS};
 use crate::Core;
 use serde::{Deserialize, Serialize};
@@ -162,6 +162,33 @@ fn clamp_side(v: f64) -> u32 {
     (v.round() as u32).clamp(params::MIN_SIDE, params::MAX_SIDE)
 }
 
+/// One source read: its role key, the widget's record of it, its bytes.
+type SourceRead<'w> = (String, &'w WidgetSource, Vec<u8>);
+
+/// A widget's sources under their role keys, read from inside the project
+/// (paths are relative to the main file's folder).
+fn read_sources<'w>(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &'w Widget,
+) -> Result<Vec<SourceRead<'w>>, String> {
+    let id = &w.id;
+    let main_dir = Path::new(main_rel)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for (key, s) in role_keys(w)? {
+        let path = crate::fs::resolve_in(cx, root_id, &main_dir.join(&s.path).to_string_lossy())
+            .map_err(|e| format!("widget {id}: {}: {e}", s.path))?;
+        let bytes = std::fs::read(&path)
+            .map_err(|e| format!("widget {id}: cannot read {}: {e}", s.path))?;
+        out.push((key, s, bytes));
+    }
+    Ok(out)
+}
+
 /// Builds the render job for one widget of a compiled main file.
 pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
     let out = out_path(&req.out_path)?;
@@ -205,18 +232,9 @@ pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<PosterJob, String> {
         .ok_or_else(|| format!("widget {id}: no {runtime} runtime in this build"))?;
     let document = fold::with_policy(host, &fold::widget_policy(None));
 
-    let main_dir = Path::new(&req.main_rel)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
     let mut sources = Vec::new();
     let mut meta = Map::new();
-    for (key, s) in role_keys(w)? {
-        let path =
-            crate::fs::resolve_in(cx, &req.root_id, &main_dir.join(&s.path).to_string_lossy())
-                .map_err(|e| format!("widget {id}: {}: {e}", s.path))?;
-        let bytes = std::fs::read(&path)
-            .map_err(|e| format!("widget {id}: cannot read {}: {e}", s.path))?;
+    for (key, s, bytes) in read_sources(cx, &req.root_id, &req.main_rel, w)? {
         let name = Path::new(&s.path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -328,6 +346,8 @@ pub fn finish(job: &PosterJob, data_url: &str) -> Result<PosterRendered, String>
         sha256: sha_of(&png),
     })
 }
+
+pub mod cache;
 
 #[cfg(test)]
 mod tests;

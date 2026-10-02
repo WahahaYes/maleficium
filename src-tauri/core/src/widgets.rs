@@ -419,6 +419,14 @@ fn join(records: Vec<Record>, marks: Vec<Mark>) -> Result<Vec<(Record, Mark)>, S
     Ok(joined)
 }
 
+/// Where the package leaves the sidecar: `<jobname>.mfw` in the outdir.
+fn sidecar_file(o: &crate::MainOutputs) -> std::path::PathBuf {
+    o.outdir.join(format!(
+        "{}.mfw",
+        o.main_file.strip_suffix(".tex").unwrap_or(&o.main_file)
+    ))
+}
+
 /// The widgets of `main_rel`'s last compile. Fails when the document was
 /// never compiled, when the sidecar is unreadable or malformed, when the
 /// PDF carries widgets its sidecar does not (or the reverse), and when a
@@ -431,10 +439,7 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
         .map_err(|_| format!("{main_rel} has no compiled pdf: compile it first"))?;
     let found = marks(bytes).map_err(|e| format!("{main_rel}: {e}"))?;
 
-    let sidecar_path = o.outdir.join(format!(
-        "{}.mfw",
-        o.main_file.strip_suffix(".tex").unwrap_or(&o.main_file)
-    ));
+    let sidecar_path = sidecar_file(&o);
     let records = match std::fs::read_to_string(&sidecar_path) {
         Ok(text) => parse_sidecar(&text).map_err(|e| format!("{main_rel}: {e}"))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -493,6 +498,35 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
             .then(a.rect.x0.total_cmp(&b.rect.x0))
     });
     Ok(WidgetList { widgets: out })
+}
+
+/// Each widget's sidecar record as the package wrote it, runtime, sources
+/// and options joined by `|`, by id: the guard a poster map entry carries,
+/// so the package uses a cached poster only for the exact record it was
+/// rendered from. Empty when the document was never compiled or records
+/// no widgets.
+pub(crate) fn sidecar_guards(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    let o = super::outputs::outputs_of(cx, root_id, main_rel)?;
+    let path = sidecar_file(&o);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(e) => return Err(format!("{main_rel}: cannot read the widget sidecar: {e}")),
+    };
+    Ok(guards_of(&text))
+}
+
+fn guards_of(text: &str) -> BTreeMap<String, String> {
+    text.lines()
+        .skip(1)
+        .map(|l| l.split('|').collect::<Vec<_>>())
+        .filter(|f| f.len() == SIDECAR_FIELDS && f[0] == "widget")
+        .map(|f| (f[1].to_string(), format!("{}|{}|{}", f[3], f[8], f[9])))
+        .collect()
 }
 
 /// The bus event for one `widgets` call, shared by the adapters that log it.

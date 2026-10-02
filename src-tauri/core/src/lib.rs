@@ -58,6 +58,7 @@ struct State {
     watchers: watch::Watchers,
     queues: watch::Queues,
     owns: watch::OwnWrites,
+    poster_renderer: std::sync::Mutex<Option<Arc<dyn widgets::poster::cache::PosterRenderer>>>,
 }
 
 impl Core {
@@ -81,6 +82,24 @@ impl Core {
     }
     pub(crate) fn owns(&self) -> &watch::OwnWrites {
         &self.0.owns
+    }
+    /// The poster renderer compiles use; the desktop app installs its
+    /// in-process one at startup.
+    pub fn set_poster_renderer(&self, r: Arc<dyn widgets::poster::cache::PosterRenderer>) {
+        *self
+            .0
+            .poster_renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(r);
+    }
+    pub(crate) fn poster_renderer(
+        &self,
+    ) -> Option<Arc<dyn widgets::poster::cache::PosterRenderer>> {
+        self.0
+            .poster_renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 

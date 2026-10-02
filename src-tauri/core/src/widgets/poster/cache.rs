@@ -1,0 +1,745 @@
+//! The project's poster cache: `.maleficium/` in the main file's folder,
+//! written by a compile (the user's explicit action).
+//!
+//! ```text
+//! .maleficium/README.md             what the folder is (written once)
+//! .maleficium/posters/<sha256>.png  one auto-poster per widget state
+//! .maleficium/posters/<job>.map     widget id -> poster, read by the package
+//! ```
+//!
+//! A poster's name is [`poster_key`]: a hash of the widget's runtime (and
+//! the runtime document's bytes), its canonical options, its source files'
+//! bytes, the poster theme and [`RENDERER_VERSION`]. Nothing about where
+//! the widget sits on the page enters it, so a poster replacing its
+//! placeholder can never make the key move.
+//!
+//! A compile runs in two passes around the engine. [`before_compile`]
+//! reads the previous compile's widget list (the document is never
+//! pre-scanned), renders the auto-posters it lacks through the configured
+//! [`PosterRenderer`], and writes the map; the package then typesets each
+//! mapped poster, or a placeholder. A widget new in this compile gets its
+//! placeholder now and its poster on the next compile. [`after_compile`]
+//! rewrites the map from the new widget list and collects garbage: posters
+//! no widget uses go, then the oldest beyond the byte cap.
+//!
+//! Each map entry carries the widget's sidecar record (runtime, sources,
+//! options as the package wrote them); the package uses a poster only when
+//! the record it is about to write matches, so an edited widget shows its
+//! placeholder until its new poster exists, never a stale one.
+
+use super::{poster_source, read_sources, PosterRendered, PosterRequest, PosterSource};
+use crate::widgets::{sidecar_guards, widgets, Widget, WidgetType};
+use crate::Core;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// The project folder the app owns, beside the main file.
+pub const CACHE_DIR: &str = ".maleficium";
+/// The posters and maps, inside [`CACHE_DIR`].
+pub const POSTERS_DIR: &str = "posters";
+/// Bump whenever the renderer changes what a poster looks like for the
+/// same widget: every cached poster then renders again.
+pub const RENDERER_VERSION: u32 = 1;
+/// The cache's byte cap when [`CAP_ENV`] does not set one.
+pub const DEFAULT_CAP_BYTES: u64 = 100 * 1024 * 1024;
+/// Overrides the byte cap, in MiB.
+pub const CAP_ENV: &str = "MALEFICIUM_POSTER_CACHE_MIB";
+
+const README_NAME: &str = "README.md";
+const MAP_EXT: &str = "map";
+/// Process start and window setup on top of the per-render limits.
+const PROCESS_SLACK_MS: u64 = 30_000;
+
+/// Renders poster requests. The desktop app renders in-process; elsewhere
+/// the app binary's headless mode does ([`ProcessRenderer`]).
+pub trait PosterRenderer: Send + Sync {
+    /// One result per request, in order.
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>>;
+}
+
+/// The renderer a compile uses: the one the adapter installed, else the
+/// app binary beside this program, else none (posters stay placeholders).
+pub(crate) fn renderer(cx: &Core) -> Option<Arc<dyn PosterRenderer>> {
+    cx.poster_renderer()
+        .or_else(|| ProcessRenderer::find().map(|r| Arc::new(r) as Arc<dyn PosterRenderer>))
+}
+
+/// The byte cap: [`CAP_ENV`] in MiB, or [`DEFAULT_CAP_BYTES`].
+pub fn cap_bytes() -> u64 {
+    std::env::var(CAP_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map_or(DEFAULT_CAP_BYTES, |mib| mib.saturating_mul(1024 * 1024))
+}
+
+/// One source as the key sees it: role key, path, bytes.
+pub(crate) type KeySource = (String, String, Vec<u8>);
+
+fn feed(h: &mut Sha256, field: &[u8]) {
+    h.update((field.len() as u64).to_le_bytes());
+    h.update(field);
+}
+
+/// The key of one widget state, as lowercase sha256 hex. Every field is
+/// length-prefixed; options are sorted; sources keep their role order.
+pub(crate) fn digest(
+    kind: &str,
+    runtime: &str,
+    runtime_doc: &str,
+    options: &[(String, String)],
+    sources: &[KeySource],
+    tokens: &str,
+) -> String {
+    let mut h = Sha256::new();
+    feed(&mut h, b"maleficium-poster");
+    feed(&mut h, &RENDERER_VERSION.to_le_bytes());
+    feed(&mut h, kind.as_bytes());
+    feed(&mut h, runtime.as_bytes());
+    feed(&mut h, &Sha256::digest(runtime_doc.as_bytes()));
+    let mut opts: Vec<&(String, String)> = options.iter().collect();
+    opts.sort();
+    feed(&mut h, &(opts.len() as u64).to_le_bytes());
+    for (k, v) in opts {
+        feed(&mut h, k.as_bytes());
+        feed(&mut h, v.as_bytes());
+    }
+    feed(&mut h, &(sources.len() as u64).to_le_bytes());
+    for (key, path, bytes) in sources {
+        feed(&mut h, key.as_bytes());
+        feed(&mut h, path.as_bytes());
+        feed(&mut h, &Sha256::digest(bytes));
+    }
+    feed(&mut h, tokens.as_bytes());
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Whether a widget's poster can come from the cache: first-party model and
+/// chart runtimes only, and never when the document gives its own poster.
+fn auto(w: &Widget) -> bool {
+    matches!(w.kind, WidgetType::Model | WidgetType::Chart)
+        && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+}
+
+/// The cache key of one widget of `main_rel`'s last compile.
+pub fn poster_key(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Result<String, String> {
+    let runtime = w.runtime.as_deref().unwrap_or("");
+    let doc = super::host_document(runtime)
+        .ok_or_else(|| format!("widget {}: no {runtime} runtime in this build", w.id))?;
+    let options: Vec<(String, String)> = w
+        .options
+        .iter()
+        .map(|o| (o.key.clone(), o.value.clone()))
+        .collect();
+    let sources: Vec<KeySource> = read_sources(cx, root_id, main_rel, w)?
+        .into_iter()
+        .map(|(k, s, b)| (k, s.path.clone(), b))
+        .collect();
+    let mut tokens: Vec<(String, String)> = super::light_tokens()
+        .into_iter()
+        .map(|(k, v)| (k, v.as_str().unwrap_or("").to_string()))
+        .collect();
+    tokens.sort();
+    let tokens = tokens
+        .iter()
+        .map(|(k, v)| format!("{k}:{v};"))
+        .collect::<String>();
+    let kind = match w.kind {
+        WidgetType::Model => "model",
+        WidgetType::Chart => "chart",
+        WidgetType::Video => "video",
+        WidgetType::Table => "table",
+        WidgetType::Html => "html",
+    };
+    Ok(digest(kind, runtime, doc, &options, &sources, &tokens))
+}
+
+/// The cache folders of one main file's folder.
+#[derive(Debug, Clone)]
+pub struct Cache {
+    pub dir: PathBuf,
+    pub posters: PathBuf,
+}
+
+impl Cache {
+    pub fn at(main_dir: &Path) -> Self {
+        let dir = main_dir.join(CACHE_DIR);
+        Cache {
+            posters: dir.join(POSTERS_DIR),
+            dir,
+        }
+    }
+
+    /// A poster's file.
+    pub fn png(&self, key: &str) -> PathBuf {
+        self.posters.join(format!("{key}.png"))
+    }
+
+    fn map(&self, job: &str) -> PathBuf {
+        self.posters.join(format!("{job}.{MAP_EXT}"))
+    }
+
+    /// Both folders exist as real folders (not links).
+    pub fn present(&self) -> bool {
+        [&self.dir, &self.posters].iter().all(|d| real_dir(d))
+    }
+
+    /// Creates the folders. A link or a file in their place is refused: the
+    /// cache only ever writes inside the project's own folders.
+    pub fn ensure(&self) -> Result<(), String> {
+        for d in [&self.dir, &self.posters] {
+            match std::fs::symlink_metadata(d) {
+                Ok(m) if m.file_type().is_dir() => {}
+                Ok(_) => {
+                    return Err(format!(
+                        "{} is not a folder; the poster cache is not written",
+                        d.display()
+                    ))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir(d)
+                    .map_err(|e| format!("cannot create {}: {e}", d.display()))?,
+                Err(e) => return Err(format!("cannot read {}: {e}", d.display())),
+            }
+        }
+        Ok(())
+    }
+}
+
+fn real_dir(d: &Path) -> bool {
+    std::fs::symlink_metadata(d).is_ok_and(|m| m.file_type().is_dir())
+}
+
+/// What `.maleficium/README.md` says.
+pub const README: &str = "# .maleficium
+
+Maleficium writes this folder when it compiles a paper that uses
+`maleficium-interactive.sty`. It holds auto-posters: still images of the
+interactive model and chart widgets that have no `poster=` of their own.
+
+- `posters/<sha256>.png` is one poster. Its name is a hash of the widget's
+  source files, its options, the runtime and the renderer version, so any
+  change to the widget renders a new poster.
+- `posters/<main>.map` tells the package which poster belongs to which
+  widget of `<main>.tex`. A poster is used only while the widget's recorded
+  options still match; otherwise the widget shows a placeholder.
+
+It is safe to delete. The next compile in Maleficium renders the posters
+again. A widget that is new in a compile shows a placeholder until the
+compile after it.
+
+You may commit it. With the folder in place the paper compiles with its
+posters anywhere the package is installed, without Maleficium; without
+the folder those widgets show a placeholder box.
+
+Cleanup: after each successful compile, posters that no widget of a
+compiled main file uses are deleted. When the folder grows past its cap
+(100 MiB unless MALEFICIUM_POSTER_CACHE_MIB sets another size in MiB),
+the oldest posters the paper just compiled does not use go first.
+
+Maleficium writes this README only when it is missing, so edits stay.
+";
+
+/// Writes the README when it is missing; an existing one (edited or not)
+/// is never replaced. True when it was written.
+pub fn write_readme(c: &Cache) -> Result<bool, String> {
+    let path = c.dir.join(README_NAME);
+    if std::fs::symlink_metadata(&path).is_ok() {
+        return Ok(false);
+    }
+    std::fs::write(&path, README)
+        .map(|_| true)
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+/// One map line's content: the widget, its sidecar record, its poster key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapEntry {
+    pub id: String,
+    pub guard: String,
+    pub key: String,
+}
+
+/// Whether a record can ride inside a TeX argument and read back as the
+/// same characters: no escapes, groups, comments, parameters or `^^`.
+fn tex_safe(s: &str) -> bool {
+    !s.chars()
+        .any(|c| matches!(c, '\\' | '{' | '}' | '%' | '#' | '^') || c.is_control())
+}
+
+/// Every run of white space as one space: TeX folds them when it reads the
+/// map, and the package folds the widget's own record the same way.
+fn fold_spaces(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_whitespace() {
+            if !out.ends_with(' ') {
+                out.push(' ');
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The map file the package inputs: one `\mfw@postermap{id}{record}{key}`
+/// per widget whose poster exists.
+pub fn map_text(main_file: &str, entries: &[MapEntry]) -> String {
+    let mut out = format!(
+        "% Maleficium poster map for {main_file}: written by the app before and after\n\
+         % each compile, read by maleficium-interactive.sty. Safe to delete.\n\
+         % \\mfw@postermap{{<widget id>}}{{<runtime>|<sources>|<options>}}{{<poster sha256>}}\n"
+    );
+    for e in entries {
+        out.push_str(&format!(
+            "\\mfw@postermap{{{}}}{{{}}}{{{}}}\n",
+            e.id, e.guard, e.key
+        ));
+    }
+    out
+}
+
+fn is_key(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+
+/// The entries of a map file; lines that do not parse are skipped.
+pub fn parse_map(text: &str) -> Vec<MapEntry> {
+    text.lines()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("\\mfw@postermap{")?;
+            let (id, rest) = rest.split_once("}{")?;
+            let (guard, rest) = rest.split_once("}{")?;
+            let key = rest.strip_suffix('}')?;
+            is_key(key).then(|| MapEntry {
+                id: id.to_string(),
+                guard: guard.to_string(),
+                key: key.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Writes the map in one step, and only when its text changes.
+fn write_map(c: &Cache, job: &str, main_file: &str, entries: &[MapEntry]) -> Result<(), String> {
+    let path = c.map(job);
+    let text = map_text(main_file, entries);
+    if std::fs::read_to_string(&path).is_ok_and(|t| t == text) {
+        return Ok(());
+    }
+    let tmp = path.with_extension("map.part");
+    std::fs::write(&tmp, &text)
+        .and_then(|_| std::fs::rename(&tmp, &path))
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("cannot write {}: {e}", path.display())
+        })
+}
+
+/// What a garbage collection removed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Collected {
+    /// Posters no map or current widget used.
+    pub orphans: Vec<String>,
+    /// Posters evicted, oldest first, to get under the cap.
+    pub evicted: Vec<String>,
+    /// Bytes left in the cache.
+    pub bytes: u64,
+}
+
+/// Deletes posters that neither `keep` (the compiled main file's widgets)
+/// nor another main file's map uses, leftover partial writes, and maps
+/// whose main file is gone; then, while the cache is over `cap`, the
+/// oldest posters outside `keep`. Only `<sha256>.png` files are touched.
+pub fn collect(
+    c: &Cache,
+    main_dir: &Path,
+    job: &str,
+    keep: &BTreeSet<String>,
+    cap: u64,
+) -> Result<Collected, String> {
+    if !c.present() {
+        return Ok(Collected::default());
+    }
+    let mut used: BTreeSet<String> = keep.clone();
+    let mut posters: Vec<(String, u64, std::time::SystemTime)> = Vec::new();
+    let entries = std::fs::read_dir(&c.posters)
+        .map_err(|e| format!("cannot list {}: {e}", c.posters.display()))?;
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Ok(m) = std::fs::symlink_metadata(e.path()) else {
+            continue;
+        };
+        if !m.file_type().is_file() {
+            continue;
+        }
+        if name.ends_with(".part") {
+            let _ = std::fs::remove_file(e.path());
+        } else if let Some(other) = name.strip_suffix(&format!(".{MAP_EXT}")) {
+            if other == job {
+                continue;
+            }
+            if main_dir.join(format!("{other}.tex")).is_file() {
+                let text = std::fs::read_to_string(e.path()).unwrap_or_default();
+                used.extend(parse_map(&text).into_iter().map(|m| m.key));
+            } else {
+                let _ = std::fs::remove_file(e.path());
+            }
+        } else if let Some(key) = name.strip_suffix(".png").filter(|k| is_key(k)) {
+            posters.push((
+                key.to_string(),
+                m.len(),
+                m.modified().unwrap_or(std::time::UNIX_EPOCH),
+            ));
+        }
+    }
+    let mut out = Collected::default();
+    posters.retain(|(key, _, _)| {
+        if used.contains(key) {
+            return true;
+        }
+        let gone = std::fs::remove_file(c.png(key)).is_ok();
+        if gone {
+            out.orphans.push(key.clone());
+        }
+        !gone
+    });
+    let mut total: u64 = posters.iter().map(|p| p.1).sum();
+    let mut old: Vec<&(String, u64, std::time::SystemTime)> =
+        posters.iter().filter(|p| !keep.contains(&p.0)).collect();
+    old.sort_by_key(|p| (p.2, p.0.clone()));
+    for (key, len, _) in old {
+        if total <= cap {
+            break;
+        }
+        if std::fs::remove_file(c.png(key)).is_ok() {
+            total -= len;
+            out.evicted.push(key.clone());
+        }
+    }
+    out.orphans.sort();
+    out.bytes = total;
+    Ok(out)
+}
+
+/// A widget whose poster the cache provides.
+struct Wanted<'w> {
+    widget: &'w Widget,
+    key: String,
+    png: PathBuf,
+}
+
+fn wanted<'w>(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    list: &'w [Widget],
+    c: &Cache,
+    say: &mut dyn FnMut(String),
+) -> Vec<Wanted<'w>> {
+    list.iter()
+        .filter(|w| auto(w))
+        .filter_map(|w| match poster_key(cx, root_id, main_rel, w) {
+            Ok(key) => Some(Wanted {
+                widget: w,
+                png: c.png(&key),
+                key,
+            }),
+            Err(e) => {
+                say(format!("poster {}: {e}", w.id));
+                None
+            }
+        })
+        .collect()
+}
+
+fn entries(
+    want: &[Wanted],
+    guards: &BTreeMap<String, String>,
+    say: &mut dyn FnMut(String),
+) -> Vec<MapEntry> {
+    want.iter()
+        .filter(|w| w.png.is_file())
+        .filter_map(|w| {
+            let guard = guards.get(&w.widget.id)?;
+            if !tex_safe(guard) || !tex_safe(&w.widget.id) {
+                say(format!(
+                    "poster {}: its record holds characters TeX would read differently; it keeps the placeholder",
+                    w.widget.id
+                ));
+                return None;
+            }
+            Some(MapEntry {
+                id: w.widget.id.clone(),
+                guard: fold_spaces(guard),
+                key: w.key.clone(),
+            })
+        })
+        .collect()
+}
+
+fn job_of(main_file: &str) -> &str {
+    main_file.strip_suffix(".tex").unwrap_or(main_file)
+}
+
+/// The first pass: render the posters the previous compile's widgets lack
+/// and write the map. Does nothing before a first compile (no widget list),
+/// and creates the cache only when a widget needs it. Never fails the
+/// compile: problems are reported through `say`.
+pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnMut(String)) {
+    let Ok(list) = widgets(cx, root_id, main_rel) else {
+        return;
+    };
+    let Ok(o) = crate::outputs::outputs_of(cx, root_id, main_rel) else {
+        return;
+    };
+    let c = Cache::at(&o.dir);
+    let want = wanted(cx, root_id, main_rel, &list.widgets, &c, say);
+    if want.is_empty() && !c.present() {
+        return;
+    }
+    if let Err(e) = c.ensure() {
+        say(format!("posters: {e}"));
+        return;
+    }
+    if let Err(e) = write_readme(&c) {
+        say(format!("posters: {e}"));
+    }
+    let missing: Vec<&Wanted> = want
+        .iter()
+        .filter(|w| poster_source(w.widget, Some(&w.png)) == PosterSource::Placeholder)
+        .collect();
+    let mut rendered = 0;
+    if !missing.is_empty() {
+        let reqs: Vec<PosterRequest> = missing
+            .iter()
+            .map(|w| PosterRequest {
+                root_id: root_id.to_string(),
+                main_rel: main_rel.to_string(),
+                widget_id: w.widget.id.clone(),
+                out_path: w.png.to_string_lossy().into_owned(),
+                timeout_ms: None,
+            })
+            .collect();
+        match renderer(cx) {
+            None => say(format!(
+                "posters: {} not rendered: no poster renderer beside this program; placeholders stay",
+                reqs.len()
+            )),
+            Some(r) => {
+                for (w, res) in missing.iter().zip(r.render(cx, &reqs)) {
+                    match res {
+                        Ok(p) if Path::new(&p.path) == w.png => {
+                            rendered += 1;
+                            say(format!(
+                                "poster {}: rendered {}x{}",
+                                w.widget.id, p.width, p.height
+                            ));
+                        }
+                        Ok(p) => say(format!(
+                            "poster {}: the renderer wrote {} instead of the cache; ignored",
+                            w.widget.id, p.path
+                        )),
+                        Err(e) => say(format!("poster {}: {e}", w.widget.id)),
+                    }
+                }
+            }
+        }
+    }
+    let guards = sidecar_guards(cx, root_id, main_rel).unwrap_or_default();
+    let map = entries(&want, &guards, say);
+    if let Err(e) = write_map(&c, job_of(&o.main_file), &o.main_file, &map) {
+        say(format!("posters: {e}"));
+    }
+    say(format!(
+        "posters: {} cached, {rendered} rendered, {} placeholder",
+        want.len() - missing.len(),
+        want.len() - map.len()
+    ));
+}
+
+/// The second pass, after a successful compile: rewrite the map from the
+/// new widget list and collect garbage. Does nothing when the cache does
+/// not exist.
+pub fn after_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnMut(String)) {
+    let Ok(o) = crate::outputs::outputs_of(cx, root_id, main_rel) else {
+        return;
+    };
+    let c = Cache::at(&o.dir);
+    if !c.present() {
+        return;
+    }
+    let Ok(list) = widgets(cx, root_id, main_rel) else {
+        return;
+    };
+    let want = wanted(cx, root_id, main_rel, &list.widgets, &c, say);
+    let guards = sidecar_guards(cx, root_id, main_rel).unwrap_or_default();
+    let map = entries(&want, &guards, say);
+    let job = job_of(&o.main_file);
+    if let Err(e) = write_map(&c, job, &o.main_file, &map) {
+        say(format!("posters: {e}"));
+    }
+    let keep: BTreeSet<String> = want.iter().map(|w| w.key.clone()).collect();
+    let cap = cap_bytes();
+    match collect(&c, &o.dir, job, &keep, cap) {
+        Ok(g) => {
+            if !g.orphans.is_empty() || !g.evicted.is_empty() {
+                say(format!(
+                    "posters: removed {} unused, {} over the cap",
+                    g.orphans.len(),
+                    g.evicted.len()
+                ));
+            }
+            if g.bytes > cap {
+                say(format!(
+                    "posters: this paper's posters alone ({} bytes) exceed the cache cap ({cap} bytes)",
+                    g.bytes
+                ));
+            }
+        }
+        Err(e) => say(format!("posters: {e}")),
+    }
+}
+
+/// The poster file of a widget the cache provides, when it exists: for the
+/// bundle export and anything else that wants the PDF's picture.
+pub fn cached_poster(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Option<PathBuf> {
+    if !auto(w) {
+        return None;
+    }
+    let o = crate::outputs::outputs_of(cx, root_id, main_rel).ok()?;
+    let c = Cache::at(&o.dir);
+    let png = c.png(&poster_key(cx, root_id, main_rel, w).ok()?);
+    (c.present() && png.is_file()).then_some(png)
+}
+
+/// Runs the app binary's headless renderer (`maleficium --render-posters
+/// <root>`): requests as JSON lines on its stdin, results on its stdout.
+pub struct ProcessRenderer {
+    exe: PathBuf,
+}
+
+impl ProcessRenderer {
+    /// The app binary: this program when it is the app (`maleficium --mcp`),
+    /// else `maleficium` beside it (the MCP sidecar's install layout).
+    pub fn find() -> Option<Self> {
+        let exe = std::env::current_exe().ok()?;
+        let name = if cfg!(windows) {
+            "maleficium.exe"
+        } else {
+            "maleficium"
+        };
+        let app = if exe.file_name().is_some_and(|n| n == name) {
+            exe
+        } else {
+            exe.parent()?.join(name)
+        };
+        app.is_file().then_some(ProcessRenderer { exe: app })
+    }
+}
+
+/// Whether a window can open here. Linux needs a display server; the
+/// renderer would fail at startup without one.
+fn display_available() -> bool {
+    if cfg!(target_os = "linux") {
+        ["DISPLAY", "WAYLAND_DISPLAY"]
+            .iter()
+            .any(|v| std::env::var_os(v).is_some_and(|s| !s.is_empty()))
+    } else {
+        true
+    }
+}
+
+impl PosterRenderer for ProcessRenderer {
+    fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterRendered, String>> {
+        let all = |e: String| -> Vec<Result<PosterRendered, String>> {
+            reqs.iter().map(|_| Err(e.clone())).collect()
+        };
+        if reqs.is_empty() {
+            return Vec::new();
+        }
+        if !display_available() {
+            return all(String::from("no display for the poster renderer"));
+        }
+        let root = match crate::fs::session_root(cx, &reqs[0].root_id) {
+            Ok(r) => r,
+            Err(e) => return all(e),
+        };
+        run_process(&self.exe, &root, reqs).unwrap_or_else(all)
+    }
+}
+
+fn run_process(
+    exe: &Path,
+    root: &Path,
+    reqs: &[PosterRequest],
+) -> Result<Vec<Result<PosterRendered, String>>, String> {
+    use std::io::{BufRead, Write};
+    use std::process::Stdio;
+    let mut child = crate::quiet_command(exe)
+        .arg("--render-posters")
+        .arg(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("cannot start the poster renderer: {e}"))?;
+    let mut input = String::new();
+    for r in reqs {
+        input.push_str(&serde_json::to_string(r).map_err(|e| e.to_string())?);
+        input.push('\n');
+    }
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("the poster renderer has no output")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let budget: u64 = reqs
+        .iter()
+        .map(|r| r.timeout_ms.unwrap_or(super::DEFAULT_TIMEOUT_MS))
+        .sum::<u64>()
+        + PROCESS_SLACK_MS;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget);
+    let mut out = Vec::with_capacity(reqs.len());
+    while out.len() < reqs.len() {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let Ok(line) = rx.recv_timeout(left) else {
+            break;
+        };
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+        out.push(if v["ok"] == serde_json::Value::Bool(true) {
+            serde_json::from_value::<PosterRendered>(v["result"].clone())
+                .map_err(|e| format!("the poster renderer answered oddly: {e}"))
+        } else {
+            Err(v["error"]
+                .as_str()
+                .unwrap_or("the poster renderer failed")
+                .to_string())
+        });
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    while out.len() < reqs.len() {
+        out.push(Err(String::from(
+            "the poster renderer stopped before answering",
+        )));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests;
