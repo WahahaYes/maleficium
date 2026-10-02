@@ -219,10 +219,15 @@ mod tests {
         let h = page(false);
         assert!(h.contains("setAttribute('sandbox', 'allow-scripts')"));
         assert!(!h.contains("allow-same-origin"));
+        let (markup, script) = h.split_once("<script>").unwrap();
         assert!(
-            !h.contains("<iframe"),
+            !markup.contains("<iframe"),
             "frames are made by the page's own script, after its listener"
         );
+        // A single-file widget's wrapper frames it with the same sandbox and
+        // names only its own frame origins.
+        assert!(script.contains("<iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\""));
+        assert!(script.contains("var WRAP_DIRECTIVE = 'frame-src';"));
     }
 
     #[test]
@@ -234,8 +239,8 @@ mod tests {
         }
         assert!(single.contains(&format!("content=\"{}\"", fold::SINGLE_FILE_READER_POLICY)));
         assert!(folder.contains(&format!("content=\"{}\"", fold::FOLDER_READER_POLICY)));
-        assert!(!single.contains("frame-src"));
-        assert!(folder.contains("frame-src 'self'"));
+        assert!(!fold::policy_of(&single).contains("frame-src"));
+        assert!(fold::policy_of(&folder).contains("frame-src 'self'"));
         assert!(single.contains("default-src 'none'") && single.contains("connect-src 'none'"));
         assert!(single.contains("object-src blob:"));
     }

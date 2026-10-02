@@ -59,6 +59,16 @@ fn meta_csp(policy: &str) -> String {
     format!("<meta http-equiv=\"Content-Security-Policy\" content=\"{policy}\">")
 }
 
+/// The policy a page's first meta CSP carries (tests read the page's own
+/// policy, not its script text).
+#[cfg(test)]
+pub(crate) fn policy_of(html: &str) -> &str {
+    let tag = "<meta http-equiv=\"Content-Security-Policy\" content=\"";
+    html.split_once(tag)
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map_or("", |(p, _)| p)
+}
+
 /// Puts the policy meta first in `<head>` (creating the head position when
 /// the document has none), and a charset meta behind it when the document
 /// declares none, so the policy is the first element that exists.
