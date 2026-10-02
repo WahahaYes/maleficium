@@ -14,7 +14,10 @@ pub fn run() {
             commands::compile::cancel_compile,
             commands::history::history_get,
             commands::history::history_restore,
-            commands::preview::preview_in_browser
+            commands::preview::preview_in_browser,
+            commands::widget_approval::widget_approve,
+            commands::widget_approval::widget_revoke,
+            commands::widget_approval::widget_auto_approve
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
