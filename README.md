@@ -148,11 +148,13 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 - No automatic updates. Check the releases page for new versions.
 - Until 1.0, settings and history may not carry over between versions.
 - The engine is Tectonic only. Documents that need `biber` or shell escape depend on tools outside the app, and the pre-compile check flags them.
+- Exported paper bundles keep widgets offline, or limited to the origins a widget declares, through the browser's content security policy. Browsers are not egress-proof: some open connections the policy does not stop (preconnects, prerenders), so a bundle limits what loads, not every connection.
 
 ## Documentation
 
 - [Building from source](docs/BUILDING.md), including how releases are cut
 - [Contributing](docs/CONTRIBUTING.md): setup, checks, and house rules
+- [Embedding a YouTube or Vimeo video](docs/VIDEO-EMBEDS.md) in a paper bundle, and what it costs
 - [Test harnesses](e2e/README.md)
 - [Built-in templates](src-tauri/templates/README.md): origins and license
 - [Privacy](PRIVACY.md): what the app and its MCP server store, read, and send
