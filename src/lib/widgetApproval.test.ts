@@ -90,6 +90,15 @@ describe('widgets model', () => {
     expect(m.get().reviews.sim).toBeUndefined();
   });
 
+  it('hides a loaded review on request', async () => {
+    const f = fakeIo();
+    const m = createWidgetsModel(f.io, 'r', 'main.tex');
+    await m.refresh();
+    await m.loadReview('sim');
+    m.hideReview('sim');
+    expect(m.get().reviews.sim).toBeUndefined();
+  });
+
   it('revokes by the widget folder path', async () => {
     const f = fakeIo();
     const m = createWidgetsModel(f.io, 'r', 'main.tex');
