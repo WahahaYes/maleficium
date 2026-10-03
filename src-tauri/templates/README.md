@@ -29,11 +29,12 @@ The welcome tour opens on first launch and is not listed in the gallery.
 
 ### Classes, packages, and fonts
 
-The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License). Every template also carries `maleficium-footer.sty` and `maleficium-mark.pdf`, which draw the "Made with Maleficium" mark bottom right on each page; delete the `\usepackage{maleficium-footer}` line from a project to remove it. The look is shared: the Resume and CV carry `maleficium-cv.sty`, every other template except the journal carries `maleficium-doc.sty` (Slides carries `maleficium-slides.sty`), each folder with its own copy so a project stays self-contained. The journal keeps plain IEEEtran formatting, because venues require it. Loading a class or package puts no terms on the document that uses it.
+The templates only name these; Maleficium does not ship them. The engine downloads them from the Tectonic bundle at compile time, each under its own license (mostly the LaTeX Project Public License). The font is Libertinus (SIL Open Font License). Every template also carries `maleficium-footer.sty` and `maleficium-mark.pdf`, which draw the "Made with Maleficium" mark bottom right on each page; delete the `\usepackage{maleficium-footer}` line from a project to remove it. The look is shared: the Resume and CV load `maleficium-cv.sty`, every other template except the journal loads `maleficium-doc.sty` (Slides loads `maleficium-slides.sty`). Those files live once in `shared/` and are overlaid into each template when the app builds (`SHARED_ALL` / `SHARED_SOME` in `core/build.rs`), so a new project still gets its own copies and stays self-contained. The journal keeps plain IEEEtran formatting, because venues require it. Loading a class or package puts no terms on the document that uses it.
 
 ## Adding a built-in template
 
 1. Create `<id>/` with a `template.json` (`id`, `name`, `description`, `category`, `main`) and the project files.
-2. Start the main file with the same two-line CC0 header the others use.
-3. Add a row to the table above. If the template is adapted from outside work, name the source in **Origin**, and only adapt work whose license allows release under CC0.
-4. Check it compiles offline in the app.
+2. If it loads a shared style file, add it to the map in `core/build.rs`; never copy a shared file into the template folder (the build refuses duplicates).
+3. Start the main file with the same two-line CC0 header the others use.
+4. Add a row to the table above. If the template is adapted from outside work, name the source in **Origin**, and only adapt work whose license allows release under CC0.
+5. Check it compiles offline in the app.
