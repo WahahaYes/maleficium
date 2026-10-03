@@ -19,15 +19,18 @@ This product bundles third-party VSCode color themes under src/assets/themes/
 - GitHub dark default and light default, Copyright (c) 2020 Primer
 - Catppuccin Mocha and Latte, Copyright (c) 2021 Catppuccin
 
-This product bundles engine sidecars packed by scripts/fetch-sidecars.sh
-into the installable next to the app binary:
+This product bundles one engine sidecar, maleficium-engine, built by
+scripts/build-engine.sh and packed into the installable next to the app
+binary. It contains:
 
-- Tectonic 0.17.0 (official release assets, redistributed unmodified),
-  MIT-licensed.
-- SyncTeX command-line tool, self-built from jlaurens/synctex at pinned
-  commit 04cf8e3e8665ff203248d7af78ee1129afbc1b64, under its permissive
-  MIT-style license (Copyright Jerome Laurens 2008-2024, plus a
-  non-advertising clause).
+- Tectonic 0.17.0, built from its published source, MIT-licensed.
+- latexml 0.7.6 (latexml-oxide), built from its published source, released
+  under CC0 1.0; its dependencies carry their own licences (see the
+  engine's Cargo.lock).
+- The SyncTeX parser from jlaurens/synctex at commit
+  04cf8e3e8665ff203248d7af78ee1129afbc1b64, vendored unmodified in
+  src-tauri/engine/synctex under its MIT licence (Copyright Jerome Laurens
+  2008-2024).
 
 The built-in project templates under src-tauri/templates/ are original to
 Maleficium and dedicated to the public domain under CC0 1.0

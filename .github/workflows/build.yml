@@ -47,12 +47,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
       # The engine links ICU, freetype, graphite2, libpng and fontconfig (found
-      # through pkg-config); icu4c is keg-only. Static linking is still open.
+      # through pkg-config; build-engine.sh adds the keg-only icu4c). Static
+      # linking is still open.
       - name: macOS engine libraries
         if: runner.os == 'macOS'
         run: |
           brew install pkg-config icu4c graphite2 freetype libpng fontconfig harfbuzz
-          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
       # Windows: the engine's C libraries come from vcpkg, statically linked
       # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
       # find the same triplet through VCPKGRS_TRIPLET). The installed tree is
@@ -80,15 +80,6 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install `
             "freetype:$t" "graphite2:$t" "harfbuzz[graphite2]:$t" "icu:$t" `
             "libpng:$t" "fontconfig:$t" "libxml2:$t" "libxslt:$t"
-      # SyncTeX builds under MINGW64 (gcc + static zlib); the app itself
-      # builds with the runner's MSVC toolchain.
-      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
-        if: runner.os == 'Windows'
-        with:
-          msystem: MINGW64
-          update: false
-          install: >-
-            curl git python tar mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -110,13 +101,8 @@ jobs:
             src-tauri
             src-tauri/engine
       - run: npm ci
-      - name: Sidecars
-        if: runner.os != 'Windows'
-        run: sh scripts/fetch-sidecars.sh
-      - name: Sidecars
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
-        run: sh scripts/fetch-sidecars.sh
+      - name: Engine
+        run: sh scripts/build-engine.sh
 
       # The same on every OS from here.
       - name: Package
