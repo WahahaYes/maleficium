@@ -41,7 +41,7 @@ pub enum WidgetType {
 }
 
 impl WidgetType {
-    fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "model" => Self::Model,
             "video" => Self::Video,
@@ -150,17 +150,18 @@ pub struct WidgetList {
 }
 
 /// One parsed `widget|...` line, before the PDF supplies page and rect.
-struct Record {
-    id: String,
-    kind: WidgetType,
-    runtime: Option<String>,
-    label: Option<String>,
-    figure: Option<String>,
-    theme: String,
-    poster: Option<String>,
-    sources: Vec<WidgetSource>,
-    options: Vec<WidgetOption>,
-    alt: String,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Record {
+    pub id: String,
+    pub kind: WidgetType,
+    pub runtime: Option<String>,
+    pub label: Option<String>,
+    pub figure: Option<String>,
+    pub theme: String,
+    pub poster: Option<String>,
+    pub sources: Vec<WidgetSource>,
+    pub options: Vec<WidgetOption>,
+    pub alt: String,
 }
 
 fn opt(s: &str) -> Option<String> {
@@ -199,7 +200,7 @@ fn pairs(field: &str, what: &str, id: &str) -> Result<Vec<(String, String)>, Str
     Ok(out)
 }
 
-fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
+pub fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
     let mut lines = text.lines();
     match lines.next() {
         Some(SIDECAR_HEADER) => {}
