@@ -1,0 +1,16 @@
+% maleficium-links.sty -- the Maleficium accent for links: violet links
+% instead of hyperref boxes. Safe under any class, since it sets no
+% fonts or headings; load after cite-like packages, before
+% maleficium-footer. Dedicated to the public domain under CC0 1.0.
+% https://creativecommons.org/publicdomain/zero/1.0/
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{maleficium-links}[2026/10/03 Maleficium link colours]
+
+\RequirePackage{xcolor}
+\RequirePackage{hyperref}
+\providecolor{mlaccent}{HTML}{5B2A86}
+\hypersetup{colorlinks=true, linkcolor=mlaccent, citecolor=mlaccent,
+  urlcolor=mlaccent, pdfborder={0 0 0}}
+
+\endinput

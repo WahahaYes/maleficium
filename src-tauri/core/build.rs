@@ -39,6 +39,7 @@ const SHARED_SOME: &[(&str, &[&str])] = &[
     ),
     ("maleficium-cv.sty", &["cv", "resume"]),
     ("maleficium-slides.sty", &["beamer"]),
+    ("maleficium-links.sty", &["journal"]),
 ];
 
 /// Embeds `templates/<id>/**` as `TEMPLATES: &[(id, &[(rel path, bytes)])]`,
