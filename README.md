@@ -2,6 +2,8 @@
 
 > **maleficium** _(n.)_: an act of evil sorcery. Also known as debugging LaTeX. This makes the ritual easier.
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/wahahayes-maleficium)](https://m8ven.ai/mcp/wahahayes/maleficium) [![M8ven Verified](https://m8ven.ai/badge/mcp/wahahayes-maleficium?variant=verified)](https://m8ven.ai/mcp/wahahayes/maleficium) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Maleficium is a LaTeX editor that runs entirely on your machine. Write on one side, read the PDF on the other, and click between them. It ships its own TeX engine, so there is nothing else to install.
 
 ![Maleficium with a LaTeX project open: file tree and outline, the editor, and the compiled PDF side by side](docs/screenshots/editor.png)
