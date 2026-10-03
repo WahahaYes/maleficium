@@ -37,6 +37,11 @@ maleficium-mcp = { path = "mcp" }
 maleficium-structure = { path = "structure" }
 maleficium-events = { path = "events" }
 maleficium-index = { path = "index" }
+open = "5.4.4"
+
+# The poster renderer kills a render window's web process on timeout.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 
 [dev-dependencies]
 maleficium-core = { path = "core", features = ["test-support"] }

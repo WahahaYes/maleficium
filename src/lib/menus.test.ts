@@ -65,6 +65,8 @@ const actions: CommandActions = {
   compileFile: noop,
   makeOffline: noop,
   showPrecheck: noop,
+  installInteractive: noop,
+  showWidgets: noop,
   toggleAutoCompile: noop,
   exportPdf: noop,
   newFromTemplate: noop,
@@ -72,6 +74,9 @@ const actions: CommandActions = {
   importTemplate: noop,
   showWelcome: noop,
   exportZip: noop,
+  exportBundleFolder: noop,
+  exportBundleSingleFile: noop,
+  previewInBrowser: noop,
   zoomPreview: noop,
   cancelCompile: noop,
   forwardSync: noop,
@@ -108,6 +113,44 @@ describe('command registry', () => {
     // Leaf ids stay unique even counting submenu children.
     const leafIds = all.flatMap((c) => (c.children ? c.children.map((k) => k.id) : [c.id]));
     expect(new Set(leafIds).size).toBe(leafIds.length);
+  });
+  it('preview in browser is a File command that needs a compiled pdf', () => {
+    const calls: string[] = [];
+    const a = { ...actions, previewInBrowser: () => calls.push('preview') };
+    const find = (ctx: typeof baseCtx) =>
+      buildMenus(ctx, a)
+        .find((m) => m.id === 'file')!
+        .commands.find((c) => c.id === 'file.preview-in-browser')!;
+    const open = find({ ...baseCtx, pdfOpen: true });
+    expect(open.label).toBe('Preview in Browser');
+    expect(open.enabled).toBe(true);
+    void open.run?.();
+    expect(calls).toEqual(['preview']);
+    // Red control: no compiled pdf, no preview.
+    expect(find({ ...baseCtx, pdfOpen: false }).enabled).toBe(false);
+  });
+  it('paper bundle export is a File submenu that needs a compiled pdf', () => {
+    const calls: string[] = [];
+    const a = {
+      ...actions,
+      exportBundleFolder: () => calls.push('folder'),
+      exportBundleSingleFile: () => calls.push('single-file'),
+    };
+    const find = (ctx: typeof baseCtx) =>
+      buildMenus(ctx, a)
+        .find((m) => m.id === 'file')!
+        .commands.find((c) => c.id === 'file.export-bundle')!;
+    const open = find({ ...baseCtx, pdfOpen: true });
+    expect(open.children?.map((k) => [k.id, k.label])).toEqual([
+      ['file.export-bundle-folder', 'Folder for Web Hosting…'],
+      ['file.export-bundle-single-file', 'Single File for Email…'],
+    ]);
+    for (const k of open.children ?? []) void k.run?.();
+    expect(calls).toEqual(['folder', 'single-file']);
+    // Red control: without a compiled pdf nothing in the submenu is enabled.
+    const closed = find({ ...baseCtx, pdfOpen: false });
+    expect(closed.enabled).toBe(false);
+    expect(closed.children?.every((k) => !k.enabled)).toBe(true);
   });
   it('zoom and fit are one View submenu with their chords', () => {
     const calls: string[] = [];
@@ -267,5 +310,37 @@ describe('command registry', () => {
     expect(find({ ...baseCtx, canUndoDelete: false }, 'edit.undo-delete').enabled).toBe(false);
     expect(find({ ...baseCtx, reloadPending: true }, 'file.reload').visible).toBe(true);
     expect(find(baseCtx, 'file.reload').visible).toBe(false);
+  });
+});
+
+describe('install interactive package command', () => {
+  it('is a Tools command enabled with a project and listed in the palette', async () => {
+    const { paletteCommands } = await import('./palette');
+    const find = (ctx: MenuContext) =>
+      buildMenus(ctx, actions)
+        .find((s) => s.id === 'tools')!
+        .commands.find((c) => c.id === 'tools.install-interactive')!;
+    expect(find(baseCtx).enabled).toBe(true);
+    expect(find({ ...baseCtx, hasProject: false }).enabled).toBe(false);
+    const ids = paletteCommands(buildMenus(baseCtx, actions)).map((c) => c.id);
+    expect(ids).toContain('tools.install-interactive');
+  });
+});
+
+describe('widgets panel command', () => {
+  it('is View > Widgets, matching the panel the MCP userAction names', async () => {
+    const { paletteCommands } = await import('./palette');
+    const { WIDGETS_PANEL_PATH } = await import('./widgets.view');
+    const find = (ctx: MenuContext) => {
+      const view = buildMenus(ctx, actions).find((s) => s.id === 'view')!;
+      return { view, cmd: view.commands.find((c) => c.id === 'view.widgets')! };
+    };
+    const { view, cmd } = find(baseCtx);
+    expect(`${view.title} > ${cmd.label}`).toBe(WIDGETS_PANEL_PATH);
+    expect(cmd.enabled).toBe(true);
+    expect(find({ ...baseCtx, hasProject: false }).cmd.enabled).toBe(false);
+    expect(paletteCommands(buildMenus(baseCtx, actions)).map((c) => c.id)).toContain(
+      'view.widgets',
+    );
   });
 });

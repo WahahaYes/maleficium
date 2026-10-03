@@ -1,0 +1,104 @@
+* {
+  box-sizing: border-box;
+}
+body.m-reader {
+  margin: 0;
+  background: var(--m-color-bg);
+  color: var(--m-color-text);
+  font: var(--m-size-base)/var(--m-leading) var(--m-font-body);
+  color-scheme: light dark;
+}
+.m-reader[data-theme='dark'] {
+  color-scheme: dark;
+}
+.m-reader main {
+  max-width: var(--m-figure-max);
+  margin: 0 auto;
+  padding: var(--m-space-5) var(--m-space-3);
+}
+.m-reader header,
+.m-reader figcaption,
+.m-reader .note {
+  max-width: var(--m-measure);
+}
+.m-reader h1,
+.m-reader h2 {
+  font-family: var(--m-font-heading);
+  line-height: 1.2;
+}
+.m-reader h1 {
+  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale) * var(--m-scale));
+  margin: 0 0 var(--m-space-2);
+}
+.m-reader h2 {
+  font-size: calc(var(--m-size-base) * var(--m-scale));
+  margin: var(--m-space-5) 0 var(--m-space-3);
+  border-top: 1px solid var(--m-color-rule);
+  padding-top: var(--m-space-3);
+}
+.m-reader .authors,
+.m-reader .note {
+  color: var(--m-color-muted);
+}
+.m-reader a {
+  color: var(--m-color-link);
+}
+.m-reader a:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader object {
+  display: block;
+  width: 100%;
+  height: 80vh;
+  background: var(--m-color-surface);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+}
+.m-reader figure {
+  margin: 0 0 var(--m-space-5);
+}
+.m-reader .frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--ar, 4/3);
+  background: var(--m-figure-bg);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  overflow: hidden;
+}
+.m-reader .frame iframe,
+.m-reader .frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.m-reader .frame img {
+  object-fit: contain;
+}
+.m-reader .frame iframe {
+  opacity: 0;
+  pointer-events: none;
+}
+.m-reader figure.live iframe {
+  opacity: 1;
+  pointer-events: auto;
+}
+.m-reader figure.live .poster {
+  display: none;
+}
+.m-reader figcaption {
+  margin-top: var(--m-space-2);
+  font-size: var(--m-size-small);
+}
+.m-reader figure[data-state='error'] figcaption::after {
+  content: ' (the interactive view failed; the poster is shown)';
+  color: var(--m-color-muted);
+}
+.m-reader .unsupported {
+  padding: var(--m-space-3);
+  background: var(--m-color-target);
+  border-radius: var(--m-radius);
+}

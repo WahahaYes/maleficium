@@ -30,6 +30,7 @@ import { foldProgress, IDLE_PROGRESS, progressLabel } from '../lib/compileProgre
 import { INITIAL_AUTO, parseAutoCompile, stepAuto, type AutoInput } from '../lib/autoCompile';
 import { DEVICE_PREF_KEYS, store } from '../lib/app-store';
 import { transport } from '../lib/event-transport';
+import { findingNeedsInstall, missingNeedsInstall } from '../lib/interactiveInstall';
 import type { Actor, PrecheckPanelVia } from '../lib/generated/events';
 import type { Finding } from '../lib/generated/structure';
 import { findingsKey, loadPrecheckPopup, savePrecheckPopup, shouldPop } from '../lib/precheckPanel';
@@ -98,6 +99,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
   const [progress, setProgress] = useState(IDLE_PROGRESS);
   const [precheck, setPrecheck] = useState<PrecheckFindings | null>(null);
   const [precheckOpen, setPrecheckOpen] = useState(false);
+  /** The project lacks maleficium-interactive.sty (a warning or the compile said so). */
+  const [interactiveMissing, setInteractiveMissing] = useState(false);
   const [precheckPopup, setPrecheckPopupState] = useState(loadPrecheckPopup);
   /** Finding-set key last popped per target. */
   const precheckShownRef = useRef(new Map<string, string>());
@@ -300,6 +303,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     if (src) {
       try {
         const findings = await precompileChecks(src.rootId, src.mainRel);
+        setInteractiveMissing(findings.some(findingNeedsInstall));
         for (const f of findings) {
           emit({
             scope: 'compile',
@@ -316,6 +320,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         );
       } catch (e) {
         setPrecheck(null);
+        setInteractiveMissing(false);
         emit({
           scope: 'compile',
           kind: 'warn',
@@ -337,10 +342,12 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
           log: 'compile target is outside the project: ' + activeTarget,
           failure: 'engine-error',
           missing: null,
+          approvals: [],
         };
     const logText = compileLogText(r, src?.mainRel);
     setLog(logText);
     setCompiled(r.ok && r.pdfUrl ? { text: logText, pdfUrl: String(r.pdfUrl) } : null);
+    if (missingNeedsInstall(r.missing)) setInteractiveMissing(true);
     if (r.missing) {
       const m = r.missing;
       const line = missingLine(m, r.ok)!;
@@ -357,6 +364,9 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
         },
       });
     }
+    // The widgets this compile found waiting for the user reach the bus, where
+    // the approval prompt queue picks them up.
+    for (const e of r.approvals) emit(e);
     if (r.ok && r.pdfUrl) {
       finish('success');
       setCompileStart(null);
@@ -482,6 +492,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     feedAuto.current({ kind: 'reset' });
     setPrecheck(null);
     setPrecheckOpen(false);
+    setInteractiveMissing(false);
   }, [projectId]);
 
   /** Record a run's findings and pop the panel when the pop rule says so. */
@@ -514,6 +525,20 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
       },
     });
   }
+  /** The interactive package is in the project: drop its warning and the fix offer. */
+  const resolveInteractive = () => {
+    setInteractiveMissing(false);
+    setPrecheck((p) => {
+      if (!p) return p;
+      const findings = p.findings.filter((f) => !findingNeedsInstall(f));
+      if (findings.length === p.findings.length) return p;
+      if (findings.length === 0) {
+        setPrecheckOpen(false);
+        return null;
+      }
+      return { ...p, findings };
+    });
+  };
   /** Open the panel on request (status-bar chip or Tools menu). */
   const openPrecheck = () => {
     if (precheck) announcePanel(precheck, 'request', 'user');
@@ -633,5 +658,7 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     closePrecheck,
     precheckPopup,
     setPrecheckPopup,
+    interactiveMissing,
+    resolveInteractive,
   };
 }

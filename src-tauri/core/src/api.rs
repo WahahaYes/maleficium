@@ -13,7 +13,7 @@
 use crate::Core;
 
 use maleficium_events::{
-    BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
+    BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
 };
 use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
@@ -22,15 +22,19 @@ use maleficium_structure::{Diagnostic, Outline};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::bundle::BundleExported;
 use crate::eventlog::RotateReport;
 use crate::export::Exported;
 use crate::fs::FileStat;
+use crate::interactive::InstallResult;
 use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
 use crate::structure::Precheck;
 use crate::synctex::{ForwardHit, InverseHit};
 use crate::templates::{Created, TemplateInfo, TemplateList};
 use crate::watch::WatchEvent;
+use crate::widget_approval::{WidgetReview, WidgetsStatus};
+use crate::widgets::WidgetList;
 
 /// A granted project: its canonical path and the session-root id the other
 /// operations take. The Tauri adapter mints the fs-scope grant beside this.
@@ -68,6 +72,11 @@ params! {
     TemplateSaveProjectParams { root_id: String, info: TemplateInfo },
     TemplateImportFolderParams { dir: String, info: TemplateInfo },
     TemplateWelcomeParams {},
+    InteractiveInstallParams { root_id: String, overwrite: bool },
+    WidgetsParams { root_id: String, main_rel: String },
+    WidgetsStatusParams { root_id: String, main_rel: String },
+    WidgetReviewParams { root_id: String, main_rel: String, widget: String },
+    ExportBundleParams { root_id: String, main_rel: String, dest: String, profile: BundleProfile, size_cap_bytes: Option<u64> },
     ForwardSyncParams { root_id: String, main_rel: String, tex_rel: String, line: u32 },
     InverseSyncParams { root_id: String, main_rel: String, page: u32, x: f32, y: f32 },
     StructureOutlineParams { text: String },
@@ -150,6 +159,11 @@ operations! {
     TemplateSaveProject via template_save_project(TemplateSaveProjectParams) -> TemplateInfo,
     TemplateImportFolder via template_import_folder(TemplateImportFolderParams) -> TemplateInfo,
     TemplateWelcome via template_welcome(TemplateWelcomeParams) -> Created,
+    InteractiveInstall via interactive_install(InteractiveInstallParams) -> InstallResult,
+    Widgets via widgets(WidgetsParams) -> WidgetList,
+    WidgetsStatus via widgets_status(WidgetsStatusParams) -> WidgetsStatus,
+    WidgetReview via widget_review(WidgetReviewParams) -> Box<WidgetReview>,
+    ExportBundle via export_bundle(ExportBundleParams) -> BundleExported,
     ForwardSync via forward_sync(ForwardSyncParams) -> ForwardHit,
     InverseSync via inverse_sync(InverseSyncParams) -> InverseHit,
     StructureOutline via structure_outline(StructureOutlineParams) -> Outline,
@@ -261,6 +275,35 @@ fn template_import_folder(
 
 fn template_welcome(_cx: &Core, _p: TemplateWelcomeParams) -> Result<Created, String> {
     crate::templates::welcome()
+}
+
+fn interactive_install(cx: &Core, p: InteractiveInstallParams) -> Result<InstallResult, String> {
+    crate::interactive::install_checked(cx, &p.root_id, p.overwrite)
+}
+
+fn export_bundle(cx: &Core, p: ExportBundleParams) -> Result<BundleExported, String> {
+    crate::bundle::export_bundle(
+        cx,
+        &p.root_id,
+        &p.main_rel,
+        &p.dest,
+        p.profile,
+        p.size_cap_bytes,
+    )
+}
+
+fn widgets(cx: &Core, p: WidgetsParams) -> Result<WidgetList, String> {
+    crate::widgets::widgets(cx, &p.root_id, &p.main_rel)
+}
+
+/// Read-only: approving, revoking and the auto-approval switch are not
+/// operations of this contract (see `widget_approval`).
+fn widgets_status(cx: &Core, p: WidgetsStatusParams) -> Result<WidgetsStatus, String> {
+    crate::widget_approval::widgets_status(cx, &p.root_id, &p.main_rel)
+}
+
+fn widget_review(cx: &Core, p: WidgetReviewParams) -> Result<Box<WidgetReview>, String> {
+    crate::widget_approval::review(cx, &p.root_id, &p.main_rel, &p.widget).map(Box::new)
 }
 
 fn forward_sync(cx: &Core, p: ForwardSyncParams) -> Result<ForwardHit, String> {
@@ -483,6 +526,38 @@ pub fn typescript() -> String {
         TemplateSaveProjectParams::decl(&cfg),
         TemplateImportFolderParams::decl(&cfg),
         TemplateWelcomeParams::decl(&cfg),
+        InteractiveInstallParams::decl(&cfg),
+        InstallResult::decl(&cfg),
+        WidgetsParams::decl(&cfg),
+        crate::widgets::WidgetType::decl(&cfg),
+        crate::widgets::WidgetRect::decl(&cfg),
+        crate::widgets::WidgetSource::decl(&cfg),
+        crate::widgets::WidgetOption::decl(&cfg),
+        crate::widgets::WidgetCsp::decl(&cfg),
+        crate::widgets::Widget::decl(&cfg),
+        WidgetList::decl(&cfg),
+        WidgetsStatusParams::decl(&cfg),
+        WidgetReviewParams::decl(&cfg),
+        crate::widget_approval::ApprovalKind::decl(&cfg),
+        crate::widget_approval::ApprovedVia::decl(&cfg),
+        crate::widget_approval::WidgetApproved::decl(&cfg),
+        crate::widget_approval::ApprovalRequired::decl(&cfg),
+        crate::widget_approval::WidgetApprovalStatus::decl(&cfg),
+        crate::widget_approval::WidgetUnavailable::decl(&cfg),
+        WidgetsStatus::decl(&cfg),
+        crate::widget_approval::FileChange::decl(&cfg),
+        crate::widget_approval::ReviewFile::decl(&cfg),
+        WidgetReview::decl(&cfg),
+        crate::widget_approval::WidgetApproveParams::decl(&cfg),
+        crate::widget_approval::WidgetRevokeParams::decl(&cfg),
+        crate::widget_approval::WidgetAutoApproveParams::decl(&cfg),
+        crate::widgets::poster::PosterRequest::decl(&cfg),
+        crate::widgets::poster::PosterRendered::decl(&cfg),
+        crate::widgets::poster::PosterOutcome::decl(&cfg),
+        ExportBundleParams::decl(&cfg),
+        crate::bundle::BundleWarningKind::decl(&cfg),
+        crate::bundle::BundleWarning::decl(&cfg),
+        BundleExported::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),
@@ -528,7 +603,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange } from './events';\n\
+         import type { BatchFile, BundleProfile, BusEvent, InstallOutcome, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );
@@ -578,6 +653,50 @@ mod tests {
         assert!(matches!(resp, Response::TemplatesList(_)));
         let v = serde_json::to_value(&resp).unwrap();
         assert_eq!(v["op"], "templatesList");
+    }
+
+    #[test]
+    fn interactive_install_round_trips_and_rejects_unknown_roots() {
+        let cx = &Core::default();
+        let err = dispatch(
+            cx,
+            Request::InteractiveInstall(InteractiveInstallParams {
+                root_id: "nope".into(),
+                overwrite: false,
+            }),
+        )
+        .unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn widgets_round_trips_and_rejects_unknown_roots() {
+        let cx = &Core::default();
+        let req = Request::Widgets(WidgetsParams {
+            root_id: "nope".into(),
+            main_rel: "main.tex".into(),
+        });
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["op"], "widgets");
+        assert_eq!(json["params"]["mainRel"], "main.tex");
+        assert!(!dispatch(cx, req).unwrap_err().is_empty());
+    }
+
+    /// The shared contract (desktop, the future HTTP route, anything that
+    /// dispatches requests) can read widget approvals but never write one:
+    /// approve, revoke and auto-approval are desktop user actions only.
+    #[test]
+    fn no_operation_approves_revokes_or_sets_auto_approval() {
+        use ts_rs::TS;
+        let cfg = ts_rs::Config::new().with_large_int("number");
+        let ops = Request::decl(&cfg).to_lowercase();
+        assert!(ops.contains("widgetsstatus") && ops.contains("widgetreview"));
+        for word in ["approve", "revoke", "auto", "grantwidget", "trust"] {
+            assert!(!ops.contains(word), "an operation names `{word}`: {ops}");
+        }
+        let req = serde_json::json!({"op": "widgetApprove", "params": {"rootId": "r",
+            "mainRel": "main.tex", "widget": "fig-demo", "digest": "0"}});
+        assert!(serde_json::from_value::<Request>(req).is_err());
     }
 
     #[test]

@@ -160,14 +160,17 @@ pub struct CompileLine {
 /// How a desktop compile ended. `pdfUrl` is set on success; `failure` says
 /// why there is none. `missing` names the dependency the run lacked, and is
 /// also set beside a pdf when the pinned bundle changed under it. `message`
-/// is the human-readable failure, empty on success.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+/// is the human-readable failure, empty on success. `approvals` are the
+/// `widget.approval-required` events of the html widgets the compile found
+/// waiting for the user, for the window to publish on its bus.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CompileReport {
     pub pdf_url: Option<String>,
     pub failure: Option<CompileFailure>,
     pub missing: Option<MissingDependency>,
     pub message: String,
+    pub approvals: Vec<BusEvent>,
 }
 
 /// How the preview sizes pages.
@@ -185,6 +188,46 @@ pub enum ZoomKind {
 pub enum ExportKind {
     Pdf,
     Zip,
+}
+
+/// Why an html widget is not approved to run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum WidgetApprovalCause {
+    /// The user never approved this widget folder in this project.
+    NeverApproved,
+    /// Its content changed since the user approved it.
+    ChangedSinceApproval,
+    /// It declares an origin the user's approval did not cover.
+    DeclaredOriginsChanged,
+    /// The user revoked its approval; auto-approval does not bring it back.
+    Revoked,
+}
+
+/// What the app's install of the interactive package did. The app asks
+/// before replacing a modified copy; only `NeedsConfirmation` left the
+/// project untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallOutcome {
+    /// The package was written (new, or a confirmed replacement).
+    Installed,
+    /// The project already holds the shipped package; nothing was written.
+    AlreadyCurrent,
+    /// A modified copy is there; nothing was written until confirmed.
+    NeedsConfirmation,
+}
+
+/// The layout an exported paper bundle takes (bundle spec section 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum BundleProfile {
+    /// A folder for any static http(s) host.
+    Folder,
+    /// One html document with everything inlined: email, archives, file://.
+    SingleFile,
+    /// A folder for the preprint server, which mirrors remote assets.
+    Hosted,
 }
 
 /// Whether a project compiles without network, as far as its last compiles
@@ -547,6 +590,31 @@ pub enum AppEvent {
     },
     #[serde(rename = "export.failed")]
     ExportFailed { kind: ExportKind, error: String },
+    /// The user asked the app to install the interactive package into the
+    /// project (command palette, or the fix on a missing-package warning).
+    #[serde(rename = "interactive.install")]
+    InteractiveInstall { outcome: InstallOutcome },
+    #[serde(rename = "interactive.install-failed")]
+    InteractiveInstallFailed { error: String },
+    /// A paper bundle was written outside the project: how many widgets and
+    /// bytes it holds and how many warnings the export raised.
+    #[serde(rename = "bundle.exported")]
+    BundleExported {
+        main: String,
+        profile: BundleProfile,
+        path: String,
+        bytes: u64,
+        widgets: u32,
+        warnings: u32,
+    },
+    /// A paper bundle export was refused or failed; nothing was left at the
+    /// destination.
+    #[serde(rename = "bundle.failed")]
+    BundleFailed {
+        main: String,
+        profile: BundleProfile,
+        error: String,
+    },
     /// The preview zoom changed; `percent` is what a page now shows at.
     #[serde(rename = "preview.zoom")]
     PreviewZoom { mode: ZoomKind, percent: u32 },
@@ -632,6 +700,55 @@ pub enum AppEvent {
         max_events: u32,
         max_line_bytes: u32,
     },
+    /// The widgets of a compiled main file were read: how many the document
+    /// declares (sidecar and pdf annotations agreeing).
+    #[serde(rename = "widgets.read")]
+    WidgetsRead { main: String, count: u32 },
+    /// The widget list could not be produced (never compiled, a stale or
+    /// malformed sidecar, a bad bundle manifest).
+    #[serde(rename = "widgets.failed")]
+    WidgetsFailed { main: String, error: String },
+    /// The user approved an html widget folder at this content digest.
+    #[serde(rename = "widget.approved")]
+    WidgetApproved {
+        root_id: String,
+        path: String,
+        widget: String,
+        digest: String,
+    },
+    /// The user revoked an html widget folder's approval.
+    #[serde(rename = "widget.revoked")]
+    WidgetRevoked { root_id: String, path: String },
+    /// An approved html widget folder no longer matches its approved digest.
+    /// `autoApproved`: the project's auto-approval covers the change.
+    #[serde(rename = "widget.digest-changed")]
+    WidgetDigestChanged {
+        root_id: String,
+        path: String,
+        widget: String,
+        approved_digest: String,
+        digest: String,
+        cause: WidgetApprovalCause,
+        auto_approved: bool,
+    },
+    /// A compile found an html widget waiting for the user's approval (never
+    /// approved, changed, revoked, or declaring origins the approval did not
+    /// cover). The window asks about it; the declared origins are the
+    /// domains the widget would be allowed to reach.
+    #[serde(rename = "widget.approval-required")]
+    WidgetApprovalRequired {
+        root_id: String,
+        path: String,
+        widget: String,
+        digest: String,
+        cause: WidgetApprovalCause,
+        connect_domains: Vec<String>,
+        resource_domains: Vec<String>,
+        frame_domains: Vec<String>,
+    },
+    /// The user turned the project's widget auto-approval on or off.
+    #[serde(rename = "widgets.auto-approve")]
+    WidgetsAutoApprove { root_id: String, on: bool },
     /// An automation-surface tool call and its outcome, logged with actor
     /// `agent` through the same writer as the app's events.
     #[serde(rename = "mcp.call")]
@@ -699,6 +816,9 @@ pub fn typescript() -> String {
         CompileReport::decl(&cfg),
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
+        WidgetApprovalCause::decl(&cfg),
+        InstallOutcome::decl(&cfg),
+        BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
         PrecheckPanelVia::decl(&cfg),

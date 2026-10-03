@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changes
+
+- **Interactive posters are cached in the project.** A model, chart or HTML widget with no `poster=` gets a poster Maleficium renders itself, saved in `.maleficium/posters/` beside the main file when you compile. This is the one place a compile writes into your project. The folder has a README, is safe to delete and may be committed, so the paper compiles with its posters without Maleficium. A widget new in a compile shows a placeholder until the next compile. Source zips and bundle exports include the cache. `\interactivemodel` takes `camera=`, `size=` and `background=`, and `\interactivechart` takes `scale=`, to shape the poster.
+- **Your own HTML widgets need approval.** View > Widgets lists each widget with its status, a diff of what changed since you approved it, Approve and Revoke, and an auto-approval setting that is off by default. An unapproved widget is never rendered, and an agent over MCP can read the status but cannot approve.
+- **Preview in Browser and a companion page.** File > Preview in Browser exports the paper as one file and opens it. The bundle's `index.html` is now a companion page (title, authors, abstract, the PDF, then each widget). Tools > Install Interactive Package adds the LaTeX package from the app.
+- **Html widgets can declare origins.** `framedomains=` and `resourcedomains=` (or `widget.json`) name the `https` origins one widget may frame or load, for example a YouTube or Vimeo player; see docs/VIDEO-EMBEDS.md. The origins are part of the approval.
+- **One QR code per paper, in the page footer.** `maleficium-interactive.sty` drew a 2cm QR code under every widget when `bundleurl` was set. It now draws one 1.5cm QR code with the URL in the footer of the first page, and each widget keeps a one-line "Interactive version" mark that links to the bundle URL. Floats no longer grow by 2cm and widget rects are unchanged. `\maleficiumsetup{qr=none}` turns the footer QR off.
+
 ### Fixes
 
 - **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
