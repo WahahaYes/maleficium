@@ -28,12 +28,12 @@ newer_than() {
 }
 
 if [ ! -x "$BIN" ]; then
-    warn "FRESHNESS: no debug app binary yet ($BIN missing) — the first dev:desktop build creates it."
+    warn "freshness: no debug app binary yet ($BIN missing) — the first dev:desktop build creates it."
 else
     # shellcheck disable=SC2046
     stale=$(newer_than "$BIN" "$ROOT/src" "$ROOT/src-tauri/src" "$ROOT/src-tauri/core" "$ROOT/src-tauri/mcp" "$ROOT/src-tauri/structure" "$ROOT/src-tauri/events" "$ROOT/src-tauri/index" "$ROOT/src-tauri/templates" "$ROOT/src-tauri/Cargo.toml" "$ROOT/src-tauri/Cargo.lock" "$ROOT/src-tauri/tauri.conf.json" "$ROOT/src-tauri/capabilities" "$ROOT/src-tauri/build.rs" "$ROOT/package.json" "$ROOT/vite.config.ts" "$ROOT/tsconfig.json" "$ROOT/index.html" | head -n 10)
     if [ -n "$stale" ]; then
-        warn "FRESHNESS WARN: sources newer than $BIN — tauri dev rebuilds, but if the app looks stale: stop, rebuild, restart, retest. Newest:"
+        warn "freshness WARN: sources newer than $BIN — tauri dev rebuilds, but if the app looks stale: stop, rebuild, restart, retest. Newest:"
         warn "$stale"
     else
         echo "freshness: app binary newer than sources."
@@ -51,25 +51,25 @@ case "$os/$arch" in
     *) triple="" ;;
 esac
 if [ -z "$triple" ]; then
-    warn "FRESHNESS: unknown host $os/$arch — cannot verify sidecars; compile fails honestly if one is missing."
+    warn "freshness: unknown host $os/$arch — cannot verify sidecars; compile fails honestly if one is missing."
 else
     exe=""
     case "$os" in MINGW* | MSYS* | CYGWIN*) exe=".exe" ;; esac
     if [ -x "$ROOT/src-tauri/binaries/maleficium-engine-$triple$exe" ]; then
         echo "freshness: engine sidecar present for $triple."
     else
-        warn "FRESHNESS ERROR: engine sidecar missing or not executable: src-tauri/binaries/maleficium-engine-$triple$exe — run: sh scripts/build-engine.sh"
+        warn "freshness ERROR: engine sidecar missing or not executable: src-tauri/binaries/maleficium-engine-$triple$exe — run: sh scripts/build-engine.sh"
     fi
 fi
 
 if [ "$ALL" -eq 1 ]; then
     if [ ! -f "$ROOT/dist/index.html" ]; then
-        warn "FRESHNESS: dist/index.html missing — npm run build creates it (tauri build runs it first)."
+        warn "freshness: dist/index.html missing — npm run build creates it (tauri build runs it first)."
     else
         # shellcheck disable=SC2046
         stale_dist=$(newer_than "$ROOT/dist/index.html" "$ROOT/src" "$ROOT/index.html" | head -n 10)
         if [ -n "$stale_dist" ]; then
-            warn "FRESHNESS WARN: sources newer than dist/ — packaging now would ship stale UI; run npm run build first. Newest:"
+            warn "freshness WARN: sources newer than dist/ — packaging now would ship stale UI; run npm run build first. Newest:"
             warn "$stale_dist"
         else
             echo "freshness: dist newer than sources."
