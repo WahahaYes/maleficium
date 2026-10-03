@@ -23,7 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# Engine sidecars: fetched/built by scripts/fetch-sidecars.sh, never tracked
+# The engine sidecar: built by scripts/build-engine.sh, never tracked
 src-tauri/binaries/
 __pycache__/
 

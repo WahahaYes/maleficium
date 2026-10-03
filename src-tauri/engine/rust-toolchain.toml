@@ -1,0 +1,8 @@
+# The engine is its own workspace so this pin reaches only it: latexml's core
+# crate needs the nightly `thread_local` feature, and the app and MCP server
+# stay on the stable pin one directory up. Move this back to the repo's stable
+# channel once latexml no longer needs nightly.
+[toolchain]
+channel = "nightly-2026-10-02"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

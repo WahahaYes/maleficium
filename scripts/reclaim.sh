@@ -111,7 +111,7 @@ fi
 # Scoped to the sidecar path fragment; the bracket trick keeps pgrep from
 # matching its own command line.
 if have pgrep; then
-    for pid in $(pgrep -f '[b]inaries/maleficium-tectonic' 2>/dev/null || true); do
+    for pid in $(pgrep -f '[b]inaries/maleficium-engine' 2>/dev/null || true); do
         ppid=$(parent_of "$pid")
         if [ -n "$ppid" ] && reaper "$ppid"; then
             echo "reclaim: orphaned engine pid $pid — KILL"

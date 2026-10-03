@@ -48,9 +48,13 @@ RUN curl -sSfL -o /tmp/rustup-init \
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY scripts/fetch-sidecars.sh scripts/
-COPY scripts/synctex-shim scripts/synctex-shim
-RUN sh scripts/fetch-sidecars.sh
+# The engine builds from source here, on its own pinned nightly.
+COPY scripts/build-engine.sh scripts/
+COPY src-tauri/engine src-tauri/engine
+RUN cd src-tauri/engine && rustup toolchain install
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/src-tauri/engine/target \
+    sh scripts/build-engine.sh
 
 COPY . .
 
