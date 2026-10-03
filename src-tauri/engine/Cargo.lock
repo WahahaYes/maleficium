@@ -2174,6 +2174,10 @@ version = "0.3.0"
 dependencies = [
  "cc",
  "latexml",
+ "latexml_contrib",
+ "latexml_core",
+ "latexml_package",
+ "latexml_post",
  "libz-sys",
  "tectonic",
  "tectonic_bridge_core",
