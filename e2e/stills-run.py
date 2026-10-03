@@ -14,7 +14,8 @@ probes measure that case.
 
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
-STILLS_STATES (default "1 2 3 4 5 6 7 8 9"), STILLS_MIRROR_PORT /
+STILLS_STATES (default "1 2 3 4 5 6 7 8 9"; 10 is the opt-in worker-failure
+proof), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -993,6 +994,42 @@ def state9():
           "keep-mine saved" % len(held))
 
 
+def state10():
+    """Worker failure: with the pdf.js worker URL broken at the vite layer,
+    opening a compiled project emits preview.load-failed once and the
+    preview renders its error branch instead of hanging. Opt-in
+    (STILLS_STATES=10): the break flag stays out of every other state."""
+    breakfile = os.environ.get("STILLS_BREAK_PDF_WORKER") or os.path.join(OUT, ".break-worker")
+    log("pre-warming engine cache via driver")
+    if not run_driver("driver-warm10.jsonl", 150, FIX + "/simple"):
+        die("warm driver failed")
+    with open(breakfile, "w") as f:
+        f.write("pdf.worker\n")
+    try:
+        mstate = now_ms()
+        start_app(FIX + "/simple")
+        wait_window(300)
+        open_project()
+        click_editor()
+        key("ctrl+r")
+        wait_event("compile.finish", mstate, 300)
+        # The worker's error listener fires once per launch, so the wait
+        # starts at launch: a preview open before the recompile counts.
+        wait_event("preview.load-failed", mstate, 60)
+        time.sleep(2)
+        shot("10-worker-failed")
+        stop_app()
+    finally:
+        if os.path.isfile(breakfile):
+            os.remove(breakfile)
+    evs = acts(since_events(mstate))
+    fails = [e for e in evs if e.get("action") == "preview.load-failed"]
+    if not fails or "pdf worker failed to load" not in str(fails[0].get("error", "")):
+        die("no worker load failure on the bus: %s" % fails)
+    check_log("log.open compile.finish preview.load-failed")
+    print("stills: worker failure rendered the preview error branch (%s)" % fails[0].get("error"))
+
+
 # ---- run --------------------------------------------------------------------
 
 
@@ -1030,6 +1067,9 @@ def main():
     # dev build `tauri dev` runs (no custom-protocol) and builds maleficium-mcp
     # too (State 2's driver runs it).
     open(PRESET, "w").close()
+    # The worker-break flag for state 10: the path rides to vite, which 404s
+    # the pdf.js worker only while the file exists. Absent everywhere else.
+    os.environ.setdefault("STILLS_BREAK_PDF_WORKER", os.path.join(OUT, ".break-worker"))
     target = os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "src-tauri", "target")
     BIN_DIR = os.path.join(target, "debug")
     # Exported: State 2's driver builds maleficium-mcp under the same config,
@@ -1040,7 +1080,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 10):
+    for n in range(1, 11):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)
