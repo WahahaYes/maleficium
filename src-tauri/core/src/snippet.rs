@@ -394,12 +394,43 @@ fn render(
     Err(format!("page {} does not fit the image size cap", page))
 }
 
+/// PNG of the first page of a standalone pdf, as a figure: the whole page at
+/// `dpi`, scaled down so neither side exceeds `max_px`. Unlike [`render`] it
+/// has no region and no byte cap; the caller enforces its own size limits.
+pub fn pdf_first_page_png(bytes: Vec<u8>, dpi: f32, max_px: u32) -> Result<Vec<u8>, String> {
+    use hayro::vello_cpu::color::palette::css::WHITE;
+
+    let pdf =
+        hayro::hayro_syntax::Pdf::new(bytes).map_err(|e| format!("not a readable pdf: {e:?}"))?;
+    let pages = pdf.pages();
+    let page = pages.first().ok_or("the pdf has no pages")?;
+    let (w, h) = page.render_dimensions();
+    if !(w >= 1.0 && h >= 1.0) {
+        return Err("the pdf page has no area".to_string());
+    }
+    let scale = (dpi / 72.0).min(max_px as f32 / w.max(h));
+    let settings = hayro::RenderSettings {
+        x_scale: scale,
+        y_scale: scale,
+        bg_color: WHITE,
+        ..Default::default()
+    };
+    hayro::render(
+        page,
+        &hayro::RenderCache::new(),
+        &hayro::hayro_interpret::InterpreterSettings::default(),
+        &settings,
+    )
+    .into_png()
+    .map_err(|e| format!("cannot encode the pdf page: {e}"))
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A one-page pdf with a filled box, written by hand so tests need no engine.
-    fn tiny_pdf() -> Vec<u8> {
+    pub(crate) fn tiny_pdf() -> Vec<u8> {
         let content = b"0 0 1 rg 100 600 200 100 re f";
         let objs = [
             "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
@@ -437,6 +468,18 @@ mod tests {
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
         let n = |i: usize| u32::from_be_bytes(bytes[i..i + 4].try_into().unwrap());
         (n(16), n(20))
+    }
+
+    #[test]
+    fn a_figure_pdf_renders_its_first_page_within_the_pixel_cap() {
+        let png = pdf_first_page_png(tiny_pdf(), 150.0, 2400).unwrap();
+        // 612x792 pt at 150 dpi, give or take a rounded pixel.
+        let (w, h) = png_size(&png);
+        assert!(w.abs_diff(1275) <= 1 && h.abs_diff(1650) <= 1, "{w}x{h}");
+        let capped = pdf_first_page_png(tiny_pdf(), 150.0, 400).unwrap();
+        let (cw, ch) = png_size(&capped);
+        assert!(cw.max(ch) <= 400 && ch >= 398, "{cw}x{ch}");
+        assert!(pdf_first_page_png(b"not a pdf".to_vec(), 150.0, 400).is_err());
     }
 
     #[test]
