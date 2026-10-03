@@ -66,9 +66,15 @@ jobs:
         run: python scripts/release-meta.py stale
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # The engine is its own workspace with its own (nightly) pin.
+      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
+        working-directory: src-tauri/engine
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/engine
       - run: npm ci
       - name: Sidecars
         if: runner.os != 'Windows'

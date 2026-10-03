@@ -1,0 +1,22 @@
+[package]
+name = "maleficium-engine"
+version = "0.3.0"
+license = "Apache-2.0"
+description = "The compile and convert engines, run as a child of the app"
+authors = ["Ethan Wilson"]
+edition = "2021"
+
+# Not a member of ../Cargo.toml: it has its own toolchain pin and lockfile.
+[workspace]
+
+[[bin]]
+name = "maleficium-engine"
+path = "src/main.rs"
+
+[dependencies]
+tectonic = "=0.17.0"
+tectonic_bridge_core = "=0.5.3"
+tectonic_bundles = "=0.4.2"
+tectonic_errors = "=0.3.0"
+tectonic_status_base = "=0.2.2"
+latexml = "=0.7.6"

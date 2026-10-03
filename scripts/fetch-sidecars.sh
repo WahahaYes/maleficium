@@ -1,36 +1,31 @@
 #!/bin/sh
 # Put the bundled engine sidecars in src-tauri/binaries/ (untracked).
-#   Tectonic 0.17.0: official release assets, each extracted binary checked
-#     against the pinned sha256 below.
+#   maleficium-engine: built for this host from src-tauri/engine (Tectonic and
+#     latexml linked from source, versions pinned by its Cargo.lock, on the
+#     nightly pinned by its rust-toolchain.toml), then installed under the
+#     Rust triple the app looks it up by. Peak memory is a few GB: cap it with
+#     CARGO_BUILD_JOBS on a small machine.
 #   SyncTeX: built for this host from pinned upstream source with our
 #     c-auto.h shim, then smoke-tested (view -> Page:, edit -> Input:/Line:)
-#     against a document the fetched Tectonic compiles. The hash below is
+#     against a document the built engine compiles. The hash below is
 #     what this recipe produced on Linux with gcc 15 + zlib 1.3.1; another
 #     toolchain or OS differs, so a mismatch warns and the smoke test decides.
 #     Hosts: Linux x86_64 (static, gcc), macOS arm64/x86_64 (cc, system
 #     zlib), Windows x86_64 under MSYS2 MINGW64 (static, gcc + zlib).
-# Idempotent: a present binary with the pinned hash is left alone.
-# Needs network, curl, tar, python3; SyncTeX also needs git, a C compiler,
-# and zlib (static on Linux and Windows).
+# Idempotent: the engine build is incremental, and a SyncTeX binary with the
+# pinned hash is left alone.
+# Needs network, cargo (via rustup), a C and C++ compiler and libclang headers
+# for the engine; SyncTeX also needs git and zlib (static on Linux and
+# Windows).
 # POSIX sh.
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
 BIN="$ROOT/src-tauri/binaries"
-TECTONIC_VERSION=0.17.0
-TECTONIC_URL="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40$TECTONIC_VERSION"
 SYNCTEX_REPO=https://github.com/jlaurens/synctex.git
 SYNCTEX_REV=04cf8e3e8665ff203248d7af78ee1129afbc1b64
 SYNCTEX_SHA=5e7c245223faf271a3fa8b9963d8b5f223b18c99f0d88c5dbd97579c69ccf883
 
-# triple  sha256-of-extracted-binary
-TECTONIC_PINS="
-x86_64-unknown-linux-gnu 2b3a86250906c92ed0a3ae8aaa454ec55bd6cede8593b3e549640177f6aecaa3
-aarch64-unknown-linux-musl 19a2b763e5875fffefaa193c42e460ceba5983d027b6d50b0094130d26ba4e4a
-x86_64-apple-darwin 0d888b4cb5607830f33e4ede37e613c1d0b9251644c209ce78ae807c976637e4
-aarch64-apple-darwin b52b5a730e2b0b33087304f7720f649603953f270a6b1c88bb031e1ae01f7f9c
-x86_64-pc-windows-msvc 99ffcfdbf1ebf8bdda9e791942e3d06aedb12463fddc33f07de6f5211c8bf08d
-"
 
 die() { echo "fetch-sidecars: $1" >&2; exit 1; }
 say() { echo "fetch-sidecars: $1"; }
@@ -52,34 +47,23 @@ case "$(uname -s) $(uname -m)" in
     (*) die "no SyncTeX recipe for $(uname -s) $(uname -m)" ;;
 esac
 
-need curl; need tar; need python3
+need cargo
 mkdir -p "$BIN"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-sidecars-XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-echo "$TECTONIC_PINS" | while read -r triple pin; do
-    [ -n "$triple" ] || continue
-    case "$triple" in
-        *windows*) exe=".exe"; archive="tectonic-$TECTONIC_VERSION-$triple.zip" ;;
-        *) exe=""; archive="tectonic-$TECTONIC_VERSION-$triple.tar.gz" ;;
-    esac
-    dest="$BIN/maleficium-tectonic-$triple$exe"
-    if [ -f "$dest" ] && [ "$(sha "$dest")" = "$pin" ]; then
-        say "tectonic $triple present"
-        continue
-    fi
-    say "tectonic $triple: downloading"
-    curl -sSfL --retry 4 --retry-delay 5 --retry-all-errors -o "$WORK/$archive" "$TECTONIC_URL/$archive" || die "download failed: $archive"
-    mkdir -p "$WORK/$triple"
-    case "$archive" in
-        *.zip) python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$WORK/$archive" "$WORK/$triple" ;;
-        *) tar -xzf "$WORK/$archive" -C "$WORK/$triple" ;;
-    esac
-    got=$(sha "$WORK/$triple/tectonic$exe")
-    [ "$got" = "$pin" ] || die "tectonic $triple: sha256 $got, expected $pin"
-    install -m 755 "$WORK/$triple/tectonic$exe" "$dest"
-    say "tectonic $triple: verified"
-done
+say "engine $SYNCTEX_TRIPLE: building src-tauri/engine"
+# The engine is its own workspace with its own toolchain pin, so build it from
+# its directory. bindgen needs the C compiler's headers; point it at them when
+# libclang does not find stddef.h on its own.
+if [ -z "${BINDGEN_EXTRA_CLANG_ARGS:-}" ] && command -v gcc >/dev/null 2>&1; then
+    gcc_inc=$(dirname "$(gcc -print-file-name=include/stddef.h)")
+    [ -f "$gcc_inc/stddef.h" ] && export BINDGEN_EXTRA_CLANG_ARGS="-I$gcc_inc"
+fi
+(cd "$ROOT/src-tauri/engine" && cargo build --release) || die "engine build failed"
+install -m 755 "$ROOT/src-tauri/engine/target/release/maleficium-engine$EXE" \
+    "$BIN/maleficium-engine-$SYNCTEX_TRIPLE$EXE"
+say "engine $SYNCTEX_TRIPLE: installed"
 
 dest="$BIN/maleficium-synctex-$SYNCTEX_TRIPLE$EXE"
 if [ -f "$dest" ] && [ "$(sha "$dest")" = "$SYNCTEX_SHA" ]; then
@@ -106,13 +90,13 @@ git -C "$src" checkout -q FETCH_HEAD
 (cd "$src" && "$CC" -O2 $LINK -s -I. $SHIM -o "$WORK/synctex$EXE" \
     synctex_main.c synctex_parser.c synctex_parser_utils.c $LIBS) || die "synctex build failed (zlib installed?)"
 
-# Smoke: compile a two-page document with the host Tectonic, then query both ways.
-host_tectonic="$BIN/maleficium-tectonic-$SYNCTEX_TRIPLE$EXE"
-[ -x "$host_tectonic" ] || die "smoke test needs $host_tectonic"
+# Smoke: compile a two-page document with the host engine, then query both ways.
+host_engine="$BIN/maleficium-engine-$SYNCTEX_TRIPLE$EXE"
+[ -x "$host_engine" ] || die "smoke test needs $host_engine"
 doc="$WORK/smoke"
 mkdir -p "$doc"
 printf '\\documentclass{article}\n\\begin{document}\nfirst page\n\\newpage\nsecond page\n\\end{document}\n' >"$doc/smoke.tex"
-(cd "$doc" && "$host_tectonic" -X compile smoke.tex --synctex >/dev/null 2>&1) || die "smoke compile failed"
+(cd "$doc" && "$host_engine" compile smoke.tex --synctex >/dev/null 2>&1) || die "smoke compile failed"
 # Queried as the app does (core/synctex.rs): from inside the output dir,
 # absolute tex path, relative pdf. pwd -W gives MSYS2 the native C:/ form,
 # which a native Windows binary needs. tr: Windows output ends in CRLF.
