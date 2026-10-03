@@ -37,6 +37,32 @@ function stillsPreset(file: string | undefined): Plugin {
   };
 }
 
+// Error-proof still (e2e/stills-run.py state 10): while the flag file
+// exists, the pdf.js worker URL 404s so the worker fails to load and the
+// preview must render its error branch. Dev server only; unset, inert.
+function stillsBreakWorker(file: string | undefined): Plugin {
+  return {
+    name: 'stills-break-worker',
+    apply: 'serve',
+    configureServer(server) {
+      if (!file) return;
+      server.middlewares.use((req, res, next) => {
+        if (req.method !== 'GET' || !req.url?.includes('pdf.worker')) return next();
+        let broken = false;
+        try {
+          readFileSync(file, 'utf8');
+          broken = true;
+        } catch {
+          /* flag absent: worker serves normally */
+        }
+        if (!broken) return next();
+        res.statusCode = 404;
+        res.end('stills: pdf worker broken on purpose');
+      });
+    },
+  };
+}
+
 // Video harness (e2e/showreel-run.py): camera moves the app polls in dev
 // builds (src/lib/devCamera.ts), read from SHOWREEL_CAMERA_FILE. Dev server
 // only; unset, inert.
@@ -67,6 +93,7 @@ export default defineConfig(() => ({
   plugins: [
     react(),
     stillsPreset(process.env.STILLS_PRESET_FILE),
+    stillsBreakWorker(process.env.STILLS_BREAK_PDF_WORKER),
     showreelCamera(process.env.SHOWREEL_CAMERA_FILE),
   ],
   define: { __APP_VERSION__: JSON.stringify(version) },
