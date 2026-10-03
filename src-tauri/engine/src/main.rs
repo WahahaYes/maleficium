@@ -9,6 +9,7 @@
 mod compile;
 mod convert;
 mod dump;
+mod graphics;
 mod kpsewhich;
 mod session;
 mod synctex;
