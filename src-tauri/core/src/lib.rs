@@ -17,6 +17,7 @@ pub mod interactive;
 pub mod mainfile;
 pub mod outputs;
 pub mod readiness;
+pub mod reflow;
 pub mod replace;
 pub mod search;
 pub mod snippet;
