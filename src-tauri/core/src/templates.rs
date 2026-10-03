@@ -412,6 +412,30 @@ mod tests {
         assert!(!root.join("paper.aux").exists() && !root.join(".git").exists());
     }
 
+    /// The shared style files reach every template that loads them: each
+    /// embedded style or mark matches the single source, and shared/
+    /// itself never embeds as a template.
+    #[test]
+    fn embedded_style_files_match_the_shared_source() {
+        let shared = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../templates/shared");
+        assert!(shared.is_dir(), "templates/shared missing");
+        for (id, files) in TEMPLATES {
+            assert_ne!(*id, "shared", "shared/ must not embed as a template");
+            for (rel, bytes) in *files {
+                if *rel == MANIFEST || !(rel.ends_with(".sty") || rel.ends_with(".pdf")) {
+                    continue;
+                }
+                let want = std::fs::read(shared.join(rel))
+                    .unwrap_or_else(|_| panic!("{id} embeds {rel}, absent from shared/"));
+                assert_eq!(
+                    *bytes,
+                    want.as_slice(),
+                    "{id}/{rel} differs from shared/{rel}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn welcome_is_written_once_into_app_data() {
         let base = tmp("welcome");
