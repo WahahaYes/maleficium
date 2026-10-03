@@ -1,0 +1,18 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\graphicspath{{img/}{sub/deep/}}
+\begin{document}
+\begin{figure}\centering
+\includegraphics[width=0.5\linewidth]{a.png}
+\caption{png via graphicspath}\end{figure}
+\begin{figure}
+\begin{subfigure}{0.45\textwidth}\includegraphics[height=2cm]{b.jpg}\caption{b}\end{subfigure}
+\begin{subfigure}{0.45\textwidth}\includegraphics[scale=0.5,angle=90]{c}\caption{c noext pdf}\end{subfigure}
+\caption{sub}\end{figure}
+\includegraphics{img/d.eps}
+\includegraphics{../etc/passwd}
+\includegraphics{noext}
+\includegraphics{missing.png}
+\includegraphics{http://example.com/x.png}
+\end{document}
