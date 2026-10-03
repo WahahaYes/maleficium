@@ -13,9 +13,16 @@
 
 - **Hosts that support MCP Apps show the snippet inline.** The `snippet` tool now names a small View (`ui://maleficium/snippet/v1`): the rendered region of the PDF beside the source lines, with previous/next page, a whole-page toggle, and a refresh when a compile replaces the PDF. It follows the host's light or dark theme and never inverts the page. Hosts without Apps support get the same text and, with `with_image`, the same image as before. A new `snippet_render` tool, hidden from the model, lets the View re-render without a model turn.
 
+- **Every MCP tool declares what it does.** All 32 tools now carry explicit read-only, destructive, idempotent and open-world hints, so hosts and directories can tell a safe read from a write without guessing. A regression test fails if a tool is added without them, and each tool has a handler test. `PRIVACY.md` states that the app and server work locally, and the README links it.
+
 ### Templates
 
 - **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Slides has a matching style. Journal Paper keeps plain IEEEtran formatting. Every template ends each page with a small "Made with Maleficium" mark that links to the project; deleting one `\usepackage{maleficium-footer}` line removes it. Each folder carries its own copy of the style files, so a project stays self-contained.
+
+### For contributors
+
+- **The TeX engine is built from source.** Compiling no longer runs a downloaded Tectonic binary. A new crate, `src-tauri/engine`, builds `maleficium-engine` (Tectonic 0.17.0 through its library API, with the same arguments and status lines) and still runs as a killable child of the app and the MCP server. It also links the latexml converter, as groundwork for a reflowed reader. Build it with `sh scripts/build-engine.sh` before `npm run build` or `tauri build`; CI builds it on all four targets, and the old sidecar download script is gone.
+- **Sidecar downloads retry.** A single 504 from GitHub no longer fails a CI job: the download is retried four times, and the sha256 pin is still checked.
 
 ## 0.3.0 - 2026-09-30
 
