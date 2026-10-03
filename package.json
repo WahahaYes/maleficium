@@ -4,6 +4,15 @@
   "license": "Apache-2.0",
   "version": "0.3.0",
   "type": "module",
+  "author": "Ethan Wilson",
+  "homepage": "https://github.com/WahahaYes/maleficium#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WahahaYes/maleficium.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WahahaYes/maleficium/issues"
+  },
   "scripts": {
     "predev": "sh scripts/reclaim.sh",
     "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh",
