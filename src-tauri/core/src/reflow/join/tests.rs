@@ -288,3 +288,35 @@ fn the_real_playground_article_and_sidecar_join() {
         ]
     );
 }
+
+/// End-to-end proof, run by `e2e/widget-binding-run.sh`: the playground paper
+/// converted by the real engine joins to the sidecar of its real compile.
+#[test]
+#[ignore = "needs MFW_E2E_HTML and MFW_E2E_SIDECAR from e2e/widget-binding-run.sh"]
+fn the_converted_playground_joins_its_compiled_sidecar() {
+    let html = std::fs::read_to_string(std::env::var("MFW_E2E_HTML").unwrap()).unwrap();
+    let sidecar = std::fs::read_to_string(std::env::var("MFW_E2E_SIDECAR").unwrap()).unwrap();
+    let j = join_sidecar(&html, &sidecar).unwrap();
+    println!(
+        "placeholders {} == records {}",
+        j.len(),
+        sidecar.lines().filter(|l| l.starts_with("widget|")).count()
+    );
+    for x in &j {
+        println!(
+            "{} {:?} -> {} {:?} label={:?} figure={:?}",
+            x.placeholder.index + 1,
+            x.placeholder.kind,
+            x.record.id,
+            x.record.runtime,
+            x.record.label,
+            x.record.figure
+        );
+    }
+    let out = apply(&html, &j).unwrap();
+    assert!(!out.contains("m-widget"));
+    assert_eq!(out.matches(MOUNT_PREFIX).count(), j.len());
+    for x in &j {
+        assert!(out.contains(&mount_marker(&x.record.id)));
+    }
+}
