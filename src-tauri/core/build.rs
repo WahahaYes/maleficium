@@ -18,16 +18,43 @@ fn files(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The single source for style files several templates load: overlaid
+/// into each template's embedded files at build time, so the repo holds
+/// one copy while instantiated projects stay self-contained.
+const SHARED_DIR: &str = "shared";
+/// Shared files every template embeds.
+const SHARED_ALL: &[&str] = &["maleficium-footer.sty", "maleficium-mark.pdf"];
+/// Shared files only some templates embed: file, template ids.
+const SHARED_SOME: &[(&str, &[&str])] = &[
+    (
+        "maleficium-doc.sty",
+        &[
+            "article",
+            "assignment",
+            "book",
+            "letter",
+            "report",
+            "welcome",
+        ],
+    ),
+    ("maleficium-cv.sty", &["cv", "resume"]),
+    ("maleficium-slides.sty", &["beamer"]),
+    ("maleficium-links.sty", &["journal"]),
+];
+
 /// Embeds `templates/<id>/**` as `TEMPLATES: &[(id, &[(rel path, bytes)])]`,
 /// shared by the desktop app and the MCP binary.
 fn embed_templates() {
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../templates");
     println!("cargo:rerun-if-changed={}", root.display());
+    let shared = root.join(SHARED_DIR);
+    println!("cargo:rerun-if-changed={}", shared.display());
     let mut ids: Vec<_> = std::fs::read_dir(&root)
         .expect("templates dir readable")
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|id| id != SHARED_DIR)
         .collect();
     ids.sort();
     let mut src = String::from(
@@ -39,11 +66,33 @@ fn embed_templates() {
         let dir = root.join(&id);
         let mut list = Vec::new();
         files(&dir, Path::new(""), &mut list);
+        let mut rels: Vec<(String, PathBuf)> = list
+            .into_iter()
+            .map(|rel| {
+                let s = rel.to_string_lossy().replace('\\', "/");
+                (s, dir.join(&rel))
+            })
+            .collect();
+        let shared_for = |name: &str| {
+            SHARED_ALL.contains(&name)
+                || SHARED_SOME
+                    .iter()
+                    .any(|(f, tids)| *f == name && tids.contains(&id.as_str()))
+        };
+        for name in SHARED_ALL.iter().chain(SHARED_SOME.iter().map(|(f, _)| f)) {
+            if shared_for(name) {
+                let dup = rels.iter().any(|(r, _)| r == name);
+                assert!(
+                    !dup,
+                    "template {id} carries its own {name}; the copy in {SHARED_DIR}/ is the source"
+                );
+                rels.push((name.to_string(), shared.join(name)));
+            }
+        }
+        rels.sort_by(|a, b| a.0.cmp(&b.0));
         writeln!(src, "    ({id:?}, &[").unwrap();
-        for rel in list {
-            let abs = dir.join(&rel);
+        for (rel, abs) in rels {
             println!("cargo:rerun-if-changed={}", abs.display());
-            let rel = rel.to_string_lossy().replace('\\', "/");
             writeln!(
                 src,
                 "        ({rel:?}, include_bytes!({:?})),",
