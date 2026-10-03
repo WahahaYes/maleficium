@@ -13,7 +13,7 @@ set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
 ENGINE_RS="$ROOT/src-tauri/core/src/engine.rs"
-SIDECARS="$ROOT/scripts/fetch-sidecars.sh"
+ENGINE_CARGO="$ROOT/src-tauri/engine/Cargo.toml"
 RELAY=https://relay.fullyjustified.net
 RELAY_FORMAT=33
 RELEASES=https://api.github.com/repos/tectonic-typesetting/tectonic/releases/latest
@@ -25,9 +25,9 @@ command -v gzip >/dev/null 2>&1 || die "missing tool: gzip"
 pin() { sed -n "s/^pub const $1: &str = \"\\(.*\\)\";/\\1/p" "$ENGINE_RS"; }
 BUNDLE_URL=$(pin BUNDLE_URL)
 BUNDLE_DIGEST=$(pin BUNDLE_DIGEST)
-TECTONIC_VERSION=$(sed -n 's/^TECTONIC_VERSION=//p' "$SIDECARS")
+TECTONIC_VERSION=$(sed -n 's/^tectonic = "=\(.*\)"$/\1/p' "$ENGINE_CARGO")
 [ -n "$BUNDLE_URL" ] && [ -n "$BUNDLE_DIGEST" ] || die "bundle pins not found in $ENGINE_RS"
-[ -n "$TECTONIC_VERSION" ] || die "TECTONIC_VERSION not found in $SIDECARS"
+[ -n "$TECTONIC_VERSION" ] || die "tectonic pin not found in $ENGINE_CARGO"
 
 fetch() { curl -fsS --max-time 60 "$@"; }
 moved=0

@@ -55,10 +55,10 @@ if [ -z "$triple" ]; then
 else
     exe=""
     case "$os" in MINGW* | MSYS* | CYGWIN*) exe=".exe" ;; esac
-    if [ -x "$ROOT/src-tauri/binaries/maleficium-tectonic-$triple$exe" ]; then
-        echo "freshness: tectonic sidecar present for $triple."
+    if [ -x "$ROOT/src-tauri/binaries/maleficium-engine-$triple$exe" ]; then
+        echo "freshness: engine sidecar present for $triple."
     else
-        warn "FRESHNESS ERROR: tectonic sidecar missing or not executable: src-tauri/binaries/maleficium-tectonic-$triple$exe — run: sh scripts/fetch-sidecars.sh"
+        warn "FRESHNESS ERROR: engine sidecar missing or not executable: src-tauri/binaries/maleficium-engine-$triple$exe — run: sh scripts/fetch-sidecars.sh"
     fi
     if [ -x "$ROOT/src-tauri/binaries/maleficium-synctex-$triple$exe" ]; then
         echo "freshness: synctex sidecar present for $triple."

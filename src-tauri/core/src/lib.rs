@@ -311,10 +311,10 @@ mod tests {
         let dev = crate::test_scratch::dir("sidecar-dev");
         std::fs::create_dir_all(&dev).unwrap();
         let ext = if cfg!(windows) { ".exe" } else { "" };
-        let installed = app.join(format!("maleficium-tectonic{ext}"));
+        let installed = app.join(format!("maleficium-engine{ext}"));
         std::fs::write(&installed, b"").unwrap();
-        std::fs::write(dev.join(format!("maleficium-tectonic-t{ext}")), b"").unwrap();
-        let found = find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t");
+        std::fs::write(dev.join(format!("maleficium-engine-t{ext}")), b"").unwrap();
+        let found = find_sidecar(Some(&app), &dev, "maleficium-engine", "t");
         assert_eq!(found, Some(installed));
     }
 
@@ -332,7 +332,7 @@ mod tests {
             Some(fetched)
         );
         assert_eq!(
-            find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t"),
+            find_sidecar(Some(&app), &dev, "maleficium-engine", "t"),
             None
         );
     }

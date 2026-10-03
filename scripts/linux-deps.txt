@@ -14,3 +14,12 @@ libayatana-appindicator3-dev
 librsvg2-dev
 zlib1g-dev
 libgraphite2-3
+libgraphite2-dev
+clang
+libclang-dev
+libicu-dev
+libfreetype-dev
+libfontconfig-dev
+libpng-dev
+libxml2-dev
+libxslt1-dev
