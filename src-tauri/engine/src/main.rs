@@ -9,6 +9,7 @@
 mod compile;
 mod convert;
 mod kpsewhich;
+mod session;
 mod synctex;
 
 fn main() {
