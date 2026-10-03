@@ -13,7 +13,12 @@ edition = "2021"
 name = "maleficium-engine"
 path = "src/main.rs"
 
+[build-dependencies]
+cc = "1"
+
 [dependencies]
+# Static zlib for the SyncTeX parser, so no system zlib is needed.
+libz-sys = { version = "1", default-features = false, features = ["static"] }
 tectonic = "=0.17.0"
 tectonic_bridge_core = "=0.5.3"
 tectonic_bundles = "=0.4.2"

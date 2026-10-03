@@ -7,7 +7,7 @@
 #   macOS:   .dmg (ad-hoc signed; the host's own architecture)
 #   Windows: NSIS setup .exe (run from Git Bash or MSYS2)
 # Expects the toolchains (rust-toolchain.toml, .nvmrc), `npm ci`, and the
-# sidecars (scripts/fetch-sidecars.sh) to be in place already.
+# engine (scripts/build-engine.sh) to be in place already.
 #
 # Usage: sh scripts/package.sh [--out DIR]   (default: out/)
 # POSIX sh.
@@ -24,7 +24,7 @@ done
 
 die() { printf 'package: %s\n' "$1" >&2; exit 1; }
 [ -n "$(ls -A "$ROOT/src-tauri/binaries" 2>/dev/null)" ] \
-    || die "no sidecars in src-tauri/binaries; run sh scripts/fetch-sidecars.sh first"
+    || die "no sidecars in src-tauri/binaries; run sh scripts/build-engine.sh first"
 
 case "$(uname -s)" in
     Linux) BUNDLES=deb,appimage ;;

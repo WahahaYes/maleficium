@@ -8,7 +8,7 @@ Install the toolchain and system packages listed in [BUILDING.md](BUILDING.md), 
 
 ```sh
 npm ci
-sh scripts/fetch-sidecars.sh   # bundled Tectonic + SyncTeX
+sh scripts/build-engine.sh   # the bundled engine: Tectonic, latexml, SyncTeX
 npm run dev:desktop            # the app, with hot reload
 ```
 

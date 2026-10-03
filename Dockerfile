@@ -49,13 +49,12 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # The engine builds from source here, on its own pinned nightly.
-COPY scripts/fetch-sidecars.sh scripts/
-COPY scripts/synctex-shim scripts/synctex-shim
+COPY scripts/build-engine.sh scripts/
 COPY src-tauri/engine src-tauri/engine
 RUN cd src-tauri/engine && rustup toolchain install
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/src-tauri/engine/target \
-    sh scripts/fetch-sidecars.sh
+    sh scripts/build-engine.sh
 
 COPY . .
 
