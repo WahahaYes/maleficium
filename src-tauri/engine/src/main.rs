@@ -24,6 +24,7 @@ fn main() {
     let code = match args.next().and_then(|a| a.into_string().ok()).as_deref() {
         Some("compile") => compile::run(args.collect()),
         Some("convert") => convert::run(args.collect()),
+        Some("dump") => dump::run(args.collect()),
         Some("synctex") => synctex::run(args.collect()),
         Some("kpsewhich") => kpsewhich::run(args.collect()),
         _ => {
