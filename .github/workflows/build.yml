@@ -46,15 +46,47 @@ jobs:
       - name: Linux build packages
         if: runner.os == 'Linux'
         run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
-      # SyncTeX builds under MINGW64 (gcc + static zlib); the app itself
-      # builds with the runner's MSVC toolchain.
-      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+      # The engine links ICU, freetype, graphite2, libpng and fontconfig (found
+      # through pkg-config; build-engine.sh adds the keg-only icu4c). Static
+      # linking is still open.
+      - name: macOS engine libraries
+        if: runner.os == 'macOS'
+        run: |
+          brew install pkg-config icu4c graphite2 freetype libpng fontconfig harfbuzz
+      # Windows: the engine's C libraries come from vcpkg, statically linked
+      # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
+      # find the same triplet through VCPKGRS_TRIPLET). The installed tree is
+      # cached: a cold vcpkg build of ICU is slow.
+      - name: Windows engine libraries (vcpkg)
         if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VCPKG_TRIPLET: x64-windows-static-md
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "TECTONIC_DEP_BACKEND=vcpkg" >> $env:GITHUB_ENV
+      - name: Windows vcpkg cache
+        id: vcpkg-cache
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          msystem: MINGW64
-          update: false
-          install: >-
-            curl git python tar mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
+          path: ${{ env.VCPKG_ROOT }}\installed
+          key: vcpkg-x64-windows-static-md-engine-v1
+      - name: Windows vcpkg install
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $t = "x64-windows-static-md"
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install `
+            "freetype:$t" "graphite2:$t" "harfbuzz[graphite2]:$t" "icu:$t" `
+            "libpng:$t" "fontconfig:$t" "libxml2:$t" "libxslt:$t"
+      - name: Windows vcpkg cache save
+        if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.VCPKG_ROOT }}\installed
+          key: vcpkg-x64-windows-static-md-engine-v1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -66,17 +98,18 @@ jobs:
         run: python scripts/release-meta.py stale
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # The engine is its own workspace with its own (nightly) pin.
+      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
+        working-directory: src-tauri/engine
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/engine
       - run: npm ci
-      - name: Sidecars
-        if: runner.os != 'Windows'
-        run: sh scripts/fetch-sidecars.sh
-      - name: Sidecars
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
-        run: sh scripts/fetch-sidecars.sh
+      - name: Engine
+        run: sh scripts/build-engine.sh
 
       # The same on every OS from here.
       - name: Package

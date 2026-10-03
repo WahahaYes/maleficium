@@ -198,7 +198,7 @@ def linux(dir, shots):
          "matchbox-window-manager"], stdout=subprocess.DEVNULL,
         env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
     files = run(["dpkg", "-L", "maleficium"], capture_output=True, text=True).stdout.splitlines()
-    for want in ["/usr/bin/maleficium", "/usr/bin/maleficium-mcp", "/usr/bin/maleficium-tectonic", "/usr/bin/maleficium-synctex"]:
+    for want in ["/usr/bin/maleficium", "/usr/bin/maleficium-mcp", "/usr/bin/maleficium-engine"]:
         if want not in files:
             fail("package lacks %s" % want)
     if not any(f.endswith("Maleficium.desktop") for f in files):
@@ -242,7 +242,7 @@ def macos(dir, shots):
     say("signature ok")
     bin = os.path.join(app, "Contents/MacOS")
     arch = platform.machine()  # arm64 or x86_64, as lipo names them
-    for b in ["maleficium-mcp", "maleficium-tectonic", "maleficium-synctex"]:
+    for b in ["maleficium-mcp", "maleficium-engine"]:
         path = os.path.join(bin, b)
         if not os.access(path, os.X_OK):
             fail("bundle lacks %s" % b)
@@ -276,7 +276,7 @@ def windows(dir, shots):
     dest = tempfile.mkdtemp(prefix="smoke-")
     # NSIS takes /D= last and unquoted, so pass a raw command line.
     run('"%s" /S /D=%s' % (setup, dest))
-    for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-tectonic.exe", "maleficium-synctex.exe"]:
+    for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
         if not os.path.isfile(os.path.join(dest, b)):
             fail("install lacks %s" % b)
     say("install ok (%s)" % dest)

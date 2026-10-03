@@ -205,7 +205,7 @@ pub fn sidecar_path_for(name: &str) -> Result<PathBuf, String> {
     let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../binaries");
     find_sidecar(exe.as_deref().and_then(Path::parent), &dev, name, triple).ok_or_else(|| {
         format!(
-            "bundled {} sidecar missing ({}-{}): run scripts/fetch-sidecars.sh",
+            "bundled {} sidecar missing ({}-{}): run scripts/build-engine.sh",
             name, name, triple
         )
     })
@@ -311,10 +311,10 @@ mod tests {
         let dev = crate::test_scratch::dir("sidecar-dev");
         std::fs::create_dir_all(&dev).unwrap();
         let ext = if cfg!(windows) { ".exe" } else { "" };
-        let installed = app.join(format!("maleficium-tectonic{ext}"));
+        let installed = app.join(format!("maleficium-engine{ext}"));
         std::fs::write(&installed, b"").unwrap();
-        std::fs::write(dev.join(format!("maleficium-tectonic-t{ext}")), b"").unwrap();
-        let found = find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t");
+        std::fs::write(dev.join(format!("maleficium-engine-t{ext}")), b"").unwrap();
+        let found = find_sidecar(Some(&app), &dev, "maleficium-engine", "t");
         assert_eq!(found, Some(installed));
     }
 
@@ -325,14 +325,14 @@ mod tests {
         let dev = crate::test_scratch::dir("sidecar-dev-only");
         std::fs::create_dir_all(&dev).unwrap();
         let ext = if cfg!(windows) { ".exe" } else { "" };
-        let fetched = dev.join(format!("maleficium-synctex-t{ext}"));
-        std::fs::write(&fetched, b"").unwrap();
+        let built = dev.join(format!("maleficium-engine-t{ext}"));
+        std::fs::write(&built, b"").unwrap();
         assert_eq!(
-            find_sidecar(Some(&app), &dev, "maleficium-synctex", "t"),
-            Some(fetched)
+            find_sidecar(Some(&app), &dev, "maleficium-engine", "t"),
+            Some(built)
         );
         assert_eq!(
-            find_sidecar(Some(&app), &dev, "maleficium-tectonic", "t"),
+            find_sidecar(Some(&app), &dev, "maleficium-other", "t"),
             None
         );
     }
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn missing_sidecar_names_the_fix() {
         let err = sidecar_path_for("no-such-sidecar").unwrap_err();
-        assert!(err.contains("fetch-sidecars.sh"), "{err}");
+        assert!(err.contains("build-engine.sh"), "{err}");
     }
 
     #[test]

@@ -55,7 +55,7 @@
     "longDescription": "Maleficium is a desktop-native LaTeX editor.\nIt bundles the Tectonic engine for fully offline compiles after the first bundle download.",
     "copyright": "Copyright 2026 Ethan Wilson",
     "license": "Apache-2.0",
-    "externalBin": ["binaries/maleficium-tectonic", "binaries/maleficium-synctex"],
+    "externalBin": ["binaries/maleficium-engine"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -50,8 +50,9 @@ fn query_for(cx: &Core, root_id: &str, main_rel: &str) -> Result<Query, String> 
 }
 
 fn run_sidecar(dir: &Path, args: &[String]) -> Result<String, String> {
-    let bin = super::sidecar_path_for("maleficium-synctex")?;
+    let bin = super::sidecar_path_for("maleficium-engine")?;
     let output = super::quiet_command(&bin)
+        .arg("synctex")
         .current_dir(dir)
         .args(args)
         .output()

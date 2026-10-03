@@ -73,7 +73,7 @@ On Linux, Docker builds the `.deb` and AppImage with no toolchain on the host:
 docker build --output type=local,dest=../maleficium-release .
 ```
 
-To build on the host instead (Linux, macOS, or Windows), install the Node and Rust versions the repo pins, then run `npm ci`, `sh scripts/fetch-sidecars.sh`, and `sh scripts/package.sh`; packages land in `out/`. [docs/BUILDING.md](docs/BUILDING.md) lists the system packages each OS needs.
+To build on the host instead (Linux, macOS, or Windows), install the Node and Rust versions the repo pins, then run `npm ci`, `sh scripts/build-engine.sh`, and `sh scripts/package.sh`; packages land in `out/`. [docs/BUILDING.md](docs/BUILDING.md) lists the system packages each OS needs.
 
 ## Getting started
 

@@ -1,6 +1,6 @@
 # Building Maleficium from source
 
-Release targets: Linux x86_64 (`.deb` and AppImage), macOS aarch64 and x86_64 (`.dmg`), and Windows x86_64 (NSIS installer). Every route below needs network access during the build (npm, crates.io, Tectonic release assets, SyncTeX source).
+Release targets: Linux x86_64 (`.deb` and AppImage), macOS aarch64 and x86_64 (`.dmg`), and Windows x86_64 (NSIS installer). Every route below needs network access during the build (npm, crates.io).
 
 Run every command below from the repo root.
 
@@ -20,6 +20,7 @@ This runs `package.sh` on Ubuntu 24.04, the same base CI builds on and the oldes
 
 - Node from `.nvmrc` (Vite needs `^20.19.0 || >=22.12.0`)
 - Rust from `rust-toolchain.toml` (`rustup toolchain install` in the repo root)
+- The engine (`src-tauri/engine`) is its own workspace with its own pinned nightly (latexml needs it): run `rustup toolchain install` there too. `scripts/build-engine.sh` builds it from source, which needs a few GB of RAM (cap parallelism with `CARGO_BUILD_JOBS=3` on a small machine) and a C and C++ compiler with libclang headers
 
 ### Linux
 
@@ -29,34 +30,27 @@ System packages (Ubuntu 24.04 or newer, Debian 13 or newer), from the list CI an
 xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
 ```
 
-`zlib1g-dev` provides the static zlib the SyncTeX build links; `libgraphite2-3` is a runtime dependency of the bundled Tectonic. Fedora and Arch: install the Tauri 2 Linux prerequisites listed at <https://v2.tauri.app/start/prerequisites/#linux>, plus git, python3, graphite2 and a static zlib (Fedora: `zlib-ng-compat-static`).
+The engine links ICU, freetype, fontconfig, graphite2, libpng, libxml2 and libxslt from the system on Linux, so the `-dev` packages in that list are build dependencies and the matching libraries are runtime dependencies of the package (`libgraphite2-3` is declared today; the rest, and static linking on macOS and Windows, are still open). Fedora and Arch: install the Tauri 2 Linux prerequisites listed at <https://v2.tauri.app/start/prerequisites/#linux>, plus git, python3, graphite2 and a static zlib (Fedora: `zlib-ng-compat-static`).
 
 A host build links against the host's glibc, so for packages meant for other machines prefer Docker or CI.
 
 ### macOS
 
-Needs Xcode Command Line Tools (`xcode-select --install`) and git. Build on the architecture you are targeting. SyncTeX links the system zlib dynamically, since macOS does not support fully static binaries. The app is ad-hoc signed (`bundle.macOS.signingIdentity` is `-`), which Apple silicon requires before it will run a binary at all.
+Needs Xcode Command Line Tools (`xcode-select --install`) and git. Build on the architecture you are targeting. The app is ad-hoc signed (`bundle.macOS.signingIdentity` is `-`), which Apple silicon requires before it will run a binary at all.
 
 ### Windows
 
-Needs Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++"), Git Bash, and [MSYS2](https://www.msys2.org/) for the SyncTeX build. Fetch the sidecars in an MSYS2 **MINGW64** shell:
-
-```sh
-pacman -S --needed curl git python tar mingw-w64-x86_64-gcc mingw-w64-x86_64-zlib
-sh scripts/fetch-sidecars.sh
-```
-
-and run the rest from Git Bash.
+Needs Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg (static triplet `x64-windows-static-md`; see `.github/workflows/build.yml` for the ports and environment).
 
 ### Build
 
 ```sh
 npm ci
-sh scripts/fetch-sidecars.sh      # Windows: in MSYS2, as above
+sh scripts/build-engine.sh
 sh scripts/package.sh             # packages land in out/
 ```
 
-`fetch-sidecars.sh` puts the sha256-pinned Tectonic and a SyncTeX built from pinned source into `src-tauri/binaries/`; the bundler packs both next to the app binary. On Linux, `package.sh` also repacks the AppImage without the `libwayland-*` libraries the bundler copies in: they clash with a newer host Mesa and leave the window blank.
+`build-engine.sh` builds `maleficium-engine` (Tectonic and latexml, pinned by `src-tauri/engine/Cargo.lock`, plus the vendored SyncTeX parser) into `src-tauri/binaries/` and smoke-tests it; the bundler packs it next to the app binary. On Linux, `package.sh` also repacks the AppImage without the `libwayland-*` libraries the bundler copies in: they clash with a newer host Mesa and leave the window blank.
 
 ## Checking
 
