@@ -71,7 +71,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed
+          path: ${{ env.VCPKG_ROOT }}\installed
           key: vcpkg-x64-windows-static-md-engine-v1
       - name: Windows vcpkg install
         if: runner.os == 'Windows'
@@ -85,7 +85,7 @@ jobs:
         if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed
+          path: ${{ env.VCPKG_ROOT }}\installed
           key: vcpkg-x64-windows-static-md-engine-v1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

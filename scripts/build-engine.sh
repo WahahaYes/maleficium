@@ -43,9 +43,10 @@ if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
         export PKG_CONFIG_PATH
     fi
 fi
-# bindgen needs the C compiler's headers; point it at them when libclang does
-# not find stddef.h on its own.
-if [ -z "${BINDGEN_EXTRA_CLANG_ARGS:-}" ] && command -v gcc >/dev/null 2>&1; then
+# On Linux bindgen needs the C compiler's headers; point it at them when
+# libclang does not find stddef.h on its own. Not elsewhere: on Windows a
+# MinGW gcc on PATH would feed bindgen headers that clash with MSVC's.
+if [ "$(uname -s)" = Linux ] && [ -z "${BINDGEN_EXTRA_CLANG_ARGS:-}" ] && command -v gcc >/dev/null 2>&1; then
     gcc_inc=$(dirname "$(gcc -print-file-name=include/stddef.h)")
     [ -f "$gcc_inc/stddef.h" ] && export BINDGEN_EXTRA_CLANG_ARGS="-I$gcc_inc"
 fi
