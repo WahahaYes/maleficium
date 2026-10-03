@@ -108,6 +108,19 @@ jobs:
             src-tauri
             src-tauri/engine
       - run: npm ci
+      # latexml's format dumps come from the pinned bundle over the network
+      # (about two minutes). They belong to one latexml version and one
+      # bundle pin, so the cache is keyed on exactly that pair
+      # (scripts/dumps-key.sh); build-engine.sh skips generation on a hit.
+      # Both steps are UNVERIFIED on macOS and Windows until CI runs.
+      - name: Format dumps key
+        id: dumps-key
+        run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
+      - name: Format dumps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/resources/dumps
+          key: ${{ steps.dumps-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
 
