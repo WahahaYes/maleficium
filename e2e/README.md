@@ -10,6 +10,7 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `driver-run.sh` | no | Compile, SyncTeX, and file ops over the sidecar, plus heavy-document budgets |
 | `interactive-run.sh` | no | The interactive package installs, compiles, and the widget list, sidecar and annotations are right |
 | `export-run.sh` | no | Paper bundle export in every profile, preview in browser, declared origins, and the reader in Chromium, Firefox and WebKit |
+| `convert-run.sh` | no | `maleficium-engine convert` with the host TeX hidden (bwrap, Linux): structure counts, figure paths, an undefined macro still yields the article, nothing written beside the source |
 | `playground-run.sh` | no | The showcase paper compiles with every widget macro |
 | `approval-run.sh` | no | Html widget approval over the sidecar: nothing can approve over MCP, and the app-side store is what counts |
 | `posters-cache-run.sh` | Xvfb (own display) | The `.maleficium/posters` cache: two-pass compile, regeneration, cleanup, source zips and bundle export |
