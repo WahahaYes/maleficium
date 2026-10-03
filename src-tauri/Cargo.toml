@@ -4,6 +4,8 @@ version.workspace = true
 license = "Apache-2.0"
 description = "Desktop-native LaTeX editor"
 authors = ["Ethan Wilson"]
+repository = "https://github.com/WahahaYes/maleficium"
+homepage = "https://github.com/WahahaYes/maleficium"
 edition = "2021"
 default-run = "maleficium"
 

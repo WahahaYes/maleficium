@@ -4,6 +4,9 @@ version.workspace = true
 license = "Apache-2.0"
 edition = "2021"
 description = "The stdio MCP server over maleficium-core: no Tauri"
+authors = ["Ethan Wilson"]
+repository = "https://github.com/WahahaYes/maleficium"
+homepage = "https://github.com/WahahaYes/maleficium"
 
 [dependencies]
 rmcp = { version = "3.4.0", features = ["server", "transport-io"] }
