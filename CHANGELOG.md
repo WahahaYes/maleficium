@@ -30,6 +30,7 @@
 ### For contributors
 
 - **The TeX engine is built from source.** Compiling no longer runs a downloaded Tectonic binary. A new crate, `src-tauri/engine`, builds `maleficium-engine` (Tectonic 0.17.0 through its library API, with the same arguments and status lines) and still runs as a killable child of the app and the MCP server. It also links the latexml converter, as groundwork for a reflowed reader. Build it with `sh scripts/build-engine.sh` before `npm run build` or `tauri build`; CI builds it on all four targets, and the old sidecar download script is gone.
+- **The engine converts a paper to HTML with no TeX installed.** `maleficium-engine convert` resolves every file latexml asks for from the pinned Tectonic bundle (through a built-in `kpsewhich` mode, also reachable as `maleficium-engine kpsewhich`), generates the TeX Live 2022 kernel dumps at build time (`maleficium-engine dump`, run by `scripts/build-engine.sh` and cached in CI), and writes its stylesheets beside `--out` and never beside the source. It reports a failed post-processing step instead of returning raw XML, and tags each figure with `data-graphic`. The `maleficium-interactive` widgets convert to placeholders that join to the `.mfw` sidecar by order, and `reflow::figures` makes the article's figures self-contained. These are the pieces of the reflowed reader; nothing in the app calls them yet.
 - **Sidecar downloads retry.** A single 504 from GitHub no longer fails a CI job: the download is retried four times, and the sha256 pin is still checked.
 
 ## 0.3.0 - 2026-09-30
