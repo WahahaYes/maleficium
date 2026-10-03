@@ -426,11 +426,11 @@ pub fn pdf_first_page_png(bytes: Vec<u8>, dpi: f32, max_px: u32) -> Result<Vec<u
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A one-page pdf with a filled box, written by hand so tests need no engine.
-    fn tiny_pdf() -> Vec<u8> {
+    pub(crate) fn tiny_pdf() -> Vec<u8> {
         let content = b"0 0 1 rg 100 600 200 100 re f";
         let objs = [
             "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
