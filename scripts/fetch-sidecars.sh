@@ -47,6 +47,10 @@ case "$(uname -s) $(uname -m)" in
     (*) die "no SyncTeX recipe for $(uname -s) $(uname -m)" ;;
 esac
 
+# An MSYS2 shell does not inherit rustup's cargo from the Windows PATH.
+if ! command -v cargo >/dev/null 2>&1 && [ -n "${USERPROFILE:-}" ] && command -v cygpath >/dev/null 2>&1; then
+    PATH="$PATH:$(cygpath -u "$USERPROFILE")/.cargo/bin"
+fi
 need cargo
 mkdir -p "$BIN"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-sidecars-XXXXXX")
@@ -60,6 +64,10 @@ if [ -z "${BINDGEN_EXTRA_CLANG_ARGS:-}" ] && command -v gcc >/dev/null 2>&1; the
     gcc_inc=$(dirname "$(gcc -print-file-name=include/stddef.h)")
     [ -f "$gcc_inc/stddef.h" ] && export BINDGEN_EXTRA_CLANG_ARGS="-I$gcc_inc"
 fi
+# latexml's kpathsea crate wants libkpathsea or a kpsewhich on PATH at build
+# time. The product ships no TeX distribution, so build without either; the
+# package resolution it would give is a separate decision.
+export KPATHSEA_SKIP_TOOLCHAIN_CHECK=1
 (cd "$ROOT/src-tauri/engine" && cargo build --release) || die "engine build failed"
 install -m 755 "$ROOT/src-tauri/engine/target/release/maleficium-engine$EXE" \
     "$BIN/maleficium-engine-$SYNCTEX_TRIPLE$EXE"
