@@ -21,6 +21,7 @@ use latexml::converter::Converter;
 use latexml::post::{self, PostOptions};
 use latexml_core::common::{Config, OutputFormat};
 
+use crate::graphics;
 use crate::session::{self, Options};
 
 pub fn run(args: Vec<OsString>) -> i32 {
@@ -240,8 +241,14 @@ fn convert(source: String, out: &Path, source_dir: &Path) -> Converted {
         };
         let post = post::run_post_processing_logged(&xml, &post_opts);
         let status_code = core.status_code.max(post.status_code);
-        let log = format!("{}\n{}", core.log, post.log);
-        let html = post.html;
+        let mut log = format!("{}\n{}", core.log, post.log);
+        let html = match graphics::inject(&xml, &post.html) {
+            Ok(html) => html,
+            Err(why) => {
+                log.push_str(&format!("\nWarning:graphics:data-graphic {why}\n"));
+                post.html
+            }
+        };
         Converted {
             html,
             log,
