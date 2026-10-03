@@ -46,6 +46,40 @@ jobs:
       - name: Linux build packages
         if: runner.os == 'Linux'
         run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
+      # The engine links ICU, freetype, graphite2, libpng and fontconfig (found
+      # through pkg-config); icu4c is keg-only. Static linking is still open.
+      - name: macOS engine libraries
+        if: runner.os == 'macOS'
+        run: |
+          brew install pkg-config icu4c graphite2 freetype libpng fontconfig harfbuzz
+          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+      # Windows: the engine's C libraries come from vcpkg, statically linked
+      # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
+      # find the same triplet through VCPKGRS_TRIPLET). The installed tree is
+      # cached: a cold vcpkg build of ICU is slow.
+      - name: Windows engine libraries (vcpkg)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VCPKG_TRIPLET: x64-windows-static-md
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
+          "TECTONIC_DEP_BACKEND=vcpkg" >> $env:GITHUB_ENV
+      - name: Windows vcpkg cache
+        if: runner.os == 'Windows'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed
+          key: vcpkg-x64-windows-static-md-engine-v1
+      - name: Windows vcpkg install
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $t = "x64-windows-static-md"
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install `
+            "freetype:$t" "graphite2:$t" "harfbuzz[graphite2]:$t" "icu:$t" `
+            "libpng:$t" "fontconfig:$t" "libxml2:$t" "libxslt:$t"
       # SyncTeX builds under MINGW64 (gcc + static zlib); the app itself
       # builds with the runner's MSVC toolchain.
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
