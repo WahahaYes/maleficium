@@ -1,0 +1,5 @@
+<article class="ltx_document">
+<figure id="S3.F1" class="ltx_figure"><img src="" id="S3.F1.g1" class="ltx_graphics ltx_centering ltx_missing ltx_missing_image" alt="Refer to caption">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">Figure 1. </span>Illustration of eye tracking spatial error and object visual size measurements. As an average case measurement, object segmentation area can be mapped to a circular region, with the radius reflecting the eye tracking accuracy requirement (<span class="ltx_text" style="--ltx-fg-color:#FF0000;">thin bars</span>). Alternatively, <math id="S3.F1.m3" class="ltx_Math" alttext="1/2" display="inline"><mrow><mn>1</mn><mo>/</mo><mn>2</mn></mrow></math> minor axis span <math id="S3.F1.m4" class="ltx_Math" alttext="L_{min}" display="inline"><msub><mi>L</mi><mrow><mi>m</mi><mo>⁢</mo><mi>i</mi><mo>⁢</mo><mi>n</mi></mrow></msub></math> (<span class="ltx_text" style="--ltx-fg-color:#FF0000;">thick bars</span>) is a stricter bound for measuring non-uniform objects.</figcaption>
+</figure>
+</article>
