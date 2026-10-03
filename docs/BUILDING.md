@@ -50,7 +50,9 @@ sh scripts/build-engine.sh
 sh scripts/package.sh             # packages land in out/
 ```
 
-`build-engine.sh` builds `maleficium-engine` (Tectonic and latexml, pinned by `src-tauri/engine/Cargo.lock`, plus the vendored SyncTeX parser) into `src-tauri/binaries/` and smoke-tests it; the bundler packs it next to the app binary. On Linux, `package.sh` also repacks the AppImage without the `libwayland-*` libraries the bundler copies in: they clash with a newer host Mesa and leave the window blank.
+`build-engine.sh` builds `maleficium-engine` (Tectonic and latexml, pinned by `src-tauri/engine/Cargo.lock`, plus the vendored SyncTeX parser) into `src-tauri/binaries/` and smoke-tests it; the bundler packs it next to the app binary. It then runs `maleficium-engine dump` to generate latexml's kernel format dumps (`plain`, `latex` and a version stamp, about 3 MB) from the bundle pinned in `src-tauri/core/src/engine.rs` into `src-tauri/resources/dumps/` (untracked; needs the network, about two minutes), and `tauri.conf.json` bundles that directory as app resources. The dumps belong to one latexml version and one bundle pin (`scripts/dumps-key.sh` names the pair); an unchanged pair is not regenerated. `package.sh` refuses to run without them. The engine finds them at the app's resource directory plus `resources/dumps` (Linux `.deb`/AppImage: `../lib/Maleficium/` beside `usr/bin`; macOS: `Contents/Resources`; Windows: the install directory) unless `--dumps` or `MALEFICIUM_DUMP_DIR` says otherwise. Only the Linux layout was checked, against Tauri's `resource_dir`; the others are unverified.
+
+`maleficium-engine convert` needs no TeX installation: it re-runs itself as `kpsewhich` (a link in a private scratch directory first on `PATH`), resolving every file latexml asks for from the pinned bundle's Tectonic cache and fetching what is missing. `e2e/convert-run.sh` proves it with the host TeX hidden. On Linux, `package.sh` also repacks the AppImage without the `libwayland-*` libraries the bundler copies in: they clash with a newer host Mesa and leave the window blank.
 
 ## Checking
 

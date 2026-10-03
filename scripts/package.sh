@@ -26,6 +26,9 @@ die() { printf 'package: %s\n' "$1" >&2; exit 1; }
 [ -n "$(ls -A "$ROOT/src-tauri/binaries" 2>/dev/null)" ] \
     || die "no sidecars in src-tauri/binaries; run sh scripts/build-engine.sh first"
 
+ls "$ROOT"/src-tauri/resources/dumps/latex.*.dump.txt >/dev/null 2>&1 \
+    || die "no latexml format dumps in src-tauri/resources/dumps; run sh scripts/build-engine.sh first"
+
 case "$(uname -s)" in
     Linux) BUNDLES=deb,appimage ;;
     Darwin) BUNDLES=dmg ;;
