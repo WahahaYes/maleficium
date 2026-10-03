@@ -1,0 +1,161 @@
+\documentclass{article}
+\usepackage{amsmath,amsthm}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{maleficium-interactive}
+\maleficiumtheme{house}
+\maleficiumsetup{bundleurl=https://example.org/papers/playground}
+\newtheorem{theorem}{Theorem}
+\title{The Playground Paper}
+\author{Maleficium}
+\date{}
+\begin{document}
+\maketitle
+\begin{abstract}
+One source that compiles to a PDF today and is meant to become an
+interactive HTML paper later. Every widget macro the package offers
+appears at least once, beside plain figures, subfigures, math,
+citations, cross-references and a theorem.
+\end{abstract}
+
+\section{Introduction}
+Text typeset with \TeX{}~\cite{knuth1984texbook} and \LaTeX{}~\cite{lamport1994latex}
+reads the same in print and on screen; the widgets below add an
+interactive layer on top of that~\cite{shannon1948mathematical}.
+Section~\ref{sec:guide} explains each widget, and
+Figures~\ref{fig:model}, \ref{fig:video}, \ref{fig:chart} and~\ref{fig:html},
+Table~\ref{tab:results} and Figure~\ref{fig:subs} show them.
+
+\section{Widgets}\label{sec:widgets}
+
+\subsection{Model}
+\begin{figure}[ht]
+\centering
+\caption{A three-dimensional model widget with a poster fallback.}
+\label{fig:model}
+\interactivemodel[poster=figures/mesh.png, height=5cm, id=fig-model,
+  alt={Blue poster standing in for an interactive 3D mesh}]{models/mesh.glb}
+\end{figure}
+
+\subsection{Video}
+\begin{figure}[ht]
+\centering
+\caption{A video widget; the poster frame is what the PDF shows.}
+\label{fig:video}
+\interactivevideo[poster=figures/clip.png, height=5cm, id=fig-video,
+  alt={Red poster frame of a playback clip}]{media/clip.mp4}
+\end{figure}
+
+\subsection{Table from CSV}
+Table~\ref{tab:results} is read from a CSV file. The PDF keeps the first
+three rows; the interactive view carries all five.
+\begin{table}[ht]
+\centering
+\caption{Accuracy and latency for each configuration.}
+\label{tab:results}
+\interactivetable[pdfrows=3, id=tab-results,
+  alt={Accuracy and latency for five configurations, from baseline to ours-xl}]{data/results.csv}
+\end{table}
+
+\subsection{Chart from a Vega-Lite spec}
+\begin{figure}[ht]
+\centering
+\caption{Accuracy by method, drawn from a Vega-Lite specification.}
+\label{fig:chart}
+\interactivechart[poster=figures/chart.png, height=5cm, id=fig-chart,
+  alt={Bar chart of accuracy rising from 0.71 for baseline to 0.89 for ours-xl}]{charts/ablation.vl.json}
+\end{figure}
+
+\subsection{HTML widget}
+\begin{figure}[ht]
+\centering
+\caption{A self-contained HTML widget in a sandboxed frame.}
+\label{fig:html}
+\interactive[poster=figures/demo.png, height=5cm, id=fig-html,
+  alt={Purple poster standing in for a live HTML demo}]{widgets/demo/}
+\end{figure}
+
+\subsection{Widget in a float without a caption}
+A float needs no caption. This one holds a widget and nothing else, so it
+carries no label and no figure number.
+\begin{figure}[ht]
+\centering
+\interactivechart[poster=figures/chart.png, height=3cm, id=chart-bare,
+  alt={Small uncaptioned copy of the accuracy chart}]{charts/ablation.vl.json}
+\end{figure}
+
+A widget may also sit directly in the text, outside any float. It records
+no label and no figure number either.
+
+\begin{center}
+\interactivechart[poster=figures/chart.png, height=3cm, id=chart-inline,
+  alt={Small inline copy of the accuracy chart outside any float}]{charts/ablation.vl.json}
+\end{center}
+
+\section{Plain floats}
+Not every figure is interactive. Figure~\ref{fig:plain} has a caption;
+the one after it has none.
+\begin{figure}[ht]
+\centering
+\includegraphics[height=3cm]{figures/plain.png}
+\caption{A static figure with a caption.}
+\label{fig:plain}
+\end{figure}
+\begin{figure}[ht]
+\centering
+\includegraphics[height=3cm]{figures/plain.png}
+\end{figure}
+
+\subsection{Subfloats}
+Figure~\ref{fig:subs} uses the standard \texttt{subcaption} package, with
+Figures~\ref{fig:suba} and~\ref{fig:subb} as its panels.
+\begin{figure}[ht]
+\centering
+\begin{subfigure}{0.45\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/left.png}
+\caption{First panel.}\label{fig:suba}
+\end{subfigure}\hfill
+\begin{subfigure}{0.45\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/right.png}
+\caption{Second panel.}\label{fig:subb}
+\end{subfigure}
+\caption{Two subfigures side by side.}
+\label{fig:subs}
+\end{figure}
+
+\section{Math and theorems}
+Entropy is defined in Equation~\eqref{eq:entropy} and bounded in
+Theorem~\ref{thm:bound}.
+\begin{equation}\label{eq:entropy}
+H(X) = -\sum_{i=1}^{n} p_i \log p_i .
+\end{equation}
+\begin{theorem}\label{thm:bound}
+For a distribution on $n$ outcomes, $0 \le H(X) \le \log n$.
+\end{theorem}
+\begin{proof}
+Jensen's inequality gives $H(X) \le \log \sum_i p_i \cdot \tfrac{1}{p_i} = \log n$,
+and each term of Equation~\eqref{eq:entropy} is nonnegative.
+\end{proof}
+
+\section{What each widget does}\label{sec:guide}
+\begin{description}
+\item[Model] \verb|\interactivemodel| loads a glTF model (\texttt{.glb}) for orbiting
+  and zooming. The PDF shows the poster (Figure~\ref{fig:model}).
+\item[Video] \verb|\interactivevideo| plays a clip, with an optional remote URL
+  and checksum for large files. The PDF shows the poster frame (Figure~\ref{fig:video}).
+\item[Table] \verb|\interactivetable| reads a CSV into a sortable table. The PDF
+  prints only the first \texttt{pdfrows} rows (Table~\ref{tab:results}).
+\item[Chart] \verb|\interactivechart| renders a Vega-Lite specification with
+  hover details; the PDF shows a poster (Figure~\ref{fig:chart}).
+\item[HTML] \verb|\interactive| embeds a folder with an \texttt{index.html} in a
+  sandboxed frame (Figure~\ref{fig:html}).
+\end{description}
+Every widget requires \texttt{alt=} text, which becomes the image
+description in the HTML view, and every widget besides the table needs a
+\texttt{poster=} image that the PDF shows.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}

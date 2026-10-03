@@ -16,6 +16,7 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import CloseIcon from '@mui/icons-material/Close';
 import type { CheckKind } from '../lib/generated/structure';
+import { findingNeedsInstall } from '../lib/interactiveInstall';
 import type { PrecheckFindings } from '../hooks/useCompileRunner';
 
 const KIND_LABEL: Record<CheckKind, string> = {
@@ -29,12 +30,15 @@ export default function PrecheckPanel({
   precheck,
   popupEnabled,
   onJump,
+  onInstallInteractive,
   onClose,
 }: {
   precheck: PrecheckFindings;
   /** Whether the panel opens on its own; the checkbox shows only then. */
   popupEnabled: boolean;
   onJump: (rootPath: string, rel: string, line: number) => void;
+  /** Put maleficium-interactive.sty into the project (offered on that finding). */
+  onInstallInteractive: () => void;
   onClose: (dontShowAgain: boolean) => void;
 }) {
   const [dontShow, setDontShow] = useState(false);
@@ -83,35 +87,48 @@ export default function PrecheckPanel({
       </Typography>
       <Box sx={{ overflowY: 'auto', borderTop: 1, borderBottom: 1, borderColor: 'divider' }}>
         {precheck.findings.map((f) => (
-          <ButtonBase
-            key={`${f.kind}|${f.name}|${f.path}|${f.line}`}
-            onClick={() => onJump(precheck.rootPath, f.path, f.line)}
-            title={`Go to ${f.path}:${f.line}`}
-            sx={{
-              display: 'block',
-              width: '100%',
-              textAlign: 'left',
-              px: 1.5,
-              py: 0.75,
-              '&:hover': { bgcolor: 'action.hover' },
-            }}
-          >
-            <Typography variant="caption" color="warning.main" component="div">
-              {KIND_LABEL[f.kind]}
-            </Typography>
-            <Typography variant="body2" component="div" noWrap>
-              {f.name}
-              <Typography component="span" variant="caption" color="text.secondary">
-                {'  '}
-                {f.path}:{f.line}
+          <Box key={`${f.kind}|${f.name}|${f.path}|${f.line}`}>
+            <ButtonBase
+              onClick={() => onJump(precheck.rootPath, f.path, f.line)}
+              title={`Go to ${f.path}:${f.line}`}
+              sx={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                px: 1.5,
+                py: 0.75,
+                '&:hover': { bgcolor: 'action.hover' },
+              }}
+            >
+              <Typography variant="caption" color="warning.main" component="div">
+                {KIND_LABEL[f.kind]}
               </Typography>
-            </Typography>
-            {f.suggestion ? (
-              <Typography variant="caption" color="text.secondary" component="div">
-                Try: {f.suggestion}
+              <Typography variant="body2" component="div" noWrap>
+                {f.name}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {'  '}
+                  {f.path}:{f.line}
+                </Typography>
               </Typography>
+              {f.suggestion ? (
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Try: {f.suggestion}
+                </Typography>
+              ) : null}
+            </ButtonBase>
+            {findingNeedsInstall(f) ? (
+              <Box sx={{ px: 1.5, pb: 0.75 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  data-testid="install-interactive-fix"
+                  onClick={onInstallInteractive}
+                >
+                  Install maleficium-interactive.sty
+                </Button>
+              </Box>
             ) : null}
-          </ButtonBase>
+          </Box>
         ))}
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.5 }}>

@@ -19,6 +19,7 @@ const DRIFTED_RUN: CompileResult = {
   log: '',
   failure: null,
   missing: { reason: 'bundle-changed' },
+  approvals: [],
 };
 
 const DRIFTED_READINESS: OfflineReadiness = {
@@ -33,6 +34,7 @@ const CLEAN_RUN: CompileResult = {
   log: '',
   failure: null,
   missing: null,
+  approvals: [],
 };
 
 const CLEAN_READINESS: OfflineReadiness = { state: 'ready', needs: [], missing: null };
@@ -95,6 +97,7 @@ describe('bundle drift is loud', () => {
       log: 'bundled tectonic failed: boom',
       failure: 'engine-error',
       missing: null,
+      approvals: [],
     };
     expect(compileLogText(failed, 'main.tex')).toBe('bundled tectonic failed: boom');
     const text = compileLogText({ ...failed, missing: { reason: 'bundle-changed' } }, 'main.tex');

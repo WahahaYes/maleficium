@@ -196,6 +196,69 @@ struct CancelParams {
     job_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct InteractiveInstallParams {
+    root_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WidgetsParams {
+    root_id: String,
+    main_rel: String,
+}
+
+/// Unknown fields are refused: there is no approval argument for an agent
+/// to pass, so an `approve` (or anything like it) is an error.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetsStatusParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetCheckParams {
+    root_id: String,
+    main_rel: String,
+    /// The widget id, as `widgets` lists it.
+    widget: String,
+}
+
+/// Unknown fields are refused: the export has no approval argument for an
+/// agent to pass, so an `approved_fetch` (or anything like it) is an error,
+/// not something quietly ignored.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ExportBundleParams {
+    root_id: String,
+    main_rel: String,
+    /// Absolute path outside the project: a new or empty folder (folder,
+    /// hosted), or the file to write (single-file).
+    dest: String,
+    profile: maleficium_events::BundleProfile,
+    /// Single-file warning threshold in bytes; default 50 MiB.
+    size_cap_bytes: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PreviewBundleParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct PreviewBundleOut {
+    /// Absolute path of the single-file bundle's index.html, outside the project.
+    path: String,
+    bytes: u64,
+    widgets: u32,
+    warnings: Vec<core::bundle::BundleWarning>,
+    /// How to view it: nothing was opened.
+    hint: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -696,6 +759,185 @@ impl Maleficium {
                 &p.parent_dir,
                 &p.name,
             )?))
+        })
+    }
+
+    #[tool(
+        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path. Never replaces a modified copy (outcome needs-confirmation): only the user can confirm that, in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn interactive_install(
+        &self,
+        Parameters(p): Parameters<InteractiveInstallParams>,
+    ) -> Result<Json<core::interactive::InstallResult>, String> {
+        self.tool("interactive_install", || {
+            Ok(Json(core::interactive::install_checked(
+                &self.cx, &p.root_id, false,
+            )?))
+        })
+    }
+
+    #[tool(
+        description = "The interactive widgets of main_rel's last compile: for each, its page, rect (PDF units, origin bottom-left), type, runtime, sources, options, alt, float label and figure number, and declared csp origins, in document order. Empty when the document declares none. Fails (isError) when main_rel was never compiled, or when the widget sidecar and the pdf disagree (recompile), or when a widget bundle's widget.json is invalid.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets(
+        &self,
+        Parameters(p): Parameters<WidgetsParams>,
+    ) -> Result<Json<core::widgets::WidgetList>, String> {
+        self.tool("widgets", || {
+            let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
+                &p.main_rel,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Approval state of every html widget (author code) of main_rel's last compile, so you can ask the user about all of them at once. approved: runs as is (via user, or via auto when the project's auto-approval covers a content change). approval_required: a normal result, not an error, with cause (never_approved, changed_since_approval, declared_origins_changed, revoked), digest, declaredOrigins, whatHappens, userAction, agentMustNot and a message to relay. unavailable: the folder cannot be approved (a symlink, a special file, too large). exempt: first-party widgets that need no approval. autoApprove is the project's setting. Only the user approves, revokes or changes auto-approval, in the app's View > Widgets: no tool can, and nothing written into the project counts.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets_status(
+        &self,
+        Parameters(p): Parameters<WidgetsStatusParams>,
+    ) -> Result<Json<core::widget_approval::WidgetsStatus>, String> {
+        self.tool("widgets_status", || {
+            let s = core::widget_approval::widgets_status(&self.cx, &p.root_id, &p.main_rel)?;
+            let changed: Vec<_> = s
+                .widgets
+                .iter()
+                .filter_map(|w| {
+                    core::widget_approval::digest_changed_event(
+                        &p.root_id,
+                        w,
+                        maleficium_events::Actor::Agent,
+                    )
+                })
+                .collect();
+            let _ = core::eventlog::append(&changed);
+            Ok(Json(s))
+        })
+    }
+
+    #[tool(
+        description = "Whether one html widget of main_rel may run: status approved, or status approval_required as a normal result (not an error) carrying the widget id, path, digest, cause, declaredOrigins, whatHappens, userAction (the user approves it in the app's View > Widgets), agentMustNot and a message to relay. Do not poll it in a loop: it only changes when the user acts. Fails (isError) for an unknown or first-party widget, which needs no approval, and for a folder that cannot be approved (a symlink, a special file, outside the project, too large).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widget_check(
+        &self,
+        Parameters(p): Parameters<WidgetCheckParams>,
+    ) -> Result<Json<core::widget_approval::WidgetApprovalStatus>, String> {
+        self.tool("widget_check", || {
+            let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
+            let w = list
+                .widgets
+                .iter()
+                .find(|w| w.id == p.widget)
+                .ok_or_else(|| format!("{} has no widget {}", p.main_rel, p.widget))?;
+            let target =
+                core::widget_approval::WidgetTarget::of(&p.main_rel, w)?.ok_or_else(|| {
+                    format!(
+                        "widget {} runs a first-party runtime: it needs no approval",
+                        p.widget
+                    )
+                })?;
+            let checked =
+                core::widget_approval::check_widget_approval(&self.cx, &p.root_id, &target)?;
+            if let Some(e) = core::widget_approval::digest_changed_event(
+                &p.root_id,
+                &checked.status,
+                maleficium_events::Actor::Agent,
+            ) {
+                let _ = core::eventlog::append(std::slice::from_ref(&e));
+            }
+            Ok(Json(checked.status))
+        })
+    }
+
+    #[tool(
+        description = "Export main_rel's last compile as a paper bundle at dest, an absolute path outside the project: profile folder or hosted writes a folder (manifest.json, index.html, paper.pdf, theme/, widgets/<id>/index.html, content-addressed assets/), single-file writes one html file with everything inline. Every widget is one self-contained document with a strict CSP; assets are sha256-hashed from the project's files. Writes only to dest (an earlier bundle there is replaced; any other non-empty folder is refused) and never fetches: a remote asset with no local copy is refused, since hashing it would need a download that only the user can approve in the app. Returns the path, bytes, counts and warnings (size cap, runtimes missing from this build, files an author bundle could not inline). Fails before any compile, for a destination inside the project, and for an invalid manifest.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn export_bundle(
+        &self,
+        Parameters(p): Parameters<ExportBundleParams>,
+    ) -> Result<Json<core::bundle::BundleExported>, String> {
+        self.tool("export_bundle", || {
+            let r = core::bundle::export_bundle(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+                &p.dest,
+                p.profile,
+                p.size_cap_bytes,
+            );
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                p.profile,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Preview main_rel's last compile as a paper bundle: exports the single-file profile (everything inline, opens from file://) to index.html in a scratch folder under the app data dir, never in the project, and returns its absolute path. It does not open anything: open the path in a browser yourself, or tell the user to (the app's File menu has Preview in Browser). One scratch folder per project; the next preview replaces it. Same rules as export_bundle: never fetches, no approvals, fails before any compile and for an invalid manifest. The browser sandbox is the only isolation: it is not egress-proof, so treat widgets as untrusted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn preview_bundle(
+        &self,
+        Parameters(p): Parameters<PreviewBundleParams>,
+    ) -> Result<Json<PreviewBundleOut>, String> {
+        self.tool("preview_bundle", || {
+            let r = core::bundle::preview_bundle(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                core::bundle::BundleProfile::SingleFile,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            let r = r?;
+            Ok(Json(PreviewBundleOut {
+                hint: format!("open {} in a browser to view it", r.path),
+                path: r.path,
+                bytes: r.bytes,
+                widgets: r.widgets,
+                warnings: r.warnings,
+            }))
         })
     }
 
@@ -1306,6 +1548,238 @@ mod tests {
         );
     }
 
+    /// The widget list only reads: hosts may call it without confirmation.
+    /// Its failures reach the client as tool errors, never as an empty list.
+    #[test]
+    fn widgets_is_a_read_only_tool_and_failures_are_errors() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "widgets").expect("widgets");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let m = Maleficium::default();
+        let err = m
+            .widgets(Parameters(WidgetsParams {
+                root_id: "nope".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The export writes a new place and replaces only an earlier bundle, so
+    /// it is not read-only; it never fetches, so it is not open-world. An
+    /// agent has no way to approve a download: the parameters refuse any
+    /// field the schema does not list, and the tool has no approval argument.
+    /// The preview tool takes no destination (the core picks the scratch
+    /// folder) and no approval, and it only returns a path: opening it is the
+    /// app menu's job.
+    #[test]
+    fn preview_bundle_takes_a_project_and_nothing_else() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "preview_bundle")
+            .expect("preview_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(props, ["main_rel", "root_id"]);
+        assert!(serde_json::from_value::<PreviewBundleParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn export_bundle_cannot_be_given_an_approval_and_fails_closed() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "export_bundle")
+            .expect("export_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            props,
+            ["dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+        let base = serde_json::json!({
+            "root_id": "r", "main_rel": "main.tex", "dest": "/tmp/x", "profile": "folder"
+        });
+        assert!(serde_json::from_value::<ExportBundleParams>(base.clone()).is_ok());
+        for extra in [
+            "approved_fetch",
+            "approve_fetch",
+            "approve",
+            "fetch",
+            "network",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(["https://media.example.org/clip.mp4"]);
+            assert!(
+                serde_json::from_value::<ExportBundleParams>(v).is_err(),
+                "{extra} must not be accepted"
+            );
+        }
+        let m = Maleficium::default();
+        let err = m
+            .export_bundle(Parameters(
+                serde_json::from_value::<ExportBundleParams>(base).unwrap(),
+            ))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The approval boundary: no tool approves, revokes or switches
+    /// auto-approval. No tool is named for it, no tool takes a parameter
+    /// for it (and the approval tools refuse unknown fields), and this
+    /// crate never calls the core's user-action functions.
+    #[test]
+    fn no_tool_can_approve_revoke_or_change_auto_approval() {
+        let tools = Maleficium::tool_router().list_all();
+        let banned = ["approv", "revok", "auto", "mode", "trust", "allow"];
+        for t in &tools {
+            let name = t.name.to_lowercase();
+            assert!(!banned.iter().any(|b| name.contains(b)), "tool {name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            let props = schema["properties"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for key in props.keys() {
+                let k = key.to_lowercase();
+                assert!(
+                    !banned.iter().any(|b| k.contains(b)),
+                    "tool {name} takes `{key}`"
+                );
+            }
+        }
+        for name in ["widgets_status", "widget_check"] {
+            let t = tools.iter().find(|t| t.name == name).expect(name);
+            let a = t.annotations.as_ref().expect("annotations");
+            assert_eq!(a.read_only_hint, Some(true), "{name}");
+            assert_eq!(a.open_world_hint, Some(false), "{name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            assert_eq!(schema["additionalProperties"], false, "{name}");
+        }
+        let base = serde_json::json!({"root_id": "r", "main_rel": "main.tex", "widget": "w"});
+        assert!(serde_json::from_value::<WidgetCheckParams>(base.clone()).is_ok());
+        for extra in [
+            "approve",
+            "approved",
+            "auto_approve",
+            "digest",
+            "revoke",
+            "mode",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetCheckParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"root_id": "r", "main_rel": "main.tex"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetsStatusParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+        let src = include_str!("lib.rs");
+        for f in [
+            "approve",
+            "approve_at",
+            "revoke",
+            "revoke_at",
+            "set_auto_approve",
+            "set_auto_at",
+        ] {
+            let call = format!("widget_approval::{f}(");
+            assert!(!src.contains(&call), "the MCP crate calls {call}");
+        }
+    }
+
+    /// A widget nobody approved is a normal result naming what the user
+    /// must do, never a tool error; a first-party one is an error.
+    #[test]
+    fn widget_check_returns_approval_required_as_a_normal_result() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-approval");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("widgets/demo")).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        std::fs::write(dir.join("widgets/demo/index.html"), "<p>demo</p>").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "ap", &root.to_string_lossy()).unwrap();
+        let o = core::outputs::outputs_of(&m.cx, "ap", "main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            o.outdir.join(&o.pdf_name),
+            include_bytes!("../../core/testdata/interactive/main.pdf"),
+        )
+        .unwrap();
+        std::fs::write(
+            o.outdir.join("main.mfw"),
+            include_str!("../../core/testdata/interactive/main.mfw"),
+        )
+        .unwrap();
+        let p = |widget: &str| {
+            Parameters(WidgetCheckParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+                widget: widget.into(),
+            })
+        };
+        let r = m.widget_check(p("fig-demo")).expect("a normal result").0;
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["status"], "approval_required", "{v}");
+        assert_eq!(v["widget"], "fig-demo");
+        assert_eq!(v["path"], "widgets/demo");
+        assert_eq!(v["cause"], "never_approved");
+        assert_eq!(v["digest"].as_str().unwrap().len(), 64);
+        assert!(v["userAction"].as_str().unwrap().contains("View > Widgets"));
+        assert!(m.widget_check(p("fig-mesh")).is_err());
+        assert!(m.widget_check(p("nope")).is_err());
+        let s = m
+            .widgets_status(Parameters(WidgetsStatusParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .expect("status")
+            .0;
+        assert_eq!(s.pending, 1);
+        assert_eq!(s.exempt.len(), 4);
+        let _ = std::fs::remove_dir_all(&o.outdir);
+    }
+
     /// Every embedded View is a whole html page that loads nothing from
     /// the network (the default Apps CSP would block it anyway).
     #[test]
@@ -1795,6 +2269,53 @@ mod tests {
             }))
             .is_err());
 
+        // Never compiled: the widget tools fail closed, none returns an empty list.
+        let main = |extra: serde_json::Value| {
+            let mut v = serde_json::json!({"root_id": "cov", "main_rel": "main.tex"});
+            v.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            v
+        };
+        assert!(m
+            .widgets(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widgets_status(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widget_check(Parameters(
+                serde_json::from_value(main(serde_json::json!({"widget": "w"}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .preview_bundle(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .export_bundle(Parameters(
+                serde_json::from_value(main(
+                    serde_json::json!({"dest": "/tmp/maleficium-cov-bundle", "profile": "folder"})
+                ))
+                .unwrap()
+            ))
+            .is_err());
+        let installed = m
+            .interactive_install(Parameters(InteractiveInstallParams {
+                root_id: "cov".into(),
+            }))
+            .unwrap();
+        assert!(
+            dir.join("maleficium-interactive.sty").exists(),
+            "{:?}",
+            installed.0
+        );
+
         let covered = [
             "grant",
             "info",
@@ -1828,6 +2349,12 @@ mod tests {
             "definition",
             "find_files",
             "diagnostics",
+            "interactive_install",
+            "widgets",
+            "widgets_status",
+            "widget_check",
+            "export_bundle",
+            "preview_bundle",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(

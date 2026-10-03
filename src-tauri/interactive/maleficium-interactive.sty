@@ -1,0 +1,666 @@
+% maleficium-interactive.sty -- interactive-paper widgets for Maleficium.
+% Dedicated to the public domain under CC0 1.0.
+% https://creativecommons.org/publicdomain/zero/1.0/
+%
+% Each macro typesets a poster at the requested size with an interactive
+% mark, emits a named PDF annotation (/NM (mfw:<id>)) over the poster box,
+% and records the widget in the \jobname.mfw sidecar the compile leaves in
+% the outdir. Needs the XeTeX engine (xdvipdfmx specials).
+%
+% Posters: poster= is the document's own and always wins. Model, chart and
+% html widgets may leave it out: Maleficium then renders one (an html
+% widget's only once the user approved its folder) into the project's
+% .maleficium/posters/ folder and lists it in .maleficium/posters/
+% \jobname.map, which this package reads. A widget uses its listed poster
+% only while its recorded runtime, sources and options match the list;
+% otherwise, or with no list (another LaTeX setup, a first compile), it
+% shows a placeholder box of the same size. A box without width= is 4:3,
+% or a model's size= aspect, so the poster replacing it keeps the layout.
+%
+% Usage:
+%   \maleficiumtheme{house}                    % optional; house is default
+%   \maleficiumsetup{bundleurl=https://...}    % optional; link per widget, one QR
+%   \maleficiumsetup{qr=none}                 % qr=footer (default) | none
+%   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
+%   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
+%   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
+%     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
+%   \interactivevideo[poster=figures/clip.png,
+%     remote=https://cdn.example.org/clip.mp4, sha256=<hex>]{media/clip.mp4}
+%   \interactivetable[pdfrows=10]{data/results.csv}
+%   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
+%   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
+%   \interactive[height=6cm, alt={...},
+%     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
+%
+% Sidecar line (pipe-separated, one per widget):
+%   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
+% sources is role=path,... and options is k=v,...; empty fields are empty.
+% Recorded values never contain |, # or braces; dimensions ride as pt.
+% Every widget declares its text alternative with alt= (used as the HTML
+% img alt); there is no caption fallback because the exporter cannot read
+% caption text back.
+%
+% Poster parameters say what the app's rendered poster shows and where a
+% live view starts. Model: camera= (braced: 16 numbers of a column-major
+% camera-to-world matrix, or pos=x,y,z target=x,y,z up=x,y,z), size=WxH in
+% pixels, background= (transparent or a hex colour without #, e.g. ffffff).
+% Chart: scale= (poster pixels per CSS pixel). Each is an error on any other
+% widget type.
+%
+% Origins (html only): framedomains= and resourcedomains= name the https
+% origins the widget may frame or load from, separated by spaces (commas are
+% recorded as spaces), as its folder's widget.json csp.frameDomains and
+% csp.resourceDomains do; the two are joined. They go into that widget's
+% policy only, and the user approves them with the widget. The camera's commas are recorded as spaces; the app checks
+% the numbers. Place the macro after the float's \caption\label for
+% label and figure capture; before it, or outside any float, they stay empty
+% rather than stale.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{maleficium-interactive}[2026/10/01 Maleficium interactive widgets]
+
+\RequirePackage{keyval}
+\RequirePackage{graphicx}
+\RequirePackage{xcolor}
+\RequirePackage{tikz}
+\RequirePackage{qrcode}
+\RequirePackage{pgfplotstable}
+\RequirePackage{etoolbox}
+\@ifpackageloaded{hyperref}{}{\RequirePackage[hidelinks]{hyperref}}
+
+% -- look --------------------------------------------------------------------
+% The Maleficium palette and two-tone slash, namespaced so template styles
+% keep their own definitions.
+\definecolor{mfwaccent}{HTML}{5B2A86}
+\definecolor{mfwink}{HTML}{1E1B24}
+\definecolor{mfwmuted}{HTML}{6B6676}
+\colorlet{mfwaccentlt}{mfwaccent!55!white}
+\newcommand{\mfwSlash}{%
+  \begin{tikzpicture}[baseline=0pt, x=0.085em, y=0.085em]
+    \fill[mfwaccentlt] (4.6,-3.5) -- (7.6,-3.5) -- (10.6,4.5) -- (7.6,4.5) -- cycle;
+    \fill[mfwaccent]   (0,-3.5)   -- (3.4,-3.5) -- (6.4,4.5)  -- (3.0,4.5) -- cycle;
+  \end{tikzpicture}}
+
+% -- state -------------------------------------------------------------------
+\newcount\mfw@nextid
+\mfw@nextid=1
+\newlength{\mfw@dim}
+\newlength{\mfw@dimw}
+\newif\ifmfw@ok
+\def\mfw@theme{house}
+\def\mfw@bundleurl{}
+\def\mfw@floatlabel{}
+\newwrite\mfw@sidecar
+\newif\ifmfw@sidecar@open
+\newsavebox{\mfw@box}
+
+% -- poster map ----------------------------------------------------------------
+% Written by the app: \mfw@postermap{<id>}{<runtime>|<sources>|<options>}{<sha256>}
+% per widget whose rendered poster exists. The record is kept as a string
+% with space runs folded, the same form \mfw@makekey gives the widget's own.
+\newcommand{\mfw@postermap}[3]{%
+  \mfw@foldspaces{#2}%
+  \expandafter\xdef\csname mfw@pm@r@#1\endcsname{\mfw@folded}%
+  \expandafter\xdef\csname mfw@pm@k@#1\endcsname{\detokenize{#3}}%
+}
+
+% -- keys --------------------------------------------------------------------
+\define@key{mfw}{poster}{\def\mfw@poster{#1}}
+\define@key{mfw}{height}{\def\mfw@height{#1}}
+\define@key{mfw}{width}{\def\mfw@width{#1}}
+\define@key{mfw}{id}{\def\mfw@id{#1}}
+\define@key{mfw}{runtime}{\def\mfw@runtime{#1}}
+\define@key{mfw}{pdfrows}{\def\mfw@pdfrows{#1}}
+\define@key{mfw}{remote}{\def\mfw@remote{#1}}
+\define@key{mfw}{sha256}{\def\mfw@sha{#1}}
+\define@key{mfw}{data}{\def\mfw@data{#1}}
+\define@key{mfw}{alt}{\def\mfw@alt{#1}}
+\define@key{mfw}{camera}{\def\mfw@p@camera{#1}}
+\define@key{mfw}{size}{\def\mfw@p@size{#1}}
+\define@key{mfw}{background}{\def\mfw@p@background{#1}}
+\define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
+\define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
+\define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
+\define@key{mfwsetup}{bundleurl}{\gdef\mfw@bundleurl{#1}}
+\define@key{mfwsetup}{qr}{%
+  \def\mfw@tmp{#1}%
+  \ifx\mfw@tmp\mfw@qr@footer\gdef\mfw@qr{footer}\else
+  \ifx\mfw@tmp\mfw@qr@none\gdef\mfw@qr{none}\else
+    \PackageError{maleficium-interactive}%
+      {qr= must be footer or none, not `#1'}%
+      {Use \protect\maleficiumsetup{qr=footer} or qr=none.}%
+  \fi\fi
+}
+\def\mfw@qr@footer{footer}
+\def\mfw@qr@none{none}
+\def\mfw@qr{footer}
+\newcommand{\mfw@resetkeys}{%
+  \def\mfw@poster{}\def\mfw@height{6cm}\def\mfw@width{}%
+  \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
+  \def\mfw@remote{}\def\mfw@sha{}\def\mfw@data{}\def\mfw@alt{}%
+  \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
+  \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}%
+}
+\newcommand{\maleficiumsetup}[1]{\setkeys{mfwsetup}{#1}}
+% The text alternative is required: it becomes the HTML img alt.
+\newcommand{\mfw@needalt}{%
+  \ifx\mfw@alt\empty
+    \PackageError{maleficium-interactive}%
+      {alt= is required: describe the widget in one line}%
+      {Pass alt={What a reader gets from this widget}.}%
+  \fi
+}
+
+% The theme id rides into the sidecar; an unknown id never affects the PDF.
+\newcommand{\maleficiumtheme}[1]{%
+  \mfw@valid@theme{#1}%
+  \ifmfw@ok\else
+    \PackageError{maleficium-interactive}%
+      {Theme id `#1' must be lowercase letters, digits and dashes}%
+      {Use \protect\maleficiumtheme{house} or another id matching [a-z0-9-]+.}%
+  \fi
+  \gdef\mfw@theme{#1}%
+}
+
+% -- strings -------------------------------------------------------------------
+% Id validation and slugifying run on the LaTeX3 string layer: hand-rolled
+% character loops proved too fragile here, and the kernel routines are tested.
+\RequirePackage{expl3}
+\ExplSyntaxOn
+\str_new:N \g_mfw_slug_str
+\str_new:N \l_mfw_slug_str
+\bool_new:N \l_mfw_ok_bool
+\cs_new_protected:Npn \mfw_slugify: {
+  \exp_args:NV \mfw_slugify_inner:n \mfw@floatlabel
+}
+\cs_new_protected:Npn \mfw_slugify_inner:n #1 {
+  \str_set:Nx \l_mfw_slug_str { \str_foldcase:n {#1} }
+  \str_replace_all:Nnn \l_mfw_slug_str {:} {-}
+  \str_replace_all:Nnn \l_mfw_slug_str {_} {-}
+  \regex_replace_all:nnN { [^a-z0-9-] } {} \l_mfw_slug_str
+  \str_gset_eq:NN \g_mfw_slug_str \l_mfw_slug_str
+  \edef\mfw@slug{\g_mfw_slug_str}
+}
+\cs_new_protected:Npn \mfw_syncok: {
+  \bool_if:NTF \l_mfw_ok_bool { \mfw@oktrue } { \mfw@okfalse }
+}
+\cs_new_protected:Npn \mfw_valid:n #1 {
+  \regex_match:nnTF { \A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z } {#1}
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+\cs_new_protected:Npn \mfw_valid_theme:n #1 {
+  \regex_match:nnTF { \A[a-z0-9-]+\Z } {#1}
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+\cs_new_protected:Npn \mfw_valid_digits:n #1 {
+  \regex_match:nnTF { \A[0-9]+\Z } {#1}
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+\cs_new_protected:Npn \mfw_nobar:n #1 {
+  \str_if_in:nnTF {|} {#1}
+    { \bool_set_false:N \l_mfw_ok_bool }
+    { \bool_set_true:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+\str_new:N \l_mfw_cam_str
+\cs_new_protected:Npn \mfw_match:Nn #1 #2 {
+  \exp_args:NnV \regex_match:nnTF {#2} #1
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
+% Poster parameter shapes; the app parses the values themselves.
+\cs_new_protected:Npn \mfw@check@camera {
+  \str_set:Nx \l_mfw_cam_str { \mfw@p@camera }
+  \str_replace_all:Nnn \l_mfw_cam_str { , } { ~ }
+  \tl_set:Nx \mfw@p@camera { \l_mfw_cam_str }
+  \mfw_match:Nn \mfw@p@camera { \A(?:[0-9eE.+\-\s]|pos=|target=|up=)+\Z }
+}
+\cs_new_protected:Npn \mfw@check@size
+  { \mfw_match:Nn \mfw@p@size { \A[0-9]+x[0-9]+\Z } }
+\cs_new_protected:Npn \mfw@check@background
+  { \mfw_match:Nn \mfw@p@background { \A(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|transparent)\Z } }
+\cs_new_protected:Npn \mfw@check@scale
+  { \mfw_match:Nn \mfw@p@scale { \A[0-9]*\.?[0-9]+\Z } }
+% Origins: commas become spaces (the sidecar splits options on commas);
+% the shape is checked here, every origin itself by the app.
+\cs_new_protected:Npn \mfw_origins:N #1 {
+  \str_set:Nx \l_mfw_cam_str { #1 }
+  \str_replace_all:Nnn \l_mfw_cam_str { , } { ~ }
+  \tl_set:Nx #1 { \l_mfw_cam_str }
+  \mfw_match:Nn #1 { \A\s*https://[a-z0-9.:\-]+(?:\s+https://[a-z0-9.:\-]+)*\s*\Z }
+}
+\cs_new_protected:Npn \mfw@check@framedomains { \mfw_origins:N \mfw@p@framedomains }
+\cs_new_protected:Npn \mfw@check@resourcedomains { \mfw_origins:N \mfw@p@resourcedomains }
+% Record strings as the poster map holds them: detokenized, every run of
+% white space one space (TeX folds them when it reads the map back).
+\str_new:N \l_mfw_fold_str
+\cs_new_protected:Npn \mfw@foldspaces #1 {
+  \str_set:Nn \l_mfw_fold_str {#1}
+  \regex_replace_all:nnN { \s+ } { \  } \l_mfw_fold_str
+  \tl_set:Nx \mfw@folded { \l_mfw_fold_str }
+}
+\cs_new_protected:Npn \mfw@foldspaces@x #1 {
+  \str_set:Nx \l_mfw_fold_str {#1}
+  \regex_replace_all:nnN { \s+ } { \  } \l_mfw_fold_str
+  \tl_set:Nx \mfw@folded { \l_mfw_fold_str }
+}
+% Plain-name entry points for the LaTeX2e body below.
+\cs_new_protected:Npn \mfw@slugify { \mfw_slugify: }
+\cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
+\cs_new_protected:Npn \mfw@valid@slug { \exp_args:NV \mfw_valid:n \g_mfw_slug_str }
+\cs_new_protected:Npn \mfw@valid@theme #1 { \mfw_valid_theme:n {#1} }
+\cs_new_protected:Npn \mfw@valid@digits { \exp_args:NV \mfw_valid_digits:n \mfw@pdfrows }
+\cs_new_protected:Npn \mfw@check@nobar #1 { \exp_args:NV \mfw_nobar:n #1 }
+\ExplSyntaxOff
+
+% The float's own label, and only that: entering a float clears it, labels
+% record only while inside one, and leaving clears it again. A widget outside
+% a float, or placed before its float's \caption\label, records empty label
+% and figure instead of a neighbour's.
+\newif\ifmfw@infloat
+\AtBeginDocument{%
+  \let\mfw@orig@label\label
+  \renewcommand{\label}[1]{\mfw@orig@label{#1}%
+    \ifmfw@infloat\gdef\mfw@floatlabel{#1}\fi}%
+}
+\newcommand{\mfw@enterfloat}{\gdef\mfw@floatlabel{}\global\mfw@infloattrue}
+\newcommand{\mfw@leavefloat}{\gdef\mfw@floatlabel{}\global\mfw@infloatfalse}
+\AtBeginEnvironment{figure}{\mfw@enterfloat}
+\AtBeginEnvironment{table}{\mfw@enterfloat}
+\AtBeginEnvironment{figure*}{\mfw@enterfloat}
+\AtBeginEnvironment{table*}{\mfw@enterfloat}
+\AtEndEnvironment{figure}{\mfw@leavefloat}
+\AtEndEnvironment{table}{\mfw@leavefloat}
+\AtEndEnvironment{figure*}{\mfw@leavefloat}
+\AtEndEnvironment{table*}{\mfw@leavefloat}
+% The figure number rides along only when a label anchors it; otherwise the
+% counter still holds whatever came before and is left out.
+\newcommand{\mfw@snap@fig}{%
+  \ifx\mfw@floatlabel\empty\def\mfw@figno{}%
+  \else\protected@edef\mfw@figno{\@currentlabel}\fi
+}
+
+% Resolve the widget id: pinned, slugified, or w-<n>. Duplicates fail naming
+% both lines; an unusable slug falls back to w-<n> with a warning.
+\newcommand{\mfw@resolve@id}{%
+  \ifx\mfw@id\empty
+    \ifx\mfw@floatlabel\empty
+      \mfw@take@counter
+    \else
+      \mfw@slugify
+      \ifx\mfw@slug\empty\mfw@take@counter\else
+        \mfw@valid@slug
+        \ifmfw@ok\let\mfw@id\mfw@slug\else\mfw@take@counter\fi
+      \fi
+    \fi
+  \else
+    \mfw@valid@id
+    \ifmfw@ok\else
+      \PackageError{maleficium-interactive}%
+        {Widget id `\mfw@id' must match [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?}%
+        {Pass id=fig-teaser or leave it out for an automatic w-<n>.}%
+    \fi
+  \fi
+  \expandafter\ifx\csname mfw@seen@\mfw@id\endcsname\relax
+    \expandafter\xdef\csname mfw@seen@\mfw@id\endcsname{\the\inputlineno}%
+  \else
+    \PackageError{maleficium-interactive}%
+      {Duplicate widget id `\mfw@id' (first used on line
+        \csname mfw@seen@\mfw@id\endcsname)}%
+      {Pass a unique id=... to one of the two widgets.}%
+  \fi
+}
+\newcommand{\mfw@take@counter}{%
+  \edef\mfw@id{w-\the\mfw@nextid}%
+  \global\advance\mfw@nextid by 1
+  \ifx\mfw@floatlabel\empty\else
+    \PackageWarning{maleficium-interactive}%
+      {Label `\mfw@floatlabel' does not slugify; widget is \mfw@id}%
+  \fi
+}
+
+% -- sidecar -----------------------------------------------------------------
+% Values are fully expanded before detokenizing, so option macros arrive as
+% text. Raw characters (% # ~) never reach here with surprising catcodes:
+% keyval already tokenized them at the call site.
+\newcommand{\mfw@safe}[2]{%
+  \edef\mfw@tmp{#1}%
+  \expandafter\edef\csname#2\endcsname{\expandafter\detokenize\expandafter{\mfw@tmp}}%
+  \mfw@nobar{#2}%
+}
+% An empty value holds no pipe; checking it would V-pass nothing and grab
+% a stray token instead.
+\newcommand{\mfw@nobar}[1]{%
+  \expandafter\ifx\csname#1\endcsname\empty\mfw@oktrue\else
+    \expandafter\mfw@check@nobar\csname#1\endcsname
+    \ifmfw@ok\else\PackageError{maleficium-interactive}%
+      {character `|' is not allowed in #1}{Remove it from the value.}\fi
+  \fi
+}
+\newcommand{\mfw@open@sidecar}{%
+  \ifmfw@sidecar@open\else
+    \immediate\openout\mfw@sidecar=\jobname.mfw
+    \immediate\write\mfw@sidecar{mfw 1}%
+    \global\mfw@sidecar@opentrue
+  \fi
+}
+% #1 type, #2 runtime, #3 label, #4 figure, #5 poster, #6 sources, #7 options.
+% Alt rides separately: it is recorded verbatim for the HTML img alt.
+\newcommand{\mfw@record}[7]{%
+  \mfw@open@sidecar
+  \mfw@safe{\mfw@id}{mfw@s@id}%
+  \mfw@safe{#1}{mfw@s@type}%
+  \mfw@safe{#2}{mfw@s@rt}%
+  \mfw@safe{#3}{mfw@s@label}%
+  \mfw@safe{#4}{mfw@s@fig}%
+  \mfw@safe{\mfw@theme}{mfw@s@theme}%
+  \mfw@safe{#5}{mfw@s@poster}%
+  \mfw@safe{#6}{mfw@s@src}%
+  \mfw@safe{#7}{mfw@s@opt}%
+  \mfw@safe{\mfw@alt}{mfw@s@alt}%
+  \immediate\write\mfw@sidecar{widget|\mfw@s@id|\mfw@s@type|\mfw@s@rt|%
+    \mfw@s@label|\mfw@s@fig|\mfw@s@theme|\mfw@s@poster|\mfw@s@src|\mfw@s@opt|\mfw@s@alt}%
+}
+
+% -- annotation and placement ------------------------------------------------
+% The special must sit inline with the poster box: bare in vertical mode the
+% driver drops it. Dims come from the set box, so the rect matches the poster.
+\newcommand{\mfw@dospec}{%
+  \edef\mfw@spec{pdf: ann @mfw@\mfw@id\space
+    width \the\wd\mfw@box\space height \the\ht\mfw@box\space
+    depth \the\dp\mfw@box\space
+    << /Type /Annot /Subtype /Text
+    /Contents (Maleficium interactive widget \mfw@id) /NM (mfw:\mfw@id) >>}%
+  \expandafter\special\expandafter{\mfw@spec}%
+}
+% The poster box goes down first (visible, zero advance), the annotation
+% lands on its origin, then the line advances past it.
+\newcommand{\mfw@emit}{%
+  \leavevmode\rlap{\usebox{\mfw@box}}\mfw@dospec\hskip\wd\mfw@box\par
+  \mfw@markline\par
+}
+% One line per widget: the mark, and a text link when a bundle URL is set.
+% No QR here; the single QR lives in the page footer (below).
+\newcommand{\mfw@markline}{%
+  \noindent\mfwSlash\ %
+  \textcolor{mfwaccent}{\sffamily\bfseries\scriptsize Interactive version}%
+  \ifx\mfw@bundleurl\empty\else
+    \ \textcolor{mfwmuted}{\sffamily\scriptsize
+      \href{\mfw@bundleurl}{open}}%
+  \fi
+}
+
+% -- footer QR -----------------------------------------------------------------
+% One QR (1.5cm) with the URL beside it, drawn once on the first shipped page
+% in the foreground layer: it takes no flow space, so floats and widget rects
+% never move. It sits in the bottom-right corner, flush with the right text
+% edge, below the text block; the URL wraps in a 3cm column to its left so it
+% stays clear of the centred page number.
+\newif\ifmfw@qrdone
+\newcommand{\mfw@footerqr}{%
+  \ifmfw@qrdone\else\ifx\mfw@bundleurl\empty\else
+  \ifx\mfw@qr\mfw@qr@footer
+    \global\mfw@qrdonetrue
+    \setlength{\mfw@dim}{\dimexpr1in+\hoffset+\oddsidemargin+\textwidth-1.5cm\relax}%
+    \edef\mfw@qry{-\strip@pt\dimexpr\paperheight-0.8cm\relax}%
+    \put(\strip@pt\mfw@dim,\mfw@qry){\qrcode[height=1.5cm]{\mfw@bundleurl}}%
+    \setlength{\mfw@dim}{\dimexpr\mfw@dim-3.2cm\relax}%
+    \put(\strip@pt\mfw@dim,\mfw@qry){\parbox[b]{3cm}{\raggedleft\sffamily
+      \fontsize{5}{6}\selectfont\color{mfwmuted}%
+      \href{\mfw@bundleurl}{\expandafter\nolinkurl\expandafter{\mfw@bundleurl}}}}%
+  \fi
+  \fi\fi
+}
+\AtBeginDocument{\AddToHook{shipout/foreground}{\mfw@footerqr}}
+
+% -- shared checks -----------------------------------------------------------
+\newcommand{\mfw@needfile}[1]{%
+  \IfFileExists{#1}{}{\PackageError{maleficium-interactive}%
+    {File `#1' not found}{Put it in the project or fix the path.}}%
+}
+% A poster= given must exist; model, chart and html widgets may leave it out
+% (an html widget's auto-poster exists only once the user approved it).
+\newcommand{\mfw@needposter}{\ifx\mfw@poster\empty\else\mfw@needfile{\mfw@poster}\fi}
+% Canonicalize height/width through a length: \linewidth resolves, garbage
+% fails here, and the sidecar records unambiguous pt.
+\newcommand{\mfw@sizecanon}{%
+  \setlength{\mfw@dim}{\mfw@height}%
+  \edef\mfw@height@pt{\the\mfw@dim}%
+  \ifx\mfw@width\empty
+    \def\mfw@width@pt{}%
+  \else
+    \setlength{\mfw@dimw}{\mfw@width}%
+    \edef\mfw@width@pt{\the\mfw@dimw}%
+  \fi
+}
+\newcommand{\mfw@dims@opt}{%
+  \ifx\mfw@width@pt\empty height=\mfw@height@pt\else
+    height=\mfw@height@pt,width=\mfw@width@pt\fi
+}
+% Graphicx reads the option list through keyval, which splits keys before
+% expanding: the keys, = and commas must be literal tokens, so they are
+% written out here. Only values may be macros.
+\newcommand{\mfw@sbox@graphic}[1]{%
+  \ifx\mfw@width\empty
+    \sbox{\mfw@box}{\includegraphics[height=\mfw@height]{#1}}%
+  \else
+    \sbox{\mfw@box}{\includegraphics[height=\mfw@height,width=\mfw@width,keepaspectratio]{#1}}%
+  \fi
+}
+
+% -- posters ------------------------------------------------------------------
+% #1 runtime, #2 sources, #3 options, exactly as \mfw@record gets them. Sets
+% \mfw@box: the document's poster=, else the mapped auto-poster when the
+% widget's record still matches and the file is there, else a placeholder.
+\newcommand{\mfw@posterbox}[3]{%
+  \ifx\mfw@poster\empty
+    \def\mfw@auto{}%
+    \ifcsname mfw@pm@r@\mfw@id\endcsname
+      \mfw@safe{#1}{mfw@k@rt}\mfw@safe{#2}{mfw@k@src}\mfw@safe{#3}{mfw@k@opt}%
+      \mfw@foldspaces@x{\mfw@k@rt|\mfw@k@src|\mfw@k@opt}%
+      \expandafter\ifx\csname mfw@pm@r@\mfw@id\endcsname\mfw@folded
+        \edef\mfw@auto{.maleficium/posters/\csname mfw@pm@k@\mfw@id\endcsname.png}%
+        \IfFileExists{\mfw@auto}{}{\def\mfw@auto{}}%
+      \fi
+    \fi
+    \ifx\mfw@auto\empty\mfw@placeholder\else\mfw@sbox@graphic{\mfw@auto}\fi
+  \else
+    \mfw@sbox@graphic{\mfw@poster}%
+  \fi
+}
+% The placeholder: height=, by width= or else 4:3 (a model's size= aspect).
+\def\mfw@aspect#1x#2\@nil{\setlength{\mfw@dimw}{\dimexpr\mfw@dim*#1/#2\relax}}
+\newcommand{\mfw@placeholder}{%
+  \setlength{\mfw@dim}{\mfw@height}%
+  \ifx\mfw@width\empty
+    \ifx\mfw@p@size\empty
+      \setlength{\mfw@dimw}{\dimexpr\mfw@dim*4/3\relax}%
+    \else
+      \expandafter\mfw@aspect\mfw@p@size\@nil
+    \fi
+  \else
+    \setlength{\mfw@dimw}{\mfw@width}%
+  \fi
+  \sbox{\mfw@box}{%
+    \begin{tikzpicture}
+      \useasboundingbox (0pt,0pt) rectangle (\the\mfw@dimw,\the\mfw@dim);
+      \filldraw[fill=mfwaccent!6, draw=mfwmuted!70, line width=0.4pt]
+        (0.2pt,0.2pt) rectangle
+        (\the\dimexpr\mfw@dimw-0.2pt\relax,\the\dimexpr\mfw@dim-0.2pt\relax);
+      \node[align=center, font=\sffamily\scriptsize,
+          text width=\the\dimexpr\mfw@dimw-8pt\relax]
+        at (\the\dimexpr\mfw@dimw/2\relax,\the\dimexpr\mfw@dim/2\relax)
+        {\textcolor{mfwaccent}{\bfseries Interactive \mfw@type}\\
+         \textcolor{mfwmuted}{poster pending}};
+    \end{tikzpicture}}%
+}
+
+% -- poster parameters ---------------------------------------------------------
+% #1 the keys this widget type takes (the rest must stay empty), #2 the type.
+\newcommand{\mfw@params}[2]{%
+  \@for\mfw@k:={camera,size,background,scale,framedomains,resourcedomains}\do{%
+    \expandafter\ifx\csname mfw@p@\mfw@k\endcsname\empty\else
+      \mfw@ifin{\mfw@k}{#1}{%
+        \csname mfw@check@\mfw@k\endcsname
+        \ifmfw@ok\else
+          \PackageError{maleficium-interactive}%
+            {\mfw@k= `\csname mfw@p@\mfw@k\endcsname' is malformed}%
+            {\mfw@paramhelp}%
+        \fi
+      }{%
+        \PackageError{maleficium-interactive}%
+          {\mfw@k= does not apply to #2 widgets}%
+          {Remove it. \mfw@paramhelp}%
+      }%
+    \fi
+  }%
+}
+\def\mfw@paramhelp{Model widgets take camera={16 numbers} or
+  camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600 and
+  background=ffffff or transparent; chart widgets take scale=2; html
+  widgets take framedomains= and resourcedomains= (https origins
+  separated by spaces).}
+% \mfw@ifin{<key macro>}{<comma list>}{<yes>}{<no>}
+\newcommand{\mfw@ifin}[4]{%
+  \def\mfw@found{0}%
+  \@for\mfw@x:=#2\do{\ifx\mfw@x#1\def\mfw@found{1}\fi}%
+  \if1\mfw@found #3\else #4\fi
+}
+
+% -- the macros --------------------------------------------------------------
+\newcommand{\interactivemodel}[2][]{%
+  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@needalt%
+  \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
+  \mfw@params{camera,size,background}{model}%
+  \mfw@needposter\mfw@needfile{#2}%
+  \mfw@resolve@id\mfw@sizecanon
+  \mfw@snap@fig%
+  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
+  \mfw@posterbox{\mfw@runtime}{model=#2}{\mfw@opts}%
+  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
+    {\mfw@poster}{model=#2}{\mfw@opts}%
+  \mfw@emit
+}
+
+\newcommand{\interactivevideo}[2][]{%
+  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@needalt%
+  \def\mfw@type{video}\ifx\mfw@runtime\empty\def\mfw@runtime{video@1}\fi
+  \mfw@params{}{video}%
+  \mfw@needfile{\mfw@poster}%
+  \IfFileExists{#2}{%
+    \def\mfw@vidsrc{#2}%
+    \ifx\mfw@sha\empty\else\fi
+  }{%
+    \ifx\mfw@remote\empty
+      \PackageError{maleficium-interactive}{File `#2' not found}%
+        {Give remote=... with a sha256=... when no local copy exists.}%
+    \else
+      \PackageWarning{maleficium-interactive}%
+        {File `#2' missing; recording the remote URL only}%
+      \def\mfw@vidsrc{}%
+    \fi
+  }%
+  \mfw@resolve@id\mfw@sizecanon
+  \mfw@snap@fig%
+  \mfw@sbox@graphic{\mfw@poster}%
+  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
+    {\mfw@poster}{video=\mfw@vidsrc}%
+    {\mfw@dims@opt,remote=\mfw@remote,sha256=\mfw@sha}%
+  \mfw@emit
+}
+
+% The poster is the typeset rows; the exporter crops it from the PDF.
+\newcommand{\interactivetable}[2][]{%
+  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@needalt%
+  \def\mfw@type{table}\ifx\mfw@runtime\empty\def\mfw@runtime{table@1}\fi
+  \mfw@params{}{table}%
+  \ifx\mfw@poster\empty\else
+    \PackageWarning{maleficium-interactive}%
+      {poster= is ignored for tables; the typeset rows are the poster}%
+  \fi
+  \mfw@needfile{#2}%
+  \ifx\mfw@pdfrows\empty
+    \PackageError{maleficium-interactive}%
+      {pdfrows must be a non-negative integer, not empty}%
+      {Pass pdfrows=10 or similar.}%
+  \else
+    \mfw@valid@digits
+    \ifmfw@ok\else
+      \PackageError{maleficium-interactive}%
+        {pdfrows must be a non-negative integer, not `\mfw@pdfrows'}%
+        {Pass pdfrows=10 or similar.}%
+    \fi
+  \fi
+  \mfw@resolve@id
+  \mfw@snap@fig%
+  \sbox{\mfw@box}{\pgfplotstabletypeset[
+    col sep=comma, header=true, string type,
+    skip rows between index={\mfw@pdfrows}{1000000},
+    every head row/.style={before row=\hline, after row=\hline},
+    every last row/.style={after row=\hline}]%
+    {#2}}%
+  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
+    {}{data=#2}{pdfrows=\mfw@pdfrows}%
+  \mfw@emit
+}
+
+\newcommand{\interactivechart}[2][]{%
+  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@needalt%
+  \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
+  \mfw@params{scale}{chart}%
+  \mfw@needposter\mfw@needfile{#2}%
+  \def\mfw@srcs{spec=#2}%
+  \ifx\mfw@data\empty\else
+    \@for\mfw@f:=\mfw@data\do{%
+      \mfw@needfile{\mfw@f}%
+      \edef\mfw@srcs{\mfw@srcs,data=\mfw@f}%
+    }%
+  \fi
+  \mfw@resolve@id\mfw@sizecanon
+  \mfw@snap@fig%
+  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale}%
+  \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
+  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
+    {\mfw@poster}{\mfw@srcs}{\mfw@opts}%
+  \mfw@emit
+}
+
+\newcommand{\interactive}[2][]{%
+  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@needalt%
+  \def\mfw@type{html}%
+  \mfw@params{framedomains,resourcedomains}{html}%
+  \mfw@needposter\mfw@needfile{#2/index.html}%
+  \mfw@resolve@id\mfw@sizecanon
+  \mfw@snap@fig%
+  \def\mfw@opts{\mfw@dims@opt}%
+  \ifx\mfw@p@framedomains\empty\else
+    \expandafter\def\expandafter\mfw@opts\expandafter{%
+      \mfw@opts,framedomains=\mfw@p@framedomains}%
+  \fi
+  \ifx\mfw@p@resourcedomains\empty\else
+    \expandafter\def\expandafter\mfw@opts\expandafter{%
+      \mfw@opts,resourcedomains=\mfw@p@resourcedomains}%
+  \fi
+  \mfw@posterbox{}{bundle=#2}{\mfw@opts}%
+  \mfw@record{\mfw@type}{}{\mfw@floatlabel}{\mfw@figno}%
+    {\mfw@poster}{bundle=#2}{\mfw@opts}%
+  \mfw@emit
+}
+
+% The app's poster map for this job, when there is one.
+\InputIfFileExists{.maleficium/posters/\jobname.map}{}{}
+
+\endinput

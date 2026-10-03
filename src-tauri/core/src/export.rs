@@ -23,7 +23,7 @@ pub struct Exported {
 
 /// An absolute destination whose directory exists, outside the root. The
 /// destination itself may not exist yet, so its parent is canonicalized.
-fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
+pub(crate) fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
     let d = Path::new(dest);
     if !d.is_absolute() {
         return Err(format!("export destination must be absolute: {dest}"));
@@ -42,6 +42,7 @@ fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
             "export destination is inside the project: choose a folder outside it",
         ));
     }
+    crate::widget_approval::refuse_store_overlap(&out, &crate::widget_approval::store_base())?;
     Ok(out)
 }
 
@@ -70,6 +71,45 @@ pub fn export_pdf(
 /// The project's source files, root-relative and sorted: hidden names
 /// (outputs, trash, dot files) and symlinks are left out.
 pub(crate) fn source_files(root: &Path) -> Result<Vec<String>, String> {
+    walk_sources(root, false)
+}
+
+/// Joins path components with `/`.
+fn rel_str(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The poster cache files of one `.maleficium` folder: its README, the
+/// posters and the maps (what the package reads), never links.
+fn cache_files(root: &Path, rel: &Path, out: &mut Vec<String>) {
+    use crate::widgets::poster::cache::POSTERS_DIR;
+    let dir = root.join(rel);
+    if std::fs::symlink_metadata(dir.join("README.md")).is_ok_and(|m| m.file_type().is_file()) {
+        out.push(rel_str(&rel.join("README.md")));
+    }
+    let posters = rel.join(POSTERS_DIR);
+    if !std::fs::symlink_metadata(root.join(&posters)).is_ok_and(|m| m.file_type().is_dir()) {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(root.join(&posters)) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if e.file_type().is_ok_and(|t| t.is_file())
+            && (name.ends_with(".png") || name.ends_with(".map"))
+        {
+            out.push(rel_str(&posters.join(&name)));
+        }
+    }
+}
+
+/// Walks the sources; `with_cache` adds each folder's poster cache, so a
+/// paper exported with it compiles with its posters without the app.
+fn walk_sources(root: &Path, with_cache: bool) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
@@ -78,21 +118,18 @@ pub(crate) fn source_files(root: &Path) -> Result<Vec<String>, String> {
             std::fs::read_dir(&dir).map_err(|e| format!("cannot list {}: {e}", dir.display()))?;
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if super::is_hidden_name(&name) {
-                continue;
-            }
             let Ok(ft) = entry.file_type() else { continue };
             let child = rel.join(&name);
+            if super::is_hidden_name(&name) {
+                if with_cache && ft.is_dir() && name == crate::widgets::poster::cache::CACHE_DIR {
+                    cache_files(root, &child, &mut out);
+                }
+                continue;
+            }
             if ft.is_dir() {
                 stack.push(child);
             } else if ft.is_file() {
-                out.push(
-                    child
-                        .components()
-                        .map(|c| c.as_os_str().to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join("/"),
-                );
+                out.push(rel_str(&child));
             }
         }
     }
@@ -100,11 +137,12 @@ pub(crate) fn source_files(root: &Path) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// Zip the project's sources (uncompressed) to `dest`.
+/// Zip the project's sources (uncompressed) to `dest`, poster caches
+/// included.
 pub fn export_zip(cx: &Core, root_id: &str, dest: &str) -> Result<Exported, String> {
     let root = super::fs::session_root(cx, root_id)?;
     let out = destination(&root, dest)?;
-    let files = source_files(&root)?;
+    let files = walk_sources(&root, true)?;
     let mut entries = Vec::with_capacity(files.len());
     for rel in &files {
         let data = std::fs::read(root.join(rel)).map_err(|e| format!("cannot read {rel}: {e}"))?;
@@ -247,6 +285,44 @@ mod tests {
             .unwrap_err()
             .contains("inside the project"));
         assert!(export_zip(cx, &id, "relative.zip").is_err());
+        let _ = std::fs::remove_file(out);
+    }
+
+    #[test]
+    fn zip_carries_the_poster_cache_but_nothing_else_hidden() {
+        let cx = &Core::default();
+        let (id, root) = project(cx, "zip-cache");
+        let key = "a".repeat(64);
+        for rel in [
+            ".maleficium/README.md".to_string(),
+            format!(".maleficium/posters/{key}.png"),
+            ".maleficium/posters/main.map".to_string(),
+            ".maleficium/notes.txt".to_string(),
+            format!("ch/.maleficium/posters/{key}.png"),
+        ] {
+            let p = root.join(&rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "x").unwrap();
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            root.join("main.tex"),
+            root.join(".maleficium/posters/link.png"),
+        )
+        .unwrap();
+        let out = crate::test_scratch::dir("export-cache.zip");
+        let e = export_zip(cx, &id, &out.to_string_lossy()).unwrap();
+        assert_eq!(
+            e.files,
+            vec![
+                ".maleficium/README.md".to_string(),
+                format!(".maleficium/posters/{key}.png"),
+                ".maleficium/posters/main.map".to_string(),
+                format!("ch/.maleficium/posters/{key}.png"),
+                "ch/a.tex".to_string(),
+                "main.tex".to_string(),
+            ]
+        );
         let _ = std::fs::remove_file(out);
     }
 

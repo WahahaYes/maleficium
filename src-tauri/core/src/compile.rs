@@ -12,9 +12,12 @@ use maleficium_structure::{
     CompilePhase, FetchOutcome, LineSignal, MissingDependency, MissingReason,
 };
 
-use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
+use maleficium_events::{
+    Actor, BusEvent, CompileFailure, CompileLine, CompileReport, OfflineReadiness,
+};
 
 use super::{engine, readiness};
+use crate::widgets::poster::cache as posters;
 
 /// One compile timeout for every adapter: the desktop streaming run and the
 /// MCP job service both give the engine this long before killing it.
@@ -169,6 +172,15 @@ pub fn failure_text(c: &engine::Compiled) -> String {
     format!("bundled tectonic failed: {}", &tail[..end])
 }
 
+/// A status line of the compile's own (not the engine's).
+fn status(text: String) -> CompileLine {
+    CompileLine {
+        stream: maleficium_events::CompileStream::Status,
+        text,
+        signal: None,
+    }
+}
+
 /// Keep what one compile showed: its engine log, and what it says about
 /// the project's offline readiness. Best effort: a failed write only costs
 /// the record, never the compile result.
@@ -213,6 +225,7 @@ pub fn report(
         failure: Some(failure),
         missing: c.missing.clone(),
         message,
+        approvals: Vec::new(),
     };
     Ok(match c.status {
         JobStatus::Success => CompileReport {
@@ -226,6 +239,7 @@ pub fn report(
             failure: None,
             missing: c.missing.clone(),
             message: String::new(),
+            approvals: Vec::new(),
         },
         JobStatus::Failed if c.missing.is_some() => {
             failed(CompileFailure::MissingDependency, failure_text(c))
@@ -242,6 +256,15 @@ pub fn report(
             return Err(String::from("compile cancelled"))
         }
     })
+}
+
+/// One `widget.approval-required` event per html widget the finished
+/// compile found waiting for the user.
+fn approval_events(cx: &Core, root_id: &str, main_rel: &str, actor: Actor) -> Vec<BusEvent> {
+    posters::approvals_needed(cx, root_id, main_rel)
+        .iter()
+        .map(|r| crate::widget_approval::approval_required_event(root_id, r, actor))
+        .collect()
 }
 
 /// A foreground compile for adapters that stream lines themselves: resolves
@@ -268,6 +291,8 @@ pub fn run_blocking(
         ),
         signal: None,
     });
+
+    posters::before_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
 
     let id = cx.jobs().next_id();
     let child = Arc::new(Mutex::new(None));
@@ -298,11 +323,19 @@ pub fn run_blocking(
                 failure: Some(CompileFailure::SpawnFailed),
                 missing: None,
                 message,
+                approvals: Vec::new(),
             })
         }
     };
     settle(cx, root_id, main_rel, &out, &c);
-    report(&out, &c, COMPILE_TIMEOUT_SECS)
+    let mut approvals = Vec::new();
+    if c.status == JobStatus::Success {
+        posters::after_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
+        approvals = approval_events(cx, root_id, main_rel, Actor::System);
+    }
+    let mut rep = report(&out, &c, COMPILE_TIMEOUT_SECS)?;
+    rep.approvals = approvals;
+    Ok(rep)
 }
 
 /// Cancel the foreground compile, if one is running: the adapter's Cancel
@@ -378,6 +411,7 @@ pub fn run(
                 job.progress.note(l.signal.as_ref());
             }
         };
+        posters::before_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
         let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
             Err(e) => JobRecord {
                 status: JobStatus::Failed,
@@ -389,6 +423,12 @@ pub fn run(
             },
             Ok(c) => {
                 settle(cx, &root_id, &rel, &out, &c);
+                if c.status == JobStatus::Success {
+                    posters::after_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
+                    // No window hears this run: the log carries the request.
+                    let _ =
+                        crate::eventlog::append(&approval_events(cx, &root_id, &rel, Actor::Agent));
+                }
                 // The record keeps the whole stream: every run and status line.
                 let (lines, progress) = cx
                     .jobs()

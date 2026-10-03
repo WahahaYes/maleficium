@@ -18,6 +18,10 @@ export type CommandId =
   | 'file.import-template'
   | 'file.export-pdf'
   | 'file.export-zip'
+  | 'file.export-bundle'
+  | 'file.export-bundle-folder'
+  | 'file.export-bundle-single-file'
+  | 'file.preview-in-browser'
   | 'file.reload'
   | 'file.keep-mine'
   | 'file.clean'
@@ -47,6 +51,7 @@ export type CommandId =
   | 'view.toggle-preview'
   | 'view.toggle-log'
   | 'view.toggle-outline'
+  | 'view.widgets'
   | 'view.theme'
   | 'view.theme-dark'
   | 'view.theme-light'
@@ -63,6 +68,7 @@ export type CommandId =
   | 'tools.compile-file'
   | 'tools.make-offline'
   | 'tools.precheck-warnings'
+  | 'tools.install-interactive'
   | 'tools.auto-compile'
   | 'tools.cancel'
   | 'tools.forward-sync'
@@ -82,6 +88,7 @@ export function presetOf(v: ViewState): ViewPreset {
 
 import type { Density } from './theme';
 import { baseName } from './paths';
+import { WIDGETS_PANEL_TITLE } from './widgets.view';
 
 export interface MenuContext {
   hasProject: boolean;
@@ -158,6 +165,8 @@ export interface CommandActions {
   compileFile: () => void;
   makeOffline: () => void;
   showPrecheck: () => void;
+  installInteractive: () => void;
+  showWidgets: () => void;
   toggleAutoCompile: () => void;
   exportPdf: () => void;
   newFromTemplate: () => void;
@@ -165,6 +174,9 @@ export interface CommandActions {
   importTemplate: () => void;
   showWelcome: () => void;
   exportZip: () => void;
+  exportBundleFolder: () => void;
+  exportBundleSingleFile: () => void;
+  previewInBrowser: () => void;
   cancelCompile: () => void;
   forwardSync: () => void;
   showShortcuts: () => void;
@@ -267,6 +279,31 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Export Project as Zip…',
           enabled: ctx.hasProject,
           run: a.exportZip,
+        },
+        {
+          id: 'file.export-bundle',
+          label: 'Export Paper Bundle',
+          enabled: ctx.pdfOpen,
+          children: [
+            {
+              id: 'file.export-bundle-folder',
+              label: 'Folder for Web Hosting…',
+              enabled: ctx.pdfOpen,
+              run: a.exportBundleFolder,
+            },
+            {
+              id: 'file.export-bundle-single-file',
+              label: 'Single File for Email…',
+              enabled: ctx.pdfOpen,
+              run: a.exportBundleSingleFile,
+            },
+          ],
+        },
+        {
+          id: 'file.preview-in-browser',
+          label: 'Preview in Browser',
+          enabled: ctx.pdfOpen,
+          run: a.previewInBrowser,
         },
         {
           id: 'file.set-main',
@@ -468,6 +505,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           run: a.toggleOutline,
         },
         {
+          id: 'view.widgets',
+          label: WIDGETS_PANEL_TITLE,
+          enabled: ctx.hasProject,
+          run: a.showWidgets,
+        },
+        {
           id: 'view.theme',
           label: `Theme: ${ctx.theme === 'dark' ? 'Dark' : 'Light'}`,
           enabled: true,
@@ -586,6 +629,12 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Show Pre-compile Warnings',
           enabled: ctx.precheckCount > 0,
           run: a.showPrecheck,
+        },
+        {
+          id: 'tools.install-interactive',
+          label: 'Install Interactive Package',
+          enabled: ctx.hasProject,
+          run: a.installInteractive,
         },
         {
           id: 'tools.cancel',

@@ -1,6 +1,6 @@
 [package]
 name = "maleficium-core"
-version = "0.1.0"
+version.workspace = true
 license = "Apache-2.0"
 edition = "2021"
 description = "Application core shared by the desktop app and the MCP server: no Tauri"
@@ -28,6 +28,7 @@ base64 = "0.22.1"
 hayro = { version = "0.7", default-features = false }
 # The core-owned file watcher (notify thread per session root). No Tauri.
 notify = "8"
+jsonschema = { version = "0.58", default-features = false }
 
 [dev-dependencies]
 libc = "0.2.189"

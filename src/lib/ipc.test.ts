@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
 import { resolveMainFileTauri, setMainFile } from './mainFile.tauri';
+import { exportBundle, previewInBrowser } from './compile';
 import { matchesCompile, matchesForwardSync, menuChordId, zoomChord, KEYMAP } from './keymap';
 
 function keyEvent(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
@@ -41,6 +42,54 @@ describe('main-file adapter', () => {
         params: { rootId: '53bf67b2', rel: 'chapitres/thèse.tex' },
       },
     });
+  });
+});
+
+describe('paper bundle export adapter', () => {
+  it('sends the profile and cap and nothing that could approve a download', async () => {
+    const done = {
+      path: '/out/p',
+      profile: 'folder',
+      bytes: 10,
+      widgets: 1,
+      assets: 2,
+      warnings: [],
+    };
+    vi.mocked(invoke).mockResolvedValueOnce({ op: 'exportBundle', result: done });
+    const r = await exportBundle('1a2b3c4d', 'main.tex', '/out/p', 'folder');
+    expect(invoke).toHaveBeenLastCalledWith('core_request', {
+      req: {
+        op: 'exportBundle',
+        params: {
+          rootId: '1a2b3c4d',
+          mainRel: 'main.tex',
+          dest: '/out/p',
+          profile: 'folder',
+          sizeCapBytes: null,
+        },
+      },
+    });
+    expect(r).toEqual(done);
+    // Red control: the core, not the adapter, refuses a destination inside
+    // the project, so a refusal comes back as a rejected call.
+    vi.mocked(invoke).mockRejectedValueOnce('export destination is inside the project');
+    await expect(exportBundle('1a2b3c4d', 'main.tex', '/r/x', 'single-file')).rejects.toMatch(
+      /inside the project/,
+    );
+  });
+});
+
+describe('preview in browser', () => {
+  it('asks the desktop command for a project and main file only', async () => {
+    const done = { path: '/data/previews/ab/index.html', profile: 'single-file' };
+    vi.mocked(invoke).mockResolvedValueOnce(done);
+    expect(await previewInBrowser('1a2b3c4d', 'main.tex')).toEqual(done);
+    expect(invoke).toHaveBeenLastCalledWith('preview_in_browser', {
+      rootId: '1a2b3c4d',
+      mainRel: 'main.tex',
+    });
+    vi.mocked(invoke).mockRejectedValueOnce('main.tex has no compiled pdf');
+    await expect(previewInBrowser('1a2b3c4d', 'main.tex')).rejects.toMatch(/compiled pdf/);
   });
 });
 
