@@ -3,3 +3,4 @@
 
 pub mod figures;
 pub mod join;
+pub mod sanitize;
