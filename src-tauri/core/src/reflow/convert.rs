@@ -11,9 +11,10 @@
 //!
 //! Format dumps: the packaged engine finds `resources/dumps` in the app's
 //! resource directory itself (`engine/src/session.rs`, `resource_dir`;
-//! verified on Linux, where it is `<exe dir>/../lib/Maleficium/`). The dev
-//! engine in `src-tauri/binaries/` has no resource directory, so it gets the
-//! dev tree's `src-tauri/resources/dumps` as `--dumps`.
+//! verified on Linux, where it is `<exe dir>/../lib/Maleficium/`). A debug
+//! build has no resource directory (its engine is the copy beside
+//! `target/debug/` or the one in `src-tauri/binaries/`), so it passes the dev
+//! tree's `src-tauri/resources/dumps` as `--dumps`. A release build never does.
 
 use crate::compile::JobStatus;
 use crate::Core;
@@ -103,7 +104,7 @@ impl Converter for Engine {
         if let Err(e) = std::fs::create_dir_all(&cache) {
             return failed(format!("engine cache unreachable: {e}"));
         }
-        let mut cmd = command(&engine, main, work, &cache, dev_dumps(&engine).as_deref());
+        let mut cmd = command(&engine, main, work, &cache, dev_dumps().as_deref());
         match std::fs::File::create(work.join(STDERR)) {
             Ok(f) => cmd.stderr(f),
             Err(e) => return failed(format!("cannot write in {}: {e}", work.display())),
@@ -140,13 +141,14 @@ fn command(engine: &Path, main: &Path, work: &Path, cache: &Path, dumps: Option<
     cmd
 }
 
-/// The dev tree's dumps, when `engine` is the dev engine.
-fn dev_dumps(engine: &Path) -> Option<PathBuf> {
+/// The dev tree's dumps in a debug build, where the engine has no resource
+/// directory to find them in; `None` in a release build.
+fn dev_dumps() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let binaries = dunce::canonicalize(tree.join("binaries")).ok()?;
-    let dumps = dunce::canonicalize(tree.join("resources").join("dumps")).ok()?;
-    let dir = dunce::canonicalize(engine.parent()?).ok()?;
-    (dir == binaries).then_some(dumps)
+    dunce::canonicalize(tree.join("resources").join("dumps")).ok()
 }
 
 /// Spawn `cmd`, park the child where [`cancel`] finds it, wait up to
@@ -273,16 +275,15 @@ mod tests {
     }
 
     #[test]
-    fn the_dev_engine_gets_the_dev_dumps_and_another_engine_none() {
+    fn a_debug_build_gets_the_dev_dumps_wherever_its_engine_sits() {
+        // The dev app's engine is the copy beside target/debug, not the one
+        // in src-tauri/binaries: the dumps must not depend on where it is.
         let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let dev = tree.join("binaries").join("maleficium-engine-x");
         if tree.join("resources").join("dumps").is_dir() {
-            assert!(dev_dumps(&dev).is_some());
+            let d = dev_dumps().expect("a debug build passes the dev dumps");
+            assert!(d.ends_with("resources/dumps") && d.is_dir());
         }
-        assert_eq!(
-            dev_dumps(Path::new("/usr/lib/Maleficium/maleficium-engine")),
-            None
-        );
+        assert_eq!(dev_dumps().is_none(), !cfg!(debug_assertions));
     }
 
     #[test]
