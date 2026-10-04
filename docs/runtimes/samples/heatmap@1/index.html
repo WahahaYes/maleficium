@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Heatmap</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
+        font-family: var(--m-font-body);
+        font-size: var(--m-size-base);
+      }
+      figure {
+        margin: 0;
+        padding: var(--m-space-3);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      #msg {
+        color: var(--m-color-error);
+        padding: var(--m-space-2);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <canvas id="view" width="640" height="400" role="img" aria-label="Data heatmap"></canvas>
+      <p id="msg" hidden></p>
+    </figure>
+    <script>
+      (function () {
+        'use strict';
+        var canvas = document.getElementById('view');
+        var note = document.getElementById('msg');
+        var ctx = canvas.getContext('2d');
+        var grid = [];
+        var scheme = 'seq';
+        var seenInit = false;
+
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function fail(message) {
+          note.hidden = false;
+          note.textContent = message;
+          post({ type: 'status', state: 'error', message: message });
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function toRgb(hex) {
+          var h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
+          if (h.length === 3) {
+            h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
+          }
+          if (h.length !== 6) {
+            return null;
+          }
+          var n = parseInt(h, 16);
+          if (isNaN(n)) {
+            return null;
+          }
+          return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+        }
+        function mix(a, b, t) {
+          return [
+            Math.round(a[0] + (b[0] - a[0]) * t),
+            Math.round(a[1] + (b[1] - a[1]) * t),
+            Math.round(a[2] + (b[2] - a[2]) * t),
+          ];
+        }
+        function parseCsv(text) {
+          var out = [];
+          var lines = text.split('\n');
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line) {
+              continue;
+            }
+            var cells = line.split(',');
+            var row = [];
+            for (var j = 0; j < cells.length; j++) {
+              var n = parseFloat(cells[j].trim());
+              if (!isNaN(n)) {
+                row.push(n);
+              }
+            }
+            if (row.length) {
+              out.push(row);
+            }
+          }
+          return out;
+        }
+        function draw() {
+          if (!grid.length) {
+            return;
+          }
+          var lo = grid[0][0];
+          var hi = grid[0][0];
+          var cols = 0;
+          var i;
+          var j;
+          for (i = 0; i < grid.length; i++) {
+            cols = Math.max(cols, grid[i].length);
+            for (j = 0; j < grid[i].length; j++) {
+              lo = Math.min(lo, grid[i][j]);
+              hi = Math.max(hi, grid[i][j]);
+            }
+          }
+          var low = toRgb(token(scheme === 'div' ? '--m-div-low' : '--m-seq-1', '#CDE2FB')) || [
+            205, 226, 251,
+          ];
+          var high = toRgb(token(scheme === 'div' ? '--m-div-high' : '--m-seq-5', '#0D366B')) || [
+            13, 54, 107,
+          ];
+          var cw = canvas.width / cols;
+          var ch = canvas.height / grid.length;
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          for (i = 0; i < grid.length; i++) {
+            for (j = 0; j < grid[i].length; j++) {
+              var t = hi === lo ? 0.5 : (grid[i][j] - lo) / (hi - lo);
+              var c = mix(low, high, t);
+              ctx.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+              ctx.fillRect(j * cw, i * ch, cw + 1, ch + 1);
+            }
+          }
+        }
+        function applyTheme(t) {
+          var root = document.documentElement;
+          var tokens = (t && t.tokens) || {};
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          draw();
+        }
+        function onInit(d) {
+          seenInit = true;
+          var opts = d.options || {};
+          if (typeof opts.scheme === 'string') {
+            scheme = opts.scheme;
+          }
+          applyTheme(d.theme);
+          canvas.setAttribute('aria-label', d.alt || 'Data heatmap');
+          post({ type: 'status', state: 'loading' });
+          var given = d.sources && d.sources.data;
+          if (!given) {
+            return fail('this widget has no data source');
+          }
+          var text = new TextDecoder('utf-8').decode(given.bytes);
+          grid = parseCsv(text);
+          if (!grid.length) {
+            return fail('the data source holds no numbers');
+          }
+          note.hidden = true;
+          draw();
+          post({ type: 'status', state: 'loaded' });
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            onInit(d);
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (!seenInit) {
+              return;
+            }
+            var png = canvas.toDataURL('image/png');
+            if (png.length < 8 * 1024 * 1024) {
+              post({ type: 'snapshot', requestId: d.requestId, png: png });
+            }
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>
