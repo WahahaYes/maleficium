@@ -90,13 +90,26 @@ function snapshot(): string | null {
   cv.height = h;
   const g = cv.getContext('2d');
   if (!g) return null;
+  // The live view's colours: the plate, its surface for the header, its ink.
   const cs = getComputedStyle(document.documentElement);
-  g.fillStyle = cs.getPropertyValue('--m-color-bg').trim() || '#ffffff';
-  g.fillRect(0, 0, w, h);
-  g.fillStyle = cs.getPropertyValue('--m-color-text').trim() || '#1f2328';
-  g.font = `13px ${cs.getPropertyValue('--m-font-body').trim() || 'sans-serif'}`;
+  const token = (n: string) => cs.getPropertyValue(n).trim();
+  const plate = token('--m-figure-bg');
+  const ink = token('--m-figure-ink');
+  if (plate) {
+    g.fillStyle = plate;
+    g.fillRect(0, 0, w, h);
+  }
+  const surface = token('--m-figure-surface');
+  if (surface) {
+    g.fillStyle = surface;
+    g.fillRect(0, 0, w, 26);
+  }
+  if (ink) g.fillStyle = ink;
+  const font = token('--m-font-body') || 'sans-serif';
   const colW = Math.floor(w / Math.max(1, columns.length));
+  g.font = `600 13px ${font}`;
   columns.forEach((c, x) => g.fillText(c.name, 8 + x * colW, 18));
+  g.font = `13px ${font}`;
   (maxRows > 0 ? shown.slice(0, maxRows) : shown)
     .slice(0, Math.floor((h - 24) / 20))
     .forEach((i, y) => {
