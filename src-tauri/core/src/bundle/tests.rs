@@ -795,7 +795,7 @@ fn the_committed_schema_is_the_one_the_note_describes() {
     );
     assert_eq!(
         s["$defs"]["widget"]["properties"]["type"]["enum"],
-        json!(["model", "video", "table", "chart", "html"])
+        json!(["model", "video", "table", "chart", "html", "custom"])
     );
 }
 

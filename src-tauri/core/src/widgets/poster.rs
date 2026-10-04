@@ -254,6 +254,11 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
                 "widget {id}: video posters are not rendered yet; give it poster="
             ))
         }
+        WidgetType::Custom => {
+            return Err(format!(
+                "widget {id}: a custom widget's poster is its poster= file, nothing to render"
+            ))
+        }
     }
     if req.digest.is_some() {
         return Err(format!(

@@ -794,3 +794,108 @@ fn origin_options_apply_only_to_html_widgets() {
         "https://a.org https://b.org"
     );
 }
+
+/// The custom runtime line the package writes (lane B's fixture, verbatim).
+const CUSTOM_LINE: &str = "widget|fig-part|custom|stl-viewer@1|||house|figures/runtime-poster.png|primary=models/mesh.glb,texture=figures/runtime-texture.png,labels=data/results.csv|height=170.71652pt,color=accent,autorotate=true,expr=a=b,ratio=0.5|Orbitable flange";
+
+fn custom(line: &str) -> Result<Sidecar, String> {
+    parse_sidecar(&format!("mfw 1\n{line}\n"))
+}
+
+#[test]
+fn a_custom_record_reads_with_its_runtime_sources_and_options_verbatim() {
+    let s = custom(CUSTOM_LINE).unwrap();
+    let r = &s.records[0];
+    assert_eq!(r.kind, WidgetType::Custom);
+    assert_eq!(r.runtime.as_deref(), Some("stl-viewer@1"));
+    assert_eq!(r.poster.as_deref(), Some("figures/runtime-poster.png"));
+    let roles: Vec<(&str, &str)> = r
+        .sources
+        .iter()
+        .map(|s| (s.role.as_str(), s.path.as_str()))
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            ("primary", "models/mesh.glb"),
+            ("texture", "figures/runtime-texture.png"),
+            ("labels", "data/results.csv")
+        ]
+    );
+    let opts: Vec<(&str, &str)> = r
+        .options
+        .iter()
+        .map(|o| (o.key.as_str(), o.value.as_str()))
+        .collect();
+    assert_eq!(
+        opts,
+        [
+            ("height", "170.71652pt"),
+            ("color", "accent"),
+            ("autorotate", "true"),
+            ("expr", "a=b"),
+            ("ratio", "0.5")
+        ]
+    );
+    // `key=` means "use the default": it is not listed.
+    let s = custom(&CUSTOM_LINE.replace("color=accent", "color=")).unwrap();
+    assert!(!s.records[0].options.iter().any(|o| o.key == "color"));
+}
+
+#[test]
+fn a_bad_custom_record_fails_the_list_with_its_message() {
+    let cases = [
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "||"), "widget fig-part: a custom widget records no runtime"),
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer|"), "widget fig-part: runtime `stl-viewer` is not <name>@<major> (or names a reserved runtime)"),
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "|model@1|"), "runtime `model@1` is not <name>@<major>"),
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "|m-viewer@1|"), "runtime `m-viewer@1` is not"),
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer@0|"), "runtime `stl-viewer@0` is not"),
+        (CUSTOM_LINE.replace("|figures/runtime-poster.png|", "||"), "widget fig-part: a custom widget records no poster"),
+        (CUSTOM_LINE.replace("primary=models/mesh.glb,", ""), "widget fig-part: a custom widget records no primary source"),
+        (CUSTOM_LINE.replace("texture=", "primary="), "widget fig-part: source role `primary` is given twice"),
+        (CUSTOM_LINE.replace("labels=", "texture="), "widget fig-part: source role `texture` is given twice"),
+        (CUSTOM_LINE.replace("labels=", "Labels="), "widget fig-part: source role `Labels` is not a plain word"),
+        (CUSTOM_LINE.replace("color=", "col-or="), "widget fig-part: option key `col-or` is not a plain word"),
+        // Poster parameters belong to the built-in kinds.
+        (CUSTOM_LINE.replace("color=accent", "camera=0 0 1"), "camera= does not apply to this widget type"),
+    ];
+    for (line, want) in cases {
+        let e = custom(&line).unwrap_err();
+        assert!(e.contains(want), "want `{want}` in: {e}");
+    }
+}
+
+#[test]
+fn a_custom_widget_joins_its_placeholder_and_lists_without_its_runtime() {
+    // The binding's placeholder for \interactiveruntime.
+    let html = "<p><span class=\"ltx_text m-widget m-widget-custom\"></span></p>";
+    let side = format!("mfw 1\n{CUSTOM_LINE}\n");
+    let j = crate::reflow::join::join_sidecar(html, &side).unwrap();
+    assert_eq!(j[0].placeholder.kind, WidgetType::Custom);
+    assert_eq!(j[0].record.id, "fig-part");
+    let html_kind = "<p><span class=\"ltx_text m-widget m-widget-model\"></span></p>";
+    assert!(crate::reflow::join::join_sidecar(html_kind, &side).is_err());
+
+    // In the real pdf's place of fig-chart: listed, no csp, no runtime read
+    // (the project has no runtimes/ folder at all).
+    let line = CUSTOM_LINE.replace("fig-part", "fig-chart");
+    let sidecar = REAL_SIDECAR.replace(
+        "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart",
+        &line,
+    );
+    assert_ne!(sidecar, REAL_SIDECAR);
+    let cx = &Core::default();
+    let (id, root, out) = compiled(cx, "custom", "main.tex", Some(REAL_PDF), Some(&sidecar));
+    std::fs::create_dir_all(root.join("widgets/demo")).unwrap();
+    std::fs::write(root.join("widgets/demo/index.html"), "<p>hi</p>").unwrap();
+    let l = widgets(cx, &id, "main.tex").unwrap();
+    let w = by_id(&l, "fig-chart");
+    assert_eq!(
+        (w.kind, w.runtime.as_deref()),
+        (WidgetType::Custom, Some("stl-viewer@1"))
+    );
+    assert!(w.csp.is_none());
+    assert!(!root.join("runtimes").exists());
+    assert_eq!(serde_json::to_value(w).unwrap()["type"], "custom");
+    let _ = std::fs::remove_dir_all(out);
+}

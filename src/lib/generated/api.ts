@@ -103,7 +103,7 @@ export type TemplateWelcomeParams = Record<symbol, never>;
 
 export type WidgetsParams = { rootId: string, mainRel: string, };
 
-export type WidgetType = "model" | "video" | "table" | "chart" | "html";
+export type WidgetType = "model" | "video" | "table" | "chart" | "html" | "custom";
 
 export type WidgetRect = { x0: number, y0: number, x1: number, y1: number, };
 
@@ -115,7 +115,8 @@ export type WidgetCsp = { connectDomains: Array<string>, resourceDomains: Array<
 
 export type Widget = { id: string, type: WidgetType, 
 /**
- * Built-in runtime and major version (`model@1`); absent for `html`.
+ * Runtime and major version: built-in (`model@1`) or, for `custom`,
+ * the project's `<name>@<major>`; absent for `html`.
  */
 runtime?: string, 
 /**
