@@ -376,6 +376,17 @@ body.m-reader {
 .m-reader figure.ltx_figure > figcaption {
   order: 2;
 }
+/* A widget inside a captioned float: the float's caption is its caption, and
+   latexml's empty paragraphs around it take no room. */
+.m-reader figure.ltx_figure p:empty,
+.m-reader figure.ltx_table p:empty {
+  display: none;
+}
+.m-reader figure.ltx_figure > figure[data-widget],
+.m-reader figure.ltx_table > figure[data-widget] {
+  margin: 0;
+  width: 100%;
+}
 .m-reader figcaption.ltx_caption {
   max-width: none;
   margin: var(--m-space-2) 0 0;
@@ -606,6 +617,11 @@ body.m-reader {
   text-decoration: none;
 }
 
+/* acmart's license note is a mark and a bare word, not a footnote */
+.m-reader .ltx_note.ltx_role_cc-license {
+  display: none;
+}
+
 /* Visible markers for what went wrong */
 .m-reader .ltx_ERROR {
   font-family: var(--m-font-mono);
@@ -658,8 +674,8 @@ body.m-reader {
 
 /* Contents: the article's own nav; reader.js adds the collapse and the marker */
 .m-reader .m-version {
-  margin: 0 auto var(--m-space-4);
-  max-width: var(--m-measure);
+  margin: 0 auto var(--m-space-3);
+  text-align: center;
   font-family: var(--m-font-heading);
   font-size: var(--m-size-small);
   color: var(--m-color-muted);
@@ -678,6 +694,8 @@ body.m-reader {
 }
 .m-reader .m-contents-title {
   margin: 0;
+  padding: 0;
+  border: 0;
   font-size: 1em;
   font-weight: 600;
 }
