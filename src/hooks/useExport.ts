@@ -1,11 +1,13 @@
 // useExport.ts — export the shown pdf, or the project's sources as a zip, to
 // a place the user picks outside the project.
 
+import { useState } from 'react';
 import { dialog } from '../lib/fs-provider';
 import { exportBundle, exportPdf, exportZip, previewInBrowser } from '../lib/compile';
 import { emit } from '../lib/events';
 import type { BundleProfile, ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
+import { makeReport, type BundleReport } from '../lib/bundleReport';
 import { baseName, joinPath } from '../lib/paths';
 
 /** The last path segment without a `.tex` suffix, for default file names. */
@@ -15,6 +17,7 @@ function stem(path: string): string {
 }
 
 export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoot | null }) {
+  const [bundleReport, setBundleReport] = useState<BundleReport | null>(null);
   const report = (kind: ExportKind, r: Promise<{ path: string; bytes: number }>) =>
     r.then(
       (e) =>
@@ -91,6 +94,7 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     try {
       const r = await exportBundle(src.rootId, src.mainRel, dest, profile);
       const notes = r.warnings.map((w) => w.message).join('; ');
+      if (r.warnings.length > 0) setBundleReport(makeReport(profile, r));
       emit({
         scope: 'app',
         kind: r.warnings.length > 0 ? 'warn' : 'success',
@@ -129,6 +133,7 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     }
     try {
       const r = await previewInBrowser(src.rootId, src.mainRel);
+      if (r.warnings.length > 0) setBundleReport(makeReport(profile, r));
       emit({
         scope: 'app',
         kind: r.warnings.length > 0 ? 'warn' : 'success',
@@ -156,5 +161,12 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     }
   }
 
-  return { exportPdfAs, exportZipAs, exportBundleAs, previewBundle };
+  return {
+    exportPdfAs,
+    exportZipAs,
+    exportBundleAs,
+    previewBundle,
+    bundleReport,
+    closeBundleReport: () => setBundleReport(null),
+  };
 }
