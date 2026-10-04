@@ -3,12 +3,13 @@
 
 import { useState } from 'react';
 import { dialog } from '../lib/fs-provider';
-import { exportBundle, exportPdf, exportZip, previewInBrowser } from '../lib/compile';
+import { exportBundle, exportCancel, exportPdf, exportZip, previewInBrowser } from '../lib/compile';
 import { emit } from '../lib/events';
 import type { BundleProfile, ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
 import { makeReport, type BundleReport } from '../lib/bundleReport';
 import { baseName, joinPath } from '../lib/paths';
+import { cancelRun, canCancel, isCancelled, startRun, type ExportRun } from '../lib/exportProgress';
 
 /** The last path segment without a `.tex` suffix, for default file names. */
 function stem(path: string): string {
@@ -18,6 +19,17 @@ function stem(path: string): string {
 
 export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoot | null }) {
   const [bundleReport, setBundleReport] = useState<BundleReport | null>(null);
+  const [run, setRun] = useState<ExportRun | null>(null);
+
+  async function cancelExport() {
+    if (!canCancel(run)) return;
+    setRun(cancelRun);
+    try {
+      await exportCancel();
+    } catch {
+      // Nothing was converting any more: the export is finishing on its own.
+    }
+  }
   const report = (kind: ExportKind, r: Promise<{ path: string; bytes: number }>) =>
     r.then(
       (e) =>
@@ -66,6 +78,15 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     if (dest) await report('zip', exportZip(p.rootId, dest));
   }
 
+  const cancelled = (main: string, profile: BundleProfile) =>
+    emit({
+      scope: 'app',
+      kind: 'warn',
+      actor: 'user',
+      message: 'paper bundle export cancelled; nothing was written',
+      event: { action: 'bundle.failed', main, profile, error: 'cancelled' },
+    });
+
   /** The folder profiles ask for a parent folder and make `<name>-bundle` in it. */
   async function exportBundleAs(profile: BundleProfile) {
     const src = deps.pdf;
@@ -91,6 +112,7 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
       : await dialog().openDirectory({ title: 'Export Paper Bundle: choose a parent folder' });
     if (!picked) return;
     const dest = single ? picked : joinPath(picked, stem(src.mainRel) + '-bundle');
+    setRun(startRun(`${profile} bundle`));
     try {
       const r = await exportBundle(src.rootId, src.mainRel, dest, profile);
       const notes = r.warnings.map((w) => w.message).join('; ');
@@ -113,7 +135,10 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
         },
       });
     } catch (err) {
-      fail(String(err).slice(0, 300));
+      if (isCancelled(err)) cancelled(src.mainRel, profile);
+      else fail(String(err).slice(0, 300));
+    } finally {
+      setRun(null);
     }
   }
 
@@ -131,6 +156,7 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
       });
       return;
     }
+    setRun(startRun('browser preview'));
     try {
       const r = await previewInBrowser(src.rootId, src.mainRel);
       if (r.warnings.length > 0) setBundleReport(makeReport(profile, r));
@@ -150,6 +176,10 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
         },
       });
     } catch (err) {
+      if (isCancelled(err)) {
+        cancelled(src.mainRel, profile);
+        return;
+      }
       const error = String(err).slice(0, 300);
       emit({
         scope: 'app',
@@ -158,6 +188,8 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
         message: `preview failed: ${error}`.slice(0, 240),
         event: { action: 'bundle.failed', main: src.mainRel, profile, error },
       });
+    } finally {
+      setRun(null);
     }
   }
 
@@ -167,6 +199,8 @@ export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoo
     exportBundleAs,
     previewBundle,
     bundleReport,
+    run,
+    cancelExport,
     closeBundleReport: () => setBundleReport(null),
   };
 }
