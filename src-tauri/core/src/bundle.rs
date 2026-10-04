@@ -1042,36 +1042,160 @@ impl Drop for Scratch {
 /// At most this many log errors are quoted in the report.
 const QUOTED_ERRORS: usize = 5;
 
+/// Packages that only work with shell escape: the converter never enables
+/// it, so a conversion that names one reports it as such. Mirrors the
+/// compile's list (`structure/src/checks.rs` `SHELL_ESCAPE_PACKAGES`).
+const SHELL_ESCAPE_PACKAGES: &[&str] = &[
+    "minted",
+    "pythontex",
+    "svg",
+    "gnuplottex",
+    "auto-pst-pdf",
+    "bashful",
+    "shellesc",
+];
+
+/// Whether a missing bundle file is one of those shell-escape packages.
+fn shell_escape_package(file: &str) -> Option<&str> {
+    let base = file.rsplit('/').next().unwrap_or(file);
+    let stem = base
+        .strip_suffix(".sty")
+        .or_else(|| base.strip_suffix(".cls"))?;
+    SHELL_ESCAPE_PACKAGES.iter().find(|p| **p == stem).copied()
+}
+
 /// The report lines for what the article pipeline found.
 fn article_warnings(
+    log: &str,
     log_errors: &[String],
     issues: &[reflow::article::Issue],
 ) -> Vec<BundleWarning> {
     use reflow::article::Issue;
     let mut out = Vec::new();
-    if !log_errors.is_empty() {
-        let shown = log_errors[..log_errors.len().min(QUOTED_ERRORS)].join("; ");
-        let more = log_errors.len().saturating_sub(QUOTED_ERRORS);
+    // The generic quote skips undefined-macro detail lines: each macro gets
+    // its own warning below.
+    let quoted: Vec<&String> = log_errors
+        .iter()
+        .filter(|l| !l.starts_with("Error:undefined:"))
+        .collect();
+    if !quoted.is_empty() {
+        let shown = quoted
+            .iter()
+            .take(QUOTED_ERRORS)
+            .map(|l| l.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        let more = quoted.len().saturating_sub(QUOTED_ERRORS);
         out.push(BundleWarning {
             kind: BundleWarningKind::Conversion,
             message: format!(
                 "the conversion to HTML reported {} error{}; the article was still produced: {shown}{}",
-                log_errors.len(),
-                if log_errors.len() == 1 { "" } else { "s" },
+                quoted.len(),
+                if quoted.len() == 1 { "" } else { "s" },
                 if more > 0 { format!(" and {more} more") } else { String::new() }
             ),
         });
     }
+    // One warning per undefined macro: the article's spots first, then any
+    // macro the log named that left no mark in the article.
+    let mut groups: BTreeMap<String, usize> = BTreeMap::new();
+    for i in issues {
+        if let Issue::Undefined(found) = i {
+            for u in found {
+                groups.insert(u.name.clone(), u.spots);
+            }
+        }
+    }
+    for u in reflow::convert::undefined_from_log(log) {
+        groups.entry(u.name).or_insert(u.spots);
+    }
+    let mut groups: Vec<(String, usize)> = groups.into_iter().collect();
+    groups.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    for (name, spots) in groups {
+        let where_ = if spots > 0 {
+            format!(
+                "{} spot{} in the article show{} raw TeX",
+                spots,
+                if spots == 1 { "" } else { "s" },
+                if spots == 1 { "s" } else { "" }
+            )
+        } else {
+            String::from("the converter reported it, but it left no mark in the article")
+        };
+        out.push(BundleWarning {
+            kind: BundleWarningKind::Conversion,
+            message: format!(
+                "{name} is not defined ({where_}); the package is not in the TeX bundle: add it to your project folder next to your main file."
+            ),
+        });
+    }
+    // Files the log says the bundle lacks: shell-escape packages report as
+    // such, the rest (too new for the pinned bundle, or never in TeX Live)
+    // get the project-folder hint.
+    let mut shell_reported: Vec<String> = Vec::new();
+    for file in reflow::convert::missing_from_log(log) {
+        if let Some(pkg) = shell_escape_package(&file) {
+            if !shell_reported.contains(&pkg.to_string()) {
+                shell_reported.push(pkg.to_string());
+            }
+        } else {
+            out.push(BundleWarning {
+                kind: BundleWarningKind::Conversion,
+                message: super::compile::missing_package_text(&file),
+            });
+        }
+    }
+    for line in log.lines() {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("shell-escape")
+            || lower.contains("shell escape")
+            || lower.contains("write18")
+        {
+            // The compile's shape names the package (`Package minted
+            // Error: ...`); otherwise any shell-escape package word on the
+            // line does.
+            let pkg = line
+                .find("Package ")
+                .and_then(|at| {
+                    line[at + "Package ".len()..]
+                        .split_whitespace()
+                        .next()
+                        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '-'))
+                })
+                .filter(|w| !w.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    line.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                        .map(|w| w.trim_matches('-'))
+                        .find(|w| SHELL_ESCAPE_PACKAGES.contains(w))
+                        .map(str::to_string)
+                });
+            match pkg {
+                Some(p) if !shell_reported.contains(&p) => shell_reported.push(p),
+                None if !shell_reported.iter().any(|p| p.is_empty()) => {
+                    shell_reported.push(String::new());
+                }
+                _ => {}
+            }
+        }
+    }
+    for pkg in shell_reported {
+        out.push(BundleWarning {
+            kind: BundleWarningKind::Conversion,
+            message: if pkg.is_empty() {
+                String::from(
+                    "the conversion needs shell escape, which the converter never enables; the article was still produced.",
+                )
+            } else {
+                format!(
+                    "{pkg} needs shell escape, which the converter never enables; the article was still produced."
+                )
+            },
+        });
+    }
     for i in issues {
         out.push(match i {
-            Issue::Errors(n) => BundleWarning {
-                kind: BundleWarningKind::Conversion,
-                message: format!(
-                    "{n} place{} in the article show{} raw TeX the converter could not handle",
-                    if *n == 1 { "" } else { "s" },
-                    if *n == 1 { "s" } else { "" }
-                ),
-            },
+            Issue::Undefined(_) => continue,
             Issue::Join(e) => BundleWarning {
                 kind: BundleWarningKind::WidgetJoin,
                 message: format!("the widgets could not be placed in the article ({e}); they are listed at its end"),
@@ -1368,8 +1492,11 @@ pub fn export_bundle_with(
         mounts: &mount_units,
         title: &meta.title,
     })?;
-    plan.warnings
-        .extend(article_warnings(&conversion.errors, &article.issues));
+    plan.warnings.extend(article_warnings(
+        &conversion.log,
+        &conversion.errors,
+        &article.issues,
+    ));
 
     let mut paper = Map::new();
     paper.insert("title".into(), meta.title.clone().into());

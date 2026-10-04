@@ -137,7 +137,7 @@ impl Jobs {
 
 /// The one sentence for a package or class the pinned bundle does not carry:
 /// the project folder is the only place it can come from.
-fn missing_package_text(file: &str) -> String {
+pub(crate) fn missing_package_text(file: &str) -> String {
     format!(
         "{file} is not in the TeX bundle: add it to your project folder next to your main file."
     )
