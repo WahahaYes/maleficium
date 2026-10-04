@@ -47,6 +47,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(cx) = app.try_state::<maleficium_core::Core>() {
                     maleficium_core::compile::shutdown(&cx);
+                    maleficium_core::reflow::convert::shutdown(&cx);
                 }
             }
         });
