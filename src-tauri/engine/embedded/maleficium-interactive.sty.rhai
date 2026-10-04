@@ -18,8 +18,7 @@
 // Macros of the .sty and what they become here:
 //   \interactive, \interactivemodel, \interactivevideo, \interactivetable,
 //   \interactivechart   placeholder, arguments read verbatim and dropped
-//   \maleficiumtheme, \maleficiumsetup   no output (theme and bundleurl are
-//                       PDF/sidecar concerns)
+//   \maleficiumtheme   no output (the theme is a PDF/sidecar concern)
 //   \mfwSlash           no output (the PDF's brand mark)
 // The package's colors are defined so \textcolor{mfwaccent} still works.
 //
@@ -38,7 +37,6 @@ RequirePackage("hyperref", ["hidelinks"]);
 RawTeX("\\definecolor{mfwaccent}{HTML}{5B2A86}\\definecolor{mfwink}{HTML}{1E1B24}\\definecolor{mfwmuted}{HTML}{6B6676}");
 
 DefMacro("\\maleficiumtheme Semiverbatim", |x| "");
-DefMacro("\\maleficiumsetup Semiverbatim", |x| "");
 DefMacro("\\mfwSlash", || "");
 
 DefConstructor("\\interactive [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-html\"/>");

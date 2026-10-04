@@ -97,7 +97,6 @@
 \newlength{\mfw@dimw}
 \newif\ifmfw@ok
 \def\mfw@theme{house}
-\def\mfw@bundleurl{}
 \def\mfw@floatlabel{}
 \newwrite\mfw@sidecar
 \newif\ifmfw@sidecar@open
@@ -130,21 +129,6 @@
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
 \define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
 \define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
-% Legacy setup keys: old documents still compile, but nothing reads the
-% values anymore (the PDF carries no links or QR codes).
-\define@key{mfwsetup}{bundleurl}{\gdef\mfw@bundleurl{#1}}
-\define@key{mfwsetup}{qr}{%
-  \def\mfw@tmp{#1}%
-  \ifx\mfw@tmp\mfw@qr@footer\gdef\mfw@qr{footer}\else
-  \ifx\mfw@tmp\mfw@qr@none\gdef\mfw@qr{none}\else
-    \PackageError{maleficium-interactive}%
-      {qr= must be footer or none, not `#1'}%
-      {Use \protect\maleficiumsetup{qr=footer} or qr=none.}%
-  \fi\fi
-}
-\def\mfw@qr@footer{footer}
-\def\mfw@qr@none{none}
-\def\mfw@qr{footer}
 \newcommand{\mfw@resetkeys}{%
   \def\mfw@poster{}\def\mfw@height{6cm}\def\mfw@width{}%
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
@@ -152,7 +136,6 @@
   \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
   \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}%
 }
-\newcommand{\maleficiumsetup}[1]{\setkeys{mfwsetup}{#1}}
 % The text alternative is required: it becomes the HTML img alt.
 \newcommand{\mfw@needalt}{%
   \ifx\mfw@alt\empty
