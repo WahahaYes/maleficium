@@ -60,6 +60,8 @@ struct State {
     queues: watch::Queues,
     owns: watch::OwnWrites,
     poster_renderer: std::sync::Mutex<Option<Arc<dyn widgets::poster::cache::PosterRenderer>>>,
+    converts: reflow::convert::Running,
+    converter: std::sync::Mutex<Option<Arc<dyn reflow::convert::Converter>>>,
 }
 
 impl Core {
@@ -98,6 +100,21 @@ impl Core {
     ) -> Option<Arc<dyn widgets::poster::cache::PosterRenderer>> {
         self.0
             .poster_renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+    pub(crate) fn converts(&self) -> &reflow::convert::Running {
+        &self.0.converts
+    }
+    /// The converter exports use instead of the bundled engine: tests
+    /// install one that needs no engine.
+    pub fn set_converter(&self, c: Arc<dyn reflow::convert::Converter>) {
+        *self.0.converter.lock().unwrap_or_else(|e| e.into_inner()) = Some(c);
+    }
+    pub(crate) fn converter(&self) -> Option<Arc<dyn reflow::convert::Converter>> {
+        self.0
+            .converter
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
