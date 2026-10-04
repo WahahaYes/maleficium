@@ -68,7 +68,6 @@ export type CommandId =
   | 'tools.compile-file'
   | 'tools.make-offline'
   | 'tools.precheck-warnings'
-  | 'tools.install-interactive'
   | 'tools.auto-compile'
   | 'tools.cancel'
   | 'tools.forward-sync'
@@ -165,7 +164,6 @@ export interface CommandActions {
   compileFile: () => void;
   makeOffline: () => void;
   showPrecheck: () => void;
-  installInteractive: () => void;
   showWidgets: () => void;
   toggleAutoCompile: () => void;
   exportPdf: () => void;
@@ -629,12 +627,6 @@ export function buildMenus(ctx: MenuContext, a: CommandActions): MenuSection[] {
           label: 'Show Pre-compile Warnings',
           enabled: ctx.precheckCount > 0,
           run: a.showPrecheck,
-        },
-        {
-          id: 'tools.install-interactive',
-          label: 'Install Interactive Package',
-          enabled: ctx.hasProject,
-          run: a.installInteractive,
         },
         {
           id: 'tools.cancel',

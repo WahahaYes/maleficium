@@ -12,6 +12,9 @@ use ts_rs::TS;
 include!(concat!(env!("OUT_DIR"), "/templates.rs"));
 
 const MANIFEST: &str = "template.json";
+/// The interactive-widget package every template carries (see build.rs).
+#[cfg(test)]
+const INTERACTIVE_PACKAGE: &str = "maleficium-interactive.sty";
 /// The first-run tour: bundled, instantiable, never listed.
 pub const WELCOME: &str = "welcome";
 
@@ -423,7 +426,10 @@ mod tests {
         for (id, files) in TEMPLATES {
             assert_ne!(*id, "shared", "shared/ must not embed as a template");
             for (rel, bytes) in *files {
-                if *rel == MANIFEST || !(rel.ends_with(".sty") || rel.ends_with(".pdf")) {
+                if *rel == MANIFEST
+                    || *rel == INTERACTIVE_PACKAGE
+                    || !(rel.ends_with(".sty") || rel.ends_with(".pdf"))
+                {
                     continue;
                 }
                 let want = std::fs::read(shared.join(rel))
@@ -434,6 +440,30 @@ mod tests {
                     "{id}/{rel} differs from shared/{rel}"
                 );
             }
+        }
+    }
+
+    /// The interactive-widget package ships through the templates: every
+    /// bundled template carries it, byte-identical to the one canonical
+    /// file, and a project made from it holds it at the root.
+    #[test]
+    fn every_bundled_template_creates_a_project_holding_the_interactive_package() {
+        let canon = std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../interactive/maleficium-interactive.sty"),
+        )
+        .unwrap();
+        let text = String::from_utf8(canon.clone()).unwrap();
+        for macro_name in ["\\interactivemodel", "\\interactive", "\\maleficiumtheme"] {
+            assert!(text.contains(macro_name), "{macro_name} missing");
+        }
+        assert!(TEMPLATES.len() >= 10);
+        for (id, _) in TEMPLATES {
+            let out = tmp(&format!("interactive-{id}"));
+            let c = instantiate_in(&out, id, &out.to_string_lossy(), "proj").unwrap();
+            let have = std::fs::read(PathBuf::from(&c.root).join(INTERACTIVE_PACKAGE))
+                .unwrap_or_else(|_| panic!("{id}: {INTERACTIVE_PACKAGE} not in the new project"));
+            assert_eq!(have, canon, "{id}: package differs from interactive/");
         }
     }
 
