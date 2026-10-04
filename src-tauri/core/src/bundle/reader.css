@@ -501,6 +501,15 @@ body.m-reader {
 .m-reader .ltx_runin + .ltx_para > .ltx_p:first-child {
   display: inline;
 }
+/* A proof's closing mark, drawn instead of the qed glyph (U+220E renders
+   as a solid box in fonts without it). */
+.m-reader .m-qed {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border: 0.09em solid currentColor;
+  vertical-align: baseline;
+}
 
 /* Math */
 .m-reader math {

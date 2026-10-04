@@ -202,6 +202,13 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, usize)
         }
     }
 
+    // A proof's closing mark is amsthm's qed symbol (U+220E), which renders
+    // as a solid box in fonts without the glyph: draw the box in CSS
+    // instead, so the mark reads in every browser.
+    for proof in doc.select("article.ltx_document .ltx_proof").nodes() {
+        qed_box(proof);
+    }
+
     // In-page links: a citation or reference to `page.html#x` becomes `#x`
     // when `x` is in the article; a fragment with no target is unlinked.
     let ids: HashSet<String> = article
@@ -252,6 +259,31 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, usize)
         article.append_html(s);
     }
     (article.html().to_string(), errors)
+}
+
+/// Replace a proof-final U+220E with a CSS-drawn end mark (`m-qed` in the
+/// reader stylesheet). Only a trailing mark is touched: a symbol quoted
+/// mid-proof stays text.
+fn qed_box(proof: &dom_query::NodeRef) {
+    let mut last: Option<dom_query::NodeRef> = None;
+    for n in proof.descendants() {
+        if n.is_text() && !n.text().trim().is_empty() {
+            last = Some(n);
+        }
+    }
+    let Some(t) = last else {
+        return;
+    };
+    let text = t.text().to_string();
+    let Some(stripped) = text.trim_end().strip_suffix('\u{220e}') else {
+        return;
+    };
+    t.after_html("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>");
+    if stripped.is_empty() {
+        t.remove_from_parent();
+    } else {
+        t.set_text(stripped.to_string());
+    }
 }
 
 struct Entry {
