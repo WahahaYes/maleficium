@@ -1,9 +1,11 @@
-// Sandbox render check for the model and video runtimes: headless Firefox plays
+// Sandbox render check for the model, video and chart runtimes: headless Firefox plays
 // the reader. Each runtime document is the committed build with the exporter's
 // widget policy as its first element, shown in `<iframe sandbox="allow-scripts"
 // srcdoc>` (the reader's own frame), and fed its source as bytes over the
 // bridge. Checks the load, a non-blank and theme-following picture, orbiting,
 // bad input, a forged sibling message, and that nothing reaches the network.
+// The chart: a Vega-Lite mouseover selection fires with the SVG renderer and
+// the hover tooltip shows the mark's fields as text.
 // Controls: an unsandboxed frame must be able to read its parent, and a
 // runtime that names an external url must trip the bundle grep.
 //
@@ -111,8 +113,15 @@ await page.evaluate(() => {
     mode,
     tokens:
       mode === 'dark'
-        ? { '--m-figure-bg': '#16181d', '--m-color-text': '#dfe1e6' }
-        : { '--m-figure-bg': '#ffffff', '--m-color-text': '#1e1b24' },
+        ? { '--m-figure-bg': '#1c1f25', '--m-figure-ink': '#dfe1e6' }
+        : {
+            '--m-figure-bg': '#ffffff',
+            '--m-figure-ink': '#1e1b24',
+            '--m-tooltip-bg': '#ffffff',
+            '--m-tooltip-fg': '#1e1b24',
+            '--m-tooltip-border': '#d9d5e0',
+            '--m-shadow': '0 2px 8px rgba(30, 27, 36, 0.16)',
+          },
   });
   window.__mount = (id, html, sandboxed = true) => {
     const f = document.createElement('iframe');
@@ -382,6 +391,70 @@ console.log(
 );
 check('video: the fixture mp4 reaches a terminal status', !!v3);
 await page.evaluate(() => window.__unmount('v3'));
+
+// ---- chart: hover ----
+const hoverSpec = Buffer.from(
+  JSON.stringify({
+    data: {
+      values: [
+        { a: 'x', b: 5 },
+        { a: 'y', b: 8 },
+      ],
+    },
+    params: [{ name: 'hover', select: { type: 'point', on: 'mouseover', clear: 'mouseout' } }],
+    mark: 'bar',
+    encoding: {
+      x: { field: 'a', type: 'nominal' },
+      y: { field: 'b', type: 'quantitative' },
+      color: { condition: { param: 'hover', value: '#ff00ff', empty: false }, value: '#00aa00' },
+    },
+  }),
+).toString('base64');
+await page.evaluate((h) => window.__mount('c1', h), runtime('chart'));
+await until(async () => (await events('c1')).find((e) => e.data.type === 'ready'));
+await page.evaluate(
+  (b) => window.__init('c1', 'spec', 'hover.vl.json', 'application/json', b, 'light'),
+  hoverSpec,
+);
+const ct = await terminal('c1');
+check('chart: renders the hover spec', ct?.data.state === 'loaded', JSON.stringify(ct?.data));
+const chartFrame = page.frameLocator('#c1');
+const bar = chartFrame.locator('.mark-rect path').first();
+const barBox = await bar.boundingBox();
+const tipText = () => chartFrame.locator('#tip').evaluate((t) => (t.hidden ? null : t.textContent));
+const fills = () =>
+  chartFrame
+    .locator('.mark-rect path')
+    .evaluateAll((ps) => ps.map((p) => (p.getAttribute('fill') || '').toLowerCase()));
+check('chart: no tooltip before hovering', (await tipText()) === null);
+if (barBox) {
+  await page.mouse.move(barBox.x + barBox.width / 2, barBox.y + barBox.height / 2, { steps: 4 });
+}
+const hovered = await until(async () => ((await fills()).includes('#ff00ff') ? true : null), 5000);
+check(
+  'chart: a mouseover selection param fires with the SVG renderer',
+  !!hovered,
+  JSON.stringify(await fills()),
+);
+const shown = await until(tipText, 5000);
+check(
+  'chart: the hover tooltip shows the fields as text',
+  !!shown && shown.includes('a') && shown.includes('x') && shown.includes('5'),
+  String(shown),
+);
+check(
+  'chart: the tooltip holds text nodes only',
+  await chartFrame
+    .locator('#tip')
+    .evaluate((t) => [...t.querySelectorAll('*')].every((e) => /^(DIV|SPAN)$/.test(e.tagName))),
+);
+if (shotsAt) await page.locator('#c1').screenshot({ path: join(shotsAt, 'chart-hover.png') });
+await page.mouse.move(2, 470, { steps: 4 });
+check(
+  'chart: the tooltip hides when the pointer leaves',
+  !!(await until(async () => ((await tipText()) === null ? true : null), 5000)),
+);
+await page.evaluate(() => window.__unmount('c1'));
 
 check('nothing reached the network listener', hits.length === 0, hits.join(', '));
 const csp = logs.filter((l) => /Content Security Policy/i.test(l));
