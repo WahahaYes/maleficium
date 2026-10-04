@@ -42,8 +42,9 @@ use super::{
     poster_source, read_sources, PosterOutcome, PosterRequest, PosterSource, HTML_RUNTIME,
 };
 use crate::bundle::fold;
+use crate::theme::Theme;
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
-use crate::widgets::{sidecar_guards, widgets, Widget, WidgetType};
+use crate::widgets::{read, sidecar_guards, widgets, Widget, WidgetType};
 use crate::Core;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -150,8 +151,8 @@ fn key_options(w: &Widget) -> Vec<(String, String)> {
         .collect()
 }
 
-fn key_tokens() -> String {
-    let mut tokens: Vec<(String, String)> = super::light_tokens()
+fn key_tokens(theme: &Theme) -> String {
+    let mut tokens: Vec<(String, String)> = super::poster_tokens(theme)
         .into_iter()
         .map(|(k, v)| (k, v.as_str().unwrap_or("").to_string()))
         .collect();
@@ -164,7 +165,13 @@ fn key_tokens() -> String {
 
 /// The cache key of one first-party runtime widget of `main_rel`'s last
 /// compile. An html widget has none of its own: see [`html_key`].
-pub fn poster_key(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Result<String, String> {
+pub fn poster_key(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+    theme: &Theme,
+) -> Result<String, String> {
     let kind = match w.kind {
         WidgetType::Model => "model",
         WidgetType::Chart => "chart",
@@ -190,13 +197,13 @@ pub fn poster_key(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Resul
         doc,
         &key_options(w),
         &sources,
-        &key_tokens(),
+        &key_tokens(theme),
     ))
 }
 
 /// The cache key of an html widget whose folder hashes to `approval_digest`
 /// (every file and the declared origins): any edit changes it.
-pub fn html_key(w: &Widget, folder: &str, approval_digest: &str) -> String {
+pub fn html_key(w: &Widget, folder: &str, approval_digest: &str, theme: &Theme) -> String {
     let sources: Vec<KeySource> = vec![(
         "bundle".to_string(),
         folder.to_string(),
@@ -208,7 +215,7 @@ pub fn html_key(w: &Widget, folder: &str, approval_digest: &str) -> String {
         &fold::widget_policy(None),
         &key_options(w),
         &sources,
-        &key_tokens(),
+        &key_tokens(theme),
     )
 }
 
@@ -227,15 +234,16 @@ fn keyed(
     root_id: &str,
     main_rel: &str,
     w: &Widget,
+    theme: &Theme,
 ) -> Result<Keyed, String> {
     let Some(target) = WidgetTarget::of(main_rel, w)? else {
-        return poster_key(cx, root_id, main_rel, w).map(|k| Keyed::Key(k, None));
+        return poster_key(cx, root_id, main_rel, w, theme).map(|k| Keyed::Key(k, None));
     };
     let checked = widget_approval::check_at(base, cx, root_id, &target)?;
     Ok(match checked.status {
         WidgetApprovalStatus::Approved(_) => {
             let d = checked.snapshot.digest;
-            Keyed::Key(html_key(w, &checked.snapshot.path, &d), Some(d))
+            Keyed::Key(html_key(w, &checked.snapshot.path, &d, theme), Some(d))
         }
         WidgetApprovalStatus::ApprovalRequired(r) => Keyed::Approval(Box::new(r)),
     })
@@ -567,20 +575,22 @@ struct Wanted<'w> {
 }
 
 /// The widgets the cache provides for, and the html widgets that wait for
-/// the user's approval (they get no poster and no map entry).
+/// the user's approval (they get no poster and no map entry). `paper` is
+/// the compile's widget list and the theme its posters are keyed by.
 fn wanted<'w>(
     base: &Path,
     cx: &Core,
     root_id: &str,
     main_rel: &str,
-    list: &'w [Widget],
+    paper: (&'w [Widget], &Theme),
     c: &Cache,
     say: &mut dyn FnMut(String),
 ) -> (Vec<Wanted<'w>>, Vec<ApprovalRequired>) {
     let mut want = Vec::new();
     let mut pending = Vec::new();
+    let (list, theme) = paper;
     for w in list.iter().filter(|w| auto(w)) {
-        match keyed(base, cx, root_id, main_rel, w) {
+        match keyed(base, cx, root_id, main_rel, w, theme) {
             Ok(Keyed::Key(key, digest)) => want.push(Wanted {
                 widget: w,
                 png: c.png(&key),
@@ -647,14 +657,22 @@ pub(crate) fn before_compile_at(
     main_rel: &str,
     say: &mut dyn FnMut(String),
 ) -> usize {
-    let Ok(list) = widgets(cx, root_id, main_rel) else {
+    let Ok((list, theme)) = read(cx, root_id, main_rel) else {
         return 0;
     };
     let Ok(o) = crate::outputs::outputs_of(cx, root_id, main_rel) else {
         return 0;
     };
     let c = Cache::at(&o.dir);
-    let (want, pending) = wanted(base, cx, root_id, main_rel, &list.widgets, &c, say);
+    let (want, pending) = wanted(
+        base,
+        cx,
+        root_id,
+        main_rel,
+        (&list.widgets, &theme),
+        &c,
+        say,
+    );
     for r in &pending {
         say(approval_line(r));
     }
@@ -751,10 +769,18 @@ pub(crate) fn after_compile_at(
     if !c.present() {
         return;
     }
-    let Ok(list) = widgets(cx, root_id, main_rel) else {
+    let Ok((list, theme)) = read(cx, root_id, main_rel) else {
         return;
     };
-    let (want, _) = wanted(base, cx, root_id, main_rel, &list.widgets, &c, say);
+    let (want, _) = wanted(
+        base,
+        cx,
+        root_id,
+        main_rel,
+        (&list.widgets, &theme),
+        &c,
+        say,
+    );
     let guards = sidecar_guards(cx, root_id, main_rel).unwrap_or_default();
     let map = entries(&want, &guards, say);
     let job = job_of(&o.main_file);
@@ -786,8 +812,21 @@ pub(crate) fn after_compile_at(
 /// The poster file of a widget the cache provides, when it exists: for the
 /// bundle export and anything else that wants the PDF's picture. An html
 /// widget's only while it is approved as it is now.
-pub fn cached_poster(cx: &Core, root_id: &str, main_rel: &str, w: &Widget) -> Option<PathBuf> {
-    cached_poster_at(&widget_approval::store_base(), cx, root_id, main_rel, w)
+pub fn cached_poster(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+    theme: &Theme,
+) -> Option<PathBuf> {
+    cached_poster_at(
+        &widget_approval::store_base(),
+        cx,
+        root_id,
+        main_rel,
+        w,
+        theme,
+    )
 }
 
 /// [`cached_poster`] against the approval store at `base`.
@@ -797,11 +836,12 @@ pub(crate) fn cached_poster_at(
     root_id: &str,
     main_rel: &str,
     w: &Widget,
+    theme: &Theme,
 ) -> Option<PathBuf> {
     if !auto(w) {
         return None;
     }
-    let Keyed::Key(key, _) = keyed(base, cx, root_id, main_rel, w).ok()? else {
+    let Keyed::Key(key, _) = keyed(base, cx, root_id, main_rel, w, theme).ok()? else {
         return None;
     };
     let o = crate::outputs::outputs_of(cx, root_id, main_rel).ok()?;

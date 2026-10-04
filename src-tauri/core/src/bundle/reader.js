@@ -1,7 +1,6 @@
 (function () {
   'use strict';
   var FOLDER = __FOLDER__;
-  var TOKENS = __TOKENS__;
   var body = document.body;
   function island(id) {
     var el = document.getElementById(id);
@@ -20,6 +19,9 @@
   var manifest = island('mfw-manifest');
   var docs = island('mfw-widgets');
   var blobs = island('mfw-assets');
+  // The paper's theme record, the one the page's CSS was written from:
+  // every widget gets the same values the chrome is styled with.
+  var themes = island('mfw-theme');
   var dark = window.matchMedia('(prefers-color-scheme: dark)');
   function mode() {
     return dark.matches ? 'dark' : 'light';
@@ -29,12 +31,8 @@
   }
   paint();
   function theme() {
-    var cs = getComputedStyle(body),
-      tokens = {};
-    TOKENS.forEach(function (t) {
-      tokens[t] = cs.getPropertyValue(t).trim();
-    });
-    return { mode: mode(), tokens: tokens };
+    var m = mode();
+    return { mode: m, tokens: themes[m] || {} };
   }
   function b64(s) {
     var bin = atob(s),

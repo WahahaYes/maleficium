@@ -191,7 +191,7 @@ fn a_widgets_key_follows_its_source_bytes_and_options() {
     let key = |cx: &Core| {
         let l = widgets(cx, &id, "main.tex").unwrap();
         let w = l.widgets.iter().find(|w| w.id == "fig-mesh").unwrap();
-        poster_key(cx, &id, "main.tex", w).unwrap()
+        poster_key(cx, &id, "main.tex", w, &Theme::house()).unwrap()
     };
     let a = key(cx);
     assert_eq!(a, key(cx));
@@ -512,15 +512,15 @@ fn cached_poster_names_the_file_only_once_it_exists() {
     let l = widgets(cx, &id, "main.tex").unwrap();
     let mesh = l.widgets.iter().find(|w| w.id == "fig-mesh").unwrap();
     let demo = l.widgets.iter().find(|w| w.id == "fig-demo").unwrap();
-    assert!(cached_poster(cx, &id, "main.tex", mesh).is_none());
+    assert!(cached_poster(cx, &id, "main.tex", mesh, &Theme::house()).is_none());
     with_fake(cx);
     run_before(cx, &id);
-    let p = cached_poster(cx, &id, "main.tex", mesh).unwrap();
+    let p = cached_poster(cx, &id, "main.tex", mesh, &Theme::house()).unwrap();
     assert!(p.ends_with(format!(
         "{CACHE_DIR}/{POSTERS_DIR}/{}.png",
-        poster_key(cx, &id, "main.tex", mesh).unwrap()
+        poster_key(cx, &id, "main.tex", mesh, &Theme::house()).unwrap()
     )));
-    assert!(cached_poster(cx, &id, "main.tex", demo).is_none());
+    assert!(cached_poster(cx, &id, "main.tex", demo, &Theme::house()).is_none());
 }
 
 #[test]
@@ -667,7 +667,7 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
         maleficium_events::WidgetApprovalCause::NeverApproved
     );
     assert!(!mapped());
-    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).is_none());
+    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w(), &Theme::house()).is_none());
 
     // Approved: it renders into the cache and is mapped.
     approve();
@@ -683,7 +683,7 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
         approvals_needed_at(&base, cx, &id, "main.tex").is_empty(),
         "an approved widget asks nothing"
     );
-    let png = cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).unwrap();
+    let png = cached_poster_at(&base, cx, &id, "main.tex", &demo_w(), &Theme::house()).unwrap();
     assert!(png.is_file());
 
     // Edited: its old poster stays on disk but is never used for it.
@@ -705,7 +705,7 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
     assert!(!marker.exists());
     assert!(png.is_file(), "the old poster is still there");
     assert!(!mapped(), "a cache hit never stands in for the approval");
-    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w()).is_none());
+    assert!(cached_poster_at(&base, cx, &id, "main.tex", &demo_w(), &Theme::house()).is_none());
     let mut lines = Vec::new();
     after_compile_at(&base, cx, &id, "main.tex", &mut |l| lines.push(l));
     assert!(!mapped(), "{lines:?}");
@@ -779,11 +779,32 @@ fn an_html_widget_has_no_runtime_key() {
     let (id, _root) = project(cx, "htmlkey");
     let l = widgets(cx, &id, "main.tex").unwrap();
     let demo = l.widgets.iter().find(|w| w.id == "fig-demo").unwrap();
-    assert!(poster_key(cx, &id, "main.tex", demo)
+    assert!(poster_key(cx, &id, "main.tex", demo, &Theme::house())
         .unwrap_err()
         .contains("approval digest"));
-    let a = html_key(demo, "widgets/demo", &"a".repeat(64));
-    assert_ne!(a, html_key(demo, "widgets/demo", &"b".repeat(64)));
-    assert_ne!(a, html_key(demo, "widgets/other", &"a".repeat(64)));
+    let a = html_key(demo, "widgets/demo", &"a".repeat(64), &Theme::house());
+    assert_ne!(
+        a,
+        html_key(demo, "widgets/demo", &"b".repeat(64), &Theme::house())
+    );
+    assert_ne!(
+        a,
+        html_key(demo, "widgets/other", &"a".repeat(64), &Theme::house())
+    );
     assert!(is_key(&a));
+}
+
+#[test]
+fn a_widgets_key_follows_the_papers_theme() {
+    let cx = &Core::default();
+    let (id, _root) = project(cx, "themekey");
+    let l = widgets(cx, &id, "main.tex").unwrap();
+    let mesh = l.widgets.iter().find(|w| w.id == "fig-mesh").unwrap();
+    let cream = include_str!("../../../../testdata/theme/cream-times.mfw");
+    let cream = crate::widgets::parse_sidecar(cream).unwrap().theme.unwrap();
+    assert_ne!(
+        poster_key(cx, &id, "main.tex", mesh, &Theme::house()).unwrap(),
+        poster_key(cx, &id, "main.tex", mesh, &cream).unwrap(),
+        "a new page colour renders new posters"
+    );
 }
