@@ -24,10 +24,11 @@ fn clean_conversion() -> String {
     html
 }
 
-/// A converter that hands back fixed HTML and log errors, or fails.
+/// A converter that hands back fixed HTML, log errors and the log, or fails.
 struct Fixed {
     html: Result<String, String>,
     errors: Vec<String>,
+    log: String,
 }
 
 impl reflow::convert::Converter for Fixed {
@@ -37,6 +38,7 @@ impl reflow::convert::Converter for Fixed {
         reflow::convert::Conversion {
             html: self.html.clone(),
             errors: self.errors.clone(),
+            log: self.log.clone(),
         }
     }
 }
@@ -45,6 +47,7 @@ fn converts_to(p: &Project, html: Result<String, String>, errors: &[&str]) {
     p.cx.set_converter(std::sync::Arc::new(Fixed {
         html,
         errors: errors.iter().map(|e| e.to_string()).collect(),
+        log: String::new(),
     }));
 }
 
@@ -1166,15 +1169,30 @@ fn conversion_problems_are_reported_and_never_block_the_article() {
         r.warnings
     );
     assert!(ks.contains(&BundleWarningKind::Figure));
+    // The undefined-macro detail line is not quoted with the other errors:
+    // its macro gets its own warning with the package hint.
     let log = r
         .warnings
         .iter()
-        .find(|w| w.message.contains("reported 6 errors"))
+        .find(|w| w.message.contains("reported 5 errors"))
         .unwrap();
     assert!(
-        log.message.contains("\\undefinedmacro") && log.message.ends_with("and 1 more"),
+        !log.message.contains("\\undefinedmacro") && !log.message.contains("more"),
         "{}",
         log.message
+    );
+    let undef = r
+        .warnings
+        .iter()
+        .find(|w| w.message.contains("\\undefinedmacro"))
+        .unwrap();
+    assert!(
+        undef
+            .message
+            .contains("1 spot in the article shows raw TeX")
+            && undef.message.contains("add it to your project folder"),
+        "{}",
+        undef.message
     );
     let fig = r
         .warnings
@@ -1205,6 +1223,80 @@ fn conversion_problems_are_reported_and_never_block_the_article() {
         )
         .kind,
         maleficium_events::EventKind::Warn
+    );
+}
+
+#[test]
+fn undefined_macros_export_grouped_with_the_package_hint() {
+    // The origin paper's shape (e2e/fixtures/vendored/
+    // on-the-origin-of-objects): its conversion names one undefined macro
+    // and its article shows that macro's raw TeX throughout.
+    let p = project("grouped", REAL_SIDECAR);
+    let span = "<span class=\"ltx_ERROR undefined\">\\undefinedmacro</span>";
+    let html = CONVERTED.replacen(
+        span,
+        "<span class=\"ltx_ERROR undefined\">\\eolang</span> \
+         <span class=\"ltx_ERROR undefined\">\\eolang</span> \
+         <span class=\"ltx_ERROR undefined\">\\eolang</span>",
+        1,
+    );
+    assert_ne!(html, CONVERTED, "the fixture span changed");
+    p.cx.set_converter(std::sync::Arc::new(Fixed {
+        html: Ok(html),
+        errors: Vec::new(),
+        log: String::from(
+            "3 warnings; 1 error; 1 undefined macro[\\eolang]\nConversion complete: 3 warnings; 1 error; 1 undefined macro[\\eolang]\n",
+        ),
+    }));
+    let d = dest(&p, "grouped.html");
+    let r = export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let undef: Vec<&BundleWarning> = r
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("\\eolang"))
+        .collect();
+    assert_eq!(undef.len(), 1, "{:?}", r.warnings);
+    assert!(
+        undef[0]
+            .message
+            .contains("3 spots in the article show raw TeX")
+            && undef[0].message.contains("add it to your project folder"),
+        "{}",
+        undef[0].message
+    );
+    let html = reader_html(&d, BundleProfile::SingleFile);
+    assert!(html.contains("\\eolang"), "the article is still produced");
+}
+
+#[test]
+fn missing_bundle_files_and_shell_escape_report_by_name() {
+    let log = "1 warning; 2 missing files[eolang.sty, minted.sty]\nConversion complete: 1 warning; 2 missing files[eolang.sty, minted.sty]\n";
+    let warnings = article_warnings(log, &[], &[]);
+    let missing = warnings
+        .iter()
+        .find(|w| w.message.contains("eolang.sty"))
+        .expect("a missing-file warning");
+    assert_eq!(
+        missing.message,
+        super::super::compile::missing_package_text("eolang.sty")
+    );
+    let shell = warnings
+        .iter()
+        .find(|w| w.message.contains("minted"))
+        .expect("a shell-escape warning");
+    assert!(
+        shell.message.contains("needs shell escape") && shell.message.contains("still produced"),
+        "{}",
+        shell.message
+    );
+    // The compile's own shell-escape signature reports the package too.
+    let tex_log = "error: main.tex:3: Package minted Error: You must invoke LaTeX with the -shell-escape flag.\n";
+    let warnings = article_warnings(tex_log, &[], &[]);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.message.contains("minted needs shell escape")),
+        "{warnings:?}"
     );
 }
 

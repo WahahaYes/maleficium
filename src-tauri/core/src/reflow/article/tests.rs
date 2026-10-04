@@ -111,9 +111,18 @@ fn the_whole_pipeline_mounts_every_widget_in_place_and_sanitizes_last() {
     assert!(h.contains("<a class=\"ltx_ref\">dead link</a>"));
     assert!(h.contains("<a href=\"https://example.org/\""));
 
-    // The undefined macro stays visible and is counted.
+    // The undefined macro stays visible and is grouped by name.
     assert!(h.contains("<span class=\"ltx_ERROR undefined\">\\undefinedmacro</span>"));
-    assert!(a.issues.contains(&Issue::Errors(1)));
+    assert_eq!(
+        a.issues.iter().find_map(|i| match i {
+            Issue::Undefined(g) => Some(g.clone()),
+            _ => None,
+        }),
+        Some(vec![UndefinedMacro {
+            name: String::from("\\undefinedmacro"),
+            spots: 1,
+        }])
+    );
 
     // Contents after the abstract: sections, the subsection, the references.
     let nav = h.find("<nav class=\"m-contents\"").unwrap();
@@ -141,6 +150,55 @@ fn the_whole_pipeline_mounts_every_widget_in_place_and_sanitizes_last() {
         assert!(!h.contains(gone), "{gone} survived");
     }
     assert!(!a.issues.iter().any(|i| matches!(i, Issue::Join(_))));
+}
+
+#[test]
+fn undefined_macros_group_by_name_with_spots() {
+    // The shape the origin paper (e2e/fixtures/vendored/
+    // on-the-origin-of-objects) converts to today: every `ltx_ERROR` span
+    // shows the same undefined macro.
+    let mut html = String::from(
+        "<html><body><article class=\"ltx_document\"><section id=\"S1\"><h2>1 One</h2><p>",
+    );
+    for _ in 0..11 {
+        html.push_str("<span class=\"ltx_ERROR undefined\">\\eolang</span> ");
+    }
+    html.push_str(
+        "<span class=\"ltx_ERROR undefined\">\\ff{code}</span> \
+         <span class=\"ltx_ERROR undefined\">{ffcode}</span> \
+         </p></section><section id=\"S2\"><h2>2 Two</h2></section></article></body></html>",
+    );
+    let a = build_with(&html, Some("mfw 1\n"), figures::Mode::SingleFile);
+    let groups = a.issues.iter().find_map(|i| match i {
+        Issue::Undefined(g) => Some(g.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        groups,
+        Some(vec![
+            UndefinedMacro {
+                name: String::from("\\eolang"),
+                spots: 11,
+            },
+            UndefinedMacro {
+                name: String::from("\\ff"),
+                spots: 1,
+            },
+            UndefinedMacro {
+                name: String::from("{ffcode}"),
+                spots: 1,
+            },
+        ])
+    );
+    assert!(a.html.contains("\\eolang"), "the article keeps the raw TeX");
+}
+
+#[test]
+fn macro_names_come_from_the_first_macro_or_the_raw_text() {
+    assert_eq!(macro_name("\\eolang"), "\\eolang");
+    assert_eq!(macro_name("\\ff{code} and more"), "\\ff");
+    assert_eq!(macro_name("{ffcode}"), "{ffcode}");
+    assert_eq!(macro_name("  "), "(unreadable TeX)");
 }
 
 #[test]

@@ -189,6 +189,15 @@ fn convert(source: String, out: &Path, source_dir: &Path) -> Converted {
             bindings_dispatch: Some(Rc::new(latexml_package::dispatch)),
             extra_bindings_dispatch: Some(Rc::new(latexml_contrib::dispatch)),
             // Raw-load a package that has no binding (an author's own .sty).
+            // An author .rhai beside their .sty needs no wiring here: the
+            // converter's binding chain (latexml's `runtime-bindings`
+            // default feature, active in this build) probes `<pkg>.sty.rhai`
+            // in the source directory before any compiled binding, so it
+            // overrides the raw-loaded .sty (verified: `X.sty.rhai` wins over
+            // `X.sty` in the input's folder; without it the .sty raw-loads).
+            // Revisit only if a real paper needs more (a .rhai distributed
+            // on the TeX tree outside the project resolves through the
+            // chain's last tier already).
             include_styles: Some(true),
             ..Config::default()
         };
