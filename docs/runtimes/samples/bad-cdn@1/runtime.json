@@ -1,0 +1,19 @@
+{
+  "contract": 1,
+  "name": "bad-cdn",
+  "version": "1.0.0",
+  "title": "Bad CDN sample",
+  "description": "Deliberately bad: loads a script from a CDN.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT",
+  "sources": {
+    "data": {
+      "primary": true,
+      "required": true,
+      "extensions": ["csv"],
+      "description": "Unused; the role sample the package needs."
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}
