@@ -795,7 +795,7 @@ fn the_committed_schema_is_the_one_the_note_describes() {
     );
     assert_eq!(
         s["$defs"]["widget"]["properties"]["type"]["enum"],
-        json!(["model", "video", "table", "chart", "html"])
+        json!(["model", "video", "table", "chart", "html", "custom"])
     );
 }
 
@@ -1536,4 +1536,469 @@ fn a_hostile_theme_value_refuses_the_export() {
     let e = export(&p, &d, BundleProfile::SingleFile).unwrap_err();
     assert!(e.contains("--m-figure-bg"), "{e}");
     assert!(!PathBuf::from(&d).exists());
+}
+
+// ---- custom runtimes ------------------------------------------------------
+
+const CHART_LINE: &str = "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart";
+const DEMO_LINE: &str = "widget|fig-demo|html||||house|figures/demo.png|bundle=widgets/demo/|height=227.62204pt|Live demo widget";
+/// fig-chart runs the documented heatmap sample (installed), fig-demo the
+/// stl viewer (not installed).
+const HEAT_LINE: &str = "widget|fig-chart|custom|heatmap@1|||house|figures/chart.png|primary=data/grid.csv|height=142.26378pt,scheme=div|Ablation chart";
+const STL_LINE: &str = "widget|fig-demo|custom|stl-viewer@1|||house|figures/demo.png|primary=models/mesh.stl|height=227.62204pt,autorotate=true|Live demo widget";
+const GRID: &str = "0,1,2,3,4,5\n1,2,3,4,5,4\n2,3,4,5,4,3\n3,4,5,4,3,2\n4,5,4,3,2,1\n";
+
+struct Custom {
+    p: Project,
+    /// The approval store home (stands in for app data).
+    base: PathBuf,
+}
+
+fn copy_sample(r: &str, to: &Path) {
+    copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/runtimes/samples")
+            .join(r),
+        to,
+    );
+}
+
+fn custom_project(name: &str, heat: &str) -> Custom {
+    let sidecar = REAL_SIDECAR
+        .replace(CHART_LINE, heat)
+        .replace(DEMO_LINE, STL_LINE);
+    assert!(sidecar.contains("|custom|heatmap@1|") && sidecar.contains("|custom|stl-viewer@1|"));
+    let p = project(name, &sidecar);
+    std::fs::write(p.root.join("data/grid.csv"), GRID).unwrap();
+    copy_sample("heatmap@1", &p.root.join("runtimes/heatmap@1"));
+    converts_to(
+        &p,
+        Ok(clean_conversion()
+            .replace("m-widget m-widget-chart", "m-widget m-widget-custom")
+            .replace("m-widget m-widget-html", "m-widget m-widget-custom")),
+        &[],
+    );
+    let base = crate::test_scratch::dir(&format!("bundle-{name}-appdata"));
+    let _ = std::fs::remove_dir_all(&base);
+    Custom { p, base }
+}
+
+impl Custom {
+    fn export(&self, d: &str, profile: BundleProfile) -> Result<BundleExported, String> {
+        export_bundle_at(&self.base, &self.p.cx, &self.p.id, "main.tex", d, profile)
+    }
+    fn check(&self) -> crate::widget_approval::RuntimeChecked {
+        crate::widget_approval::check_runtime_at(
+            &self.base,
+            &self.p.cx,
+            &self.p.id,
+            "heatmap@1",
+            &["fig-chart".into()],
+        )
+        .unwrap()
+    }
+    fn decide(&self, decision: crate::widget_approval::RuntimeDecision) {
+        let digest = self.check().snapshot.digest;
+        crate::widget_approval::decide_runtime_at(
+            &self.base,
+            &self.p.cx,
+            &crate::widget_approval::RuntimeDecisionParams {
+                root_id: self.p.id.clone(),
+                main_rel: "main.tex".into(),
+                runtime: "heatmap@1".into(),
+                digest,
+                decision,
+            },
+        )
+        .unwrap();
+    }
+    fn allow(&self) {
+        self.decide(crate::widget_approval::RuntimeDecision::Allowed);
+    }
+    fn rt(&self) -> PathBuf {
+        self.p.root.join("runtimes/heatmap@1")
+    }
+}
+
+fn widget_json<'a>(m: &'a Value, id: &str) -> &'a Value {
+    m["widgets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["id"] == id)
+        .unwrap()
+}
+
+fn runtime_warnings(r: &BundleExported) -> Vec<&str> {
+    r.warnings
+        .iter()
+        .filter(|w| w.kind == BundleWarningKind::Runtime)
+        .map(|w| w.message.as_str())
+        .collect()
+}
+
+const STL_MISSING: &str = "runtime stl-viewer@1 is not installed in this project (no runtimes/stl-viewer@1/runtime.json): fig-demo export as posters only.";
+
+#[test]
+fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
+    let c = custom_project("rt-live", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "paper");
+    let r = c.export(&d, BundleProfile::Folder).unwrap();
+    let folder = PathBuf::from(&d);
+    let m = manifest_of(&folder);
+    validate_manifest(&m).unwrap();
+
+    // Live: runtime ref, entry, role-keyed sources, typed and defaulted
+    // options, no csp, no fallback.
+    let heat = widget_json(&m, "fig-chart");
+    assert_eq!(heat["type"], "custom");
+    assert_eq!(heat["runtime"], "heatmap@1");
+    assert_eq!(heat["entry"], "widgets/fig-chart/index.html");
+    assert_eq!(heat["sources"], json!({"data": "fig-chart-data"}));
+    assert_eq!(heat["options"], json!({"scheme": "div"}));
+    assert!(heat.get("csp").is_none() && heat.get("fallback").is_none());
+    let a = &m["assets"]["fig-chart-data"];
+    assert_eq!(
+        (a["mime"].as_str(), a["source"].as_str()),
+        (Some("text/csv"), Some("data/grid.csv"))
+    );
+    assert_eq!(a["sha256"], sha_of(GRID.as_bytes()));
+
+    // The runtimes entry carries the digest the approval judged.
+    let judged = c.check().snapshot.digest;
+    assert_eq!(
+        m["runtimes"],
+        json!({"heatmap@1": {"name": "heatmap", "version": "1.0.0", "digest": judged,
+            "license": "MIT", "capabilities": {"webgl": false}, "vendored": []}})
+    );
+
+    // The folded document: policy first, the package's own page inlined,
+    // its metadata left out, the licence block last.
+    let doc = std::fs::read_to_string(folder.join("widgets/fig-chart/index.html")).unwrap();
+    let at = doc
+        .find("<meta http-equiv=\"Content-Security-Policy\"")
+        .unwrap();
+    assert!(!doc[..at].contains("<script") && !doc[..at].contains("<meta charset"));
+    assert_eq!(fold::policy_of(&doc), fold::widget_policy(None));
+    let sample = std::fs::read_to_string(c.rt().join("index.html")).unwrap();
+    let probe = sample
+        .lines()
+        .find(|l| l.contains("addEventListener"))
+        .unwrap()
+        .trim();
+    assert!(doc.contains(probe), "the package's page is the document");
+    let licence = std::fs::read_to_string(c.rt().join("LICENSE")).unwrap();
+    assert!(doc.trim_end().ends_with(" -->"));
+    let block = &doc[doc.find("<!-- Licences:").unwrap()..];
+    assert!(block.starts_with("<!-- Licences:\nheatmap 1.0.0 (MIT)\n"));
+    assert!(block.contains(licence.lines().next().unwrap()));
+    assert!(!block.contains("data.csv"), "samples are not folded");
+
+    // Fallback: no document, no source asset, the reason, the note, the warning.
+    let stl = widget_json(&m, "fig-demo");
+    assert_eq!(stl["fallback"], "runtime-missing");
+    assert_eq!(stl["sources"], json!({}));
+    for gone in ["entry", "options", "csp"] {
+        assert!(stl.get(gone).is_none(), "{gone}");
+    }
+    assert!(!folder.join("widgets/fig-demo").exists());
+    assert!(m["assets"].get("fig-demo-primary").is_none());
+    assert!(m["assets"].get("fig-demo-poster").is_some());
+    assert_eq!(runtime_warnings(&r), [STL_MISSING]);
+    let index = reader_html(&d, BundleProfile::Folder);
+    assert!(index.contains(
+        "Interactive version not included in this copy: runtime stl-viewer@1 is not installed."
+    ));
+}
+
+#[test]
+fn the_licence_block_cannot_close_its_comment() {
+    let c = custom_project("rt-licence", HEAT_LINE);
+    std::fs::write(c.rt().join("LICENSE"), "MIT -- see --> and <!-- and ---x-").unwrap();
+    c.allow();
+    let d = dest(&c.p, "paper");
+    c.export(&d, BundleProfile::Folder).unwrap();
+    let doc =
+        std::fs::read_to_string(PathBuf::from(&d).join("widgets/fig-chart/index.html")).unwrap();
+    let block = &doc[doc.find("<!-- Licences:").unwrap() + 4..];
+    let inner = block
+        .strip_suffix(" -->")
+        .unwrap_or(block.trim_end().strip_suffix(" -->").unwrap());
+    assert!(!inner.contains("--"), "{inner}");
+    assert!(
+        inner.contains("MIT - - see - -> and <!- - and - - -x-"),
+        "{inner}"
+    );
+}
+
+#[test]
+fn an_unapproved_denied_or_invalid_runtime_exports_as_its_poster() {
+    let c = custom_project("rt-gate", HEAT_LINE);
+    let run = |name: &str| {
+        let d = dest(&c.p, name);
+        let r = c.export(&d, BundleProfile::Folder).unwrap();
+        let m = manifest_of(Path::new(&d));
+        validate_manifest(&m).unwrap();
+        assert!(
+            m.get("runtimes").is_none(),
+            "no live widget, no runtimes map"
+        );
+        assert!(!PathBuf::from(&d).join("widgets/fig-chart").exists());
+        assert!(m["assets"].get("fig-chart-data").is_none());
+        let index = reader_html(&d, BundleProfile::Folder);
+        (
+            widget_json(&m, "fig-chart")["fallback"].clone(),
+            runtime_warnings(&r)
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+            index,
+        )
+    };
+    let (why, warns, index) = run("unapproved");
+    assert_eq!(why, "unapproved");
+    assert_eq!(warns, [
+        "runtime heatmap@1 is not approved in this project: fig-chart export as posters only. Approve it in View > Widgets and export again.",
+        STL_MISSING,
+    ]);
+    assert!(index.contains("Interactive version not included in this copy: runtime heatmap@1 was not approved by the author."));
+
+    c.decide(crate::widget_approval::RuntimeDecision::Denied);
+    let (why, warns, _) = run("denied");
+    assert_eq!(why, "denied");
+    assert_eq!(warns[0], "runtime heatmap@1 is denied in this project: fig-chart export as posters only. Allow it in View > Widgets to export it live.");
+
+    // Allowed, then changed with auto off: unapproved again.
+    c.allow();
+    std::fs::write(
+        c.rt().join("index.html"),
+        std::fs::read_to_string(c.rt().join("index.html")).unwrap() + "<!-- edit -->",
+    )
+    .unwrap();
+    assert_eq!(run("changed").0, "unapproved");
+
+    let m = c.rt().join("runtime.json");
+    let text = std::fs::read_to_string(&m)
+        .unwrap()
+        .replace("\"MIT\"", "\"GPL-3.0\"");
+    std::fs::write(&m, text).unwrap();
+    let (why, warns, index) = run("invalid");
+    assert_eq!(why, "runtime-invalid");
+    assert!(
+        warns[0]
+            .starts_with("runtime heatmap@1 is invalid (license `GPL-3.0` is not on the allowlist"),
+        "{}",
+        warns[0]
+    );
+    assert!(
+        warns[0].ends_with("): fig-chart export as posters only."),
+        "{}",
+        warns[0]
+    );
+    assert!(index.contains("runtime heatmap@1 did not pass validation."));
+}
+
+#[test]
+fn a_bind_error_refuses_the_export_approved_or_not() {
+    let c = custom_project("rt-bind", &HEAT_LINE.replace("scheme=div", "scheme=hot"));
+    let d = dest(&c.p, "paper");
+    for approve in [false, true] {
+        if approve {
+            c.allow();
+        }
+        let e = c.export(&d, BundleProfile::Folder).unwrap_err();
+        assert_eq!(
+            e,
+            "widget fig-chart: option scheme=hot is not one of seq, div"
+        );
+        assert!(!PathBuf::from(&d).exists());
+    }
+    let c = custom_project(
+        "rt-bind-ext",
+        &HEAT_LINE.replace("data/grid.csv", "data/results.json"),
+    );
+    let e = c
+        .export(&dest(&c.p, "paper"), BundleProfile::Folder)
+        .unwrap_err();
+    assert!(e.contains("source data: `data/results.json` has extension `.json`; runtime heatmap@1 accepts .csv"), "{e}");
+    // A source over its role's cap refuses the live export.
+    let c = custom_project("rt-bind-size", HEAT_LINE);
+    let m = c.rt().join("runtime.json");
+    let text = std::fs::read_to_string(&m).unwrap().replace(
+        "\"extensions\": [\"csv\"]",
+        "\"extensions\": [\"csv\"], \"maxBytes\": 8",
+    );
+    std::fs::write(&m, text).unwrap();
+    c.allow();
+    let e = c
+        .export(&dest(&c.p, "paper"), BundleProfile::Folder)
+        .unwrap_err();
+    assert_eq!(
+        e,
+        format!(
+            "widget fig-chart: source data is {} bytes; runtime heatmap@1 accepts at most 8",
+            GRID.len()
+        )
+    );
+}
+
+#[test]
+fn a_single_file_export_carries_only_live_documents() {
+    let c = custom_project("rt-single", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "paper.html");
+    c.export(&d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    let m = island_json(&html, "mfw-manifest");
+    validate_manifest(&m).unwrap();
+    assert!(widget_json(&m, "fig-chart").get("entry").is_none());
+    let docs = island_json(&html, "mfw-widgets");
+    assert!(docs["fig-chart"]
+        .as_str()
+        .unwrap()
+        .contains("<!-- Licences:"));
+    assert!(docs.get("fig-demo").is_none(), "a fallback has no document");
+    assert!(m["runtimes"]["heatmap@1"].is_object());
+}
+
+#[test]
+fn the_preview_runs_custom_runtimes_without_the_approval_gate() {
+    let c = custom_project("rt-preview", HEAT_LINE);
+    let base = c.p.out.join("previews");
+    // No decision at all: the export gates it, the preview does not.
+    let r = preview_bundle_in(&c.p.cx, &c.p.id, "main.tex", &base).unwrap();
+    let html = std::fs::read_to_string(&r.path).unwrap();
+    let m = island_json(&html, "mfw-manifest");
+    assert!(widget_json(&m, "fig-chart").get("fallback").is_none());
+    assert!(island_json(&html, "mfw-widgets")["fig-chart"].is_string());
+    assert_eq!(runtime_warnings(&r), [STL_MISSING], "missing stays missing");
+    // Invalid stays invalid in the preview too.
+    let mf = c.rt().join("runtime.json");
+    std::fs::write(&mf, "{").unwrap();
+    let r = preview_bundle_in(&c.p.cx, &c.p.id, "main.tex", &base).unwrap();
+    let html = std::fs::read_to_string(&r.path).unwrap();
+    let m = island_json(&html, "mfw-manifest");
+    assert_eq!(widget_json(&m, "fig-chart")["fallback"], "runtime-invalid");
+}
+
+#[test]
+fn option_values_reach_the_runtime_as_json_and_never_as_markup() {
+    let hostile = "</script><img src=x onerror=alert(1)>";
+    let c = custom_project(
+        "rt-hostile-option",
+        &HEAT_LINE.replace("scheme=div", &format!("scheme=div,caption={hostile}")),
+    );
+    let m = c.rt().join("runtime.json");
+    let text = std::fs::read_to_string(&m).unwrap().replace(
+        "\"properties\": {",
+        "\"properties\": {\n      \"caption\": { \"type\": \"string\" },",
+    );
+    std::fs::write(&m, text).unwrap();
+    c.allow();
+    let d = dest(&c.p, "paper.html");
+    c.export(&d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    assert!(
+        !html.contains("<img src=x"),
+        "the value never lands as markup"
+    );
+    let m = island_json(&html, "mfw-manifest");
+    assert_eq!(widget_json(&m, "fig-chart")["options"]["caption"], hostile);
+}
+
+#[test]
+fn the_manifest_invariants_for_custom_runtimes_hold_and_their_breaks_are_named() {
+    let c = custom_project("rt-invariants", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "paper");
+    c.export(&d, BundleProfile::Folder).unwrap();
+    let good = manifest_of(Path::new(&d));
+    validate_manifest(&good).unwrap();
+    let i = good["widgets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|w| w["id"] == "fig-chart")
+        .unwrap();
+    let j = good["widgets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|w| w["id"] == "fig-demo")
+        .unwrap();
+    let bad = |f: &dyn Fn(&mut Value)| -> String {
+        let mut m = good.clone();
+        f(&mut m);
+        validate_manifest(&m).unwrap_err()
+    };
+    assert!(bad(&|m| {
+        m.as_object_mut().unwrap().remove("runtimes");
+    })
+    .contains("which the manifest does not list"));
+    assert!(
+        bad(&|m| m["runtimes"]["other@1"] = m["runtimes"]["heatmap@1"].clone())
+            .contains("no live widget runs it")
+    );
+    assert!(
+        bad(&|m| m["runtimes"]["heatmap@1"]["version"] = "2.0.0".into())
+            .contains("listed as heatmap@2")
+    );
+    assert!(bad(&|m| m["widgets"][i]["csp"] = json!({})).contains("schema"));
+    assert!(
+        bad(&|m| m["widgets"][j]["sources"] = json!({"model": "fig-chart-data"}))
+            .contains("schema")
+    );
+    assert!(bad(&|m| m["widgets"][j]["fallback"] = "lost".into()).contains("schema"));
+    assert!(bad(&|m| m["widgets"][i]["runtime"] = "Heat@1".into()).contains("schema"));
+    assert!(
+        bad(&|m| m["widgets"][0]["fallback"] = "denied".into()).contains("schema"),
+        "built-ins never fall back"
+    );
+    assert!(bad(&|m| m["runtimes"]["heatmap@1"]["license"] = "GPL-3.0".into()).contains("schema"));
+    assert!(bad(&|m| m["runtimes"]["heatmap@1"]["path"] = "runtimes/x".into()).contains("schema"));
+}
+
+/// Writes the single-file proof bundle (one approved custom runtime live,
+/// one poster-only fallback) to `MALEFICIUM_RUNTIME_PROOF` when set, for the
+/// screenshot harness; otherwise checks it like any export.
+#[test]
+fn a_proof_bundle_with_one_live_runtime_and_one_fallback() {
+    let c = custom_project("rt-proof", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "proof.html");
+    let r = c.export(&d, BundleProfile::SingleFile).unwrap();
+    assert_eq!(runtime_warnings(&r), [STL_MISSING]);
+    if let Some(to) = std::env::var_os("MALEFICIUM_RUNTIME_PROOF") {
+        std::fs::copy(&d, to).unwrap();
+    }
+}
+
+#[test]
+fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
+    let c = custom_project("rt-article", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "paper.html");
+    c.export(&d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    let main = &html[html.find("<main>").unwrap()..html.find("</main>").unwrap()];
+    for id in ["fig-chart", "fig-demo"] {
+        let unit = format!("<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"custom\"");
+        assert_eq!(main.matches(&unit).count(), 1, "{id} mounts once");
+    }
+    // The fallback's note sits after its caption, as text; the live one has none.
+    let demo = &main[main.find("data-widget=\"fig-demo\"").unwrap()..];
+    let demo = &demo[..demo.find("</figure>").unwrap()];
+    assert!(demo.contains("</figcaption><p class=\"m-widget-note\">Interactive version not included in this copy: runtime stl-viewer@1 is not installed.</p>"), "{demo}");
+    let chart = &main[main.find("data-widget=\"fig-chart\"").unwrap()..];
+    let chart = &chart[..chart.find("</figure>").unwrap()];
+    assert!(!chart.contains("m-widget-note"));
+    // The ref never reaches a sanitized attribute.
+    assert!(!main.contains("heatmap@1") && !main.contains("data-runtime"));
+    // The reader knows the six kinds, needs a runtimes entry for a custom
+    // widget, and guards every figure.
+    let script = &html[html.find("</main>").unwrap()..];
+    assert!(script.contains("var KINDS = ['model', 'video', 'table', 'chart', 'html', 'custom'];"));
+    assert!(script.contains("manifest.runtimes || {}"));
+    assert!(script.contains("Interactive version unavailable: this reader does not know runtime "));
 }

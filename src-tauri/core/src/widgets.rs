@@ -38,6 +38,9 @@ pub enum WidgetType {
     Table,
     Chart,
     Html,
+    /// A widget run by a custom runtime the project installs
+    /// (`runtimes/<name>@<major>/`).
+    Custom,
 }
 
 impl WidgetType {
@@ -48,6 +51,7 @@ impl WidgetType {
             "table" => Self::Table,
             "chart" => Self::Chart,
             "html" => Self::Html,
+            "custom" => Self::Custom,
             _ => return None,
         })
     }
@@ -110,7 +114,8 @@ pub struct Widget {
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub kind: WidgetType,
-    /// Built-in runtime and major version (`model@1`); absent for `html`.
+    /// Runtime and major version: built-in (`model@1`) or, for `custom`,
+    /// the project's `<name>@<major>`; absent for `html`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub runtime: Option<String>,
@@ -200,6 +205,46 @@ fn pairs(field: &str, what: &str, id: &str) -> Result<Vec<(String, String)>, Str
     Ok(out)
 }
 
+/// A custom widget's record checked without its runtime (the widget list
+/// never reads `runtime.json`): a valid runtime ref, a poster, exactly one
+/// `primary` source, plain distinct roles and plain option keys.
+fn check_custom(r: &Record) -> Result<(), String> {
+    let id = &r.id;
+    let fail = |e: String| Err(format!("widget {id}: {e}"));
+    let Some(runtime) = &r.runtime else {
+        return fail("a custom widget records no runtime".to_string());
+    };
+    if !crate::runtimes::valid_ref(runtime) {
+        return fail(format!(
+            "runtime `{runtime}` is not <name>@<major> (or names a reserved runtime)"
+        ));
+    }
+    if r.poster.is_none() {
+        return fail("a custom widget records no poster".to_string());
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for s in &r.sources {
+        if s.role != crate::runtimes::PRIMARY && !crate::runtimes::valid_role(&s.role) {
+            return fail(format!("source role `{}` is not a plain word", s.role));
+        }
+        if seen.contains(&s.role.as_str()) {
+            return fail(format!("source role `{}` is given twice", s.role));
+        }
+        seen.push(&s.role);
+    }
+    if !seen.contains(&crate::runtimes::PRIMARY) {
+        return fail("a custom widget records no primary source".to_string());
+    }
+    if let Some(o) = r
+        .options
+        .iter()
+        .find(|o| !crate::runtimes::valid_option_key(&o.key))
+    {
+        return fail(format!("option key `{}` is not a plain word", o.key));
+    }
+    Ok(())
+}
+
 /// A parsed sidecar: the widget records in document order, and the theme
 /// the package recorded (None from a sidecar without theme lines).
 #[derive(Debug, Clone, PartialEq)]
@@ -255,7 +300,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         if f[10].trim().is_empty() {
             return Err(format!("widget {id}: the sidecar records no alt text"));
         }
-        out.push(Record {
+        let record = Record {
             id: id.to_string(),
             kind,
             runtime: opt(f[3]),
@@ -276,7 +321,11 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
                 })
                 .collect::<Result<_, _>>()?,
             alt: f[10].to_string(),
-        });
+        };
+        if kind == WidgetType::Custom {
+            check_custom(&record)?;
+        }
+        out.push(record);
     }
     Ok(Sidecar {
         records: out,

@@ -266,7 +266,7 @@ pub const MATHML_ATTRS: &[&str] = &[
 ];
 
 /// Widget kinds a mount unit's `data-type` may name.
-pub const MOUNT_KINDS: &[&str] = &["model", "video", "table", "chart", "html"];
+pub const MOUNT_KINDS: &[&str] = &["model", "video", "table", "chart", "html", "custom"];
 
 /// Element ids the reader page owns: its JSON islands and controls use the
 /// `mfw-` prefix, and `pdf-link` is the download link.

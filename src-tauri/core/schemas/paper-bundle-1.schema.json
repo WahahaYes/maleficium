@@ -90,6 +90,12 @@
       }
     },
     "widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } },
+    "runtimes": {
+      "type": "object",
+      "description": "the custom runtimes live widgets run, by ref; omitted when none",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}$" },
+      "additionalProperties": { "$ref": "#/$defs/runtime" }
+    },
     "assets": {
       "type": "object",
       "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
@@ -98,6 +104,50 @@
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "license": {
+      "enum": [
+        "MIT",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "Apache-2.0",
+        "ISC",
+        "Zlib",
+        "0BSD",
+        "CC0-1.0",
+        "Unlicense"
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "digest", "license", "capabilities", "vendored"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "license": { "$ref": "#/$defs/license" },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["webgl"],
+          "properties": { "webgl": { "type": "boolean" } }
+        },
+        "vendored": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version", "license"],
+            "properties": {
+              "name": { "type": "string" },
+              "version": { "type": "string" },
+              "license": { "$ref": "#/$defs/license" }
+            }
+          }
+        }
+      }
+    },
     "assetRef": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]*$",
@@ -169,11 +219,14 @@
       "required": ["id", "type", "page", "rect", "poster", "alt"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$" },
-        "type": { "enum": ["model", "video", "table", "chart", "html"] },
+        "type": { "enum": ["model", "video", "table", "chart", "html", "custom"] },
         "runtime": {
           "type": "string",
-          "pattern": "^(model|video|table|chart)@\\d+$",
-          "description": "built-in runtime and its major version; absent for html"
+          "description": "built-in runtime and its major version, or a custom runtime's ref; absent for html"
+        },
+        "fallback": {
+          "enum": ["runtime-missing", "runtime-invalid", "unapproved", "denied"],
+          "description": "why a custom widget exports as its poster only"
         },
         "entry": {
           "type": "string",
@@ -211,6 +264,24 @@
           "if": { "properties": { "type": { "const": "html" } } },
           "then": { "not": { "required": ["runtime"] } },
           "else": { "required": ["runtime", "sources"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "custom" } } },
+          "then": {
+            "properties": { "runtime": { "pattern": "^[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}$" } },
+            "not": { "required": ["csp"] }
+          },
+          "else": {
+            "properties": { "runtime": { "pattern": "^(model|video|table|chart)@\\d+$" } },
+            "not": { "required": ["fallback"] }
+          }
+        },
+        {
+          "if": { "required": ["fallback"] },
+          "then": {
+            "properties": { "sources": { "maxProperties": 0 } },
+            "allOf": [{ "not": { "required": ["entry"] } }, { "not": { "required": ["options"] } }]
+          }
         }
       ]
     }

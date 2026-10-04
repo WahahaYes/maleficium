@@ -38,6 +38,7 @@ const CAUSE_STATE: Record<WidgetApprovalCause, RowState> = {
   changed_since_approval: 'changed',
   declared_origins_changed: 'changed',
   revoked: 'revoked',
+  license_or_vendored_changed: 'changed',
 };
 
 const CAUSE_DETAIL: Record<WidgetApprovalCause, string> = {
@@ -45,6 +46,7 @@ const CAUSE_DETAIL: Record<WidgetApprovalCause, string> = {
   changed_since_approval: 'Its files changed after you approved it.',
   declared_origins_changed: 'It now declares origins your approval did not cover.',
   revoked: 'You revoked it; auto-approval does not bring it back.',
+  license_or_vendored_changed: 'Its licence or vendored libraries changed after you allowed it.',
 };
 
 export function causeDetail(c: WidgetApprovalCause): string {

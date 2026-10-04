@@ -102,6 +102,19 @@ body.m-reader {
   content: ' (the interactive view failed; the poster is shown)';
   color: var(--m-color-muted);
 }
+/* A widget this copy cannot run (a custom runtime left out, or one this
+  reader does not know) keeps its poster, with a short note why. */
+.m-reader figure[data-state='poster-only'] iframe {
+  display: none;
+}
+.m-reader figure[data-state='poster-only'] .poster {
+  display: block;
+}
+.m-reader .m-widget-note {
+  margin: var(--m-space-1) 0 0;
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
 .m-reader .unsupported {
   padding: var(--m-space-3);
   background: var(--m-color-target);

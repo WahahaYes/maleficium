@@ -200,8 +200,20 @@ pub enum WidgetApprovalCause {
     ChangedSinceApproval,
     /// It declares an origin the user's approval did not cover.
     DeclaredOriginsChanged,
-    /// The user revoked its approval; auto-approval does not bring it back.
+    /// The user revoked its approval (for a custom runtime: denied it);
+    /// auto-approval does not bring it back.
     Revoked,
+    /// A custom runtime's licence or vendored libraries changed since the
+    /// user allowed it: auto-approval never covers that.
+    LicenseOrVendoredChanged,
+}
+
+/// The user's decision on a custom runtime of a project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDecision {
+    Allowed,
+    Denied,
 }
 
 /// The layout an exported paper bundle takes (bundle spec section 5).
@@ -726,6 +738,25 @@ pub enum AppEvent {
         resource_domains: Vec<String>,
         frame_domains: Vec<String>,
     },
+    /// An export found a custom runtime waiting for the user (never
+    /// allowed, changed, or its licence or vendored libraries changed). The
+    /// window asks about it; `widgets` are the ids that use it.
+    #[serde(rename = "runtime.approval-required")]
+    RuntimeApprovalRequired {
+        root_id: String,
+        runtime: String,
+        digest: String,
+        cause: WidgetApprovalCause,
+        widgets: Vec<String>,
+    },
+    /// The user allowed or denied a custom runtime at this digest.
+    #[serde(rename = "runtime.decided")]
+    RuntimeDecided {
+        root_id: String,
+        runtime: String,
+        digest: String,
+        decision: RuntimeDecision,
+    },
     /// The user turned the project's widget auto-approval on or off.
     #[serde(rename = "widgets.auto-approve")]
     WidgetsAutoApprove { root_id: String, on: bool },
@@ -797,6 +828,7 @@ pub fn typescript() -> String {
         ZoomKind::decl(&cfg),
         ExportKind::decl(&cfg),
         WidgetApprovalCause::decl(&cfg),
+        RuntimeDecision::decl(&cfg),
         BundleProfile::decl(&cfg),
         OfflineState::decl(&cfg),
         OfflineReadiness::decl(&cfg),
