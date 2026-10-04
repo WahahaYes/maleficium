@@ -1,9 +1,11 @@
-// Companion-reader check: a headless browser (Firefox unless --browser says otherwise) loads the index.html of an exported
+// Reader check: a headless browser (Firefox unless --browser says otherwise) loads the index.html of an exported
 // single-file bundle (over http and from file://) and of a folder bundle (over
 // http; from file:// it must say it is unsupported). Asserts every widget frame
-// is mounted in manifest order under the pdf, sandbox="allow-scripts" exactly,
+// is mounted once inside the reflowed article, sandbox="allow-scripts" exactly,
 // every widget reaches ready (its poster is then replaced), the poster is
-// shown with scripts off, the reader's meta CSP, no request beyond the
+// shown with scripts off, the article itself (title, headings, one contents
+// nav, footnotes collected into a list, the pdf offered as a download and not
+// embedded), the reader's meta CSP, no request beyond the
 // bundle's own files, and the spike's controls: an unsandboxed and an
 // allow-same-origin frame read their parent (red), a widget that navigates its
 // own frame off-site is stopped by the reader's CSP but not by a copy of the
@@ -149,20 +151,41 @@ const inspect = (page) =>
           live: f.classList.contains('live'),
           state: f.dataset.state ?? '',
           posterShown: getComputedStyle(f.querySelector('.poster')).display !== 'none',
-          caption: f.querySelector('figcaption')?.textContent ?? '',
+          caption:
+            (
+              f.querySelector('figcaption') ??
+              f.parentElement?.closest('figure')?.querySelector(':scope > figcaption')
+            )?.textContent ?? '',
           mounted: !!(fr[0] && (fr[0].srcdoc || fr[0].getAttribute('src'))),
         };
       }),
       pdfLink: document.getElementById('pdf-link')?.getAttribute('href')?.slice(0, 30),
-      pdfObject: document.getElementById('pdf')?.getAttribute('data') ?? '',
-      pdfBeforeFigures:
-        !!document.getElementById('pdf') &&
-        !!(
-          document
-            .getElementById('pdf')
-            .compareDocumentPosition(document.querySelector('figure[data-widget]')) &
-          Node.DOCUMENT_POSITION_FOLLOWING
-        ),
+      pdfEmbedded: !!document.querySelector('object, embed, #pdf'),
+      title: document.querySelector('article h1')?.textContent?.trim() ?? '',
+      headings: [...document.querySelectorAll('article h2.ltx_title')].length,
+      navCount: document.querySelectorAll('nav.m-contents').length,
+      tocCount: document.querySelectorAll('.m-toc').length,
+      navLinks: [...document.querySelectorAll('nav.m-contents a')].map((a) => ({
+        ok: !!document.getElementById(a.getAttribute('href').slice(1)),
+        text: a.textContent.trim(),
+      })),
+      navInArticleBeforeFigures: (() => {
+        const n = document.querySelector('article nav.m-contents');
+        const f = document.querySelector('figure[data-widget]');
+        return !n || !f || !!(n.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING);
+      })(),
+      notesListed: document.querySelectorAll('.m-notes li').length,
+      notesInline: document.querySelectorAll('.ltx_note.ltx_role_footnote').length,
+      posters: figs.map((f) => {
+        const i = f.querySelector('.poster');
+        const r = i.getBoundingClientRect();
+        const fr = f.querySelector('.frame').getBoundingClientRect();
+        return {
+          fit: getComputedStyle(i).objectFit,
+          ar: f.style.getPropertyValue('--ar').trim(),
+          framed: Math.abs(r.width - fr.width) < 2 && Math.abs(r.height - fr.height) < 2,
+        };
+      }),
       csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content,
       title: document.title,
       unsupported: document.querySelector('.unsupported')?.textContent ?? '',
@@ -176,15 +199,9 @@ async function reader(label, url, expectCsp) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 700 } });
   await ctx.addInitScript(() => {
     window.__csp = [];
-    // Not counted: the favicon request, and the report for a pdf object that has no
-    // data when parsed (single-file, before the reader script gives it its blob url).
-    // Browsers check that empty url against object-src and report the page itself
-    // (Chromium an empty uri, WebKit the page url) and load nothing; a blocked pdf
-    // would name the blob or paper.pdf instead.
+    // Not counted: the favicon request.
     document.addEventListener('securitypolicyviolation', (e) => {
       if (e.blockedURI.endsWith('/favicon.ico')) return;
-      if (e.violatedDirective === 'object-src' && !/blob|data|paper\.pdf/.test(e.blockedURI))
-        return;
       window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
     });
   });
@@ -196,8 +213,8 @@ async function reader(label, url, expectCsp) {
   });
   const s = all ?? (await inspect(page));
   check(
-    `${label}: every widget frame is mounted, in manifest order`,
-    JSON.stringify(s.order) === JSON.stringify(ids) &&
+    `${label}: every widget frame is mounted once, in the article`,
+    JSON.stringify([...s.order].sort()) === JSON.stringify([...ids].sort()) &&
       s.frames.every((f) => f.count === 1 && f.mounted),
     JSON.stringify(s.order),
   );
@@ -217,18 +234,42 @@ async function reader(label, url, expectCsp) {
     JSON.stringify(s.frames.map((f) => f.state)),
   );
   check(
-    `${label}: the pdf link and embed come before the figures`,
-    s.pdfBeforeFigures && !!s.pdfLink,
-    JSON.stringify([s.pdfLink, s.pdfBeforeFigures]),
+    `${label}: the pdf is offered as a download and not embedded`,
+    !!s.pdfLink && !s.pdfEmbedded,
+    JSON.stringify([s.pdfLink, s.pdfEmbedded]),
   );
   check(
-    `${label}: each widget has a caption`,
+    `${label}: the article has its title and section headings`,
+    !!s.title && s.headings > 0,
+    JSON.stringify([s.title, s.headings]),
+  );
+  check(
+    `${label}: one contents list, the article's own, linking to real sections`,
+    s.navCount === 1 &&
+      s.tocCount === 0 &&
+      s.navLinks.length > 0 &&
+      s.navLinks.every((l) => l.ok) &&
+      s.navInArticleBeforeFigures,
+    JSON.stringify([s.navCount, s.tocCount, s.navLinks.filter((l) => !l.ok)]),
+  );
+  check(
+    `${label}: footnotes are collected into one list`,
+    s.notesInline === 0 || s.notesListed === s.notesInline,
+    JSON.stringify([s.notesListed, s.notesInline]),
+  );
+  check(
+    `${label}: each poster fills its frame, contained, at the widget's aspect ratio`,
+    s.posters.every((p) => p.fit === 'contain' && /^[\d.]+ \/ [\d.]+$/.test(p.ar)),
+    JSON.stringify(s.posters),
+  );
+  check(
+    `${label}: each widget has a caption (its own or its float's)`,
     s.frames.every((f) => f.caption.trim().length > 0),
   );
   check(`${label}: the reader's meta CSP is the exporter's`, s.csp === expectCsp, s.csp);
   const violations = await page.evaluate(() => window.__csp);
   check(
-    `${label}: the reader's own page (pdf embed included) breaks no CSP directive`,
+    `${label}: the reader's own page breaks no CSP directive`,
     violations.length === 0,
     violations.join('; '),
   );
@@ -243,10 +284,9 @@ const FOLDER_CSP = constant('FOLDER_READER_POLICY');
 // ---- the three loads ----
 const sH = await reader('single-file over http', `${single.origin}/`, SINGLE_CSP);
 check(
-  'single-file over http: the pdf object gets a blob url from the inline link',
-  sH.s.pdfLink.startsWith('data:application/pdf') &&
-    (await sH.page.evaluate(() => document.getElementById('pdf').data.startsWith('blob:'))),
-  sH.s.pdfObject,
+  'single-file over http: the pdf link is the inline data url',
+  sH.s.pdfLink.startsWith('data:application/pdf'),
+  sH.s.pdfLink,
 );
 check(
   'single-file over http: the page is one request (plus a favicon)',
@@ -260,15 +300,14 @@ await sF.ctx.close();
 
 const fH = await reader('folder over http', `${folder.origin}/`, FOLDER_CSP);
 check(
-  'folder over http: the pdf object and link point at paper.pdf',
-  fH.s.pdfObject === 'paper.pdf' && fH.s.pdfLink === 'paper.pdf',
+  'folder over http: the pdf link points at paper.pdf',
+  fH.s.pdfLink === 'paper.pdf',
   JSON.stringify(fH.s),
 );
 check(
   'folder over http: only bundle files were requested',
   folder.requests.every(
-    (p) =>
-      p === '/' || p === '/favicon.ico' || p === '/paper.pdf' || /^\/(assets|widgets)\//.test(p),
+    (p) => p === '/' || p === '/favicon.ico' || /^\/(assets|widgets|figures)\//.test(p),
   ),
   folder.requests.join(','),
 );
