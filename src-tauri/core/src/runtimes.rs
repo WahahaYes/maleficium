@@ -778,4 +778,4 @@ pub fn check_size(w: &Widget, m: &RuntimeManifest, role: &str, bytes: u64) -> Re
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

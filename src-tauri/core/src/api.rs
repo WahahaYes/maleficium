@@ -539,6 +539,8 @@ pub fn typescript() -> String {
         WidgetReviewParams::decl(&cfg),
         crate::widget_approval::ApprovalKind::decl(&cfg),
         crate::widget_approval::ApprovedVia::decl(&cfg),
+        crate::widget_approval::VendoredId::decl(&cfg),
+        crate::widget_approval::RuntimeInfo::decl(&cfg),
         crate::widget_approval::WidgetApproved::decl(&cfg),
         crate::widget_approval::ApprovalRequired::decl(&cfg),
         crate::widget_approval::WidgetApprovalStatus::decl(&cfg),
@@ -550,6 +552,7 @@ pub fn typescript() -> String {
         crate::widget_approval::WidgetApproveParams::decl(&cfg),
         crate::widget_approval::WidgetRevokeParams::decl(&cfg),
         crate::widget_approval::WidgetAutoApproveParams::decl(&cfg),
+        crate::widget_approval::RuntimeDecisionParams::decl(&cfg),
         crate::widgets::poster::PosterRequest::decl(&cfg),
         crate::widgets::poster::PosterRendered::decl(&cfg),
         crate::widgets::poster::PosterOutcome::decl(&cfg),
@@ -603,7 +606,7 @@ pub fn typescript() -> String {
         "// Generated from src-tauri/core (maleficium-core). Do not edit:\n\
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
-         import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';\n\
+         import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, RuntimeDecision, WatchChange, WidgetApprovalCause } from './events';\n\
          import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );

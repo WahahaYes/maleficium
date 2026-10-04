@@ -97,7 +97,7 @@ pub enum PosterOutcome {
 #[derive(Debug, Clone)]
 pub enum Prepared {
     Job(PosterJob),
-    ApprovalRequired(ApprovalRequired),
+    ApprovalRequired(Box<ApprovalRequired>),
 }
 
 /// One source the runtime receives as bytes, under its role key.
@@ -380,7 +380,7 @@ fn html_job(
         }
     }
     match checked.status {
-        WidgetApprovalStatus::ApprovalRequired(r) => Ok(Prepared::ApprovalRequired(r)),
+        WidgetApprovalStatus::ApprovalRequired(r) => Ok(Prepared::ApprovalRequired(Box::new(r))),
         WidgetApprovalStatus::Approved(_) => {
             let folded = fold::fold_bundle(&checked.snapshot.files, &fold::widget_policy(None))
                 .map_err(|e| format!("widget {id}: {e}"))?;
@@ -423,7 +423,7 @@ pub(crate) fn run_at(
     exec: impl FnOnce(std::sync::Arc<PosterJob>) -> Result<String, String>,
 ) -> Result<PosterOutcome, String> {
     match prepare_at(base, cx, req)? {
-        Prepared::ApprovalRequired(r) => Ok(PosterOutcome::ApprovalRequired(Box::new(r))),
+        Prepared::ApprovalRequired(r) => Ok(PosterOutcome::ApprovalRequired(r)),
         Prepared::Job(job) => {
             let job = std::sync::Arc::new(job);
             let png = exec(job.clone())?;
