@@ -96,7 +96,7 @@ A paper can stay a normal LaTeX document that compiles to the PDF a venue wants,
 
 **Your own HTML widgets need your approval.** A widget folder is code, so Maleficium renders its poster only after you approve that exact content in **View > Widgets**. Any edit asks again, and an AI agent cannot approve for you. An optional auto-approval setting (off by default) approves content changes to a widget you already approved, and new widgets that declare no origins; it never approves a new origin. A widget can declare the `https` origins it may frame or load; see [Embedding a YouTube or Vimeo video](docs/VIDEO-EMBEDS.md).
 
-The bundle's `index.html` is a companion page: the title, authors and abstract, the PDF, then each widget in order. Preview and export never write into your project.
+The bundle's `index.html` is the paper itself, reflowed for the screen: Maleficium converts your LaTeX to HTML (title, authors, abstract, a contents list, sections, math, figures, tables and references) and mounts each widget in place, where it sits in the text. The page has its own look and does not copy your venue's class. `paper.pdf` stays in the bundle as the version of record and a download link; the page does not embed it. Math and macros the converter cannot read show as the raw source on the page and are listed in the export's warnings, and a figure that is missing shows a placeholder. Preview and export never write into your project.
 
 ## Use with an AI agent
 
