@@ -78,9 +78,46 @@ export interface Tokens {
   [name: string]: string;
 }
 
+/**
+ * Dark ink for content painted on `--m-figure-bg`, which the theme contract
+ * keeps white in both modes (graphics sit on it; posters are never
+ * filtered). Axis text following `--m-color-text` would be near-white on
+ * white in dark mode.
+ */
+const FIGURE_INK = '#1e1b24';
+
+/** Relative luminance of a `#rgb`/`#rrggbb` colour, 0 to 1; NaN when unparseable. */
+function luminance(hex: string): number {
+  const m = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return NaN;
+  const h =
+    m[1].length === 3
+      ? m[1]
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(h.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * `token` when it reads on `bg`, else the dark fallback: a light token on a
+ * light background is swapped, everything else passes through untouched.
+ */
+function inkOn(bg: string, token: string | undefined, fallback: string): string | undefined {
+  if (!token) return undefined;
+  if (luminance(bg) > 0.5 && luminance(token) > 0.5) return fallback;
+  return token;
+}
+
 /** A Vega-Lite `config` from the theme tokens, so the chart matches the paper. */
 export function themeConfig(tokens: Tokens): Json {
-  const text = tokens['--m-color-text'];
+  const bg = tokens['--m-figure-bg'] ?? tokens['--m-color-bg'] ?? '#ffffff';
+  const text = inkOn(bg, tokens['--m-color-text'], FIGURE_INK);
   const muted = tokens['--m-color-muted'];
   const rule = tokens['--m-color-rule'];
   const accent = tokens['--m-color-accent'];
@@ -91,7 +128,6 @@ export function themeConfig(tokens: Tokens): Json {
   if (text) Object.assign(axis, { labelColor: text, titleColor: text });
   if (font) Object.assign(axis, { labelFont: font, titleFont: font });
   const config: Json = { axis };
-  const bg = tokens['--m-figure-bg'] ?? tokens['--m-color-bg'];
   config.background = bg && bg !== 'transparent' ? bg : null;
   if (text) config.legend = { labelColor: text, titleColor: text };
   if (text) config.title = { color: text };
