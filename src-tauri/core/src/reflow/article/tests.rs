@@ -30,6 +30,7 @@ fn mounts() -> Vec<Mount<'static>> {
         width: 200.0,
         height: 100.0,
         poster: format!("assets/{id}.png"),
+        note: None,
     })
     .collect()
 }
