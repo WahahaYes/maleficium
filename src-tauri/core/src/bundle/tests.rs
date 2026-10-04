@@ -1973,3 +1973,32 @@ fn a_proof_bundle_with_one_live_runtime_and_one_fallback() {
         std::fs::copy(&d, to).unwrap();
     }
 }
+
+#[test]
+fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
+    let c = custom_project("rt-article", HEAT_LINE);
+    c.allow();
+    let d = dest(&c.p, "paper.html");
+    c.export(&d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    let main = &html[html.find("<main>").unwrap()..html.find("</main>").unwrap()];
+    for id in ["fig-chart", "fig-demo"] {
+        let unit = format!("<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"custom\"");
+        assert_eq!(main.matches(&unit).count(), 1, "{id} mounts once");
+    }
+    // The fallback's note sits after its caption, as text; the live one has none.
+    let demo = &main[main.find("data-widget=\"fig-demo\"").unwrap()..];
+    let demo = &demo[..demo.find("</figure>").unwrap()];
+    assert!(demo.contains("</figcaption><p class=\"m-widget-note\">Interactive version not included in this copy: runtime stl-viewer@1 is not installed.</p>"), "{demo}");
+    let chart = &main[main.find("data-widget=\"fig-chart\"").unwrap()..];
+    let chart = &chart[..chart.find("</figure>").unwrap()];
+    assert!(!chart.contains("m-widget-note"));
+    // The ref never reaches a sanitized attribute.
+    assert!(!main.contains("heatmap@1") && !main.contains("data-runtime"));
+    // The reader knows the six kinds, needs a runtimes entry for a custom
+    // widget, and guards every figure.
+    let script = &html[html.find("</main>").unwrap()..];
+    assert!(script.contains("var KINDS = ['model', 'video', 'table', 'chart', 'html', 'custom'];"));
+    assert!(script.contains("manifest.runtimes || {}"));
+    assert!(script.contains("Interactive version unavailable: this reader does not know runtime "));
+}
