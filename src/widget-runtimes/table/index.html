@@ -9,15 +9,20 @@
       [hidden] {
         display: none !important;
       }
+      /* Everything sits on the figure plate, in the plate's ink: the theme
+        chose --m-figure-ink, --m-figure-surface and --m-figure-accent to
+        read on --m-figure-bg in each mode. */
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: var(--m-figure-bg, transparent);
-        color: var(--m-color-text, #1f2328);
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
         font: var(--m-size-small, 13px) / var(--m-leading, 1.4)
           var(--m-font-body, system-ui, sans-serif);
+        --rule: color-mix(in srgb, var(--m-figure-ink) 18%, var(--m-figure-bg));
+        --quiet: color-mix(in srgb, var(--m-figure-ink) 72%, var(--m-figure-bg));
       }
       #app {
         display: flex;
@@ -29,7 +34,7 @@
         align-items: center;
         gap: var(--m-space-2, 8px);
         padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
-        border-bottom: 1px solid var(--m-color-rule, #d1d9e0);
+        border-bottom: 1px solid var(--rule);
       }
       /* a slot a few rows tall has room for the rows, not the filter box */
       @media (max-height: 100px) {
@@ -42,18 +47,18 @@
         min-width: 0;
         font: inherit;
         color: inherit;
-        background: var(--m-color-surface, #f6f8fa);
-        border: 1px solid var(--m-color-rule, #d1d9e0);
+        background: var(--m-figure-surface);
+        border: 1px solid var(--rule);
         border-radius: var(--m-radius, 4px);
         padding: 2px 6px;
       }
       .bar .count {
-        color: var(--m-color-muted, #59636e);
+        color: var(--quiet);
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
       }
       :focus-visible {
-        outline: 2px solid var(--m-color-accent, #0969da);
+        outline: 2px solid var(--m-figure-accent);
         outline-offset: -2px;
       }
       .scroll {
@@ -68,7 +73,7 @@
       td {
         padding: 2px var(--m-space-2, 8px);
         text-align: left;
-        border-bottom: 1px solid var(--m-color-rule, #d1d9e0);
+        border-bottom: 1px solid var(--rule);
         white-space: nowrap;
       }
       th.num,
@@ -79,43 +84,25 @@
       th {
         position: sticky;
         top: 0;
-        background: var(--m-color-surface, #f6f8fa);
+        background: var(--m-figure-surface);
         font-weight: 600;
         cursor: pointer;
         user-select: none;
       }
       th[aria-sort='ascending']::after {
         content: ' \25B2';
-        color: var(--m-color-accent, #0969da);
+        color: var(--m-figure-accent);
       }
       th[aria-sort='descending']::after {
         content: ' \25BC';
-        color: var(--m-color-accent, #0969da);
+        color: var(--m-figure-accent);
       }
       tbody tr:hover {
-        background: var(--m-color-target, rgba(9, 105, 218, 0.1));
-      }
-      /* --m-figure-bg is white in both modes (theme contract), so in dark
-        mode the table keeps its light surfaces and dark ink: it matches its
-        poster and stays legible. */
-      html[data-mode='dark'] body {
-        color: #1e1b24;
-      }
-      html[data-mode='dark'] th,
-      html[data-mode='dark'] .bar input {
-        background-color: #f1efe9;
-        color: #1e1b24;
-      }
-      html[data-mode='dark'] .bar .count,
-      html[data-mode='dark'] .msg {
-        color: #6b6676;
-      }
-      html[data-mode='dark'] tbody tr:hover {
-        background-color: #fff4c2;
+        background: color-mix(in srgb, var(--m-figure-accent) 12%, var(--m-figure-bg));
       }
       .msg {
         padding: var(--m-space-3, 12px);
-        color: var(--m-color-muted, #59636e);
+        color: var(--quiet);
       }
     </style>
   </head>
