@@ -207,6 +207,11 @@ export async function exportBundle(
   return await request('exportBundle', { rootId, mainRel, dest, profile, sizeCapBytes });
 }
 
+/** Stop a running bundle export: it fails as cancelled and writes nothing. */
+export async function exportCancel(): Promise<string> {
+  return await request('exportCancel', {});
+}
+
 /**
  * Export the single-file bundle of main_rel's last compile to the app's
  * scratch folder for this project and open it in the OS default browser.

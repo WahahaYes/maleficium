@@ -47,14 +47,6 @@ body.m-reader {
   outline: 2px solid var(--m-color-accent);
   outline-offset: 2px;
 }
-.m-reader object {
-  display: block;
-  width: 100%;
-  height: 80vh;
-  background: var(--m-color-surface);
-  border: 1px solid var(--m-color-rule);
-  border-radius: var(--m-radius);
-}
 .m-reader figure {
   margin: 0 0 var(--m-space-5);
 }
@@ -384,6 +376,17 @@ body.m-reader {
 .m-reader figure.ltx_figure > figcaption {
   order: 2;
 }
+/* A widget inside a captioned float: the float's caption is its caption, and
+   latexml's empty paragraphs around it take no room. */
+.m-reader figure.ltx_figure p:empty,
+.m-reader figure.ltx_table p:empty {
+  display: none;
+}
+.m-reader figure.ltx_figure > figure[data-widget],
+.m-reader figure.ltx_table > figure[data-widget] {
+  margin: 0;
+  width: 100%;
+}
 .m-reader figcaption.ltx_caption {
   max-width: none;
   margin: var(--m-space-2) 0 0;
@@ -614,6 +617,11 @@ body.m-reader {
   text-decoration: none;
 }
 
+/* acmart's license note is a mark and a bare word, not a footnote */
+.m-reader .ltx_note.ltx_role_cc-license {
+  display: none;
+}
+
 /* Visible markers for what went wrong */
 .m-reader .ltx_ERROR {
   font-family: var(--m-font-mono);
@@ -664,61 +672,99 @@ body.m-reader {
   content: 'Interactive figure';
 }
 
-/* Contents (built by reader.js; the article reads without it) */
-.m-reader .m-toc {
+/* Contents: the article's own nav; reader.js adds the collapse and the marker */
+.m-reader .m-version {
+  margin: 0 auto var(--m-space-3);
+  text-align: center;
+  font-family: var(--m-font-heading);
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+.m-reader .m-version a {
+  color: var(--m-color-link);
+}
+.m-reader .m-contents {
   margin: 0 0 var(--m-space-4);
   font-family: var(--m-font-heading);
   font-size: var(--m-size-small);
-  max-width: var(--m-measure);
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-color-surface);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
 }
-.m-reader .m-toc > summary {
-  cursor: pointer;
+.m-reader .m-contents-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 1em;
   font-weight: 600;
+}
+.m-reader .m-contents-toggle {
+  all: unset;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
   padding: var(--m-space-1) 0;
 }
-.m-reader .m-toc ol {
+.m-reader .m-contents-toggle::after {
+  content: ' \25BE';
+  color: var(--m-color-muted);
+}
+.m-reader .m-contents.m-collapsed .m-contents-toggle::after {
+  content: ' \25B8';
+}
+.m-reader .m-contents-toggle:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader .m-contents.m-collapsed > ol {
+  display: none;
+}
+.m-reader .m-contents ol {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.m-reader .m-toc ol ol {
+.m-reader .m-contents ol ol {
   padding-left: var(--m-space-3);
 }
-.m-reader .m-toc a {
+.m-reader .m-contents a {
   display: block;
   padding: 2px 0 2px var(--m-space-2);
   border-left: 2px solid transparent;
   color: var(--m-color-muted);
   text-decoration: none;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
-.m-reader .m-toc a:hover {
+.m-reader .m-contents a:hover {
   color: var(--m-color-text);
 }
-.m-reader .m-toc a.m-active {
+.m-reader .m-contents a.m-active {
   color: var(--m-color-link);
   border-left-color: var(--m-color-accent);
   font-weight: 600;
 }
 @media (max-width: 1099px) {
-  .m-reader .m-toc[open] > ol {
+  .m-reader .m-contents > ol {
     max-height: 50vh;
     overflow-y: auto;
   }
 }
 @media (min-width: 1100px) {
-  .m-reader main.m-has-toc {
+  .m-reader article.m-has-contents {
     display: grid;
     grid-template-columns: 15rem minmax(0, var(--m-measure));
     column-gap: var(--m-space-5);
     justify-content: center;
     max-width: none;
   }
-  .m-reader main.m-has-toc > * {
+  .m-reader article.m-has-contents > * {
     grid-column: 2;
     min-width: 0;
   }
-  .m-reader main.m-has-toc > .m-toc {
+  .m-reader article.m-has-contents > .m-contents {
     grid-column: 1;
     grid-row: 1 / span 200;
     align-self: start;
@@ -727,7 +773,26 @@ body.m-reader {
     max-height: calc(100vh - 2 * var(--m-space-3));
     overflow-y: auto;
     margin: 0;
+    background: none;
+    border: 0;
+    padding: 0;
   }
+  .m-reader .m-contents-toggle {
+    cursor: default;
+  }
+  .m-reader .m-contents-toggle::after {
+    content: none;
+  }
+}
+
+/* Widgets listed at the end because the join failed */
+.m-reader .m-unplaced {
+  margin-top: var(--m-space-5);
+  padding-top: var(--m-space-3);
+  border-top: 1px solid var(--m-color-rule);
+}
+.m-reader .m-unplaced > h2 {
+  font-size: 1.15em;
 }
 
 @media (max-width: 600px) {
@@ -757,14 +822,12 @@ body.m-reader {
     --m-figure-bg: #fff;
     --m-err: #b3261e;
   }
-  .m-reader .m-toc,
-  .m-reader object,
-  .m-reader #paper,
+  .m-reader .m-contents,
   .m-reader noscript {
     display: none;
   }
   .m-reader main,
-  .m-reader main.m-has-toc {
+  .m-reader article.m-has-contents {
     display: block;
     max-width: none;
     padding: 0;

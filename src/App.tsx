@@ -42,6 +42,7 @@ import { structure } from './lib/structure';
 import type { OutlineEntry } from './lib/generated/structure';
 import type { ZoomAction } from './lib/zoom';
 import ExportReportDialog from './components/ExportReportDialog';
+import ExportProgress from './components/ExportProgress';
 import { useExport } from './hooks/useExport';
 import { INTERACTIVE_PACKAGE } from './lib/interactiveInstall';
 import { useInteractiveInstall } from './hooks/useInteractiveInstall';
@@ -970,6 +971,7 @@ export default function App({
         restoringRev={restoringRev}
         onRestore={(rev) => void restoreRevision(rev)}
       />
+      <ExportProgress run={exporter.run} onCancel={() => void exporter.cancelExport()} />
       <ExportReportDialog report={exporter.bundleReport} onClose={exporter.closeBundleReport} />
       <TemplateDialogs
         mode={templateMode}
