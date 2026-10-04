@@ -22,6 +22,11 @@ fn files(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) {
 /// into each template's embedded files at build time, so the repo holds
 /// one copy while instantiated projects stay self-contained.
 const SHARED_DIR: &str = "shared";
+/// The interactive-widget package: one canonical file outside the template
+/// tree, put into every template so a new project already holds it (after
+/// that it is an ordinary project file, like any package the author adds).
+const INTERACTIVE_DIR: &str = "../interactive";
+const INTERACTIVE_STY: &str = "maleficium-interactive.sty";
 /// Shared files every template embeds.
 const SHARED_ALL: &[&str] = &["maleficium-footer.sty", "maleficium-mark.pdf"];
 /// Shared files only some templates embed: file, template ids.
@@ -89,6 +94,14 @@ fn embed_templates() {
                 rels.push((name.to_string(), shared.join(name)));
             }
         }
+        let interactive = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join(INTERACTIVE_DIR)
+            .join(INTERACTIVE_STY);
+        assert!(
+            !rels.iter().any(|(r, _)| r == INTERACTIVE_STY),
+            "template {id} carries its own {INTERACTIVE_STY}; interactive/ is the source"
+        );
+        rels.push((INTERACTIVE_STY.to_string(), interactive));
         rels.sort_by(|a, b| a.0.cmp(&b.0));
         writeln!(src, "    ({id:?}, &[").unwrap();
         for (rel, abs) in rels {
@@ -107,22 +120,6 @@ fn embed_templates() {
     std::fs::write(out, src).expect("templates table written");
 }
 
-/// Embeds `interactive/maleficium-interactive.sty` as `INTERACTIVE_STY`,
-/// shared by the desktop app and the MCP binary.
-fn embed_interactive() {
-    let file = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("../interactive/maleficium-interactive.sty");
-    println!("cargo:rerun-if-changed={}", file.display());
-    let src = format!(
-        "/// The interactive-widget package, embedded for offline compiles.\n\
-         pub static INTERACTIVE_STY: &[u8] = include_bytes!({:?});\n",
-        file.display().to_string()
-    );
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("interactive.rs");
-    std::fs::write(out, src).expect("interactive package table written");
-}
-
 fn main() {
     embed_templates();
-    embed_interactive();
 }

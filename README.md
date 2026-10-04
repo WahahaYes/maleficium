@@ -88,7 +88,7 @@ On first launch Maleficium opens a short welcome project. After that:
 
 A paper can stay a normal LaTeX document that compiles to the PDF a venue wants, and also export to a self-contained web bundle with interactive figures.
 
-1. **Tools > Install Interactive Package** adds `maleficium-interactive.sty` to the project. The compile also offers the same fix when the package is missing.
+1. Every project made from a template already holds `maleficium-interactive.sty`. It is an ordinary file in your project folder, like any package you add yourself, and the project's copy wins over everything else. For an older project, copy the file in next to your main file. A package the TeX bundle lacks is an error that names the file and says to add it to the project folder.
 2. Use the macros in your source: `\interactivemodel` (glTF or GLB), `\interactivevideo`, `\interactivetable` (CSV), `\interactivechart` (Vega-Lite) and `\interactive` (a folder of your own HTML). Each needs an `alt=` text. In the PDF each one is its poster, or a placeholder box until it has one, plus a one-line "Interactive version" mark. With `\maleficiumsetup{bundleurl=...}` the first page also gets one QR code in the footer (`qr=none` turns it off).
 3. **File > Preview in Browser** opens the bundle in your default browser. **File > Export Paper Bundle** writes it as a folder (for a web server) or as one file (for email, archives, or opening from disk), always outside the project.
 

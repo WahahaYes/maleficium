@@ -1327,7 +1327,7 @@ fn blank_pdf() -> Vec<u8> {
 /// engine, converts it and exports both a single-file and a folder bundle for
 /// a person (or a headless browser) to open. Runs only with
 /// `MALEFICIUM_DRYRUN="<project dir>|<main.tex relative>|<output dir>"`; the
-/// project is copied first (the interactive package installed into the
+/// project is copied first (the interactive package copied into the
 /// copy) and nothing is written inside it.
 #[test]
 fn dry_run_exports_a_real_paper() {
@@ -1343,7 +1343,11 @@ fn dry_run_exports_a_real_paper() {
     copy_dir(Path::new(parts[0]), &proj);
     let root = dunce::canonicalize(&proj).unwrap();
     crate::fs::grant_root(&cx, "dry-run", &root.to_string_lossy()).unwrap();
-    crate::interactive::install_checked(&cx, "dry-run", false).unwrap();
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../interactive/maleficium-interactive.sty"),
+        root.join("maleficium-interactive.sty"),
+    )
+    .unwrap();
     // A paper that does not compile (it has no pdf, so the export has no
     // version of record) still converts: a stand-in pdf is put where the
     // compile would have left one.
