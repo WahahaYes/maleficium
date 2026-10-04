@@ -197,11 +197,6 @@ struct CancelParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct InteractiveInstallParams {
-    root_id: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct WidgetsParams {
     root_id: String,
     main_rel: String,
@@ -758,26 +753,6 @@ impl Maleficium {
                 &p.template,
                 &p.parent_dir,
                 &p.name,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Install the embedded maleficium-interactive.sty into a granted project root so its documents can declare interactive widgets. Explicit user action: the only writer of project sources on this path. Never replaces a modified copy (outcome needs-confirmation): only the user can confirm that, in the app.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn interactive_install(
-        &self,
-        Parameters(p): Parameters<InteractiveInstallParams>,
-    ) -> Result<Json<core::interactive::InstallResult>, String> {
-        self.tool("interactive_install", || {
-            Ok(Json(core::interactive::install_checked(
-                &self.cx, &p.root_id, false,
             )?))
         })
     }
@@ -2305,16 +2280,6 @@ mod tests {
                 .unwrap()
             ))
             .is_err());
-        let installed = m
-            .interactive_install(Parameters(InteractiveInstallParams {
-                root_id: "cov".into(),
-            }))
-            .unwrap();
-        assert!(
-            dir.join("maleficium-interactive.sty").exists(),
-            "{:?}",
-            installed.0
-        );
 
         let covered = [
             "grant",
@@ -2349,7 +2314,6 @@ mod tests {
             "definition",
             "find_files",
             "diagnostics",
-            "interactive_install",
             "widgets",
             "widgets_status",
             "widget_check",

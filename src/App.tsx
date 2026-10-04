@@ -12,12 +12,7 @@ import PreviewPane from './components/PreviewPane';
 import SideColumn from './components/SideColumn';
 import WorkArea from './components/WorkArea';
 import { mainFileTip } from './lib/mainFileTip';
-import {
-  AboutDialog,
-  ConfirmReplaceDialog,
-  GoToLineDialog,
-  RenameDialog,
-} from './components/SimpleDialogs';
+import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDialogs';
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
@@ -44,8 +39,6 @@ import type { ZoomAction } from './lib/zoom';
 import ExportReportDialog from './components/ExportReportDialog';
 import ExportProgress from './components/ExportProgress';
 import { useExport } from './hooks/useExport';
-import { INTERACTIVE_PACKAGE } from './lib/interactiveInstall';
-import { useInteractiveInstall } from './hooks/useInteractiveInstall';
 import { useWidgetApproval } from './hooks/useWidgetApproval';
 import WidgetsPanel from './components/WidgetsPanel';
 import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
@@ -329,8 +322,6 @@ export default function App({
     closePrecheck,
     precheckPopup,
     setPrecheckPopup,
-    interactiveMissing,
-    resolveInteractive,
   } = useCompileRunner({
     tex,
     fileName,
@@ -588,10 +579,6 @@ export default function App({
     const base = baseName(t) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
-  const interactiveInstall = useInteractiveInstall({
-    projectId,
-    onInstalled: resolveInteractive,
-  });
   const widgetApproval = useWidgetApproval({
     projectId,
     mainRel: mainFile ? relInProject(mainFile) : null,
@@ -742,7 +729,6 @@ export default function App({
       void makeOffline();
     },
     showPrecheck: openPrecheck,
-    installInteractive: interactiveInstall.install,
     showWidgets: widgetApproval.openPanel,
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
@@ -931,12 +917,6 @@ export default function App({
         precheckPopup={precheckPopup}
         onPrecheckPopup={setPrecheckPopup}
       />
-      <ConfirmReplaceDialog
-        open={interactiveInstall.confirmOpen}
-        file={INTERACTIVE_PACKAGE}
-        onCancel={interactiveInstall.cancelReplace}
-        onConfirm={interactiveInstall.confirmReplace}
-      />
       <RenameDialog
         open={renameOpen}
         title={baseName(fileName) || fileName}
@@ -1009,7 +989,6 @@ export default function App({
         offline={compilePhase === 'compiling' ? null : offline}
         warnings={precheck?.findings.length ?? 0}
         onOpenWarnings={openPrecheck}
-        onInstallInteractive={interactiveMissing ? interactiveInstall.install : undefined}
       />
       {conflicts.length > 0 ? (
         <ExternalChangeDialog
@@ -1025,7 +1004,6 @@ export default function App({
           precheck={precheck}
           popupEnabled={precheckPopup}
           onJump={(r, rel, line) => void openFinding(r, rel, line)}
-          onInstallInteractive={interactiveInstall.install}
           onClose={closePrecheck}
         />
       ) : null}

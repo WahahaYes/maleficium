@@ -108,35 +108,6 @@ export function GoToLineDialog({
   );
 }
 
-export function ConfirmReplaceDialog({
-  open,
-  file,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean;
-  file: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open={open} onClose={onCancel} maxWidth="xs">
-      <DialogTitle>Replace {file}?</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2">
-          The project already has a modified {file}. Replacing it discards those changes.
-        </Typography>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button variant="contained" color="warning" onClick={onConfirm}>
-          Replace
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs">
