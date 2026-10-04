@@ -206,3 +206,25 @@ fn a_document_that_is_not_latexml_is_wrapped_as_the_article() {
     assert!(a.html.starts_with("<article class=\"ltx_document\"><h1"));
     assert!(a.html.contains("<p>plain <b>text</b></p>"));
 }
+
+#[test]
+fn a_proof_final_qed_becomes_a_drawn_mark() {
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><h6 class=\"ltx_title ltx_runin\">Proof.</h6><div class=\"ltx_para\"><p class=\"ltx_p\">Jensen gives it.\n∎</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>"));
+    assert!(!html.contains('∎'));
+}
+
+#[test]
+fn a_non_trailing_qed_stays_text() {
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">∎ marks the spot, and text follows.</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(html.contains('∎'));
+    assert!(!html.contains("m-qed"));
+}
