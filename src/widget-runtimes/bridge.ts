@@ -29,12 +29,45 @@ export interface Init {
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Keeps only `--m-*` tokens with string values; anything else is dropped. */
+// Token values, the same allow-list the app checks the theme record with
+// (src-tauri/core/src/theme.rs): a colour, a font-family list, a length,
+// a number or one shadow, and nothing that can end a declaration, open a
+// comment or name a resource (no ; braces < backslash, quotes outside a font name,
+// url(), var(), calc() or other functions).
+const NUM = String.raw`-?(?:\d{1,4}(?:\.\d{1,4})?|\.\d{1,4})`;
+const LEN = String.raw`(?:0|${NUM}(?:px|rem|em|ch|pt|vw|vh|%))`;
+const ARG = String.raw`(?:\d{1,3}(?:\.\d{1,4})?|\.\d{1,4})(?:%|deg)?`;
+const COLOR = String.raw`(?:#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})|(?:rgb|rgba|hsl|hsla)\(${ARG}(?:(?:, ?| | ?/ ?)${ARG}){2,3}\))`;
+const FONT_ITEM = String.raw`(?:"[A-Za-z0-9][A-Za-z0-9 -]{0,39}"|[A-Za-z][A-Za-z0-9-]{0,39})`;
+const VALUE = new RegExp(
+  [
+    `^${COLOR}$`,
+    `^${FONT_ITEM}(?:, ${FONT_ITEM}){0,7}$`,
+    `^${LEN}$`,
+    `^min\\(${LEN}, ?${LEN}\\)$`,
+    String.raw`^(?:\d{1,3}(?:\.\d{1,4})?|\.\d{1,4})$`,
+    `^(?:${LEN} ){2,4}${COLOR}$`,
+    '^none$',
+  ].join('|'),
+);
+/** The most tokens one message may set, and the longest value. */
+const MAX_TOKENS = 128;
+const MAX_VALUE = 200;
+
+/** Whether `v` is an allowed token value. */
+export function tokenValueOk(v: string): boolean {
+  return v.length > 0 && v.length <= MAX_VALUE && VALUE.test(v);
+}
+
+/** Keeps only `--m-*` tokens whose values pass the allow-list; anything else is dropped. */
 export function cleanTokens(v: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!isObject(v)) return out;
   for (const [k, val] of Object.entries(v)) {
-    if (/^--m-[a-z0-9-]+$/.test(k) && typeof val === 'string' && val.length <= 300) out[k] = val;
+    if (Object.keys(out).length >= MAX_TOKENS) break;
+    if (/^--m-[a-z0-9-]{1,40}$/.test(k) && typeof val === 'string' && tokenValueOk(val)) {
+      out[k] = val;
+    }
   }
   return out;
 }

@@ -14,8 +14,8 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: var(--m-figure-bg, transparent);
-        color: var(--m-color-text, #1f2328);
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
         font: var(--m-size-small, 13px) / var(--m-leading, 1.4)
           var(--m-font-body, system-ui, sans-serif);
       }
@@ -26,17 +26,37 @@
       }
       .msg {
         padding: var(--m-space-3, 12px);
-        color: var(--m-color-muted, #59636e);
+        color: color-mix(in srgb, var(--m-figure-ink) 72%, var(--m-figure-bg));
       }
-      /* --m-figure-bg is white in both modes (theme contract): the loading
-        and error note keeps dark ink in dark mode too. */
-      html[data-mode='dark'] .msg {
-        color: #6b6676;
+      #tip {
+        position: fixed;
+        z-index: 1;
+        max-width: min(20rem, calc(100vw - 8px));
+        padding: 4px 8px;
+        pointer-events: none;
+        background: var(--m-tooltip-bg);
+        color: var(--m-tooltip-fg);
+        border: 1px solid var(--m-tooltip-border);
+        border-radius: var(--m-radius, 4px);
+        box-shadow: var(--m-shadow);
+        overflow-wrap: anywhere;
+      }
+      .tip-title {
+        font-weight: 600;
+      }
+      .tip-row {
+        display: flex;
+        gap: var(--m-space-2, 8px);
+        justify-content: space-between;
+      }
+      .tip-value {
+        font-variant-numeric: tabular-nums;
       }
     </style>
   </head>
   <body>
     <div id="chart" role="img"><div class="msg">Loading…</div></div>
+    <div id="tip" role="tooltip" hidden></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

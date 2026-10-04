@@ -78,63 +78,63 @@ export interface Tokens {
   [name: string]: string;
 }
 
-/**
- * Dark ink for content painted on `--m-figure-bg`, which the theme contract
- * keeps white in both modes (graphics sit on it; posters are never
- * filtered). Axis text following `--m-color-text` would be near-white on
- * white in dark mode.
- */
-const FIGURE_INK = '#1e1b24';
-
-/** Relative luminance of a `#rgb`/`#rrggbb` colour, 0 to 1; NaN when unparseable. */
-function luminance(hex: string): number {
-  const m = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim());
-  if (!m) return NaN;
-  const h =
-    m[1].length === 3
-      ? m[1]
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : m[1];
-  const [r, g, b] = [0, 2, 4].map((i) => {
-    const c = parseInt(h.slice(i, i + 2), 16) / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+/** The tokens' values for `names`, or null when any is missing. */
+function all(tokens: Tokens, names: string[]): string[] | null {
+  const v = names.map((n) => tokens[n]);
+  return v.every((x) => typeof x === 'string' && x !== '') ? v : null;
 }
 
-/**
- * `token` when it reads on `bg`, else the dark fallback: a light token on a
- * light background is swapped, everything else passes through untouched.
- */
-function inkOn(bg: string, token: string | undefined, fallback: string): string | undefined {
-  if (!token) return undefined;
-  if (luminance(bg) > 0.5 && luminance(token) > 0.5) return fallback;
-  return token;
-}
+const CATEGORICAL = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `--m-cat-${i}`);
+const SEQUENTIAL = [1, 2, 3, 4, 5].map((i) => `--m-seq-${i}`);
+const DIVERGING = ['--m-div-low', '--m-div-mid', '--m-div-high'];
 
-/** A Vega-Lite `config` from the theme tokens, so the chart matches the paper. */
+/**
+ * A Vega-Lite `config` from the theme tokens, so the chart matches the
+ * paper. Everything is painted on the figure plate (`--m-figure-bg`) in the
+ * plate's own ink and accent, which the theme chose to read on it; axes and
+ * grid are that ink, thinned. Marks hover a tooltip of their encoded fields.
+ */
 export function themeConfig(tokens: Tokens): Json {
-  const bg = tokens['--m-figure-bg'] ?? tokens['--m-color-bg'] ?? '#ffffff';
-  const text = inkOn(bg, tokens['--m-color-text'], FIGURE_INK);
-  const muted = tokens['--m-color-muted'];
-  const rule = tokens['--m-color-rule'];
-  const accent = tokens['--m-color-accent'];
+  const bg = tokens['--m-figure-bg'];
+  const ink = tokens['--m-figure-ink'];
+  const accent = tokens['--m-figure-accent'];
   const font = tokens['--m-font-body'];
   const axis: Json = {};
-  if (muted) Object.assign(axis, { gridColor: muted, gridOpacity: 0.3 });
-  if (rule) Object.assign(axis, { domainColor: rule, tickColor: rule });
-  if (text) Object.assign(axis, { labelColor: text, titleColor: text });
-  if (font) Object.assign(axis, { labelFont: font, titleFont: font });
-  const config: Json = { axis };
-  config.background = bg && bg !== 'transparent' ? bg : null;
-  if (text) config.legend = { labelColor: text, titleColor: text };
-  if (text) config.title = { color: text };
-  if (accent) {
-    config.mark = { color: accent };
-    config.range = { category: { scheme: 'tableau10' } };
+  if (ink) {
+    Object.assign(axis, {
+      labelColor: ink,
+      titleColor: ink,
+      domainColor: ink,
+      domainOpacity: 0.5,
+      tickColor: ink,
+      tickOpacity: 0.5,
+      gridColor: ink,
+      gridOpacity: 0.12,
+    });
   }
+  if (font) Object.assign(axis, { labelFont: font, titleFont: font });
+  const config: Json = { axis, background: bg ?? null };
+  if (ink) {
+    config.legend = {
+      labelColor: ink,
+      titleColor: ink,
+      ...(font ? { labelFont: font, titleFont: font } : {}),
+    };
+    config.title = { color: ink, ...(font ? { font } : {}) };
+    config.header = { labelColor: ink, titleColor: ink };
+    config.text = { color: ink };
+    // The plot frame, in the ink like the axes (Vega's own grey glares on a dark plate).
+    config.view = { stroke: ink, strokeOpacity: 0.15 };
+  }
+  config.mark = { tooltip: { content: 'encoding' }, ...(accent ? { color: accent } : {}) };
+  const range: Json = {};
+  const cat = all(tokens, CATEGORICAL);
+  if (cat) range.category = cat;
+  const seq = all(tokens, SEQUENTIAL);
+  if (seq) Object.assign(range, { ramp: seq, heatmap: seq, ordinal: seq });
+  const div = all(tokens, DIVERGING);
+  if (div) range.diverging = div;
+  if (Object.keys(range).length) config.range = range;
   return config;
 }
 

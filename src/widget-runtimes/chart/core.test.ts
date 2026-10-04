@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compileSpec, createView, csvRows, parseScale, parseSpec, resolveData } from './core';
+import {
+  compileSpec,
+  createView,
+  csvRows,
+  parseScale,
+  parseSpec,
+  resolveData,
+  themeConfig,
+} from './core';
 import type { SourceBytes } from '../bridge';
 
 const bytes = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer;
@@ -119,26 +127,44 @@ describe('chart runtime', () => {
     view.finalize();
   });
 
-  it('turns theme tokens into axis and background colours', async () => {
-    const out = await svg(fixture(), { '--m-color-text': '#abcdef', '--m-figure-bg': '#102030' });
+  it('paints on the figure plate in the plate ink', async () => {
+    const out = await svg(fixture(), {
+      '--m-figure-ink': '#abcdef',
+      '--m-figure-bg': '#102030',
+      '--m-figure-accent': '#a1b2c3',
+      '--m-color-text': '#ff0000',
+    });
     expect(out).toContain('#abcdef');
     expect(out).toContain('#102030');
+    expect(out).toContain('#a1b2c3'); // the single-series mark
+    expect(out).not.toContain('#ff0000'); // the page's text is not the plate's ink
   });
 
-  it('paints dark axis text on a light figure background', async () => {
-    // The house dark mode: light text on the white figure background.
-    const dark = await svg(fixture(), {
-      '--m-color-text': '#dfe1e6',
-      '--m-figure-bg': '#ffffff',
-    });
-    expect(dark).not.toContain('#dfe1e6');
-    expect(dark).toContain('#1e1b24');
-    // The house light mode: the dark text token reads as is.
-    const light = await svg(fixture(), {
-      '--m-color-text': '#1e1b24',
-      '--m-figure-bg': '#ffffff',
-    });
-    expect(light).toContain('#1e1b24');
+  it('colours series, ramps and diverging scales from the palette tokens', () => {
+    const tokens: Record<string, string> = {
+      '--m-div-low': '#000001',
+      '--m-div-mid': '#000002',
+      '--m-div-high': '#000003',
+    };
+    for (let i = 1; i <= 8; i++) tokens[`--m-cat-${i}`] = `#10000${i}`;
+    for (let i = 1; i <= 5; i++) tokens[`--m-seq-${i}`] = `#20000${i}`;
+    const c = themeConfig(tokens) as { range: Record<string, string[]>; mark: object };
+    expect(c.range.category).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((i) => `#10000${i}`));
+    expect(c.range.ramp).toEqual([1, 2, 3, 4, 5].map((i) => `#20000${i}`));
+    expect(c.range.heatmap).toEqual(c.range.ramp);
+    expect(c.range.diverging).toEqual(['#000001', '#000002', '#000003']);
+    expect(c.mark).toEqual({ tooltip: { content: 'encoding' } });
+    // An incomplete palette is left to Vega's own.
+    delete tokens['--m-cat-8'];
+    expect((themeConfig(tokens) as { range: object }).range).not.toHaveProperty('category');
+  });
+
+  it('keeps an author config over the theme', () => {
+    const vega = compileSpec(
+      { ...fixture(), config: { background: '#123456' } },
+      { '--m-figure-bg': '#ffffff' },
+    ) as { background?: string };
+    expect(vega.background).toBe('#123456');
   });
 
   it('reads CSV rows with numbers typed', () => {
