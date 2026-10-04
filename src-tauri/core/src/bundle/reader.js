@@ -43,13 +43,6 @@
     return out;
   }
 
-  var pdf = document.getElementById('pdf');
-  var link = document.getElementById('pdf-link');
-  if (!FOLDER && pdf && link) {
-    var m = /^data:[^,]*,(.*)$/.exec(link.getAttribute('href') || '');
-    if (m) pdf.data = URL.createObjectURL(new Blob([b64(m[1])], { type: 'application/pdf' }));
-  }
-
   var widgets = {};
   (manifest.widgets || []).forEach(function (w) {
     widgets[w.id] = w;
@@ -279,61 +272,49 @@
     }, 1800);
   });
 
-  // Contents, from the headings that carry an id.
-  var heads = Array.prototype.filter.call(
-    article.querySelectorAll('h2.ltx_title, h3.ltx_title'),
-    function (h) {
-      return !h.classList.contains('ltx_title_document') && h.textContent.trim();
-    },
-  );
-  if (!heads.length && article === main) {
-    heads = Array.prototype.slice.call(main.querySelectorAll('h2'));
-  }
-  if (heads.length < 2) return;
-  var used = 0;
-  var items = heads.map(function (h) {
-    var target = h.parentNode && h.parentNode.id ? h.parentNode : h;
-    if (!target.id) target.id = 'm-h-' + ++used;
-    var tag = h.querySelector('.ltx_tag');
-    var label = h.textContent.replace(/\s+/g, ' ').trim();
-    return { h: h, id: target.id, label: label, level: h.tagName === 'H3' ? 2 : 1, tag: !!tag };
-  });
-  var toc = el('details', 'm-toc');
-  toc.setAttribute('aria-label', 'Contents');
-  toc.appendChild(el('summary', null, 'Contents'));
-  var root = el('ol');
-  var top = null;
-  var sub = null;
+  // Contents: the list is in the page already (the article carries its own
+  // `nav.m-contents`, which reads with scripts off). Here it only gains a
+  // collapse on narrow screens and a marker on the section in view.
+  var nav = article.querySelector('nav.m-contents');
+  if (!nav) return;
   var links = {};
-  items.forEach(function (it) {
-    var li = el('li');
-    var a = el('a', null, it.label);
-    a.href = '#' + it.id;
-    li.appendChild(a);
-    links[it.id] = a;
-    if (it.level === 1 || !top) {
-      root.appendChild(li);
-      top = li;
-      sub = null;
-    } else {
-      if (!sub) {
-        sub = el('ol');
-        top.appendChild(sub);
-      }
-      sub.appendChild(li);
-    }
+  var items = [];
+  Array.prototype.forEach.call(nav.querySelectorAll('a[href^="#"]'), function (a) {
+    var id = a.getAttribute('href').slice(1);
+    var target = id && document.getElementById(id);
+    if (!target) return;
+    var h = target.querySelector('h2, h3, h4, h5, h6') || target;
+    links[id] = a;
+    items.push({ id: id, h: h });
   });
-  toc.appendChild(root);
-  main.insertBefore(toc, main.firstChild);
-  main.classList.add('m-has-toc');
+  if (!items.length) return;
+  article.classList.add('m-has-contents');
   var wide = window.matchMedia('(min-width: 1100px)');
-  function place() {
-    toc.open = wide.matches;
+  var title = nav.querySelector('.m-contents-title');
+  var toggle = null;
+  if (title) {
+    toggle = el('button', 'm-contents-toggle', title.textContent);
+    toggle.type = 'button';
+    toggle.setAttribute('aria-controls', 'm-contents-list');
+    title.textContent = '';
+    title.appendChild(toggle);
   }
-  place();
-  wide.addEventListener('change', place);
-  toc.addEventListener('click', function (ev) {
-    if (!wide.matches && ev.target && ev.target.closest && ev.target.closest('a')) toc.open = false;
+  var list = nav.querySelector('ol');
+  if (list) list.id = 'm-contents-list';
+  function collapse(on) {
+    nav.classList.toggle('m-collapsed', on);
+    if (toggle) toggle.setAttribute('aria-expanded', on ? 'false' : 'true');
+  }
+  collapse(!wide.matches);
+  wide.addEventListener('change', function () {
+    collapse(!wide.matches);
+  });
+  if (toggle)
+    toggle.addEventListener('click', function () {
+      if (!wide.matches) collapse(!nav.classList.contains('m-collapsed'));
+    });
+  nav.addEventListener('click', function (ev) {
+    if (!wide.matches && ev.target && ev.target.closest && ev.target.closest('a')) collapse(true);
   });
 
   // Scroll-spy: the last heading above a line a quarter down the screen.
@@ -356,9 +337,8 @@
     var a = links[current];
     a.classList.add('m-active');
     a.setAttribute('aria-current', 'location');
-    if (wide.matches && toc.scrollHeight > toc.clientHeight) {
-      var top = a.offsetTop - toc.clientHeight / 2;
-      toc.scrollTop = Math.max(0, top);
+    if (wide.matches && nav.scrollHeight > nav.clientHeight) {
+      nav.scrollTop = Math.max(0, a.offsetTop - nav.clientHeight / 2);
     }
   }
   window.addEventListener(

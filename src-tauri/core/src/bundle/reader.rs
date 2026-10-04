@@ -158,7 +158,7 @@ mod tests {
         assert!(!fold::policy_of(&single).contains("frame-src"));
         assert!(fold::policy_of(&folder).contains("frame-src 'self'"));
         assert!(single.contains("default-src 'none'") && single.contains("connect-src 'none'"));
-        assert!(single.contains("object-src blob:"));
+        assert!(single.contains("object-src 'none'") && folder.contains("object-src 'none'"));
     }
 
     #[test]
