@@ -63,6 +63,22 @@ PLACEHOLDERS="$(grep -o 'class="ltx_text m-widget m-widget-[a-z]*"' "$HTML" | wc
 [ "$PLACEHOLDERS" = "$RECORDS" ] || fail "$PLACEHOLDERS placeholders, $RECORDS records"
 pass "$PLACEHOLDERS placeholders = $RECORDS sidecar records"
 
+# 2b. the custom runtime macro: one placeholder of kind custom, and no
+# undefined macro (the binding defines \interactiveruntime).
+mkdir -p "$SCRATCH/runtime/out"
+cp -r "$DEVROOT/e2e/fixtures/interactive/." "$SCRATCH/runtime/"
+(cd "$SPIKE" && bwrap --ro-bind / / --dev /dev --proc /proc --bind /var/tmp /var/tmp \
+  --tmpfs /tmp --bind "$SCRATCH" "$SCRATCH" --tmpfs /usr/share/texlive \
+  --setenv PATH "$SPIKE/shim:/usr/bin:/bin" \
+  --setenv LATEXML_DUMP_DIR "$SPIKE/gen/resources/dumps" \
+  "$ENGINE" convert "$SCRATCH/runtime/runtime.tex" --out "$SCRATCH/runtime/out/runtime.html" \
+  >"$SCRATCH/runtime.log" 2>&1) || { cat "$SCRATCH/runtime.log"; fail "convert of runtime.tex failed"; }
+grep -q 'Conversion complete: No obvious problems' "$SCRATCH/runtime.log" \
+  || { cat "$SCRATCH/runtime.log"; fail "runtime.tex conversion reported problems"; }
+[ "$(grep -o 'class="ltx_text m-widget m-widget-custom"' "$SCRATCH/runtime/out/runtime.html" | wc -l)" = 1 ] \
+  || fail "runtime.tex does not convert to one m-widget-custom placeholder"
+pass "\\interactiveruntime converts to one m-widget-custom placeholder"
+
 # 3. the real join
 cd "$DEVROOT/src-tauri"
 MFW_E2E_HTML="$HTML" MFW_E2E_SIDECAR="$MFW" cargo test -q -p maleficium-core --lib \
