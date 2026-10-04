@@ -183,7 +183,10 @@ pub fn join(html: &str, records: Vec<Record>) -> Result<Vec<Joined>, JoinError> 
 /// [`join`] against the text of a `<jobname>.mfw` sidecar, parsed by the
 /// widget module's own parser.
 pub fn join_sidecar(html: &str, sidecar: &str) -> Result<Vec<Joined>, JoinError> {
-    join(html, parse_sidecar(sidecar).map_err(JoinError::Sidecar)?)
+    join(
+        html,
+        parse_sidecar(sidecar).map_err(JoinError::Sidecar)?.records,
+    )
 }
 
 /// `html` with each joined placeholder replaced by its [`mount_marker`].

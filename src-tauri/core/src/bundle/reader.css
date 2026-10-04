@@ -70,6 +70,12 @@ body.m-reader {
 .m-reader .frame img {
   object-fit: contain;
 }
+/* Posters are pictures of the page, light in both modes, like graphics:
+  they keep the paper's light plate. The live widget is on the mode's
+  plate, --m-figure-bg. */
+.m-reader .frame .poster {
+  background: var(--m-paper);
+}
 .m-reader .frame iframe {
   opacity: 0;
   pointer-events: none;
@@ -85,6 +91,13 @@ body.m-reader {
   margin-top: var(--m-space-2);
   font-size: var(--m-size-small);
 }
+.m-reader figure[data-state='error'] iframe {
+  opacity: 0;
+  pointer-events: none;
+}
+.m-reader figure[data-state='error'] .poster {
+  display: block;
+}
 .m-reader figure[data-state='error'] figcaption::after {
   content: ' (the interactive view failed; the poster is shown)';
   color: var(--m-color-muted);
@@ -97,13 +110,7 @@ body.m-reader {
 
 /* ---- The article: latexml's ltx_* classes are the hooks (reader contract). ---- */
 .m-reader {
-  --m-err: #b3261e;
-  --m-warn-bg: #fdecea;
   scroll-padding-top: var(--m-space-3);
-}
-.m-reader[data-theme='dark'] {
-  --m-err: #ff8a80;
-  --m-warn-bg: #3a2220;
 }
 @media (prefers-reduced-motion: no-preference) {
   html {
@@ -409,7 +416,7 @@ body.m-reader {
 .m-reader img.ltx_graphics {
   display: block;
   margin: 0 auto;
-  background: var(--m-figure-bg);
+  background: var(--m-paper);
   border-radius: 2px;
 }
 .m-reader .ltx_flex_figure,
@@ -432,14 +439,14 @@ body.m-reader {
   width: 100%;
   min-height: 8rem;
   padding: var(--m-space-3);
-  border: 2px dashed var(--m-err);
+  border: 2px dashed var(--m-color-error);
   border-radius: var(--m-radius);
   background: repeating-linear-gradient(
     135deg,
     var(--m-color-surface) 0 10px,
-    var(--m-warn-bg) 10px 20px
+    var(--m-color-error-bg) 10px 20px
   );
-  color: var(--m-err);
+  color: var(--m-color-error);
   font: var(--m-size-small) var(--m-font-mono);
   text-align: center;
   overflow-wrap: anywhere;
@@ -636,16 +643,16 @@ body.m-reader {
 .m-reader .ltx_ERROR {
   font-family: var(--m-font-mono);
   font-size: 0.9em;
-  color: var(--m-err);
-  text-decoration: underline wavy var(--m-err);
+  color: var(--m-color-error);
+  text-decoration: underline wavy var(--m-color-error);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
   cursor: help;
 }
 .m-reader .m-warn {
   padding: var(--m-space-2) var(--m-space-3);
-  background: var(--m-warn-bg);
-  border-left: 3px solid var(--m-err);
+  background: var(--m-color-error-bg);
+  border-left: 3px solid var(--m-color-error);
   border-radius: var(--m-radius);
   font-size: var(--m-size-small);
 }
@@ -830,7 +837,8 @@ body.m-reader {
     --m-color-accent: #000;
     --m-color-target: transparent;
     --m-figure-bg: #fff;
-    --m-err: #b3261e;
+    --m-paper: #fff;
+    --m-color-error: #b3261e;
   }
   .m-reader .m-contents,
   .m-reader noscript {

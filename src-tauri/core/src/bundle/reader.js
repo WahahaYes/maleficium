@@ -1,7 +1,6 @@
 (function () {
   'use strict';
   var FOLDER = __FOLDER__;
-  var TOKENS = __TOKENS__;
   var body = document.body;
   function island(id) {
     var el = document.getElementById(id);
@@ -20,6 +19,9 @@
   var manifest = island('mfw-manifest');
   var docs = island('mfw-widgets');
   var blobs = island('mfw-assets');
+  // The paper's theme record, the one the page's CSS was written from:
+  // every widget gets the same values the chrome is styled with.
+  var themes = island('mfw-theme');
   var dark = window.matchMedia('(prefers-color-scheme: dark)');
   function mode() {
     return dark.matches ? 'dark' : 'light';
@@ -29,12 +31,8 @@
   }
   paint();
   function theme() {
-    var cs = getComputedStyle(body),
-      tokens = {};
-    TOKENS.forEach(function (t) {
-      tokens[t] = cs.getPropertyValue(t).trim();
-    });
-    return { mode: mode(), tokens: tokens };
+    var m = mode();
+    return { mode: m, tokens: themes[m] || {} };
   }
   function b64(s) {
     var bin = atob(s),
@@ -48,6 +46,12 @@
     widgets[w.id] = w;
   });
   var frames = [];
+  // A widget that fails gives its place back to the poster: the frame is
+  // hidden again and the caption says so.
+  function fail(fig) {
+    fig.classList.remove('live');
+    fig.setAttribute('data-state', 'error');
+  }
   function bytesOf(key) {
     var a = (manifest.assets || {})[key];
     if (!a) return Promise.reject(new Error('no asset ' + key));
@@ -101,7 +105,7 @@
         rec.fig.setAttribute('data-state', 'ready');
       })
       .catch(function () {
-        rec.fig.setAttribute('data-state', 'error');
+        fail(rec.fig);
       });
   }
   window.addEventListener('message', function (e) {
@@ -112,8 +116,7 @@
       if (d.type === 'ready' && !frames[i].started) {
         frames[i].started = true;
         init(frames[i]);
-      } else if (d.type === 'status' && d.state === 'error')
-        frames[i].fig.setAttribute('data-state', 'error');
+      } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       return;
     }
   });
@@ -169,6 +172,7 @@
     // An author bundle need not speak the host protocol: it is shown once it has loaded.
     if (w.type === 'html') {
       f.addEventListener('load', function () {
+        if (fig.getAttribute('data-state') === 'error') return;
         fig.classList.add('live');
         fig.setAttribute('data-state', 'ready');
       });

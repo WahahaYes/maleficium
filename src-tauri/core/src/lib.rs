@@ -25,6 +25,7 @@ pub mod synctex;
 pub mod templates;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_scratch;
+pub mod theme;
 pub mod watch;
 pub mod widget_approval;
 pub mod widgets;
