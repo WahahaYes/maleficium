@@ -542,7 +542,7 @@ fn plain_pdf() -> Vec<u8> {
 fn annotated_pdf() -> Vec<u8> {
     build_pdf(
         "/Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [\
-         << /Type /Annot /Subtype /Text /NM (mfw:a-1) /Rect [110.5 220 10.5 20] >> \
+         << /Type /Annot /Subtype /Link /Border [0 0 0] /NM (mfw:a-1) /Rect [110.5 220 10.5 20] >> \
          << /Type /Annot /Subtype /Text /NM (other:b) /Rect [1 2 3 4] >> \
          << /Type /Annot /Subtype /Link /Rect [5 6 7 8] >>]",
     )
