@@ -188,6 +188,8 @@ fn convert(source: String, out: &Path, source_dir: &Path) -> Converted {
             format: OutputFormat::HTML5,
             bindings_dispatch: Some(Rc::new(latexml_package::dispatch)),
             extra_bindings_dispatch: Some(Rc::new(latexml_contrib::dispatch)),
+            // Raw-load a package that has no binding (an author's own .sty).
+            include_styles: Some(true),
             ..Config::default()
         };
         let mut converter = Converter::from_config(opts.clone());
