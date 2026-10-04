@@ -435,6 +435,8 @@ struct Plan<'a> {
     main_dir_rel: PathBuf,
     profile: BundleProfile,
     opts: &'a BundleOptions<'a>,
+    /// The paper's theme: posters are keyed by it.
+    theme: &'a crate::theme::Theme,
     assets: BTreeMap<String, Asset>,
     warnings: Vec<BundleWarning>,
 }
@@ -725,7 +727,8 @@ fn plan_widget(
     // cached auto-poster, else (a table's typeset rows, a placeholder)
     // cropped from the pdf.
     let poster_key = format!("{id}-poster");
-    let cached = crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w);
+    let cached =
+        crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w, p.theme);
     match crate::widgets::poster::poster_source(w, cached.as_deref()) {
         PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {
             p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
@@ -867,9 +870,7 @@ fn plan_widget(
     })
 }
 
-// ---- the house theme ----------------------------------------------------
-
-pub(crate) const THEME_CSS: &str = ".m-reader{--m-font-body:\"Libertinus Serif\",Georgia,serif;--m-font-heading:\"Libertinus Sans\",system-ui,sans-serif;--m-font-mono:\"Libertinus Mono\",ui-monospace,monospace;--m-font-math:\"Libertinus Math\",math;--m-size-base:1.0625rem;--m-scale:1.2;--m-size-small:0.875em;--m-leading:1.6;--m-measure:68ch;--m-figure-max:min(100%,64rem);--m-space-1:0.25rem;--m-space-2:0.5rem;--m-space-3:1rem;--m-space-4:1.5rem;--m-space-5:2.5rem;--m-space-6:4rem;--m-radius:6px;--m-color-bg:#fbfaf7;--m-color-surface:#f1efe9;--m-color-text:#1e1b24;--m-color-muted:#6b6676;--m-color-rule:#d9d5e0;--m-color-link:#5b2a86;--m-color-accent:#5b2a86;--m-color-target:#fff4c2;--m-figure-bg:#ffffff}\n.m-reader[data-theme=\"dark\"]{--m-color-bg:#16181d;--m-color-surface:#1f2229;--m-color-text:#dfe1e6;--m-color-muted:#9aa1ad;--m-color-rule:#343944;--m-color-link:#b79ad4;--m-color-accent:#b79ad4;--m-color-target:#3a3420}\n";
+// ---- the theme ------------------------------------------------------------
 
 fn theme_json(id: &str) -> String {
     let v = json!({
@@ -1403,7 +1404,10 @@ pub fn export_bundle_with(
 
     // The typed widget list is the join of sidecar and pdf; it also fails when
     // the main file was never compiled.
-    let list = crate::widgets::widgets(cx, root_id, main_rel)?;
+    let (list, theme) = crate::widgets::read(cx, root_id, main_rel)?;
+    // The page's CSS and the widgets' tokens come from this one theme;
+    // its values are checked again as the CSS is written.
+    let theme_css = theme.css()?;
     let o = crate::outputs::outputs_of(cx, root_id, main_rel)?;
     let pdf_bytes = std::fs::read(o.outdir.join(&o.pdf_name))
         .map_err(|_| format!("{main_rel} has no compiled pdf: compile it first"))?;
@@ -1442,6 +1446,7 @@ pub fn export_bundle_with(
             .unwrap_or_default(),
         profile,
         opts,
+        theme: &theme,
         assets: BTreeMap::new(),
         warnings: Vec::new(),
     };
@@ -1607,17 +1612,16 @@ pub fn export_bundle_with(
                 island("mfw-assets", &Value::Object(assets)),
             ]
             .concat();
-            let html = reader::render(
-                &reader::Reader {
-                    title: &meta.title,
-                    folder: false,
-                    article: &article.html,
-                    pdf: Some(&pdf_bytes),
-                    islands: &islands,
-                    frames: &frames,
-                },
-                THEME_CSS,
-            );
+            let html = reader::render(&reader::Reader {
+                title: &meta.title,
+                folder: false,
+                article: &article.html,
+                pdf: Some(&pdf_bytes),
+                islands: &islands,
+                frames: &frames,
+                theme: &theme,
+                theme_css: &theme_css,
+            });
             std::fs::write(&stage, html.as_bytes())
                 .map_err(|e| format!("cannot write {}: {e}", stage.display()))?;
             total = html.len() as u64;
@@ -1637,7 +1641,7 @@ pub fn export_bundle_with(
                 theme_json(&theme_id).as_bytes(),
                 &mut total,
             )?;
-            put(&stage, "theme/theme.css", THEME_CSS.as_bytes(), &mut total)?;
+            put(&stage, "theme/theme.css", theme_css.as_bytes(), &mut total)?;
             for p in &planned {
                 put(
                     &stage,
@@ -1690,17 +1694,16 @@ pub fn export_bundle_with(
                     put(&stage, &format!("figures/{name}"), &bytes, &mut total)?;
                 }
             }
-            let html = reader::render(
-                &reader::Reader {
-                    title: &meta.title,
-                    folder: true,
-                    article: &article.html,
-                    pdf: None,
-                    islands: &islands,
-                    frames: &frames,
-                },
-                THEME_CSS,
-            );
+            let html = reader::render(&reader::Reader {
+                title: &meta.title,
+                folder: true,
+                article: &article.html,
+                pdf: None,
+                islands: &islands,
+                frames: &frames,
+                theme: &theme,
+                theme_css: &theme_css,
+            });
             put(&stage, "index.html", html.as_bytes(), &mut total)?;
         }
         Ok(())

@@ -29,6 +29,11 @@ pub(super) struct Reader<'a> {
     pub islands: &'a str,
     /// Every frame origin a widget declared, sorted and deduplicated.
     pub frames: &'a [String],
+    /// The paper's theme, and its CSS ([`crate::theme::Theme::css`]): the
+    /// page is styled by the one and hands the other's values to every
+    /// widget, so chrome and widgets agree.
+    pub theme: &'a crate::theme::Theme,
+    pub theme_css: &'a str,
 }
 
 /// The reader page's policy. A single-file widget is a `srcdoc` document,
@@ -54,15 +59,7 @@ pub(super) fn policy(folder: bool, frames: &[String]) -> String {
     )
 }
 
-/// The token names the house theme defines, so the page hands a widget
-/// exactly the contract's values.
-fn token_names(css: &str) -> Vec<String> {
-    let first = css.split('}').next().unwrap_or("");
-    let re = regex::Regex::new(r"(--m-[a-z0-9-]+)\s*:").unwrap();
-    re.captures_iter(first).map(|c| c[1].to_string()).collect()
-}
-
-pub(super) fn render(r: &Reader, theme_css: &str) -> String {
+pub(super) fn render(r: &Reader) -> String {
     let policy = policy(r.folder, r.frames);
     let href = match r.pdf {
         Some(b) if !r.folder => format!(
@@ -77,7 +74,7 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
     page.push_str(
         "</title><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>",
     );
-    page.push_str(theme_css);
+    page.push_str(r.theme_css);
     page.push_str(CSS);
     page.push_str("</style></head><body class=\"m-reader\"><main>");
     page.push_str("<noscript><p class=\"note\">Scripts are off, so the interactive figures show their posters.</p></noscript>");
@@ -87,10 +84,8 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
     page.push_str(r.article);
     page.push_str("</main>");
     page.push_str(r.islands);
-    let tokens = serde_json::to_string(&token_names(theme_css)).unwrap_or_else(|_| "[]".into());
-    let js = JS
-        .replace("__FOLDER__", if r.folder { "true" } else { "false" })
-        .replace("__TOKENS__", &tokens);
+    page.push_str(&super::island("mfw-theme", &r.theme.json()));
+    let js = JS.replace("__FOLDER__", if r.folder { "true" } else { "false" });
     page.push_str(&format!("<script>{js}</script></body></html>\n"));
     fold::with_policy(&page, &policy)
 }
@@ -102,17 +97,17 @@ mod tests {
     const ARTICLE: &str = "<article class=\"ltx_document\"><h1 class=\"ltx_title ltx_title_document\">T</h1><figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"model\" style=\"--ar:2.00 / 1.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>A</figcaption></figure></article>";
 
     fn page(folder: bool) -> String {
-        render(
-            &Reader {
-                title: "T & <title>",
-                folder,
-                article: ARTICLE,
-                pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
-                islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
-                frames: &[],
-            },
-            super::super::THEME_CSS,
-        )
+        let theme = crate::theme::Theme::house();
+        render(&Reader {
+            title: "T & <title>",
+            folder,
+            article: ARTICLE,
+            pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
+            islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
+            frames: &[],
+            theme: &theme,
+            theme_css: &theme.css().unwrap(),
+        })
     }
 
     #[test]
@@ -206,11 +201,22 @@ mod tests {
     }
 
     #[test]
-    fn token_names_come_from_the_theme_css() {
-        let t = token_names(super::super::THEME_CSS);
-        assert!(
-            t.contains(&"--m-color-bg".to_string()) && t.contains(&"--m-figure-bg".to_string())
+    fn the_page_css_and_the_widget_tokens_come_from_one_theme() {
+        let h = page(false);
+        let theme = crate::theme::Theme::house();
+        assert!(h.contains(&theme.css().unwrap()));
+        let island = format!(
+            "<script type=\"application/json\" id=\"mfw-theme\">{}</script>",
+            serde_json::to_string(&theme.json())
+                .unwrap()
+                .replace('<', "\\u003c")
         );
-        assert!(t.len() > 20);
+        assert!(
+            h.contains(&island),
+            "the reader hands widgets the record's values"
+        );
+        // reader.js reads the island; it no longer scrapes computed styles.
+        assert!(h.contains("island('mfw-theme')"));
+        assert!(!h.contains("getPropertyValue"));
     }
 }

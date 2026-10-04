@@ -1,5 +1,5 @@
 use super::*;
-use crate::widgets::{WidgetRect, WidgetSource};
+use crate::widgets::{widgets, WidgetRect, WidgetSource};
 
 const REAL_PDF: &[u8] = include_bytes!("../../../testdata/interactive/main.pdf");
 const REAL_SIDECAR: &str = include_str!("../../../testdata/interactive/main.mfw");
@@ -82,7 +82,8 @@ fn a_model_job_carries_its_camera_size_sources_theme_and_policy() {
     assert_eq!(job.init["protocol"], 1);
     assert_eq!(job.init["runtime"], "model@1");
     assert_eq!(job.init["theme"]["mode"], "light");
-    assert_eq!(job.init["theme"]["tokens"]["--m-figure-bg"], "#ffffff");
+    // No theme record in this sidecar: the house values.
+    assert_eq!(job.init["theme"]["tokens"]["--m-figure-bg"], "#FFFFFF");
     assert_eq!(job.init["sources"]["model"]["name"], "mesh.glb");
     assert_eq!(job.init["sources"]["model"]["mime"], "model/gltf-binary");
     assert_eq!(job.sources.len(), 1);
@@ -288,11 +289,32 @@ fn an_explicit_poster_wins_over_a_cached_one_and_a_placeholder_comes_last() {
 }
 
 #[test]
-fn the_light_tokens_come_from_the_house_theme() {
-    let t = light_tokens();
-    assert_eq!(t["--m-color-text"], "#1e1b24");
-    assert!(t.keys().all(|k| k.starts_with("--m-")));
-    assert!(!t.contains_key("--m-color-target") || t["--m-color-target"] == "#fff4c2");
+fn a_job_takes_its_tokens_from_the_sidecars_theme_record() {
+    let cx = &Core::default();
+    let (id, _root, out) = project(cx, "themed", "height=170.71652pt");
+    let o = crate::outputs::outputs_of(cx, &id, "main.tex").unwrap();
+    let cream = include_str!("../../../testdata/theme/cream-times.mfw");
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    let themed = format!("{side}{}", cream.strip_prefix("mfw 1\n").unwrap());
+    std::fs::write(o.outdir.join("main.mfw"), themed).unwrap();
+    let job = job_of(cx, &req(&id, "fig-chart", &out));
+    assert_eq!(job.init["theme"]["mode"], "light");
+    assert_eq!(job.init["theme"]["tokens"]["--m-figure-bg"], "#FFF8E7");
+    assert_eq!(job.init["theme"]["tokens"]["--m-cat-1"], "#2A78D6");
+}
+
+#[test]
+fn a_poster_renders_with_the_papers_light_tokens() {
+    let cream = include_str!("../../../testdata/theme/cream-times.mfw");
+    let theme = crate::widgets::parse_sidecar(cream).unwrap().theme.unwrap();
+    let t = poster_tokens(&theme);
+    assert_eq!(
+        t["--m-figure-bg"], "#FFF8E7",
+        "the page colour, not the house white"
+    );
+    assert_eq!(t["--m-figure-ink"], "#1E1B24");
+    assert_eq!(t.len(), crate::theme::TOKENS.len());
+    assert_eq!(poster_tokens(&Theme::house())["--m-figure-bg"], "#FFFFFF");
 }
 
 // ---- html widgets: the approval gate ------------------------------------

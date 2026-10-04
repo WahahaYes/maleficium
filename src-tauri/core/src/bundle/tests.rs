@@ -375,7 +375,8 @@ fn the_single_file_profile_is_one_file_with_everything_inline() {
     // never close its island.
     assert!(html.contains("<meta http-equiv=\"Content-Security-Policy\""));
     assert!(!fold::policy_of(&html).contains("frame-src"));
-    assert_eq!(html.matches("</script>").count(), 4);
+    // Islands: manifest, widgets, assets, theme; then the script.
+    assert_eq!(html.matches("</script>").count(), 5);
 }
 
 #[test]
@@ -1480,4 +1481,59 @@ fn dry_run_exports_a_real_paper() {
             eprintln!("warning {:?}: {}", w.kind, w.message);
         }
     }
+}
+
+const CREAM: &str = include_str!("../../testdata/theme/cream-times.mfw");
+
+/// The real sidecar with the theme a cream page in Times records.
+fn themed_sidecar() -> String {
+    format!("{REAL_SIDECAR}{}", CREAM.strip_prefix("mfw 1\n").unwrap())
+}
+
+#[test]
+fn the_page_css_and_every_widgets_tokens_come_from_the_sidecars_theme() {
+    let p = project("themed", &themed_sidecar());
+    let theme = crate::widgets::parse_sidecar(CREAM).unwrap().theme.unwrap();
+    let d = dest(&p, "paper.html");
+    export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    assert!(html.contains(&theme.css().unwrap()));
+    assert!(html.contains("--m-figure-bg:#FFF8E7;"));
+    assert!(html.contains("\"TeX Gyre Termes\""));
+    assert_eq!(island_json(&html, "mfw-theme"), theme.json());
+    assert_eq!(
+        island_json(&html, "mfw-theme")["dark"]["--m-figure-bg"],
+        "#1C1F25"
+    );
+
+    let d = dest(&p, "paper");
+    export(&p, &d, BundleProfile::Folder).unwrap();
+    let css = std::fs::read_to_string(PathBuf::from(&d).join("theme/theme.css")).unwrap();
+    assert_eq!(css, theme.css().unwrap());
+    let index = std::fs::read_to_string(PathBuf::from(&d).join("index.html")).unwrap();
+    assert_eq!(island_json(&index, "mfw-theme"), theme.json());
+}
+
+#[test]
+fn a_sidecar_without_a_theme_record_exports_in_the_house_theme() {
+    let p = project("housetheme", REAL_SIDECAR);
+    let d = dest(&p, "paper.html");
+    export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    let house = crate::theme::Theme::house();
+    assert!(html.contains(&house.css().unwrap()));
+    assert_eq!(island_json(&html, "mfw-theme"), house.json());
+}
+
+#[test]
+fn a_hostile_theme_value_refuses_the_export() {
+    let bad = themed_sidecar().replace(
+        "theme|light|--m-figure-bg|#FFF8E7",
+        "theme|light|--m-figure-bg|#fff}</style><script>alert(1)</script>",
+    );
+    let p = project("hostiletheme", &bad);
+    let d = dest(&p, "paper.html");
+    let e = export(&p, &d, BundleProfile::SingleFile).unwrap_err();
+    assert!(e.contains("--m-figure-bg"), "{e}");
+    assert!(!PathBuf::from(&d).exists());
 }

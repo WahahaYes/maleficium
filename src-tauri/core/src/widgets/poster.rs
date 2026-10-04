@@ -19,8 +19,9 @@
 //! Poster precedence for a widget is [`poster_source`]: an explicit
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
-use super::{params, widgets, Widget, WidgetSource, WidgetType};
-use crate::bundle::{fold, role_keys, runtime_host, runtime_options, sha_of, THEME_CSS};
+use super::{params, read, Widget, WidgetSource, WidgetType};
+use crate::bundle::{fold, role_keys, runtime_host, runtime_options, sha_of};
+use crate::theme::{Mode, Theme};
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::Core;
 use serde::{Deserialize, Serialize};
@@ -155,18 +156,14 @@ fn host_document(runtime: &str) -> Option<&'static str> {
     runtime_host(runtime)
 }
 
-/// The house theme's light tokens, as the runtimes take them.
-fn light_tokens() -> Map<String, Value> {
-    let block = THEME_CSS
-        .split_once('{')
-        .and_then(|(_, rest)| rest.split_once('}'))
-        .map(|(b, _)| b)
-        .unwrap_or("");
-    block
-        .split(';')
-        .filter_map(|d| d.split_once(':'))
-        .filter(|(k, _)| k.trim().starts_with("--m-"))
-        .map(|(k, v)| (k.trim().to_string(), Value::from(v.trim())))
+/// The tokens a poster renders with: the paper's light set. Posters are
+/// light in both reader modes (the pdf's picture, and what prints), so a
+/// poster is rendered once, in the paper's own colours.
+pub(crate) fn poster_tokens(theme: &Theme) -> Map<String, Value> {
+    theme
+        .tokens(Mode::Light)
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::from(v.as_str())))
         .collect()
 }
 
@@ -232,7 +229,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
             .unwrap_or(DEFAULT_TIMEOUT_MS)
             .clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS),
     );
-    let list = widgets(cx, &req.root_id, &req.main_rel)?;
+    let (list, theme) = read(cx, &req.root_id, &req.main_rel)?;
     let w = list
         .widgets
         .iter()
@@ -246,7 +243,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
     let id = &w.id;
     match w.kind {
         WidgetType::Model | WidgetType::Chart => {}
-        WidgetType::Html => return html_job(base, cx, req, w, out, timeout),
+        WidgetType::Html => return html_job(base, cx, req, w, &theme, out, timeout),
         WidgetType::Table => {
             return Err(format!(
                 "widget {id}: a table's poster is its typeset rows, nothing to render"
@@ -311,7 +308,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
     Ok(Prepared::Job(PosterJob {
         widget_id: id.clone(),
         document,
-        init: init(w, runtime, options, meta),
+        init: init(w, runtime, options, meta, &theme),
         sources,
         frame,
         expect,
@@ -334,6 +331,7 @@ fn init(
     runtime: &str,
     options: Map<String, Value>,
     sources: Map<String, Value>,
+    theme: &Theme,
 ) -> Value {
     json!({
         "type": "init",
@@ -342,7 +340,7 @@ fn init(
         "runtime": runtime,
         "alt": w.alt,
         "options": options,
-        "theme": { "mode": "light", "tokens": light_tokens() },
+        "theme": { "mode": "light", "tokens": poster_tokens(theme) },
         "sources": sources,
     })
 }
@@ -361,6 +359,7 @@ fn html_job(
     cx: &Core,
     req: &PosterRequest,
     w: &Widget,
+    theme: &Theme,
     out: PathBuf,
     timeout: Duration,
 ) -> Result<Prepared, String> {
@@ -388,7 +387,7 @@ fn html_job(
             Ok(Prepared::Job(PosterJob {
                 widget_id: id.clone(),
                 document: folded.html,
-                init: init(w, HTML_RUNTIME, options, Map::new()),
+                init: init(w, HTML_RUNTIME, options, Map::new(), theme),
                 sources: Vec::new(),
                 frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
                 expect: None,
