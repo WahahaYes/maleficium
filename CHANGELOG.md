@@ -9,7 +9,7 @@
 - **Your own HTML widgets need approval.** View > Widgets lists each widget with its status, a diff of what changed since you approved it, Approve and Revoke, and an auto-approval setting that is off by default. An unapproved widget is never rendered, and an agent over MCP can read the status but cannot approve.
 - **Preview in Browser and a reflowed reader.** File > Preview in Browser exports the paper as one file and opens it. The bundle's `index.html` is now the paper itself, reflowed from your LaTeX with each widget mounted in place, and `paper.pdf` stays in the bundle as the version of record and a download, not embedded. Anything the conversion could not read, join or find (a macro, a widget, a figure) is listed in the export's warnings.
 - **Html widgets can declare origins.** `framedomains=` and `resourcedomains=` (or `widget.json`) name the `https` origins one widget may frame or load, for example a YouTube or Vimeo player; see docs/VIDEO-EMBEDS.md. The origins are part of the approval.
-- **One QR code per paper, in the page footer.** `maleficium-interactive.sty` drew a 2cm QR code under every widget when `bundleurl` was set. It now draws one 1.5cm QR code with the URL in the footer of the first page, and each widget keeps a one-line "Interactive version" mark that links to the bundle URL. Floats no longer grow by 2cm and widget rects are unchanged. `\maleficiumsetup{qr=none}` turns the footer QR off.
+- **No QR codes or "Interactive version" marks.** `maleficium-interactive.sty` no longer draws the footer QR code or the one-line mark under each widget: the package adds no links and each widget is just its poster. `\maleficiumsetup{bundleurl=...}` and `qr=` are still accepted but ignored, so older documents compile unchanged.
 
 ### Fixes
 
