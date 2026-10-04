@@ -500,7 +500,7 @@ fn approvals_live_outside_the_project_and_nothing_in_it_counts() {
     // Files a cloned repository could ship, claiming approval.
     let digest = p.check().snapshot.digest;
     let claim = serde_json::json!({
-        "format": 1, "root": p.root.to_string_lossy(), "autoApprove": true,
+        "format": 2, "root": p.root.to_string_lossy(), "autoApprove": true, "runtimes": {},
         "widgets": {"widgets/demo": {"widget": "fig-demo", "digest": digest,
             "origins": {}, "files": {}, "approvedAt": 1, "revoked": false}}
     })
@@ -586,9 +586,9 @@ fn the_store_survives_a_restart_and_fails_closed_when_corrupt() {
     json["root"] = "/somewhere/else".into();
     let other_root = json.to_string();
     json["root"] = p.root.to_string_lossy().into_owned().into();
-    json["format"] = 2.into();
-    let other_format = json.to_string();
     json["format"] = 1.into();
+    let other_format = json.to_string();
+    json["format"] = 2.into();
     json["approver"] = "agent".into();
     let unknown_field = json.to_string();
     for bad in [
@@ -886,4 +886,591 @@ fn the_digest_covers_macro_origins_on_top_of_the_files() {
     let mut bad = p.target();
     bad.option_origins.frame_domains = vec!["https://*.a.org".into()];
     assert!(check_at(&p.base, &p.cx, &p.id, &bad).is_err());
+}
+
+// ---- custom runtimes ------------------------------------------------------
+
+const RT: &str = "heatmap@1";
+/// fig-chart of the real pdf, recorded as a custom widget using heatmap@1.
+const CHART_LINE: &str = "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart";
+const CUSTOM_LINE: &str = "widget|fig-chart|custom|heatmap@1|||house|figures/chart.png|primary=data/grid.csv|height=142.26378pt,scheme=div|Ablation chart";
+
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let t = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_tree(&e.path(), &t);
+        } else {
+            std::fs::copy(e.path(), &t).unwrap();
+        }
+    }
+}
+
+fn sample_dir(r: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/runtimes/samples")
+        .join(r)
+}
+
+impl Project {
+    fn rt_dir(&self) -> PathBuf {
+        self.root.join("runtimes").join(RT)
+    }
+    fn install(&self) {
+        copy_tree(&sample_dir(RT), &self.rt_dir());
+    }
+    fn rt_write(&self, rel: &str, bytes: &[u8]) {
+        let p = self.rt_dir().join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, bytes).unwrap();
+    }
+    fn rt_manifest(&self, f: impl Fn(&mut serde_json::Value)) {
+        let p = self.rt_dir().join("runtime.json");
+        let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
+        f(&mut v);
+        std::fs::write(p, v.to_string()).unwrap();
+    }
+    fn rt_check(&self) -> RuntimeChecked {
+        check_runtime_at(&self.base, &self.cx, &self.id, RT, &["fig-chart".into()]).unwrap()
+    }
+    fn rt_status(&self) -> WidgetApprovalStatus {
+        self.rt_check().status.expect("a valid package is judged")
+    }
+    fn decide(
+        &self,
+        digest: &str,
+        decision: RuntimeDecision,
+    ) -> Result<WidgetApprovalStatus, String> {
+        decide_runtime_at(
+            &self.base,
+            &self.cx,
+            &RuntimeDecisionParams {
+                root_id: self.id.clone(),
+                main_rel: "main.tex".into(),
+                runtime: RT.into(),
+                digest: digest.into(),
+                decision,
+            },
+        )
+    }
+    fn allow(&self) -> WidgetApprovalStatus {
+        let d = self.rt_check().snapshot.digest;
+        self.decide(&d, RuntimeDecision::Allowed).unwrap()
+    }
+}
+
+/// The approval fixture with fig-chart recorded as a heatmap@1 widget and
+/// the documented heatmap sample installed as the project copy.
+fn rt_project(name: &str) -> Project {
+    let p = project(name);
+    let side = REAL_SIDECAR.replace(CHART_LINE, CUSTOM_LINE);
+    assert_ne!(side, REAL_SIDECAR);
+    std::fs::write(p.out.join("main.mfw"), side).unwrap();
+    p.install();
+    p
+}
+
+fn invalid_of(p: &Project) -> String {
+    let c = p.rt_check();
+    assert!(c.status.is_none(), "an invalid package is never judged");
+    assert!(c.snapshot.manifest.is_none());
+    c.snapshot.invalid.unwrap()
+}
+
+#[test]
+fn the_runtime_digest_is_the_widget_digest_over_every_file_and_pinned() {
+    // Pinned, checked against an independent Python implementation of the
+    // same algorithm (it reproduces the html vector above too).
+    let two = files(&[
+        ("runtime.json", "{\"contract\":1}"),
+        ("index.html", "<!doctype html><p>x</p>"),
+    ]);
+    assert_eq!(
+        digest(&two, &WidgetCsp::default()),
+        "39363733529653b52fd5f7212f54880d6053e3f7f0002828825011fa110b6a59"
+    );
+    let p = rt_project("rt-digest");
+    let snap = snapshot_runtime(&p.cx, &p.id, RT).unwrap();
+    assert_eq!(snap.path, "runtimes/heatmap@1");
+    // Every file, metadata included (runtime.json, LICENSE, samples/).
+    for f in ["runtime.json", "index.html", "LICENSE", "samples/data.csv"] {
+        assert!(snap.files.contains_key(f), "{f}");
+    }
+    assert_eq!(snap.digest, digest(&snap.files, &WidgetCsp::default()));
+    let before = snap.digest.clone();
+    p.rt_write("samples/data.csv", b"9,9\n");
+    assert_ne!(snapshot_runtime(&p.cx, &p.id, RT).unwrap().digest, before);
+}
+
+fn pure_case() -> (RuntimeSnapshot, RuntimeManifest) {
+    let files = crate::runtimes::tests::sample(RT);
+    let m = crate::runtimes::check_package(RT, &files).unwrap();
+    let snap = RuntimeSnapshot {
+        dir: PathBuf::from("/p/runtimes/heatmap@1"),
+        path: "runtimes/heatmap@1".into(),
+        digest: digest(&files, &WidgetCsp::default()),
+        files,
+        manifest: Some(m.clone()),
+        invalid: None,
+        warnings: Vec::new(),
+    };
+    (snap, m)
+}
+
+fn store_with(auto: bool, rec: Option<RuntimeRecord>) -> Store {
+    let mut s = Store::empty(Path::new("/p"));
+    s.auto_approve = auto;
+    if let Some(r) = rec {
+        s.runtimes.insert(RT.into(), r);
+    }
+    s
+}
+
+fn rec(
+    decision: RuntimeDecision,
+    digest: &str,
+    license: &str,
+    vendored: Vec<VendoredId>,
+) -> RuntimeRecord {
+    RuntimeRecord {
+        decision,
+        digest: digest.into(),
+        license: license.into(),
+        vendored,
+        files: BTreeMap::new(),
+        decided_at: 1,
+    }
+}
+
+fn verdict(store: &Store) -> WidgetApprovalStatus {
+    let (snap, m) = pure_case();
+    judge_runtime(store, RT, &snap, &m, &["fig-chart".into()])
+}
+
+#[test]
+fn judge_row_no_record_needs_the_user_even_with_auto_on() {
+    for auto in [false, true] {
+        let s = verdict(&store_with(auto, None));
+        let r = required(&s);
+        assert_eq!(r.cause, WidgetApprovalCause::NeverApproved);
+        assert_eq!(r.kind, ApprovalKind::CustomRuntime);
+        assert_eq!(
+            (r.widget.as_str(), r.path.as_str()),
+            ("fig-chart", "runtimes/heatmap@1")
+        );
+        assert!(r.declared_origins.is_empty() && r.approved_digest.is_none());
+        assert_eq!(
+            r.message,
+            "Runtime 'heatmap@1' (used by fig-chart) has not been allowed in this project. Ask the user to open View > Widgets in Maleficium, review the runtime and click Allow; until then its widgets export as posters only."
+        );
+        assert!(r.agent_must_not[1].contains("no tool approves runtimes"));
+        let info = r.runtime.as_ref().unwrap();
+        assert_eq!(
+            (info.reference.as_str(), info.version.as_str()),
+            (RT, "1.0.0")
+        );
+        assert_eq!(info.widgets, ["fig-chart"]);
+        assert_eq!((info.license.as_str(), info.webgl), ("MIT", false));
+    }
+}
+
+#[test]
+fn judge_row_denied_stays_denied_at_any_digest_and_with_auto_on() {
+    let (snap, _) = pure_case();
+    for d in [snap.digest.as_str(), "0".repeat(64).as_str()] {
+        for auto in [false, true] {
+            let s = verdict(&store_with(
+                auto,
+                Some(rec(RuntimeDecision::Denied, d, "MIT", vec![])),
+            ));
+            let r = required(&s);
+            assert_eq!(r.cause, WidgetApprovalCause::Revoked);
+            assert_eq!(r.message, "The user denied runtime 'heatmap@1' in this project. Only the user can allow it, in View > Widgets.");
+            assert!(r.approved_digest.is_none());
+        }
+    }
+}
+
+#[test]
+fn judge_row_allowed_same_digest_is_approved_by_the_user() {
+    let (snap, _) = pure_case();
+    let s = verdict(&store_with(
+        false,
+        Some(rec(RuntimeDecision::Allowed, &snap.digest, "MIT", vec![])),
+    ));
+    let a = approved(&s);
+    assert_eq!(
+        (a.via, a.kind),
+        (ApprovedVia::User, ApprovalKind::CustomRuntime)
+    );
+    assert!(a.approved_digest.is_none() && a.runtime.is_some());
+}
+
+#[test]
+fn judge_row_licence_or_vendored_change_always_needs_the_user() {
+    let other = "1".repeat(64);
+    let lib = VendoredId {
+        name: "lib".into(),
+        version: "1".into(),
+        license: "MIT".into(),
+    };
+    for (license, vendored) in [("Apache-2.0", vec![]), ("MIT", vec![lib])] {
+        for auto in [false, true] {
+            let s = verdict(&store_with(
+                auto,
+                Some(rec(
+                    RuntimeDecision::Allowed,
+                    &other,
+                    license,
+                    vendored.clone(),
+                )),
+            ));
+            let r = required(&s);
+            assert_eq!(
+                r.cause,
+                WidgetApprovalCause::LicenseOrVendoredChanged,
+                "{license} {auto}"
+            );
+            assert_eq!(r.approved_digest.as_deref(), Some(other.as_str()));
+            assert!(r
+                .message
+                .contains("that always needs the user, even with auto-approval on"));
+        }
+    }
+}
+
+#[test]
+fn judge_row_other_digest_with_auto_on_is_approved_by_auto() {
+    let other = "1".repeat(64);
+    let s = verdict(&store_with(
+        true,
+        Some(rec(RuntimeDecision::Allowed, &other, "MIT", vec![])),
+    ));
+    let a = approved(&s);
+    assert_eq!(a.via, ApprovedVia::Auto);
+    assert_eq!(a.approved_digest.as_deref(), Some(other.as_str()));
+}
+
+#[test]
+fn judge_row_other_digest_with_auto_off_needs_approval_again() {
+    let other = "1".repeat(64);
+    let s = verdict(&store_with(
+        false,
+        Some(rec(RuntimeDecision::Allowed, &other, "MIT", vec![])),
+    ));
+    let r = required(&s);
+    assert_eq!(r.cause, WidgetApprovalCause::ChangedSinceApproval);
+    assert_eq!(
+        r.message,
+        "Runtime 'heatmap@1' changed since the user allowed it, so it needs approval again. Ask the user to open View > Widgets in Maleficium, review the runtime and click Allow; until then its widgets export as posters only."
+    );
+}
+
+#[test]
+fn a_format_1_store_reads_as_empty_and_fails_closed() {
+    let p = rt_project("rt-v1");
+    p.approve();
+    p.allow();
+    p.auto(true);
+    assert!(p.rt_status().is_approved() && p.check().status.is_approved());
+    let file = project_dir(&p.base, &p.root).unwrap().join(STORE_FILE);
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(v["format"], 2);
+    // A format-1 store: the same records under the old format, and the old
+    // shape (no runtimes map). Neither is read.
+    v["format"] = 1.into();
+    std::fs::write(&file, v.to_string()).unwrap();
+    let s = p.status();
+    assert_eq!(
+        s.store_error.as_deref(),
+        Some("approval store has format 1")
+    );
+    assert!(!s.auto_approve);
+    assert_eq!(
+        required(&s.runtimes[0]).cause,
+        WidgetApprovalCause::NeverApproved
+    );
+    assert!(!p.check().status.is_approved());
+    v.as_object_mut().unwrap().remove("runtimes");
+    std::fs::write(&file, v.to_string()).unwrap();
+    let s = p.status();
+    assert!(s.store_error.is_some());
+    assert!(!p.rt_status().is_approved() && !p.check().status.is_approved());
+}
+
+#[test]
+fn decide_runtime_allows_denies_and_refuses_what_it_cannot_bind() {
+    let p = rt_project("rt-decide");
+    let d = p.rt_check().snapshot.digest;
+    // A stale digest is refused, a denial too.
+    for decision in [RuntimeDecision::Allowed, RuntimeDecision::Denied] {
+        let e = p.decide(&"0".repeat(64), decision).unwrap_err();
+        assert_eq!(
+            e,
+            format!(
+                "runtime heatmap@1 changed since it was shown for review (now {}): review it again",
+                &d[..12]
+            )
+        );
+    }
+    assert!(!project_dir(&p.base, &p.root)
+        .unwrap()
+        .join(STORE_FILE)
+        .exists());
+    let s = p.decide(&d, RuntimeDecision::Allowed).unwrap();
+    assert_eq!(approved(&s).via, ApprovedVia::User);
+    // A deny is sticky across digests, auto-approval included.
+    p.auto(true);
+    p.decide(&d, RuntimeDecision::Denied).unwrap();
+    p.rt_write("index.html", b"<!doctype html><p>changed</p>");
+    assert_eq!(required(&p.rt_status()).cause, WidgetApprovalCause::Revoked);
+    // Only the user brings it back.
+    let s = p.allow();
+    assert_eq!(approved(&s).via, ApprovedVia::User);
+
+    // A runtime the document does not use.
+    let e = decide_runtime_at(
+        &p.base,
+        &p.cx,
+        &RuntimeDecisionParams {
+            root_id: p.id.clone(),
+            main_rel: "main.tex".into(),
+            runtime: "stl-viewer@1".into(),
+            digest: d.clone(),
+            decision: RuntimeDecision::Allowed,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(e, "main.tex uses no runtime stl-viewer@1");
+    // An invalid package and a missing one.
+    p.rt_manifest(|v| v["license"] = "GPL-3.0".into());
+    let d = p.rt_check().snapshot.digest;
+    let e = p.decide(&d, RuntimeDecision::Allowed).unwrap_err();
+    assert!(
+        e.starts_with("runtime heatmap@1 is not valid (license `GPL-3.0` is not on the allowlist"),
+        "{e}"
+    );
+    assert!(e.ends_with("; fix it before allowing it"), "{e}");
+    assert!(p.decide(&d, RuntimeDecision::Denied).is_err());
+    std::fs::remove_dir_all(p.rt_dir()).unwrap();
+    let e = p.decide(&d, RuntimeDecision::Allowed).unwrap_err();
+    assert_eq!(e, "runtime heatmap@1 is not valid (not installed in this project (no runtimes/heatmap@1/runtime.json)); fix it before allowing it");
+}
+
+#[test]
+fn status_lists_runtimes_and_counts_them_and_never_exempts_them() {
+    let p = rt_project("rt-status");
+    let s = p.status();
+    assert!(!s.exempt.contains(&"fig-chart".to_string()));
+    assert_eq!(s.runtimes.len(), 1);
+    // fig-demo (html) and heatmap@1 both wait.
+    assert_eq!(s.pending, 2);
+    p.allow();
+    let s = p.status();
+    assert_eq!(s.pending, 1);
+    assert!(s.runtimes[0].is_approved());
+    // Invalid and missing packages are unavailable, never judged.
+    p.rt_manifest(|v| v["name"] = "other".into());
+    let s = p.status();
+    assert!(s.runtimes.is_empty());
+    assert_eq!(s.unavailable.len(), 1);
+    assert_eq!(s.unavailable[0].path, "runtimes/heatmap@1");
+    assert_eq!(s.unavailable[0].widget, "fig-chart");
+    assert_eq!(
+        s.unavailable[0].error,
+        "runtime heatmap@1: name `other` does not match its folder"
+    );
+    std::fs::remove_dir_all(p.rt_dir()).unwrap();
+    let s = p.status();
+    assert_eq!(
+        s.unavailable[0].error,
+        "runtime heatmap@1: not installed in this project (no runtimes/heatmap@1/runtime.json)"
+    );
+    assert_eq!(s.pending, 1);
+}
+
+/// One way to damage an installed package.
+#[cfg(unix)]
+type Hurt = Box<dyn Fn(&Project)>;
+
+#[cfg(unix)]
+#[test]
+fn hostile_packages_are_invalid_and_never_judged() {
+    let p = rt_project("rt-hostile");
+    // A symlink inside the package.
+    std::os::unix::fs::symlink("/etc/passwd", p.rt_dir().join("vendor-link")).unwrap();
+    assert!(invalid_of(&p).contains("the runtime folder holds a symlink (vendor-link)"));
+    std::fs::remove_file(p.rt_dir().join("vendor-link")).unwrap();
+    // The package folder itself a link to another folder of the project.
+    let real = p.root.join("elsewhere");
+    copy_tree(&sample_dir(RT), &real);
+    std::fs::remove_dir_all(p.rt_dir()).unwrap();
+    std::os::unix::fs::symlink(&real, p.rt_dir()).unwrap();
+    assert!(invalid_of(&p).contains("runtimes/heatmap@1 is a link or not a folder"));
+    // A link out of the project.
+    std::fs::remove_file(p.rt_dir()).unwrap();
+    let outside = crate::test_scratch::dir("approval-rt-outside");
+    copy_tree(&sample_dir(RT), &outside);
+    std::os::unix::fs::symlink(&outside, p.rt_dir()).unwrap();
+    assert!(invalid_of(&p).contains("forbidden path (outside project)"));
+    std::fs::remove_file(p.rt_dir()).unwrap();
+    p.install();
+    assert!(p.rt_check().status.is_some());
+
+    let cases: Vec<(Hurt, &str)> = vec![
+        (
+            Box::new(|p| p.rt_write("runtime.json", &vec![b' '; 64 * 1024 + 1])),
+            "runtime heatmap@1: runtime.json is larger than 64 KiB",
+        ),
+        (
+            Box::new(|p| p.rt_manifest(|v| v["license"] = "SSPL-1.0".into())),
+            "runtime heatmap@1: license `SSPL-1.0` is not on the allowlist",
+        ),
+        (
+            Box::new(|p| p.rt_manifest(|v| v["name"] = "heatmop".into())),
+            "runtime heatmap@1: name `heatmop` does not match its folder",
+        ),
+        (
+            Box::new(|p| {
+                p.rt_manifest(|v| {
+                v["vendored"] = serde_json::json!([{"name": "x", "version": "1", "license": "MIT", "source": "s",
+                    "files": ["vendor/../../../main.tex"], "licenseFile": "vendor/x/LICENSE"}])
+            })
+            }),
+            "runtime heatmap@1: path `vendor/../../../main.tex` is not a plain relative path",
+        ),
+        (
+            Box::new(|p| {
+                p.rt_manifest(|v| {
+                v["vendored"] = serde_json::json!([{"name": "x", "version": "1", "license": "GPL-3.0", "source": "s",
+                    "files": ["vendor/x/x.js"], "licenseFile": "vendor/x/LICENSE"}])
+            })
+            }),
+            "runtime heatmap@1: vendored x: license `GPL-3.0` is not on the allowlist",
+        ),
+        (
+            Box::new(|p| {
+                p.rt_write(
+                    "index.html",
+                    b"<script src=\"https://cdn.example.com/x.js\"></script>",
+                )
+            }),
+            "runtime heatmap@1: index.html:1: ",
+        ),
+        (
+            Box::new(|p| p.rt_write("vendor/big.bin", &vec![0u8; (MAX_BYTES + 1) as usize])),
+            "runtime heatmap@1: the runtime folder is larger than 64 MiB",
+        ),
+    ];
+    for (hurt, want) in cases {
+        std::fs::remove_dir_all(p.rt_dir()).unwrap();
+        p.install();
+        hurt(&p);
+        let e = invalid_of(&p);
+        assert!(e.starts_with(want), "want `{want}`, got: {e}");
+        let s = p.status();
+        assert!(s.runtimes.is_empty() && s.unavailable[0].error.starts_with(want));
+    }
+}
+
+#[test]
+fn the_documented_bad_cdn_sample_is_invalid_on_its_script_line() {
+    let p = project("rt-cdn");
+    let side = REAL_SIDECAR.replace(
+        CHART_LINE,
+        &CUSTOM_LINE
+            .replace("heatmap@1", "bad-cdn@1")
+            .replace(",scheme=div", ""),
+    );
+    std::fs::write(p.out.join("main.mfw"), side).unwrap();
+    copy_tree(&sample_dir("bad-cdn@1"), &p.root.join("runtimes/bad-cdn@1"));
+    let c = check_runtime_at(&p.base, &p.cx, &p.id, "bad-cdn@1", &["fig-chart".into()]).unwrap();
+    assert!(c.status.is_none());
+    let e = c.snapshot.invalid.unwrap();
+    assert!(e.starts_with("runtime bad-cdn@1: index.html:"), "{e}");
+}
+
+#[test]
+fn review_runtime_diffs_against_the_last_decision() {
+    let p = rt_project("rt-review");
+    p.allow();
+    p.rt_write("index.html", b"<!doctype html><p>new</p>");
+    p.rt_write("extra.js", b"var x;");
+    let r = review_runtime_at(&p.base, &p.cx, &p.id, "main.tex", RT).unwrap();
+    assert_eq!(
+        required(&r.status).cause,
+        WidgetApprovalCause::ChangedSinceApproval
+    );
+    let change = |f: &str| r.files.iter().find(|x| x.path == f).unwrap().change;
+    assert_eq!(change("index.html"), FileChange::Modified);
+    assert_eq!(change("extra.js"), FileChange::Added);
+    assert_eq!(change("runtime.json"), FileChange::Unchanged);
+    let html = r.files.iter().find(|x| x.path == "index.html").unwrap();
+    assert!(html.before.as_deref().unwrap().contains("heatmap"));
+    assert_eq!(html.after.as_deref(), Some("<!doctype html><p>new</p>"));
+}
+
+#[test]
+fn runtime_events_name_the_runtime_and_the_decision() {
+    let p = rt_project("rt-events");
+    let s = p.rt_status();
+    let e = approval_required_event(&p.id, required(&s), Actor::Agent);
+    match e.event {
+        AppEvent::RuntimeApprovalRequired {
+            runtime,
+            cause,
+            widgets,
+            digest,
+            ..
+        } => {
+            assert_eq!(
+                (runtime.as_str(), cause),
+                (RT, WidgetApprovalCause::NeverApproved)
+            );
+            assert_eq!(widgets, ["fig-chart"]);
+            assert_eq!(digest, p.rt_check().snapshot.digest);
+        }
+        other => panic!("{other:?}"),
+    }
+    let params = RuntimeDecisionParams {
+        root_id: p.id.clone(),
+        main_rel: "main.tex".into(),
+        runtime: RT.into(),
+        digest: "d".into(),
+        decision: RuntimeDecision::Denied,
+    };
+    let e = runtime_decided_event(&p.id, &params);
+    assert_eq!(e.actor, Actor::User);
+    let v = serde_json::to_value(&e.event).unwrap();
+    assert_eq!(v["action"], "runtime.decided");
+    assert_eq!(v["decision"], "denied");
+    // A licence change after an allow is a digest change too.
+    p.allow();
+    p.rt_manifest(|v| v["license"] = "ISC".into());
+    let s = p.rt_status();
+    assert_eq!(
+        required(&s).cause,
+        WidgetApprovalCause::LicenseOrVendoredChanged
+    );
+    let e = digest_changed_event(&p.id, &s, Actor::User).unwrap();
+    match e.event {
+        AppEvent::WidgetDigestChanged { path, cause, .. } => {
+            assert_eq!(path, "runtimes/heatmap@1");
+            assert_eq!(cause, WidgetApprovalCause::LicenseOrVendoredChanged);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_runtime_judged_is_the_snapshot_handed_back() {
+    let p = rt_project("rt-one-read");
+    p.allow();
+    let c = p.rt_check();
+    let a = approved(c.status.as_ref().unwrap());
+    // The caller folds `snapshot.files`: they are the bytes that hash to the
+    // approved digest, read once.
+    assert_eq!(a.digest, digest(&c.snapshot.files, &WidgetCsp::default()));
+    assert_eq!(a.digest, c.snapshot.digest);
 }

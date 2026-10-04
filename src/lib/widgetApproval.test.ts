@@ -29,7 +29,7 @@ const REQ = (over: Partial<ApprovalRequired> = {}) =>
   }) as WidgetApprovalStatus;
 
 function status(w: WidgetApprovalStatus[], autoApprove = false): WidgetsStatus {
-  return { autoApprove, pending: w.length, widgets: w, unavailable: [], exempt: [] };
+  return { autoApprove, pending: w.length, widgets: w, runtimes: [], unavailable: [], exempt: [] };
 }
 
 function fakeIo(over: Partial<WidgetsIo> = {}) {

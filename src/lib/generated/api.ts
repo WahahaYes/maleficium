@@ -2,7 +2,7 @@
 // change the Rust types, then run
 //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace
 
-import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, WatchChange, WidgetApprovalCause } from './events';
+import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, RuntimeDecision, WatchChange, WidgetApprovalCause } from './events';
 import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';
 import type { Diagnostic, Finding, Outline } from './structure';
 
@@ -147,15 +147,35 @@ export type WidgetsStatusParams = { rootId: string, mainRel: string, };
 
 export type WidgetReviewParams = { rootId: string, mainRel: string, widget: string, };
 
-export type ApprovalKind = "html_widget";
+export type ApprovalKind = "html_widget" | "custom_runtime";
 
 export type ApprovedVia = "user" | "auto";
+
+export type VendoredId = { name: string, version: string, license: string, };
+
+export type RuntimeInfo = { 
+/**
+ * `<name>@<major>`.
+ */
+reference: string, version: string, title: string, description: string, authors: Array<string>, license: string, vendored: Array<VendoredId>, webgl: boolean, 
+/**
+ * The widgets of the document that use it, in document order.
+ */
+widgets: Array<string>, 
+/**
+ * The static scan's warnings (`<file>:<line>: <message>`).
+ */
+warnings: Array<string>, };
 
 export type WidgetApproved = { kind: ApprovalKind, widget: string, path: string, digest: string, via: ApprovedVia, declaredOrigins: WidgetCsp, 
 /**
  * The digest the user last approved, when it differs (auto-approved).
  */
-approvedDigest?: string, autoApprove: boolean, };
+approvedDigest?: string, autoApprove: boolean, 
+/**
+ * The package, for a custom runtime.
+ */
+runtime?: RuntimeInfo, };
 
 export type ApprovalRequired = { kind: ApprovalKind, widget: string, path: string, digest: string, cause: WidgetApprovalCause, declaredOrigins: WidgetCsp, 
 /**
@@ -177,7 +197,11 @@ whatHappens: string, userAction: string, agentMustNot: Array<string>,
 /**
  * Plain language an agent can relay to the user.
  */
-message: string, };
+message: string, 
+/**
+ * The package, for a custom runtime.
+ */
+runtime?: RuntimeInfo, };
 
 export type WidgetApprovalStatus = { "status": "approved" } & WidgetApproved | { "status": "approval_required" } & ApprovalRequired;
 
@@ -191,7 +215,17 @@ autoApprove: boolean,
 /**
  * How many widgets wait for the user.
  */
-pending: number, widgets: Array<WidgetApprovalStatus>, unavailable: Array<WidgetUnavailable>, 
+pending: number, widgets: Array<WidgetApprovalStatus>, 
+/**
+ * Every custom runtime the document uses, one entry per ref (`widget`
+ * is the first widget using it, `path` is `runtimes/<ref>`).
+ */
+runtimes: Array<WidgetApprovalStatus>, 
+/**
+ * Widget folders and runtime packages that cannot be judged (missing,
+ * invalid, unreadable): they never run.
+ */
+unavailable: Array<WidgetUnavailable>, 
 /**
  * First-party runtime widgets: they need no approval.
  */
@@ -229,6 +263,17 @@ digest: string, };
 export type WidgetRevokeParams = { rootId: string, path: string, };
 
 export type WidgetAutoApproveParams = { rootId: string, on: boolean, };
+
+export type RuntimeDecisionParams = { rootId: string, mainRel: string, 
+/**
+ * `<name>@<major>`.
+ */
+runtime: string, 
+/**
+ * The digest shown for review: the decision is refused if the package
+ * no longer hashes to it (a denial too).
+ */
+digest: string, decision: RuntimeDecision, };
 
 export type PosterRequest = { rootId: string, 
 /**
