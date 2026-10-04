@@ -26,8 +26,9 @@
 // Packages: the .sty loads graphicx, xcolor and keyval, and hyperref when the
 // document has not; this binding does the same, so `\includegraphics` and
 // `\textcolor` keep working in documents that rely on the package to load
-// them. tikz, qrcode and pgfplotstable (PDF poster and QR drawing only) are
-// not loaded: a document that draws with tikz must load it itself.
+// them. tikz, xkeyval and pgfplotstable (PDF poster drawing and error
+// wording only) are not loaded: a document that draws with tikz must load
+// it itself.
 
 RequirePackage("keyval");
 RequirePackage("graphicx");

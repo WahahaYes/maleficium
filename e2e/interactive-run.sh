@@ -127,10 +127,8 @@ def streams(pdf_path):
 blob = streams(pdf)
 marks = re.findall(rb"/NM\s*\(mfw:([^)]+)\)", blob)
 check("pdf carries five named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-demo"]), str(marks))
-uris = re.findall(rb"/URI\s*\(https://example\.org/papers/demo\)>>/Rect\[[\d.]+ ([\d.]+) ", blob)
-# Footer link rects sit under 40pt (a wrapped url makes one per line); widget links sit above.
-check("one text link per widget", len([y for y in uris if float(y) >= 40]) == 5, str(uris))
-check("the footer link sits at the page foot", any(float(y) < 40 for y in uris), str(uris))
+uris = re.findall(rb"/URI\s*\(", blob)
+check("the pdf carries no text links", not uris, str(uris))
 rects = re.findall(rb"/Rect\s*\[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]", blob)
 check("annotation rects are well-formed", len(rects) >= 5 and all(float(a) < float(c) and float(b) < float(d) for a, b, c, d in rects), str(rects[:6]))
 
@@ -139,7 +137,9 @@ w = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
 check("widgets lists the compiled fixture", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
 check("widgets returns every widget in document order",
-      [x["id"] for x in wl] == ["fig-mesh", "tab-results", "fig-chart", "fig-clip", "fig-demo"],
+      # Without the per-widget mark lines both floats fit on page 1, so the
+      # pre-caption clip float sorts before the inline widgets that follow.
+      [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-demo"],
       str([x["id"] for x in wl]))
 wby = {x["id"]: x for x in wl}
 check("widgets agree with the sidecar on type and runtime",
@@ -183,8 +183,8 @@ import shutil
 if shutil.which("mutool"):
     txt = subprocess.run(["mutool", "draw", "-F", "txt", "-o", "-", pdf],
                          capture_output=True).stdout.decode("utf-8", "replace")
-    check("footer shows the bundle url exactly once", txt.count("example.org/papers/demo") == 1, str(txt.count("example.org/papers/demo")))
-    check("every widget keeps a one-line mark", txt.count("Interactive version") == 5, str(txt.count("Interactive version")))
+    check("no bundle url in the text", "example.org/papers/demo" not in txt, txt[-300:])
+    check("no interactive mark in the text", "Interactive version" not in txt, txt[-300:])
     check("table keeps the header and two rows",
           "alpha" in txt and "beta" in txt, txt[:200])
     check("table drops rows past pdfrows",
