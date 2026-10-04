@@ -1,6 +1,6 @@
 #!/bin/bash
 # Interactive-widgets run over the stdio sidecar. Spawns `maleficium-mcp`,
-# scripts grant -> interactive_install -> compile -> poll against a scratch
+# scripts grant -> compile -> poll against a scratch
 # copy of e2e/fixtures/interactive/, then asserts the sidecar, the named
 # PDF annotations, the table row cap, porcelain discipline, and the failing
 # documents (bad ids, files, alt, unknown options, misplaced or malformed
@@ -21,6 +21,8 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 [ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+# A project holds its own package: copy the canonical file in, as a template does.
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -82,21 +84,9 @@ def compile(rel, rounds=ROUNDS):
 g = call("grant", {"root_id": "ip", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
-r = call("interactive_install", {"root_id": "ip"})
-check("install writes the package", r["ok"] and r.get("file") == "maleficium-interactive.sty", str(r))
 sty = os.path.join(ROOT, "maleficium-interactive.sty")
-check("installed bytes match the embedded source",
+check("the project holds the package, identical to the canonical source",
       open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
-check("first install reports installed", r.get("outcome") == "installed", str(r))
-again = call("interactive_install", {"root_id": "ip"})
-check("a second install is already-current", again["ok"] and again.get("outcome") == "already-current", str(again))
-open(sty, "ab").write(b"% local edit\n")
-mod = call("interactive_install", {"root_id": "ip"})
-check("a modified copy is kept: MCP cannot confirm an overwrite",
-      mod["ok"] and mod.get("outcome") == "needs-confirmation" and open(sty, "rb").read().endswith(b"% local edit\n"), str(mod))
-open(sty, "wb").write(open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
-bad = call("interactive_install", {"root_id": "nope"})
-check("install refuses unknown roots", not bad["ok"], str(bad))
 
 rec = compile("main.tex")
 check("fixture compiles", rec.get("status") == "success", str(rec)[:300])
@@ -230,8 +220,8 @@ driver_status=$?
 
 cd "$ROOT"
 new="$(git status --porcelain)"
-[ "$new" = "?? maleficium-interactive.sty" ] || fail "unexpected project writes: $new"
-pass "porcelain shows only the installed package (explicit install)"
+[ -z "$new" ] || fail "unexpected project writes: $new"
+pass "porcelain shows no project writes"
 
 echo ""
 echo "INTERACTIVE PROOFS COMPLETE: live MCP run green."

@@ -1034,17 +1034,18 @@ def state12():
 
 
 def state10():
-    """Install the interactive package from the app. A copy of the playground
-    without maleficium-interactive.sty warns on Ctrl+R; the command palette
-    installs it (one write, the shipped bytes), the next compile succeeds, a
-    second install is a no-op, and a modified copy is kept when the confirm
-    dialog is cancelled and replaced when it is confirmed."""
+    """A package the project lacks is an error that names it. A copy of the
+    playground without maleficium-interactive.sty fails on Ctrl+R with the
+    file named and the hint to add it to the project folder; the pre-compile
+    check warns about it too. Once the file is in the project folder (an
+    ordinary project file, as a template-made project has it) the next
+    compile succeeds. The app writes nothing into the project."""
     proj = FIX + "/interactive"
     shutil.copytree(ROOT + "/e2e/fixtures/playground", proj)
     sty = proj + "/maleficium-interactive.sty"
     if os.path.exists(sty):
         os.remove(sty)
-    shipped = open(ROOT + "/src-tauri/interactive/maleficium-interactive.sty", "rb").read()
+    shipped = ROOT + "/src-tauri/interactive/maleficium-interactive.sty"
     start_app(proj)
     wait_window(300)
     window_size(1600, 900)
@@ -1065,55 +1066,26 @@ def state10():
     if os.path.exists(sty):
         die("the compile wrote the package into the project")
     shot("10-interactive-missing")
-    m_install = now_ms()
-    palette("install interactive package", x=800)
-    wait_event("interactive.install", m_install, 30)
-    time.sleep(1)
-    if not os.path.exists(sty) or open(sty, "rb").read() != shipped:
-        die("the palette install did not write the shipped package")
+    shutil.copy(shipped, sty)
+    time.sleep(2)
     click_editor()
     m_ok = now_ms()
     key("ctrl+r")
     wait_event("compile.finish", m_ok, 300)
-    m_again = now_ms()
-    palette("install interactive package", x=800)
-    wait_event("interactive.install", m_again, 30)
-    # A modified copy: cancel keeps it, confirm replaces it.
-    with open(sty, "wb") as f:
-        f.write(b"% my edits\n")
-    time.sleep(2)
-    m_mod = now_ms()
-    palette("install interactive package", x=800)
-    wait_event("interactive.install", m_mod, 30)
-    time.sleep(2)
-    shot("10-interactive-confirm")
-    key("Escape")
-    time.sleep(1)
-    if open(sty, "rb").read() != b"% my edits\n":
-        die("cancelling the confirm dialog still replaced the modified package")
-    m_conf = now_ms()
-    palette("install interactive package", x=800)
-    wait_event("interactive.install", m_conf, 30)
-    time.sleep(2)
-    m_rep = now_ms()
-    key("Tab")
-    key("Tab")
-    key("Return")
-    wait_event("interactive.install", m_rep, 30)
     time.sleep(1)
     stop_app()
 
     evs = APPLOG.events()
-    inst = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "interactive.install" and e["at"] > m_install]
-    outcomes = [e["outcome"] for e in inst]
-    if outcomes[:4] != ["installed", "already-current", "needs-confirmation", "needs-confirmation"] or "installed" not in outcomes[4:]:
-        die("interactive install outcomes: %s" % outcomes)
+    miss = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "compile.missing" and e["at"] > m_miss]
+    if not miss or miss[0].get("file") != "maleficium-interactive.sty" or miss[0].get("reason") != "not-in-bundle":
+        die("the missing package was not named: %s" % miss[:1])
+    msgs = [e.get("message", "") for e in evs if e.get("at", 0) > m_miss and "maleficium-interactive.sty is not in the TeX bundle" in e.get("message", "")]
+    if not any("add it to your project folder" in m for m in msgs):
+        die("no event carried the add-it-to-your-project-folder hint: %s" % msgs[:2])
     fin = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "compile.finish" and e["at"] > m_ok]
     if not fin or fin[0].get("ok") is not True:
-        die("the compile after install failed: %s" % fin[:1])
-    if open(sty, "rb").read() != shipped:
-        die("confirming did not replace the modified package")
-    print("stills: interactive package installed from the app (%s), compiled, modified copy kept then replaced" % ",".join(outcomes))
+        die("the compile with the package in the project failed: %s" % fin[:1])
+    print("stills: a missing package is named with the project-folder hint; with the file in the project it compiles")
 
 
 def widget_events(since):

@@ -16,7 +16,6 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import CloseIcon from '@mui/icons-material/Close';
 import type { CheckKind } from '../lib/generated/structure';
-import { findingNeedsInstall } from '../lib/interactiveInstall';
 import type { PrecheckFindings } from '../hooks/useCompileRunner';
 
 const KIND_LABEL: Record<CheckKind, string> = {
@@ -30,15 +29,12 @@ export default function PrecheckPanel({
   precheck,
   popupEnabled,
   onJump,
-  onInstallInteractive,
   onClose,
 }: {
   precheck: PrecheckFindings;
   /** Whether the panel opens on its own; the checkbox shows only then. */
   popupEnabled: boolean;
   onJump: (rootPath: string, rel: string, line: number) => void;
-  /** Put maleficium-interactive.sty into the project (offered on that finding). */
-  onInstallInteractive: () => void;
   onClose: (dontShowAgain: boolean) => void;
 }) {
   const [dontShow, setDontShow] = useState(false);
@@ -116,18 +112,6 @@ export default function PrecheckPanel({
                 </Typography>
               ) : null}
             </ButtonBase>
-            {findingNeedsInstall(f) ? (
-              <Box sx={{ px: 1.5, pb: 0.75 }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  data-testid="install-interactive-fix"
-                  onClick={onInstallInteractive}
-                >
-                  Install maleficium-interactive.sty
-                </Button>
-              </Box>
-            ) : null}
           </Box>
         ))}
       </Box>
