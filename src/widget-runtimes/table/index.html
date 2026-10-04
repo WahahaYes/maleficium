@@ -95,6 +95,24 @@
       tbody tr:hover {
         background: var(--m-color-target, rgba(9, 105, 218, 0.1));
       }
+      /* --m-figure-bg is white in both modes (theme contract), so in dark
+        mode the table keeps its light surfaces and dark ink: it matches its
+        poster and stays legible. */
+      html[data-mode='dark'] body {
+        color: #1e1b24;
+      }
+      html[data-mode='dark'] th,
+      html[data-mode='dark'] .bar input {
+        background-color: #f1efe9;
+        color: #1e1b24;
+      }
+      html[data-mode='dark'] .bar .count,
+      html[data-mode='dark'] .msg {
+        color: #6b6676;
+      }
+      html[data-mode='dark'] tbody tr:hover {
+        background-color: #fff4c2;
+      }
       .msg {
         padding: var(--m-space-3, 12px);
         color: var(--m-color-muted, #59636e);

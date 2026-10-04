@@ -28,6 +28,11 @@
         padding: var(--m-space-3, 12px);
         color: var(--m-color-muted, #59636e);
       }
+      /* --m-figure-bg is white in both modes (theme contract): the loading
+        and error note keeps dark ink in dark mode too. */
+      html[data-mode='dark'] .msg {
+        color: #6b6676;
+      }
     </style>
   </head>
   <body>

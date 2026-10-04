@@ -125,6 +125,22 @@ describe('chart runtime', () => {
     expect(out).toContain('#102030');
   });
 
+  it('paints dark axis text on a light figure background', async () => {
+    // The house dark mode: light text on the white figure background.
+    const dark = await svg(fixture(), {
+      '--m-color-text': '#dfe1e6',
+      '--m-figure-bg': '#ffffff',
+    });
+    expect(dark).not.toContain('#dfe1e6');
+    expect(dark).toContain('#1e1b24');
+    // The house light mode: the dark text token reads as is.
+    const light = await svg(fixture(), {
+      '--m-color-text': '#1e1b24',
+      '--m-figure-bg': '#ffffff',
+    });
+    expect(light).toContain('#1e1b24');
+  });
+
   it('reads CSV rows with numbers typed', () => {
     expect(csvRows('a,b\n1,x\n')).toEqual([{ a: 1, b: 'x' }]);
   });
