@@ -7,6 +7,7 @@
 
 import type {
   ApprovalRequired,
+  RuntimeDecisionParams,
   WidgetApprovalStatus,
   WidgetApproveParams,
   WidgetAutoApproveParams,
@@ -16,7 +17,14 @@ import type {
 } from './generated/api';
 import type { BusEvent } from './generated/events';
 import { eventOf } from './events';
-import { type ApprovalPrompt, originLines, promptFrom, WIDGETS_PANEL_PATH } from './widgets.view';
+import {
+  type ApprovalPrompt,
+  originLines,
+  promptFrom,
+  promptFromRuntime,
+  type RuntimePrompt,
+  WIDGETS_PANEL_PATH,
+} from './widgets.view';
 
 export interface WidgetsIo {
   status(rootId: string, mainRel: string): Promise<WidgetsStatus>;
@@ -24,6 +32,8 @@ export interface WidgetsIo {
   approve(p: WidgetApproveParams): Promise<WidgetApprovalStatus>;
   revoke(p: WidgetRevokeParams): Promise<string>;
   setAutoApprove(p: WidgetAutoApproveParams): Promise<boolean>;
+  reviewRuntime(rootId: string, mainRel: string, runtime: string): Promise<WidgetReview>;
+  decideRuntime(p: RuntimeDecisionParams): Promise<WidgetApprovalStatus>;
 }
 
 export interface WidgetsState {
@@ -268,3 +278,249 @@ export function createPromptQueue(io: Pick<WidgetsIo, 'approve'>, rootId: string
 }
 
 export type PromptQueue = ReturnType<typeof createPromptQueue>;
+
+// ---- Custom runtimes ---------------------------------------------------
+
+export interface RuntimeState {
+  status: WidgetsStatus | null;
+  loading: boolean;
+  /** Last failure to show (a refused decision, an unreadable project). */
+  notice: string | null;
+  /** Runtime refs with an action in flight. */
+  busy: readonly string[];
+  /** Loaded reviews by runtime ref. */
+  reviews: Readonly<Record<string, WidgetReview>>;
+}
+
+const EMPTY_RUNTIME: RuntimeState = {
+  status: null,
+  loading: false,
+  notice: null,
+  busy: [],
+  reviews: {},
+};
+
+/** Panel state for the document's custom runtimes, one entry per ref. */
+export function createRuntimeModel(io: WidgetsIo, rootId: string, mainRel: string) {
+  let state: RuntimeState = EMPTY_RUNTIME;
+  const subs = new Set<() => void>();
+  const set = (patch: Partial<RuntimeState>) => {
+    state = { ...state, ...patch };
+    subs.forEach((f) => f());
+  };
+  const withBusy = async (ref: string, fn: () => Promise<void>) => {
+    set({ busy: [...state.busy, ref], notice: null });
+    try {
+      await fn();
+    } finally {
+      set({ busy: state.busy.filter((b) => b !== ref) });
+    }
+  };
+  const dropReview = (ref: string) => {
+    return Object.fromEntries(Object.entries(state.reviews).filter(([k]) => k !== ref));
+  };
+  const digestOf = (ref: string): string | null => {
+    const live = state.status?.runtimes.find(
+      (s) => s.kind === 'custom_runtime' && s.runtime?.reference === ref,
+    );
+    return live?.digest ?? state.status?.runtimes.find((s) => s.widget === ref)?.digest ?? null;
+  };
+
+  async function refresh(): Promise<void> {
+    set({ loading: true });
+    try {
+      const status = await io.status(rootId, mainRel);
+      // A review for a digest the package no longer has would mislead.
+      const digests = new Map(
+        status.runtimes.map((s) => [s.runtime?.reference ?? s.widget, s.digest]),
+      );
+      const reviews = Object.fromEntries(
+        Object.entries(state.reviews).filter(([ref, r]) => digests.get(ref) === r.status.digest),
+      );
+      set({ status, loading: false, notice: status.storeError ?? state.notice, reviews });
+    } catch (e) {
+      set({ loading: false, notice: `Could not read the runtimes: ${msg(e)}` });
+    }
+  }
+
+  async function loadReview(ref: string): Promise<void> {
+    await withBusy(ref, async () => {
+      try {
+        const r = await io.reviewRuntime(rootId, mainRel, ref);
+        set({ reviews: { ...state.reviews, [ref]: r } });
+      } catch (e) {
+        set({ notice: `Could not load the source of '${ref}': ${msg(e)}` });
+      }
+    });
+  }
+
+  function hideReview(ref: string): void {
+    set({ reviews: dropReview(ref) });
+  }
+
+  /** The digest the user last looked at: the loaded review, else the listing. */
+  function reviewedDigest(ref: string): string | null {
+    return state.reviews[ref]?.status.digest ?? digestOf(ref);
+  }
+
+  async function decide(ref: string, decision: 'allowed' | 'denied'): Promise<void> {
+    const digest = reviewedDigest(ref);
+    if (!digest) return;
+    await withBusy(ref, async () => {
+      try {
+        await io.decideRuntime({ rootId, mainRel, runtime: ref, digest, decision });
+        set({ reviews: dropReview(ref) });
+      } catch (e) {
+        // The package moved under the review: show the new state, not the old.
+        set({ notice: `Not ${decision}: ${msg(e)}`, reviews: dropReview(ref) });
+      }
+    });
+    await refresh();
+  }
+
+  return {
+    get: () => state,
+    subscribe(cb: () => void) {
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
+    },
+    refresh,
+    loadReview,
+    hideReview,
+    allow: (ref: string) => decide(ref, 'allowed'),
+    deny: (ref: string) => decide(ref, 'denied'),
+  };
+}
+
+export type RuntimeModel = ReturnType<typeof createRuntimeModel>;
+
+/**
+ * The queue of runtime pop-ups the user is asked about, one per runtime
+ * version. Not now writes nothing and asks again next export; allow and
+ * deny decide the shown digest and are refused if the package changed.
+ */
+export function createRuntimePromptQueue(
+  io: Pick<WidgetsIo, 'decideRuntime'>,
+  rootId: string,
+  mainRel: string,
+) {
+  let queue: readonly RuntimePrompt[] = [];
+  let failure: string | null = null;
+  const waiters = new Set<() => void>();
+  const subs = new Set<() => void>();
+  const set = (q: readonly RuntimePrompt[], f: string | null) => {
+    queue = q;
+    failure = f;
+    subs.forEach((cb) => cb());
+    if (queue.length === 0) {
+      waiters.forEach((w) => w());
+      waiters.clear();
+    }
+  };
+  const enqueue = (p: RuntimePrompt) => {
+    if (queue.some((q) => q.key === p.key)) return;
+    set([...queue, p], failure);
+  };
+  const settle = async (decision: 'allowed' | 'denied' | null) => {
+    const p = queue[0];
+    if (!p) return;
+    if (decision) {
+      try {
+        await io.decideRuntime({
+          rootId,
+          mainRel,
+          runtime: p.reference,
+          digest: p.digest,
+          decision,
+        });
+        set(queue.slice(1), null);
+      } catch (e) {
+        set(queue.slice(1), `Not ${decision}: ${msg(e)} Review it in ${WIDGETS_PANEL_PATH}.`);
+      }
+    } else {
+      set(queue.slice(1), failure);
+    }
+  };
+  return {
+    enqueue,
+    enqueueAll(ps: readonly RuntimePrompt[]) {
+      ps.forEach(enqueue);
+    },
+    current: (): RuntimePrompt | null => queue[0] ?? null,
+    failure: () => failure,
+    allow: () => settle('allowed'),
+    deny: () => settle('denied'),
+    /** Closing the dialog: no write; this export stays poster-only. */
+    notNow: () => settle(null),
+    clearFailure() {
+      set(queue, null);
+    },
+    /** Resolves once every queued pop-up is answered; the export then runs. */
+    drain(): Promise<void> {
+      if (queue.length === 0) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        waiters.add(resolve);
+      });
+    },
+    subscribe(cb: () => void) {
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
+    },
+  };
+}
+
+export type RuntimePromptQueue = ReturnType<typeof createRuntimePromptQueue>;
+
+/**
+ * The ref and digest a bus event asks about: an export (including an MCP
+ * one) found a runtime waiting for the user. Matched by action name: the
+ * event carries the same fields whatever surface the export ran on.
+ */
+export function runtimeApprovalRef(
+  e: BusEvent,
+  rootId: string,
+): { runtime: string; digest: string } | null {
+  const raw = e.event as unknown as {
+    action?: string;
+    rootId?: string;
+    runtime?: string;
+    digest?: string;
+  };
+  if (raw.action !== 'runtime.approval-required' || raw.rootId !== rootId) return null;
+  if (typeof raw.runtime !== 'string' || typeof raw.digest !== 'string') return null;
+  return { runtime: raw.runtime, digest: raw.digest };
+}
+
+/** Turn a runtime bus event into a full pop-up via the status listing. */
+export async function offerRuntimeEvent(
+  io: Pick<WidgetsIo, 'status'>,
+  enqueue: (p: RuntimePrompt) => void,
+  e: BusEvent,
+  rootId: string,
+  mainRel: string,
+): Promise<void> {
+  const ref = runtimeApprovalRef(e, rootId);
+  if (!ref) return;
+  let status: WidgetsStatus;
+  try {
+    status = await io.status(rootId, mainRel);
+  } catch {
+    return;
+  }
+  const match = status.runtimes.find(
+    (s) => (s.runtime?.reference ?? s.widget) === ref.runtime && s.digest === ref.digest,
+  );
+  if (match && match.status === 'approval_required') enqueue(promptFromRuntime(match, mainRel));
+}
+
+/** True when a bus event means the runtime panel data is stale. */
+export function runtimeEventFor(e: BusEvent, rootId: string): boolean {
+  const raw = e.event as unknown as { action?: string; rootId?: string };
+  return raw.action === 'runtime.decided' && raw.rootId === rootId;
+}
+
+export { promptFromRuntime };
