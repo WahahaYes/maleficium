@@ -74,9 +74,11 @@ pub(crate) fn policy_of(html: &str) -> &str {
 /// declares none, so the policy is the first element that exists.
 pub fn with_policy(html: &str, policy: &str) -> String {
     let meta = meta_csp(policy);
+    // Only the head counts: a page's script may carry the markup of another.
+    let head_part = html.split_once("</head>").map_or(html, |(h, _)| h);
     let has_charset = Regex::new(r#"(?i)<meta[^>]*\bcharset\s*="#)
         .unwrap()
-        .is_match(html);
+        .is_match(head_part);
     let ins = if has_charset {
         meta
     } else {

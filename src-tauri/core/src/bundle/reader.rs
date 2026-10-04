@@ -122,6 +122,11 @@ mod tests {
             let main = &h[h.find("<main>").unwrap()..h.find("</main>").unwrap()];
             assert!(main.contains(ARTICLE), "the article goes in as given");
             assert!(h.contains("<title>T &amp; &lt;title&gt;</title>"));
+            // A browser reads a page with no charset in its head as
+            // windows-1252 and the math turns to mojibake; the wrapper markup
+            // the script carries names one, which must not count.
+            let head = &h[..h.find("</head>").unwrap()];
+            assert!(head.contains("<meta charset=\"utf-8\">"), "{head}");
             assert!(main.find("id=\"pdf-link\"").unwrap() < main.find("<article").unwrap());
             assert!(h.contains("<noscript>"));
             for gone in ["<object", "id=\"pdf\"", "id=\"widgets\"", "<embed"] {
