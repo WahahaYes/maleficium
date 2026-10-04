@@ -77,6 +77,7 @@ params! {
     WidgetsStatusParams { root_id: String, main_rel: String },
     WidgetReviewParams { root_id: String, main_rel: String, widget: String },
     ExportBundleParams { root_id: String, main_rel: String, dest: String, profile: BundleProfile, size_cap_bytes: Option<u64> },
+    ExportCancelParams {},
     ForwardSyncParams { root_id: String, main_rel: String, tex_rel: String, line: u32 },
     InverseSyncParams { root_id: String, main_rel: String, page: u32, x: f32, y: f32 },
     StructureOutlineParams { text: String },
@@ -164,6 +165,7 @@ operations! {
     WidgetsStatus via widgets_status(WidgetsStatusParams) -> WidgetsStatus,
     WidgetReview via widget_review(WidgetReviewParams) -> Box<WidgetReview>,
     ExportBundle via export_bundle(ExportBundleParams) -> BundleExported,
+    ExportCancel via export_cancel(ExportCancelParams) -> String,
     ForwardSync via forward_sync(ForwardSyncParams) -> ForwardHit,
     InverseSync via inverse_sync(InverseSyncParams) -> InverseHit,
     StructureOutline via structure_outline(StructureOutlineParams) -> Outline,
@@ -290,6 +292,12 @@ fn export_bundle(cx: &Core, p: ExportBundleParams) -> Result<BundleExported, Str
         p.profile,
         p.size_cap_bytes,
     )
+}
+
+/// Stop the HTML conversion of a running bundle export: that export then
+/// fails as cancelled and writes nothing.
+fn export_cancel(cx: &Core, _p: ExportCancelParams) -> Result<String, String> {
+    crate::reflow::convert::cancel(cx)
 }
 
 fn widgets(cx: &Core, p: WidgetsParams) -> Result<WidgetList, String> {
@@ -555,6 +563,7 @@ pub fn typescript() -> String {
         crate::widgets::poster::PosterRendered::decl(&cfg),
         crate::widgets::poster::PosterOutcome::decl(&cfg),
         ExportBundleParams::decl(&cfg),
+        ExportCancelParams::decl(&cfg),
         crate::bundle::BundleWarningKind::decl(&cfg),
         crate::bundle::BundleWarning::decl(&cfg),
         BundleExported::decl(&cfg),
