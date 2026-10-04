@@ -187,9 +187,11 @@ driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "playground run failed"
 
 cd "$ROOT"
-new="$(git status --porcelain | grep -v -e '^?? main\.\(aux\|bbl\|blg\|log\|out\|pdf\|xdv\|mfw\)$' || true)"
+# .maleficium/ is the poster cache: with a display the compile renders the
+# model and chart posters into it (the standing exception to "no writes").
+new="$(git status --porcelain | grep -v -e '^?? main\.\(aux\|bbl\|blg\|log\|out\|pdf\|xdv\|mfw\)$' -e '^?? \.maleficium/$' || true)"
 [ "$new" = "?? maleficium-interactive.sty" ] || fail "unexpected project writes: $new"
-pass "porcelain shows only the installed package (explicit install)"
+pass "porcelain shows only the installed package (and the poster cache)"
 
 echo ""
 echo "PLAYGROUND PROOFS COMPLETE: live MCP run green."

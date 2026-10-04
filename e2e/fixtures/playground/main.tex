@@ -31,19 +31,19 @@ Table~\ref{tab:results} and Figure~\ref{fig:subs} show them.
 \subsection{Model}
 \begin{figure}[ht]
 \centering
-\caption{A three-dimensional model widget with a poster fallback.}
+\caption{A three-dimensional model widget; the PDF shows a render of the model.}
 \label{fig:model}
-\interactivemodel[poster=figures/mesh.png, height=5cm, id=fig-model,
-  alt={Blue poster standing in for an interactive 3D mesh}]{models/mesh.glb}
+\interactivemodel[height=5cm, id=fig-model,
+  alt={A colored cube, the interactive 3D mesh}]{models/mesh.glb}
 \end{figure}
 
 \subsection{Video}
 \begin{figure}[ht]
 \centering
-\caption{A video widget; the poster frame is what the PDF shows.}
+\caption{A video widget; the PDF shows a frame of the clip.}
 \label{fig:video}
 \interactivevideo[poster=figures/clip.png, height=5cm, id=fig-video,
-  alt={Red poster frame of a playback clip}]{media/clip.mp4}
+  alt={A frame of the test-pattern clip}]{media/clip.mp4}
 \end{figure}
 
 \subsection{Table from CSV}
@@ -62,7 +62,7 @@ three rows; the interactive view carries all five.
 \centering
 \caption{Accuracy by method, drawn from a Vega-Lite specification.}
 \label{fig:chart}
-\interactivechart[poster=figures/chart.png, height=5cm, id=fig-chart,
+\interactivechart[height=5cm, id=fig-chart,
   alt={Bar chart of accuracy rising from 0.71 for baseline to 0.89 for ours-xl}]{charts/ablation.vl.json}
 \end{figure}
 
@@ -71,8 +71,8 @@ three rows; the interactive view carries all five.
 \centering
 \caption{A self-contained HTML widget in a sandboxed frame.}
 \label{fig:html}
-\interactive[poster=figures/demo.png, height=5cm, id=fig-html,
-  alt={Purple poster standing in for a live HTML demo}]{widgets/demo/}
+\interactive[height=5cm, id=fig-html,
+  alt={The live HTML demo}]{widgets/demo/}
 \end{figure}
 
 \subsection{Widget in a float without a caption}
@@ -80,7 +80,7 @@ A float needs no caption. This one holds a widget and nothing else, so it
 carries no label and no figure number.
 \begin{figure}[ht]
 \centering
-\interactivechart[poster=figures/chart.png, height=3cm, id=chart-bare,
+\interactivechart[height=3cm, id=chart-bare,
   alt={Small uncaptioned copy of the accuracy chart}]{charts/ablation.vl.json}
 \end{figure}
 
@@ -88,7 +88,7 @@ A widget may also sit directly in the text, outside any float. It records
 no label and no figure number either.
 
 \begin{center}
-\interactivechart[poster=figures/chart.png, height=3cm, id=chart-inline,
+\interactivechart[height=3cm, id=chart-inline,
   alt={Small inline copy of the accuracy chart outside any float}]{charts/ablation.vl.json}
 \end{center}
 
@@ -153,8 +153,10 @@ and each term of Equation~\eqref{eq:entropy} is nonnegative.
   sandboxed frame (Figure~\ref{fig:html}).
 \end{description}
 Every widget requires \texttt{alt=} text, which becomes the image
-description in the HTML view, and every widget besides the table needs a
-\texttt{poster=} image that the PDF shows.
+description in the HTML view. The app renders the PDF's picture of a
+model, chart or HTML widget from the widget itself, so these carry no
+\texttt{poster=}; a video needs a \texttt{poster=} frame until video
+posters are rendered.
 
 \bibliographystyle{plain}
 \bibliography{refs}
