@@ -74,6 +74,36 @@ convert "$SCRATCH/simple/broken.tex" "$SCRATCH/out/broken.html" "$SCRATCH/out/br
 grep -q 'undefinedmacro' "$SCRATCH/out/broken.log" || fail "the undefined macro is not in the log"
 pass "an undefined macro still yields the article and is logged"
 
+# An author's own package, beside the paper, loads raw: a plain one and an
+# expl3 one render their macros; one that does not exist is a warning only.
+mkdir -p "$SCRATCH/pkgs"
+cat > "$SCRATCH/pkgs/mypkg.sty" <<'STY'
+\ProvidesPackage{mypkg}
+\newcommand\hello[1]{\textbf{Hello #1}}
+STY
+cat > "$SCRATCH/pkgs/explpkg.sty" <<'STY'
+\ProvidesPackage{explpkg}
+\RequirePackage{expl3}
+\ExplSyntaxOn
+\NewDocumentCommand\greet{m}{\textit{Greetings~#1}}
+\ExplSyntaxOff
+STY
+cat > "$SCRATCH/pkgs/main.tex" <<'TEX'
+\documentclass{article}
+\usepackage{mypkg}
+\usepackage{explpkg}
+\usepackage{notapackage}
+\begin{document}
+A: \hello{world}. B: \greet{there}.
+\end{document}
+TEX
+convert "$SCRATCH/pkgs/main.tex" "$SCRATCH/out/pkgs.html" "$SCRATCH/out/pkgs.log" >/dev/null 2>&1 \
+  || fail "a paper with local packages did not convert"
+grep -q 'Hello world' "$SCRATCH/out/pkgs.html" || fail "a plain local .sty was not loaded"
+grep -q 'Greetings' "$SCRATCH/out/pkgs.html" || fail "an expl3 local .sty was not loaded"
+[ "$(count "$SCRATCH/out/pkgs.html" 'ltx_ERROR')" = 0 ] || fail "local packages left undefined macros"
+pass "local .sty packages (plain and expl3) are loaded raw"
+
 if sandbox "$ENGINE" convert "$SCRATCH/simple/missing.tex" --out "$SCRATCH/out/x.html" --bundle "$BUNDLE" --cache "$CACHE" --dumps "$DUMPS" >/dev/null 2>&1; then
   fail "a missing input must fail"
 fi
