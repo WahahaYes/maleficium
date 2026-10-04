@@ -8,7 +8,7 @@
 //
 //     <span class="ltx_text m-widget m-widget-KIND"></span>
 //
-// with KIND one of model, video, table, chart, html. `ltx:text` takes no
+// with KIND one of model, video, table, chart, html, custom. `ltx:text` takes no
 // arbitrary attributes, so the kind rides in a class token and the element
 // itself is the mount point. The element carries no id, options or path: the
 // i-th placeholder in document order joins the i-th `widget|` record of the
@@ -17,9 +17,9 @@
 //
 // Macros of the .sty and what they become here:
 //   \interactive, \interactivemodel, \interactivevideo, \interactivetable,
-//   \interactivechart   placeholder, arguments read verbatim and dropped
-//   \maleficiumtheme, \maleficiumsetup   no output (theme and bundleurl are
-//                       PDF/sidecar concerns)
+//   \interactivechart, \interactiveruntime   placeholder, arguments read
+//                       verbatim and dropped (custom: the runtime's own widget)
+//   \maleficiumtheme   no output (the theme is a PDF/sidecar concern)
 //   \mfwSlash           no output (the PDF's brand mark)
 // The package's colors are defined so \textcolor{mfwaccent} still works.
 //
@@ -38,7 +38,6 @@ RequirePackage("hyperref", ["hidelinks"]);
 RawTeX("\\definecolor{mfwaccent}{HTML}{5B2A86}\\definecolor{mfwink}{HTML}{1E1B24}\\definecolor{mfwmuted}{HTML}{6B6676}");
 
 DefMacro("\\maleficiumtheme Semiverbatim", |x| "");
-DefMacro("\\maleficiumsetup Semiverbatim", |x| "");
 DefMacro("\\mfwSlash", || "");
 
 DefConstructor("\\interactive [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-html\"/>");
@@ -46,3 +45,4 @@ DefConstructor("\\interactivemodel [Semiverbatim] Semiverbatim", "<ltx:text clas
 DefConstructor("\\interactivevideo [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-video\"/>");
 DefConstructor("\\interactivetable [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-table\"/>");
 DefConstructor("\\interactivechart [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-chart\"/>");
+DefConstructor("\\interactiveruntime [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-custom\"/>");
