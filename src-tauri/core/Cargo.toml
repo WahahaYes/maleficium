@@ -29,6 +29,9 @@ hayro = { version = "0.7", default-features = false }
 # The core-owned file watcher (notify thread per session root). No Tauri.
 notify = "8"
 jsonschema = { version = "0.58", default-features = false }
+# The reader's sanitizer and article post-processing parse HTML with
+# html5ever through this DOM (already in the tree via tauri-utils).
+dom_query = { version = "0.27", default-features = false }
 
 [dev-dependencies]
 libc = "0.2.189"
