@@ -355,8 +355,10 @@ and of html widgets without one that you approved in View > Widgets.
   options still match; otherwise the widget shows a placeholder.
 
 It is safe to delete. The next compile in Maleficium renders the posters
-again. A widget that is new in a compile shows a placeholder until the
-compile after it.
+again. A widget that is new in a compile gets its poster in the same
+compile: the compile renders it after the engine's first pass and runs
+the engine again, so the pdf shows the poster. A poster that cannot be
+rendered stays a placeholder.
 
 You may commit it. With the folder in place the paper compiles with its
 posters anywhere the package is installed, without Maleficium; without
