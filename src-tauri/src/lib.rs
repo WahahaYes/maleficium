@@ -39,7 +39,10 @@ pub fn run() {
             commands::poster::render_poster,
             commands::widget_approval::widget_approve,
             commands::widget_approval::widget_revoke,
-            commands::widget_approval::widget_auto_approve
+            commands::widget_approval::widget_auto_approve,
+            commands::widget_approval::runtime_decide,
+            commands::widget_approval::runtime_review,
+            commands::widget_approval::runtime_install
         ])
         .build(context())
         .expect("error while building tauri application")
