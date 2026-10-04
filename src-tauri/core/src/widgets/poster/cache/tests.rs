@@ -419,6 +419,31 @@ fn before_compile_renders_what_is_missing_once_and_maps_it() {
 }
 
 #[test]
+fn before_compile_reports_how_many_posters_it_rendered() {
+    // The compile runs the engine again only when this is above zero, so
+    // the pdf shows posters that were new in the compile just finished.
+    let cx = &Core::default();
+    let (id, _root) = project(cx, "count");
+    with_fake(cx);
+    let mut say = |_: String| {};
+    assert_eq!(before_compile(cx, &id, "main.tex", &mut say), 2);
+    assert_eq!(before_compile(cx, &id, "main.tex", &mut say), 0);
+}
+
+#[test]
+fn a_failed_render_does_not_ask_for_another_compile() {
+    let cx = &Core::default();
+    let (id, root) = project(cx, "nocount");
+    let f = Arc::new(Fake {
+        elsewhere: Some(root.join("stray.png")),
+        ..Fake::default()
+    });
+    cx.set_poster_renderer(f);
+    let mut say = |_: String| {};
+    assert_eq!(before_compile(cx, &id, "main.tex", &mut say), 0);
+}
+
+#[test]
 fn nothing_is_written_without_a_compile_or_without_auto_posters() {
     let cx = &Core::default();
     let (id, root) = project(cx, "quiet");
