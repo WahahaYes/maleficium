@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>STL viewer</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
+        font-family: var(--m-font-body);
+        font-size: var(--m-size-base);
+      }
+      figure {
+        margin: 0;
+        padding: var(--m-space-3);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      #msg {
+        color: var(--m-color-error);
+        padding: var(--m-space-2);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <canvas id="view" width="640" height="400" role="img" aria-label="Wireframe model"></canvas>
+      <p id="msg" hidden></p>
+    </figure>
+    <script>
+      (function () {
+        'use strict';
+        var canvas = document.getElementById('view');
+        var note = document.getElementById('msg');
+        var ctx = canvas.getContext('2d');
+        var tris = [];
+        var angle = 0;
+        var spin = false;
+        var seenInit = false;
+
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function fail(message) {
+          note.hidden = false;
+          note.textContent = message;
+          post({ type: 'status', state: 'error', message: message });
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function parseStl(text) {
+          var out = [];
+          var current = [];
+          var lines = text.split('\n');
+          for (var i = 0; i < lines.length; i++) {
+            var parts = lines[i].trim().split(/\s+/);
+            if (parts[0] === 'vertex' && parts.length >= 4) {
+              current.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+              if (current.length === 3) {
+                out.push(current);
+                current = [];
+              }
+            }
+          }
+          return out;
+        }
+        function frame() {
+          var min = [Infinity, Infinity, Infinity];
+          var max = [-Infinity, -Infinity, -Infinity];
+          var i;
+          var k;
+          for (i = 0; i < tris.length; i++) {
+            for (var j = 0; j < 3; j++) {
+              for (k = 0; k < 3; k++) {
+                min[k] = Math.min(min[k], tris[i][j][k]);
+                max[k] = Math.max(max[k], tris[i][j][k]);
+              }
+            }
+          }
+          var size = 0;
+          for (k = 0; k < 3; k++) {
+            size = Math.max(size, max[k] - min[k]);
+          }
+          return {
+            cx: (min[0] + max[0]) / 2,
+            cy: (min[1] + max[1]) / 2,
+            cz: (min[2] + max[2]) / 2,
+            size: size || 1,
+          };
+        }
+        function draw() {
+          if (!tris.length) {
+            return;
+          }
+          var f = frame();
+          var tilt = 0.5;
+          var ca = Math.cos(angle);
+          var sa = Math.sin(angle);
+          var scale = (Math.min(canvas.width, canvas.height) * 0.42) / f.size;
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = token('--m-figure-ink', '#1E1B24');
+          ctx.lineWidth = 1;
+          for (var i = 0; i < tris.length; i++) {
+            ctx.beginPath();
+            for (var j = 0; j < 3; j++) {
+              var p = tris[i][j];
+              var x = p[0] - f.cx;
+              var y = p[1] - f.cy;
+              var z = p[2] - f.cz;
+              var rx = x * ca - z * sa;
+              var rz = x * sa + z * ca;
+              var ry = y * Math.cos(tilt) - rz * Math.sin(tilt);
+              var sx = canvas.width / 2 + rx * scale;
+              var sy = canvas.height / 2 - ry * scale;
+              if (j === 0) {
+                ctx.moveTo(sx, sy);
+              } else {
+                ctx.lineTo(sx, sy);
+              }
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        function tick() {
+          if (spin && seenInit) {
+            angle += 0.02;
+            draw();
+            window.requestAnimationFrame(tick);
+          }
+        }
+        function applyTheme(t) {
+          var root = document.documentElement;
+          var tokens = (t && t.tokens) || {};
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          draw();
+        }
+        function onInit(d) {
+          seenInit = true;
+          var opts = d.options || {};
+          spin = opts.autorotate === true;
+          applyTheme(d.theme);
+          canvas.setAttribute('aria-label', d.alt || 'Wireframe model');
+          post({ type: 'status', state: 'loading' });
+          var given = d.sources && d.sources.model;
+          if (!given) {
+            return fail('this widget has no model source');
+          }
+          var text = new TextDecoder('utf-8').decode(given.bytes);
+          tris = parseStl(text);
+          if (!tris.length) {
+            return fail('the model source holds no facets');
+          }
+          note.hidden = true;
+          draw();
+          post({ type: 'status', state: 'loaded' });
+          if (spin) {
+            window.requestAnimationFrame(tick);
+          }
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            onInit(d);
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (!seenInit) {
+              return;
+            }
+            var png = canvas.toDataURL('image/png');
+            if (png.length < 8 * 1024 * 1024) {
+              post({ type: 'snapshot', requestId: d.requestId, png: png });
+            }
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

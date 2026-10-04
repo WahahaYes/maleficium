@@ -1,0 +1,37 @@
+{
+  "contract": 1,
+  "name": "caption-overlay",
+  "version": "1.0.0",
+  "title": "Caption overlay",
+  "description": "Shows an image with a text overlay bar.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT",
+  "sources": {
+    "image": {
+      "primary": true,
+      "required": true,
+      "extensions": ["svg", "png", "jpg"],
+      "description": "The picture under the caption."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "caption": {
+        "type": "string",
+        "default": "An example overlay",
+        "maxLength": 200,
+        "description": "Text drawn over the picture."
+      },
+      "position": {
+        "type": "string",
+        "enum": ["top", "bottom"],
+        "default": "bottom",
+        "description": "Which edge the caption sits on."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

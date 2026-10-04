@@ -1,0 +1,30 @@
+{
+  "contract": 1,
+  "name": "stl-viewer",
+  "version": "1.0.0",
+  "title": "STL viewer",
+  "description": "Shows an ASCII STL model as a canvas wireframe. No libraries.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT",
+  "sources": {
+    "model": {
+      "primary": true,
+      "required": true,
+      "extensions": ["stl"],
+      "description": "ASCII STL facets."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "autorotate": {
+        "type": "boolean",
+        "default": false,
+        "description": "Slowly turn the model."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

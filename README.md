@@ -175,6 +175,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 - [Building from source](docs/BUILDING.md), including how releases are cut
 - [Contributing](docs/CONTRIBUTING.md): setup, checks, and house rules
 - [Embedding a YouTube or Vimeo video](docs/VIDEO-EMBEDS.md) in a paper bundle, and what it costs
+- [Custom widget runtimes](docs/RUNTIMES.md): writing a runtime package for `\interactiveruntime`
 - [Test harnesses](e2e/README.md)
 - [Built-in templates](src-tauri/templates/README.md): origins and license
 - [Privacy](PRIVACY.md): what the app and its MCP server store, read, and send
