@@ -407,7 +407,7 @@ EOF
 driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "export run failed"
 
-# The companion reader, in each headless browser, over the bundles just
+# The reader page, in each headless browser, over the bundles just
 # exported, then the declared-origin cells over the two-widget variant.
 for browser in chromium firefox webkit; do
   timeout 400 node "$DEVROOT/e2e/reader-run.mjs" --single "$SCRATCH/out/single.html" \

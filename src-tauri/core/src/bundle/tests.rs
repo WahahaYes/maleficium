@@ -1294,3 +1294,94 @@ fn the_engine_converts_the_fixture_end_to_end() {
         r.warnings
     );
 }
+
+/// A one-page pdf with nothing on it and no widget annotations.
+fn blank_pdf() -> Vec<u8> {
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut at = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        at.push(out.len());
+        out.extend(format!("{} 0 obj\n{o}\nendobj\n", i + 1).bytes());
+    }
+    let xref = out.len();
+    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).bytes());
+    for a in at {
+        out.extend(format!("{a:010} 00000 n \n").bytes());
+    }
+    out.extend(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objs.len() + 1
+        )
+        .bytes(),
+    );
+    out
+}
+
+/// A dry run on a real paper, by hand: compiles a project with the real
+/// engine, converts it and exports both a single-file and a folder bundle for
+/// a person (or a headless browser) to open. Runs only with
+/// `MALEFICIUM_DRYRUN="<project dir>|<main.tex relative>|<output dir>"`; the
+/// project is copied first (the interactive package installed into the
+/// copy) and nothing is written inside it.
+#[test]
+fn dry_run_exports_a_real_paper() {
+    let Ok(spec) = std::env::var("MALEFICIUM_DRYRUN") else {
+        return;
+    };
+    let parts: Vec<&str> = spec.split('|').collect();
+    assert_eq!(parts.len(), 3, "project dir|main rel|output dir");
+    let cx = Core::default();
+    let scratch = crate::test_scratch::dir("bundle-dry-run");
+    let _ = std::fs::remove_dir_all(&scratch);
+    let proj = scratch.join("proj");
+    copy_dir(Path::new(parts[0]), &proj);
+    let root = dunce::canonicalize(&proj).unwrap();
+    crate::fs::grant_root(&cx, "dry-run", &root.to_string_lossy()).unwrap();
+    crate::interactive::install_checked(&cx, "dry-run", false).unwrap();
+    // A paper that does not compile (it has no pdf, so the export has no
+    // version of record) still converts: a stand-in pdf is put where the
+    // compile would have left one.
+    let compiled = crate::compile::run_blocking(
+        &cx,
+        "dry-run",
+        parts[1],
+        false,
+        &mut |l: &maleficium_events::CompileLine| eprintln!("compile: {}", l.text),
+    );
+    let o = crate::outputs::outputs_of(&cx, "dry-run", parts[1]).unwrap();
+    if !o.outdir.join(&o.pdf_name).is_file() {
+        eprintln!("no pdf ({compiled:?}); exporting with a stand-in");
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(o.outdir.join(&o.pdf_name), blank_pdf()).unwrap();
+    }
+    cx.set_converter(std::sync::Arc::new(reflow::convert::Engine));
+    let out = PathBuf::from(parts[2]);
+    std::fs::create_dir_all(&out).unwrap();
+    for (profile, name) in [
+        (BundleProfile::SingleFile, "single.html"),
+        (BundleProfile::Folder, "folder"),
+    ] {
+        let dest = out.join(name);
+        let _ = std::fs::remove_dir_all(&dest);
+        let _ = std::fs::remove_file(&dest);
+        let r = export_bundle(
+            &cx,
+            "dry-run",
+            parts[1],
+            &dest.to_string_lossy(),
+            profile,
+            None,
+        )
+        .unwrap();
+        eprintln!("exported {name}: {} bytes, {} widgets", r.bytes, r.widgets);
+        for w in &r.warnings {
+            eprintln!("warning {:?}: {}", w.kind, w.message);
+        }
+    }
+}
