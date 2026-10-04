@@ -184,3 +184,193 @@
     else f.srcdoc = wrap(w, docs[w.id]);
   });
 })();
+
+// The article's own niceties. Everything here is optional: with scripts off
+// the article still reads, so nothing below is needed to read it.
+(function () {
+  'use strict';
+  var main = document.querySelector('main');
+  var article = document.querySelector('article') || main;
+  if (!main || !article) return;
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  // A missing figure is a visible placeholder, not a broken image.
+  Array.prototype.forEach.call(article.querySelectorAll('img.ltx_missing_image'), function (img) {
+    var name = img.getAttribute('data-graphic') || img.getAttribute('alt') || 'figure';
+    var box = el('div', 'm-missing', 'Missing figure: ' + name);
+    box.setAttribute('role', 'img');
+    box.setAttribute('aria-label', 'Missing figure ' + name);
+    if (img.parentNode) img.parentNode.replaceChild(box, img);
+  });
+  Array.prototype.forEach.call(article.querySelectorAll('.ltx_ERROR'), function (e) {
+    if (!e.title) e.title = 'This did not convert (undefined or unsupported)';
+  });
+
+  // Footnotes move to a list after the text; the mark links to its entry.
+  var notes = article.querySelectorAll('.ltx_note.ltx_role_footnote');
+  if (notes.length) {
+    var sec = el('section', 'm-notes');
+    sec.id = 'm-notes';
+    sec.appendChild(el('h2', 'ltx_title ltx_title_section', 'Notes'));
+    var list = el('ol');
+    Array.prototype.forEach.call(notes, function (note, i) {
+      var content = note.querySelector('.ltx_note_content');
+      if (!content) return;
+      var n = i + 1;
+      if (!note.id) note.id = 'm-note-ref-' + n;
+      var li = el('li');
+      li.id = 'm-note-' + n;
+      var copy = content.cloneNode(true);
+      Array.prototype.forEach.call(
+        copy.querySelectorAll('.ltx_note_mark, .ltx_tag_note, [id]'),
+        function (x) {
+          if (x.id) x.removeAttribute('id');
+          else if (x.parentNode) x.parentNode.removeChild(x);
+        },
+      );
+      while (copy.firstChild) li.appendChild(copy.firstChild);
+      var back = el('a', null, '↩');
+      back.href = '#' + note.id;
+      back.setAttribute('aria-label', 'Back to the text');
+      li.appendChild(back);
+      list.appendChild(li);
+      var mark = note.querySelector('.ltx_note_mark');
+      if (mark) {
+        var a = el('a', 'm-note-ref', mark.textContent);
+        a.href = '#m-note-' + n;
+        a.setAttribute('aria-label', 'Footnote ' + n);
+        mark.parentNode.replaceChild(a, mark);
+      }
+    });
+    sec.appendChild(list);
+    var bib = article.querySelector('.ltx_bibliography');
+    if (bib && bib.parentNode) bib.parentNode.insertBefore(sec, bib);
+    else article.appendChild(sec);
+    document.body.classList.add('m-notes-on');
+  }
+
+  // Following an in-page link flashes where it landed, so a citation, a
+  // footnote mark or a figure reference shows what it pointed at.
+  var flashed = null;
+  article.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="#"]') : null;
+    if (!a) return;
+    var id;
+    try {
+      id = decodeURIComponent(a.getAttribute('href').slice(1));
+    } catch (_) {
+      return;
+    }
+    var to = id && document.getElementById(id);
+    if (!to) return;
+    if (flashed) flashed.classList.remove('m-flash');
+    flashed = to;
+    // :target already marks the first visit; the class covers a repeat click.
+    to.classList.remove('m-flash');
+    void to.offsetWidth;
+    to.classList.add('m-flash');
+    setTimeout(function () {
+      to.classList.remove('m-flash');
+    }, 1800);
+  });
+
+  // Contents, from the headings that carry an id.
+  var heads = Array.prototype.filter.call(
+    article.querySelectorAll('h2.ltx_title, h3.ltx_title'),
+    function (h) {
+      return !h.classList.contains('ltx_title_document') && h.textContent.trim();
+    },
+  );
+  if (!heads.length && article === main) {
+    heads = Array.prototype.slice.call(main.querySelectorAll('h2'));
+  }
+  if (heads.length < 2) return;
+  var used = 0;
+  var items = heads.map(function (h) {
+    var target = h.parentNode && h.parentNode.id ? h.parentNode : h;
+    if (!target.id) target.id = 'm-h-' + ++used;
+    var tag = h.querySelector('.ltx_tag');
+    var label = h.textContent.replace(/\s+/g, ' ').trim();
+    return { h: h, id: target.id, label: label, level: h.tagName === 'H3' ? 2 : 1, tag: !!tag };
+  });
+  var toc = el('details', 'm-toc');
+  toc.setAttribute('aria-label', 'Contents');
+  toc.appendChild(el('summary', null, 'Contents'));
+  var root = el('ol');
+  var top = null;
+  var sub = null;
+  var links = {};
+  items.forEach(function (it) {
+    var li = el('li');
+    var a = el('a', null, it.label);
+    a.href = '#' + it.id;
+    li.appendChild(a);
+    links[it.id] = a;
+    if (it.level === 1 || !top) {
+      root.appendChild(li);
+      top = li;
+      sub = null;
+    } else {
+      if (!sub) {
+        sub = el('ol');
+        top.appendChild(sub);
+      }
+      sub.appendChild(li);
+    }
+  });
+  toc.appendChild(root);
+  main.insertBefore(toc, main.firstChild);
+  main.classList.add('m-has-toc');
+  var wide = window.matchMedia('(min-width: 1100px)');
+  function place() {
+    toc.open = wide.matches;
+  }
+  place();
+  wide.addEventListener('change', place);
+  toc.addEventListener('click', function (ev) {
+    if (!wide.matches && ev.target && ev.target.closest && ev.target.closest('a')) toc.open = false;
+  });
+
+  // Scroll-spy: the last heading above a line a quarter down the screen.
+  var current = null;
+  var queued = false;
+  function spy() {
+    queued = false;
+    var line = window.innerHeight * 0.25;
+    var hit = items[0];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].h.getBoundingClientRect().top <= line) hit = items[i];
+      else break;
+    }
+    if (current === hit.id) return;
+    if (current && links[current]) {
+      links[current].classList.remove('m-active');
+      links[current].removeAttribute('aria-current');
+    }
+    current = hit.id;
+    var a = links[current];
+    a.classList.add('m-active');
+    a.setAttribute('aria-current', 'location');
+    if (wide.matches && toc.scrollHeight > toc.clientHeight) {
+      var top = a.offsetTop - toc.clientHeight / 2;
+      toc.scrollTop = Math.max(0, top);
+    }
+  }
+  window.addEventListener(
+    'scroll',
+    function () {
+      if (!queued) {
+        queued = true;
+        requestAnimationFrame(spy);
+      }
+    },
+    { passive: true },
+  );
+  window.addEventListener('resize', spy);
+  spy();
+})();
