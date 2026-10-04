@@ -3,13 +3,14 @@
 # whose model and chart give no poster=) compiles over the stdio sidecar,
 # which renders auto-posters through the app's headless renderer (the
 # `maleficium` binary beside it) under a private Xvfb:
-#   1. the first compile shows placeholders and writes nothing (no widget
-#      list yet); the second renders both posters into .maleficium/posters/
-#      and embeds them (pdfimages); README and map are written;
+#   1. the first compile has no widget list before the engine runs, so it
+#      renders both posters after it, into .maleficium/posters/, and
+#      compiles again: the pdf it returns embeds them (pdfimages), never
+#      placeholders; README and map are written;
 #   2. an unchanged compile renders nothing (same files, same mtimes);
 #   3. deleting .maleficium regenerates it on the next compile;
-#   4. an edited chart shows its placeholder (no stale poster), its old
-#      poster is collected, and the compile after renders the new one;
+#   4. an edited chart never shows its stale poster: the compile renders
+#      the new one, embeds it, and collects the old;
 #   5. porcelain shows only the package and .maleficium/, search and
 #      find_files never list the cache, the watcher never queues it (core
 #      test), and a hand-edited README survives;
@@ -103,8 +104,9 @@ def compile(call, root_id, rel="auto.tex"):
             break
     return rec
 
-def posters_line(rec):
-    return next((l for l in rec.get("lines") or [] if l.startswith("posters: ") and "cached" in l), "")
+def posters_lines(rec):
+    """Every summary line of the compile: one per pass that looked at the cache."""
+    return [l for l in rec.get("lines") or [] if l.startswith("posters: ") and "cached" in l]
 
 def images(pdf):
     """(width, height) of every image the pdf embeds (soft masks aside)."""
@@ -129,29 +131,21 @@ def tree(root):
 check("grant project root", call("grant", {"root_id": "pc", "root": ROOT})["ok"])
 check("install the package", call("interactive_install", {"root_id": "pc"})["ok"])
 
-# 1. First compile: placeholders, nothing cached (no widget list yet).
+# 1. First compile: no widget list before the engine, so the posters render
+# after it and a second engine run embeds them.
 r1 = compile(call, "pc")
 check("the first compile succeeds", r1.get("status") == "success", str(r1)[:400])
 pdf = r1.get("pdf_url") or ""
-check("the first compile embeds no image (placeholders)", pdf and images(pdf) == [], str(pdf and images(pdf)))
-check("the first compile writes no cache", not os.path.exists(CACHE))
+check("the first compile renders both posters",
+      "posters: 0 cached, 2 rendered, 0 placeholder" in posters_lines(r1), str(posters_lines(r1)))
+imgs = images(pdf)
 wl = call("widgets", {"root_id": "pc", "main_rel": "auto.tex"})
 ws = {w["id"]: w for w in wl.get("widgets") or []}
-check("both widgets are listed without a poster",
+check("both widgets are listed without a poster=",
       set(ws) == {"auto-model", "auto-chart"} and all("poster" not in w for w in ws.values()), str(wl)[:300])
-model_w = ws.get("auto-model", {}).get("rect", {})
-check("the model placeholder keeps the size= aspect (4:3)",
-      model_w and abs((model_w["x1"] - model_w["x0"]) / (model_w["y1"] - model_w["y0"]) - 4 / 3) < 0.01, str(model_w))
 rect1 = {k: w["rect"] for k, w in ws.items()}
-
-# Second compile: renders both before the engine runs, then embeds them.
-r2 = compile(call, "pc")
-check("the second compile succeeds", r2.get("status") == "success", str(r2)[:400])
-check("the second compile renders two posters", posters_line(r2) == "posters: 0 cached, 2 rendered, 0 placeholder",
-      str([l for l in r2.get("lines") or [] if "poster" in l]))
-imgs = images(pdf)
 chart_frame = round((rect1["auto-chart"]["x1"] - rect1["auto-chart"]["x0"]) * 96 / 72) if rect1 else 0
-check("the second compile embeds the model poster at its size", (320, 240) in imgs, str(imgs))
+check("the first compile's pdf embeds the model poster at its size", (320, 240) in imgs, str(imgs))
 check("...and the chart poster at twice its frame",
       len(imgs) == 2 and any(abs(w - 2 * chart_frame) <= 2 for w, _ in imgs), str((imgs, chart_frame)))
 check("two posters in the cache", len(pngs()) == 2, str(pngs()))
@@ -161,16 +155,13 @@ mtext = open(mp).read() if os.path.isfile(mp) else ""
 check("the map lists both widgets by poster hash",
       all(f"\\mfw@postermap{{{w}}}" in mtext for w in ("auto-model", "auto-chart"))
       and all(p[:-4] in mtext for p in pngs()), mtext[:400])
-wl2 = call("widgets", {"root_id": "pc", "main_rel": "auto.tex"})
-rect2 = {w["id"]: w["rect"] for w in wl2.get("widgets") or []}
-check("posters replace placeholders without moving the widgets",
-      all(abs(rect1[k][c] - rect2[k][c]) < 1.0 for k in rect1 for c in ("x0", "y0", "x1", "y1")), str((rect1, rect2)))
 
 # 2. Unchanged: nothing renders.
 before = stamps()
 r3 = compile(call, "pc")
-check("an unchanged compile renders nothing", posters_line(r3) == "posters: 2 cached, 0 rendered, 0 placeholder",
-      posters_line(r3))
+check("an unchanged compile renders nothing",
+      posters_lines(r3) and all(l == "posters: 2 cached, 0 rendered, 0 placeholder" for l in posters_lines(r3)),
+      str(posters_lines(r3)))
 check("...and leaves every cache file as it was", stamps() == before, str((before, stamps())))
 check("...and still embeds both posters", len(images(pdf)) == 2, str(images(pdf)))
 
@@ -182,27 +173,25 @@ import shutil
 shutil.rmtree(CACHE)
 r4 = compile(call, "pc")
 check("after deleting .maleficium the next compile renders again",
-      posters_line(r4) == "posters: 0 cached, 2 rendered, 0 placeholder", posters_line(r4))
+      "posters: 0 cached, 2 rendered, 0 placeholder" in posters_lines(r4), str(posters_lines(r4)))
 check("...and embeds both posters", len(images(pdf)) == 2, str(images(pdf)))
 check("...and rewrites the README", os.path.isfile(os.path.join(CACHE, "README.md")))
 open(os.path.join(CACHE, "README.md"), "a").write("my note\n")
 
-# 4. An edited chart: placeholder now (no stale poster), old poster collected.
+# 4. An edited chart: never the stale poster; the new one renders in the same
+# compile, and the old one is collected.
 old = set(pngs())
 tex = os.path.join(ROOT, "auto.tex")
 src = open(tex).read()
 open(tex, "w").write(src.replace("height=4cm, id=auto-chart", "height=3cm, id=auto-chart"))
 r5 = compile(call, "pc")
 check("the edited compile succeeds", r5.get("status") == "success", str(r5)[:300])
-check("the edited chart shows its placeholder, not its stale poster",
-      images(pdf) == [(320, 240)], str(images(pdf)))
+check("the edited compile renders the new chart poster",
+      "posters: 1 cached, 1 rendered, 0 placeholder" in posters_lines(r5), str(posters_lines(r5)))
+check("...and its pdf embeds both posters", len(images(pdf)) == 2, str(images(pdf)))
 check("the stale chart poster is collected",
-      len(pngs()) == 1 and set(pngs()) < old and any("removed 1 unused" in l for l in r5.get("lines") or []),
+      len(pngs()) == 2 and len(set(pngs()) - old) == 1 and any("removed 1 unused" in l for l in r5.get("lines") or []),
       str((pngs(), [l for l in r5.get("lines") or [] if "poster" in l])))
-r6 = compile(call, "pc")
-check("the next compile renders the new chart poster",
-      posters_line(r6) == "posters: 1 cached, 1 rendered, 0 placeholder" and len(images(pdf)) == 2,
-      str((posters_line(r6), images(pdf))))
 check("the hand-edited README is kept", open(os.path.join(CACHE, "README.md")).read().endswith("my note\n"))
 
 # 5. Porcelain, search, find_files.
@@ -240,7 +229,7 @@ r7 = compile(lcall, "uz")
 check("the exported paper compiles without the app", r7.get("status") == "success", str(r7)[:300])
 upd = r7.get("pdf_url") or ""
 check("...with both posters from the exported cache", upd and len(images(upd)) == 2, str(upd and images(upd)))
-check("...rendering nothing", not any("rendered" in l for l in r7.get("lines") or []),
+check("...rendering nothing", all(l == "posters: 2 cached, 0 rendered, 0 placeholder" for l in posters_lines(r7)) and not any(l.startswith("poster ") for l in r7.get("lines") or []),
       str([l for l in r7.get("lines") or [] if "poster" in l]))
 check("...and leaving .maleficium as it was", tree(os.path.join(UNZ, ".maleficium")) == cache_before)
 shutil.rmtree(os.path.join(UNZ, ".maleficium"))
