@@ -49,8 +49,58 @@ pub enum Issue {
     /// listed at the end of the article instead of in place.
     Join(JoinError),
     /// Elements latexml marked `ltx_ERROR` (an undefined macro shows as its
-    /// raw TeX), counted.
-    Errors(usize),
+    /// raw TeX), grouped by macro name with the spots each one owns.
+    Undefined(Vec<UndefinedMacro>),
+}
+
+/// One undefined macro and how many article spots show its raw TeX.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UndefinedMacro {
+    pub name: String,
+    pub spots: usize,
+}
+
+/// The macro an `ltx_ERROR` span shows: its first `\name`, or the trimmed
+/// raw TeX when the span holds none (an environment error shows `{name}`).
+fn macro_name(text: &str) -> String {
+    let mut rest = text;
+    while let Some(at) = rest.find('\\') {
+        let tail = &rest[at + 1..];
+        let len = tail
+            .char_indices()
+            .take_while(|(_, c)| c.is_ascii_alphabetic() || *c == '@')
+            .map(|(i, c)| i + c.len_utf8())
+            .last()
+            .unwrap_or(0);
+        if len > 0 {
+            return format!("\\{}", &tail[..len]);
+        }
+        rest = tail;
+    }
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut short = flat.trim().to_string();
+    if short.is_empty() {
+        short = String::from("(unreadable TeX)");
+    }
+    const MAX: usize = 32;
+    if short.len() > MAX {
+        short.truncate(MAX);
+    }
+    short
+}
+
+/// Group span texts into per-macro counts, most spots first, ties by name.
+fn group_undefined(texts: Vec<String>) -> Vec<UndefinedMacro> {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for t in texts {
+        *counts.entry(macro_name(&t)).or_default() += 1;
+    }
+    let mut groups: Vec<UndefinedMacro> = counts
+        .into_iter()
+        .map(|(name, spots)| UndefinedMacro { name, spots })
+        .collect();
+    groups.sort_by(|a, b| b.spots.cmp(&a.spots).then(a.name.cmp(&b.name)));
+    groups
 }
 
 pub struct Input<'a> {
@@ -141,9 +191,9 @@ pub fn build(input: Input) -> Result<Article, String> {
         .filter(|m| !placed.contains(m.id))
         .collect();
 
-    let (post, errors) = post_process(&html, input.title, &unplaced);
-    if errors > 0 {
-        issues.push(Issue::Errors(errors));
+    let (post, undefined) = post_process(&html, input.title, &unplaced);
+    if !undefined.is_empty() {
+        issues.push(Issue::Undefined(undefined));
     }
     let ids: BTreeSet<String> = input.mounts.iter().map(|m| m.id.to_string()).collect();
     Ok(Article {
@@ -152,8 +202,9 @@ pub fn build(input: Input) -> Result<Article, String> {
     })
 }
 
-/// Step 5. Returns the article element's html and the `ltx_ERROR` count.
-fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, usize) {
+/// Step 5. Returns the article element's html and the `ltx_ERROR` spans
+/// grouped by macro name.
+fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, Vec<UndefinedMacro>) {
     let doc = dom_query::Document::from(html);
     let found = doc.select("article.ltx_document").first();
     let article = match found.nodes().first() {
@@ -221,7 +272,13 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, usize)
         }
     }
 
-    let errors = doc.select("article.ltx_document .ltx_ERROR").length();
+    let undefined = group_undefined(
+        doc.select("article.ltx_document .ltx_ERROR")
+            .nodes()
+            .iter()
+            .map(|n| n.text().to_string())
+            .collect(),
+    );
 
     let entries = contents(&article, 0);
     if entries.len() > 1 {
@@ -251,7 +308,7 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, usize)
         s.push_str("</section>");
         article.append_html(s);
     }
-    (article.html().to_string(), errors)
+    (article.html().to_string(), undefined)
 }
 
 struct Entry {

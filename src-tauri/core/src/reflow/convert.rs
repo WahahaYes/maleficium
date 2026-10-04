@@ -34,6 +34,10 @@ pub struct Conversion {
     pub html: Result<String, String>,
     /// The `Error:` and `Fatal:` lines of the conversion log, in order.
     pub errors: Vec<String>,
+    /// The whole conversion log: its summary names undefined macros and
+    /// missing files (`N undefined macros[\a, \b]`, `N missing files[x.sty]`)
+    /// the detail lines above may not carry.
+    pub log: String,
 }
 
 /// Turns a main file into HTML. The product path is [`Engine`]; a test
@@ -95,6 +99,7 @@ impl Converter for Engine {
         let failed = |why: String| Conversion {
             html: Err(why),
             errors: Vec::new(),
+            log: String::new(),
         };
         let engine = match crate::sidecar_path_for("maleficium-engine") {
             Ok(p) => p,
@@ -217,7 +222,7 @@ fn finish(status: JobStatus, work: &Path) -> Conversion {
             Err(why)
         }
     };
-    Conversion { html, errors }
+    Conversion { html, errors, log }
 }
 
 /// The error lines of a conversion log: latexml writes one `Error:` or
@@ -227,6 +232,80 @@ pub fn log_errors(log: &str) -> Vec<String> {
         .filter(|l| l.starts_with("Error:") || l.starts_with("Fatal:"))
         .map(|l| l.trim().to_string())
         .collect()
+}
+
+/// The undefined macros a conversion log names, grouped with the spots each
+/// one owns: one spot per `Error:undefined:\foo` detail line, merged with the
+/// summary's `N undefined macros[\foo, \bar]` names (the pinned engine's log
+/// carries the summary but no detail lines). Most spots first, ties by name;
+/// a summary-only macro has no spot count.
+pub fn undefined_from_log(log: &str) -> Vec<super::article::UndefinedMacro> {
+    use std::collections::BTreeMap;
+    let mut spots: BTreeMap<String, usize> = BTreeMap::new();
+    for line in log.lines() {
+        if let Some(rest) = line.strip_prefix("Error:undefined:") {
+            let name = rest.split_whitespace().next().unwrap_or_default();
+            if !name.is_empty() {
+                *spots.entry(name.to_string()).or_default() += 1;
+            }
+        }
+    }
+    for name in summary_list(log, "undefined macro", "undefined macros") {
+        spots.entry(name).or_default();
+    }
+    let mut groups: Vec<super::article::UndefinedMacro> = spots
+        .into_iter()
+        .map(|(name, spots)| super::article::UndefinedMacro { name, spots })
+        .collect();
+    groups.sort_by(|a, b| b.spots.cmp(&a.spots).then(a.name.cmp(&b.name)));
+    groups
+}
+
+/// The files a conversion log says the bundle lacks: the summary's
+/// `N missing files[x.sty]` names plus `Warning:missing_file:x.sty` lines,
+/// first mention order, deduplicated.
+pub fn missing_from_log(log: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for name in summary_list(log, "missing file", "missing files") {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    for line in log.lines() {
+        if let Some(rest) = line.strip_prefix("Warning:missing_file:") {
+            let name = rest.split_whitespace().next().unwrap_or_default();
+            if !name.is_empty() && !out.contains(&name.to_string()) {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The bracketed names of a `N <singular>[a, b]` / `N <plural>[a, b]`
+/// summary fragment, in order.
+fn summary_list(log: &str, singular: &str, plural: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in log.lines() {
+        for kind in [singular, plural] {
+            let mut rest = line;
+            while let Some(at) = rest.find(kind) {
+                rest = &rest[at + kind.len()..];
+                let bracket = rest.trim_start();
+                if let Some(inner) = bracket.strip_prefix('[') {
+                    if let Some(end) = inner.find(']') {
+                        for name in inner[..end].split(',') {
+                            let name = name.trim().to_string();
+                            if !name.is_empty() && !out.contains(&name) {
+                                out.push(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -296,6 +375,58 @@ mod tests {
                 "Fatal:timeout:1 bye"
             ]
         );
+    }
+
+    fn undefined_names(groups: &[super::super::article::UndefinedMacro]) -> Vec<(&str, usize)> {
+        groups.iter().map(|g| (g.name.as_str(), g.spots)).collect()
+    }
+
+    #[test]
+    fn undefined_detail_lines_group_by_macro_with_spots() {
+        let log = "Error:undefined:\\ff The token \\ff is not defined\nError:undefined:\\ff The token \\ff is not defined\nError:undefined:\\eolang The token \\eolang is not defined\n";
+        assert_eq!(
+            undefined_names(&undefined_from_log(log)),
+            [("\\ff", 2), ("\\eolang", 1)]
+        );
+    }
+
+    #[test]
+    fn the_pinned_engine_summary_names_macros_without_detail_lines() {
+        // Verbatim from converting the origin paper (e2e/fixtures/vendored/
+        // on-the-origin-of-objects): its log carries the summary only.
+        let log = "3 warnings; 1 error; 1 undefined macro[\\eolang]\nConversion complete: 3 warnings; 1 error; 1 undefined macro[\\eolang]\n";
+        assert_eq!(undefined_names(&undefined_from_log(log)), [("\\eolang", 0)]);
+        let plural = "4 errors; 4 undefined macros[\\eolang, \\ff, \\lst, \\normalem]\n";
+        assert_eq!(
+            undefined_names(&undefined_from_log(plural)),
+            [
+                ("\\eolang", 0),
+                ("\\ff", 0),
+                ("\\lst", 0),
+                ("\\normalem", 0)
+            ]
+        );
+        // Detail lines and the summary merge: lines own the spot counts.
+        let both = format!("Error:undefined:\\ff The token \\ff is not defined\n{plural}");
+        assert_eq!(
+            undefined_names(&undefined_from_log(&both)),
+            [
+                ("\\ff", 1),
+                ("\\eolang", 0),
+                ("\\lst", 0),
+                ("\\normalem", 0)
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_files_come_from_the_summary_and_missing_file_warnings() {
+        let log = "1 warning; 2 missing files[eolang.sty, to-be-determined.sty]\nWarning:missing_file:minted.sty cannot find it\n";
+        assert_eq!(
+            missing_from_log(log),
+            ["eolang.sty", "to-be-determined.sty", "minted.sty"]
+        );
+        assert!(missing_from_log("No obvious problems\n").is_empty());
     }
 
     fn work(name: &str) -> PathBuf {

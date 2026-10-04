@@ -170,27 +170,114 @@ fn private(dir: &Path) {
     let _ = dir;
 }
 
-/// Removes scratch directories a killed run left behind.
+/// Removes scratch directories a killed run left behind: ones older than
+/// `STALE_AFTER`, and ones whose process id no longer runs. A live run's
+/// directory is never touched, whatever its age.
 fn prune(root: &Path) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
     for e in entries.flatten() {
-        let old = e
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > STALE_AFTER);
-        if old {
+        if stale(&e.path()) {
             let _ = fs::remove_dir_all(e.path());
         }
+    }
+}
+
+/// Whether a scratch directory is a leftover. Its name is `<pid>-<nanos>`
+/// (see `prepare`): when the pid parses and that process is gone, the run
+/// that owned the directory is dead, so it goes regardless of age. A live
+/// pid's directory, and any unfamiliar name, stays; age over `STALE_AFTER`
+/// catches the rest (an unparseable name, a clock that jumped).
+fn stale(dir: &Path) -> bool {
+    if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+        let pid = name.split('-').next().and_then(|p| p.parse::<u32>().ok());
+        if let Some(pid) = pid {
+            if !process_alive(pid) {
+                return true;
+            }
+        }
+    }
+    dir.metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > STALE_AFTER)
+}
+
+/// Whether a process id runs now. A `/proc` entry on Linux; on other
+/// systems every id reads as alive, so only the age rule sweeps. Pid reuse
+/// can only keep a dead run's directory longer (its recycled pid reads
+/// alive): it can never delete a live run's, whose pid always reads alive.
+fn process_alive(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        fs::metadata(format!("/proc/{pid}")).is_ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        true
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sweep_root(tag: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("maleficium-sweep-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// A pid that ran and was reaped: dead for the sweep's purposes (pid
+    /// reuse between the reap and the check is the only flake, and would
+    /// need the OS to recycle the pid within microseconds).
+    #[cfg(target_os = "linux")]
+    fn dead_pid_by_spawn() -> u32 {
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn true");
+        let pid = child.id();
+        let status = child.wait().expect("reap true");
+        assert!(status.success());
+        assert!(
+            fs::metadata(format!("/proc/{pid}")).is_err(),
+            "the reaped child lingers"
+        );
+        pid
+    }
+
+    #[test]
+    fn a_live_pid_survives_on_proc() {
+        assert!(process_alive(std::process::id()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prune_removes_a_dead_run_and_keeps_a_live_one() {
+        let root = sweep_root("pid");
+        let live = root.join(format!("{}-1", std::process::id()));
+        let dead = root.join(format!("{}-1", dead_pid_by_spawn()));
+        let strange = root.join("not-a-scratch-dir");
+        for d in [&live, &dead, &strange] {
+            fs::create_dir_all(d).unwrap();
+            fs::write(d.join("x"), "x").unwrap();
+        }
+        prune(&root);
+        assert!(live.is_dir(), "a live run's directory stays");
+        assert!(strange.is_dir(), "an unfamiliar name stays");
+        assert!(!dead.exists(), "a killed run's directory goes");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prune_ignores_a_missing_root() {
+        prune(&std::env::temp_dir().join("maleficium-no-such-sweep-root"));
+    }
 
     #[test]
     fn product_name_matches_the_tauri_config() {
