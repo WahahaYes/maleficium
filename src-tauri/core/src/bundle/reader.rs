@@ -1,7 +1,9 @@
-//! The reader of an exported bundle: `index.html`, a companion page with
-//! the paper's title and metadata, a link to and embed of `paper.pdf`, and
-//! each widget in manifest order as a sandboxed frame with its poster as the
-//! pre-load and no-script fallback. One small static page: inline css and
+//! The reader of an exported bundle: `index.html`, the paper itself as a
+//! reflowed article (built by [`crate::reflow::article`]: title, authors,
+//! abstract, contents, sections, math, figures, bibliography) with each
+//! widget mounted where its figure sits, a sandboxed frame over its poster,
+//! the poster being the pre-load and no-script view. `paper.pdf` is the
+//! version of record, offered as a download. One static page: inline css and
 //! script, no CDN, no request beyond the bundle's own files.
 //!
 //! Frames are `sandbox="allow-scripts"` and nothing else, never
@@ -16,27 +18,11 @@ use base64::Engine;
 const CSS: &str = include_str!("reader.css");
 const JS: &str = include_str!("reader.js");
 
-/// One widget as the page shows it.
-pub(super) struct ReaderWidget<'a> {
-    pub id: &'a str,
-    pub kind: &'a str,
-    /// The rendered figure number or label, when the document gave one.
-    pub figure: Option<&'a str>,
-    pub label: Option<&'a str>,
-    pub alt: &'a str,
-    /// The widget's rect on its pdf page, in points.
-    pub width: f64,
-    pub height: f64,
-    /// An `<img src>`: a bundled path or a `data:` url.
-    pub poster: String,
-}
-
 pub(super) struct Reader<'a> {
     pub title: &'a str,
-    pub authors: &'a [String],
-    pub abstract_text: Option<&'a str>,
     pub folder: bool,
-    pub widgets: Vec<ReaderWidget<'a>>,
+    /// The sanitized `<article>`, mount units in place.
+    pub article: &'a str,
     /// The pdf bytes of a single-file bundle (a folder links `paper.pdf`).
     pub pdf: Option<&'a [u8]>,
     /// The `<script type="application/json">` islands the page reads.
@@ -78,13 +64,6 @@ fn token_names(css: &str) -> Vec<String> {
 
 pub(super) fn render(r: &Reader, theme_css: &str) -> String {
     let policy = policy(r.folder, r.frames);
-    let by = r
-        .authors
-        .iter()
-        .filter(|a| !a.is_empty())
-        .map(|a| fold::text(a))
-        .collect::<Vec<_>>()
-        .join(", ");
     let href = match r.pdf {
         Some(b) if !r.folder => format!(
             "data:application/pdf;base64,{}",
@@ -92,7 +71,6 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
         ),
         _ => "paper.pdf".to_string(),
     };
-    let object_data = if r.folder { " data=\"paper.pdf\"" } else { "" };
     let mut page = String::new();
     page.push_str("<!doctype html><html lang=\"en\"><head><title>");
     page.push_str(&fold::text(r.title));
@@ -101,45 +79,12 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
     );
     page.push_str(theme_css);
     page.push_str(CSS);
-    page.push_str("</style></head><body class=\"m-reader\"><main><header><h1>");
-    page.push_str(&fold::text(r.title));
-    page.push_str("</h1>");
-    if !by.is_empty() {
-        page.push_str(&format!("<p class=\"authors\">{by}</p>"));
-    }
-    if let Some(a) = r.abstract_text.filter(|a| !a.is_empty()) {
-        page.push_str(&format!("<p class=\"abstract\">{}</p>", fold::text(a)));
-    }
-    page.push_str("<noscript><p class=\"note\">Scripts are off, so the interactive figures show their posters. The paper itself is the link below.</p></noscript></header>");
+    page.push_str("</style></head><body class=\"m-reader\"><main>");
+    page.push_str("<noscript><p class=\"note\">Scripts are off, so the interactive figures show their posters.</p></noscript>");
     page.push_str(&format!(
-        "<section id=\"paper\"><h2>Paper</h2><p><a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\">paper.pdf</a> is the version of record.</p><object id=\"pdf\" type=\"application/pdf\"{object_data}><p class=\"note\">This browser cannot show the pdf here. Use the link above.</p></object></section>"
+        "<p class=\"m-version\"><a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\">paper.pdf</a> is the version of record.</p>"
     ));
-    if !r.widgets.is_empty() {
-        page.push_str("<section id=\"widgets\"><h2>Interactive figures</h2>");
-        for w in &r.widgets {
-            let ar = if w.width > 0.0 && w.height > 0.0 {
-                format!("{:.2} / {:.2}", w.width, w.height)
-            } else {
-                "4 / 3".to_string()
-            };
-            let name = w
-                .figure
-                .filter(|f| !f.is_empty())
-                .or(w.label.filter(|l| !l.is_empty()));
-            let cap = match name {
-                Some(n) => format!("<strong>{}</strong> {}", fold::text(n), fold::text(w.alt)),
-                None => fold::text(w.alt),
-            };
-            page.push_str(&format!(
-                "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption></figure>",
-                id = fold::attr(w.id),
-                kind = fold::attr(w.kind),
-                poster = fold::attr(&w.poster),
-                alt = fold::attr(w.alt),
-            ));
-        }
-        page.push_str("</section>");
-    }
+    page.push_str(r.article);
     page.push_str("</main>");
     page.push_str(r.islands);
     let tokens = serde_json::to_string(&token_names(theme_css)).unwrap_or_else(|_| "[]".into());
@@ -154,41 +99,14 @@ pub(super) fn render(r: &Reader, theme_css: &str) -> String {
 mod tests {
     use super::*;
 
+    const ARTICLE: &str = "<article class=\"ltx_document\"><h1 class=\"ltx_title ltx_title_document\">T</h1><figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"model\" style=\"--ar:2.00 / 1.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>A</figcaption></figure></article>";
+
     fn page(folder: bool) -> String {
-        let authors = vec!["Ada <Lovelace>".to_string()];
-        let widgets = vec![
-            ReaderWidget {
-                id: "fig-a",
-                kind: "model",
-                figure: Some("Figure 1"),
-                label: Some("fig:a"),
-                alt: "A mesh & more",
-                width: 200.0,
-                height: 100.0,
-                poster: if folder {
-                    "assets/aa.png".into()
-                } else {
-                    "data:image/png;base64,AAAA".into()
-                },
-            },
-            ReaderWidget {
-                id: "fig-b",
-                kind: "table",
-                figure: None,
-                label: None,
-                alt: "Rows",
-                width: 0.0,
-                height: 0.0,
-                poster: "assets/bb.png".into(),
-            },
-        ];
         render(
             &Reader {
                 title: "T & <title>",
-                authors: &authors,
-                abstract_text: Some("An abstract."),
                 folder,
-                widgets,
+                article: ARTICLE,
                 pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
                 islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
                 frames: &[],
@@ -198,19 +116,17 @@ mod tests {
     }
 
     #[test]
-    fn widgets_follow_in_order_with_caption_and_poster() {
+    fn the_page_is_the_article_with_the_pdf_offered_and_not_embedded() {
         for folder in [false, true] {
             let h = page(folder);
-            let a = h.find("data-widget=\"fig-a\"").unwrap();
-            let b = h.find("data-widget=\"fig-b\"").unwrap();
-            assert!(h.find("id=\"pdf\"").unwrap() < a && a < b);
-            assert!(h.contains("<strong>Figure 1</strong> A mesh &amp; more"));
-            assert!(h.contains("<figcaption>Rows</figcaption>"));
-            assert_eq!(h.matches("class=\"poster\"").count(), 2);
+            let main = &h[h.find("<main>").unwrap()..h.find("</main>").unwrap()];
+            assert!(main.contains(ARTICLE), "the article goes in as given");
+            assert!(h.contains("<title>T &amp; &lt;title&gt;</title>"));
+            assert!(main.find("id=\"pdf-link\"").unwrap() < main.find("<article").unwrap());
             assert!(h.contains("<noscript>"));
-            assert!(h.contains("<h1>T &amp; &lt;title&gt;</h1>"));
-            assert!(h.contains("Ada &lt;Lovelace&gt;"));
-            assert!(h.contains("--ar:4 / 3"), "no rect falls back to 4:3");
+            for gone in ["<object", "id=\"pdf\"", "id=\"widgets\"", "<embed"] {
+                assert!(!h.contains(gone), "{gone}");
+            }
         }
     }
 
@@ -264,8 +180,9 @@ mod tests {
     fn single_file_carries_the_pdf_once_and_folder_links_it() {
         let single = page(false);
         assert!(single.contains("id=\"pdf-link\" href=\"data:application/pdf;base64,"));
+        assert_eq!(single.matches("data:application/pdf").count(), 1);
         let folder = page(true);
-        assert!(folder.contains("href=\"paper.pdf\"") && folder.contains("data=\"paper.pdf\""));
+        assert!(folder.contains("id=\"pdf-link\" href=\"paper.pdf\" download=\"paper.pdf\""));
         assert!(
             folder.contains("file:"),
             "the unsupported-over-file message is in the script"

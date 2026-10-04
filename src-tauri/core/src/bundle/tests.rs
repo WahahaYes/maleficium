@@ -5,6 +5,48 @@ use std::cell::Cell;
 /// fixture's own source files copied beside them.
 const REAL_PDF: &[u8] = include_bytes!("../../testdata/interactive/main.pdf");
 const REAL_SIDECAR: &str = include_str!("../../testdata/interactive/main.mfw");
+/// A latexml-shaped conversion of the same fixture (see reflow/article).
+const CONVERTED: &str = include_str!("../reflow/fixtures/interactive-converted.frag");
+
+/// The fixture's conversion without its deliberate problems: a missing
+/// figure, an undefined macro and hostile markup.
+fn clean_conversion() -> String {
+    let start = CONVERTED.find("<figure id=\"S1.F4\"").unwrap();
+    let end = CONVERTED[start..].find("</figure>").unwrap() + start + "</figure>".len();
+    let mut html = format!("{}{}", &CONVERTED[..start], &CONVERTED[end..]);
+    html = html.replace(
+        "<span class=\"ltx_ERROR undefined\">\\undefinedmacro</span>",
+        "",
+    );
+    let hostile = html.find("<p class=\"ltx_p\" onclick").unwrap();
+    let hostile_end = html[hostile..].find("</p>").unwrap() + hostile + "</p>".len();
+    html.replace_range(hostile..hostile_end, "");
+    html
+}
+
+/// A converter that hands back fixed HTML and log errors, or fails.
+struct Fixed {
+    html: Result<String, String>,
+    errors: Vec<String>,
+}
+
+impl reflow::convert::Converter for Fixed {
+    fn convert(&self, _cx: &Core, main: &Path, work: &Path) -> reflow::convert::Conversion {
+        assert!(main.is_absolute() && main.is_file(), "{}", main.display());
+        assert!(work.is_dir(), "an empty scratch folder");
+        reflow::convert::Conversion {
+            html: self.html.clone(),
+            errors: self.errors.clone(),
+        }
+    }
+}
+
+fn converts_to(p: &Project, html: Result<String, String>, errors: &[&str]) {
+    p.cx.set_converter(std::sync::Arc::new(Fixed {
+        html,
+        errors: errors.iter().map(|e| e.to_string()).collect(),
+    }));
+}
 
 fn copy_dir(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
@@ -49,7 +91,9 @@ fn project(name: &str, sidecar: &str) -> Project {
         dir.join("out")
     })
     .unwrap();
-    Project { cx, id, root, out }
+    let p = Project { cx, id, root, out };
+    converts_to(&p, Ok(clean_conversion()), &[]);
+    p
 }
 
 fn export(p: &Project, dest: &str, profile: BundleProfile) -> Result<BundleExported, String> {
@@ -864,9 +908,10 @@ fn a_failed_preview_leaves_no_stale_folder() {
 }
 
 #[test]
-fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
+fn the_reader_mounts_every_widget_in_article_order_with_no_external_load() {
     let p = project("reader", REAL_SIDECAR);
-    let outside = regex::Regex::new(r#"(?:src|href|data|action)=\"https?://"#).unwrap();
+    // Links in the article may point at the web; nothing loads from it.
+    let outside = regex::Regex::new(r#"(?:src|data|action)=\"https?://|<link "#).unwrap();
     for (name, profile) in [
         ("one.html", BundleProfile::SingleFile),
         ("folder", BundleProfile::Folder),
@@ -879,13 +924,14 @@ fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
             PathBuf::from(&d)
         };
         let html = std::fs::read_to_string(&path).unwrap();
-        let m = island_json(&html, "mfw-manifest");
-        let ids: Vec<String> = m["widgets"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|w| w["id"].as_str().unwrap().to_string())
-            .collect();
+        // The sidecar's order is the document's.
+        let ids = [
+            "fig-mesh",
+            "fig-clip",
+            "tab-results",
+            "fig-chart",
+            "fig-demo",
+        ];
         let at: Vec<usize> = ids
             .iter()
             .map(|i| {
@@ -893,9 +939,11 @@ fn the_reader_lists_every_widget_in_manifest_order_with_no_external_url() {
                     .unwrap()
             })
             .collect();
-        assert!(at.windows(2).all(|w| w[0] < w[1]), "{name}: manifest order");
-        assert_eq!(html.matches("<figure ").count(), ids.len());
+        assert!(at.windows(2).all(|w| w[0] < w[1]), "{name}: document order");
+        assert_eq!(html.matches("data-widget=").count(), ids.len());
         assert_eq!(html.matches("class=\"poster\"").count(), ids.len());
+        let article = html.find("<article class=\"ltx_document\">").unwrap();
+        assert!(article < at[0] && at[4] < html.find("</article>").unwrap());
         assert!(!html.contains("allow-same-origin"));
         assert_eq!(
             html.matches("setAttribute('sandbox', 'allow-scripts')")
@@ -1021,4 +1069,228 @@ fn a_bundle_without_declared_frames_keeps_the_strict_single_file_reader() {
     let html = std::fs::read_to_string(&s).unwrap();
     assert!(html.contains(&format!("content=\"{}\"", fold::SINGLE_FILE_READER_POLICY)));
     assert!(!fold::policy_of(&html).contains("frame-src"));
+}
+
+// ---- the article --------------------------------------------------------
+
+fn reader_html(d: &str, profile: BundleProfile) -> String {
+    let path = if profile == BundleProfile::SingleFile {
+        PathBuf::from(d)
+    } else {
+        PathBuf::from(d).join("index.html")
+    };
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn the_reader_is_the_article_and_the_pdf_a_download() {
+    let p = project("article", REAL_SIDECAR);
+    let figure = regex::Regex::new(r#"<img src="([^"]+)" id="S1\.F3\.g1""#).unwrap();
+    for (name, profile) in [
+        ("one.html", BundleProfile::SingleFile),
+        ("folder", BundleProfile::Folder),
+    ] {
+        let d = dest(&p, name);
+        let r = export(&p, &d, profile).unwrap();
+        let html = reader_html(&d, profile);
+        for want in [
+            ">Interactive Fixture</h1>",
+            "Ada Lovelace",
+            "class=\"ltx_abstract\"",
+            "<nav class=\"m-contents\"",
+            "<a href=\"#bib.bib1\"",
+            "<math ",
+            "id=\"pdf-link\"",
+        ] {
+            assert!(html.contains(want), "{name}: {want}");
+        }
+        assert!(
+            !html.contains("<object") && !html.contains("id=\"widgets\""),
+            "{name}"
+        );
+        assert!(
+            r.warnings
+                .iter()
+                .all(|w| w.kind == BundleWarningKind::Metadata),
+            "{name}: {:?}",
+            r.warnings
+        );
+        let src = figure.captures(&html).expect("the plain figure")[1].to_string();
+        if profile == BundleProfile::SingleFile {
+            assert!(src.starts_with("data:image/png;base64,"), "{name}");
+        } else {
+            assert!(src.starts_with("figures/"), "{name}: {src}");
+            assert_eq!(
+                std::fs::read(PathBuf::from(&d).join(&src)).unwrap(),
+                std::fs::read(p.root.join("figures/mesh.png")).unwrap()
+            );
+            assert!(PathBuf::from(&d).join("paper.pdf").is_file());
+        }
+    }
+    // The conversion's scratch folder is gone, and nothing was written into
+    // the project.
+    let o = crate::outputs::outputs_of(&p.cx, &p.id, "main.tex").unwrap();
+    assert!(!std::fs::read_dir(&o.outdir)
+        .unwrap()
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().starts_with("reader-export")));
+    assert!(!files_under(&p.root)
+        .iter()
+        .any(|f| f.ends_with(".html") && !f.starts_with("widgets/")));
+}
+
+#[test]
+fn conversion_problems_are_reported_and_never_block_the_article() {
+    let p = project("problems", REAL_SIDECAR);
+    converts_to(
+        &p,
+        Ok(CONVERTED.to_string()),
+        &[
+            "Error:undefined:\\undefinedmacro The token \\undefinedmacro is not defined",
+            "Error:a:2",
+            "Error:a:3",
+            "Error:a:4",
+            "Error:a:5",
+            "Error:a:6",
+        ],
+    );
+    let d = dest(&p, "one.html");
+    let r = export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let ks = kinds(&r);
+    assert_eq!(
+        ks.iter()
+            .filter(|k| **k == BundleWarningKind::Conversion)
+            .count(),
+        2,
+        "{:?}",
+        r.warnings
+    );
+    assert!(ks.contains(&BundleWarningKind::Figure));
+    let log = r
+        .warnings
+        .iter()
+        .find(|w| w.message.contains("reported 6 errors"))
+        .unwrap();
+    assert!(
+        log.message.contains("\\undefinedmacro") && log.message.ends_with("and 1 more"),
+        "{}",
+        log.message
+    );
+    let fig = r
+        .warnings
+        .iter()
+        .find(|w| w.kind == BundleWarningKind::Figure)
+        .unwrap();
+    assert!(fig.message.contains("figures/absent.png") && fig.message.contains("not found"));
+    let html = reader_html(&d, BundleProfile::SingleFile);
+    assert!(html.contains("ltx_missing_figure") && html.contains("\\undefinedmacro"));
+    let article = &html[html.find("<article").unwrap()..html.find("</article>").unwrap()];
+    for gone in [
+        "onclick",
+        "onerror",
+        "javascript:",
+        "alert(",
+        "<script",
+        "mfw-manifest",
+    ] {
+        assert!(!article.contains(gone), "{gone} reached the page");
+    }
+    // The event says the export warned.
+    assert_eq!(
+        event(
+            "main.tex",
+            BundleProfile::SingleFile,
+            &Ok(r),
+            maleficium_events::Actor::User
+        )
+        .kind,
+        maleficium_events::EventKind::Warn
+    );
+}
+
+#[test]
+fn a_join_error_is_reported_and_the_widgets_still_mount() {
+    let p = project("join", REAL_SIDECAR);
+    let four = clean_conversion().replacen(
+        "<span class=\"ltx_text m-widget m-widget-table\"></span>",
+        "",
+        1,
+    );
+    converts_to(&p, Ok(four), &[]);
+    let d = dest(&p, "one.html");
+    let r = export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let join = r
+        .warnings
+        .iter()
+        .find(|w| w.kind == BundleWarningKind::WidgetJoin)
+        .expect("a join warning");
+    assert!(
+        join.message.contains("4 widget placeholders") && join.message.contains("records 5"),
+        "{}",
+        join.message
+    );
+    let html = reader_html(&d, BundleProfile::SingleFile);
+    let unplaced = html.find("<section class=\"m-unplaced\">").unwrap();
+    assert_eq!(html[unplaced..].matches("data-widget=").count(), 5);
+    assert_eq!(html.matches("data-widget=").count(), 5);
+}
+
+#[test]
+fn a_conversion_with_no_html_refuses_the_export_and_writes_nothing() {
+    let p = project("noconvert", REAL_SIDECAR);
+    converts_to(
+        &p,
+        Err("the converter did not start: no such file".into()),
+        &[],
+    );
+    for (name, profile) in [
+        ("one.html", BundleProfile::SingleFile),
+        ("folder", BundleProfile::Folder),
+    ] {
+        let d = dest(&p, name);
+        let e = export(&p, &d, profile).unwrap_err();
+        assert!(
+            e.contains("could not be converted to HTML") && e.contains("no such file"),
+            "{e}"
+        );
+        assert!(!PathBuf::from(&d).exists());
+    }
+    assert_eq!(std::fs::read_dir(&p.out).unwrap().count(), 0);
+}
+
+#[test]
+fn graphicspath_entries_are_read_in_order() {
+    assert_eq!(
+        graphics_paths("\\graphicspath{{figs/}{./img/} }\n% \\graphicspath{{no/}}"),
+        ["figs/", "./img/"]
+    );
+    assert!(graphics_paths("\\documentclass{article}").is_empty());
+}
+
+/// The real engine on the real fixture: runs only with MALEFICIUM_ENGINE_E2E=1
+/// and a bundled engine, since it needs the engine binary, the format dumps
+/// and a TeX cache the fixture's compile filled.
+#[test]
+fn the_engine_converts_the_fixture_end_to_end() {
+    if std::env::var_os("MALEFICIUM_ENGINE_E2E").is_none()
+        || crate::sidecar_path_for("maleficium-engine").is_err()
+    {
+        return;
+    }
+    let p = project("engine-e2e", REAL_SIDECAR);
+    p.cx.set_converter(std::sync::Arc::new(reflow::convert::Engine));
+    let d = dest(&p, "one.html");
+    let r = export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let html = reader_html(&d, BundleProfile::SingleFile);
+    assert!(
+        html.contains("<article class=\"ltx_document\">"),
+        "{:?}",
+        r.warnings
+    );
+    assert_eq!(html.matches("data-widget=").count(), 5, "{:?}", r.warnings);
+    assert!(
+        !kinds(&r).contains(&BundleWarningKind::WidgetJoin),
+        "{:?}",
+        r.warnings
+    );
 }
