@@ -38,6 +38,9 @@ pub struct Mount<'a> {
     pub height: f64,
     /// An `<img src>`: a bundled path or a `data:` url.
     pub poster: String,
+    /// Why the widget shows only its poster (a custom runtime left out of
+    /// this copy), shown as text under the caption.
+    pub note: Option<String>,
 }
 
 /// What the pipeline found wrong; never a reason to drop the article.
@@ -140,8 +143,11 @@ pub fn mount_unit(m: &Mount) -> String {
         Some(n) => format!("<strong>{}</strong> {}", fold::text(n), fold::text(m.alt)),
         None => fold::text(m.alt),
     };
+    let note = m.note.as_deref().map_or(String::new(), |n| {
+        format!("<p class=\"m-widget-note\">{}</p>", fold::text(n))
+    });
     format!(
-        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption></figure>",
+        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption>{note}</figure>",
         id = fold::attr(m.id),
         kind = fold::attr(m.kind),
         poster = fold::attr(&m.poster),

@@ -15,6 +15,12 @@
 //!
 //! Widgets are folded into one inline document each in every profile (the
 //! 2026-09-30 browser export spike): see [`fold`].
+//!
+//! A custom runtime widget exports live only when its project copy
+//! (`runtimes/<ref>/`) is valid, binds, and is approved; otherwise it
+//! exports as its poster with a note, and the export says why. The export
+//! never asks: it judges and falls back. The browser preview runs custom
+//! runtimes without the approval gate, as it does html widgets.
 
 pub(crate) mod fold;
 mod reader;
@@ -90,6 +96,9 @@ pub enum BundleWarningKind {
     /// A figure the article shows as a placeholder (missing, outside the
     /// main file's folder, EPS, too large).
     Figure,
+    /// A custom runtime's widgets export as posters only (not installed,
+    /// invalid, not approved or denied); one warning per runtime.
+    Runtime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -177,11 +186,12 @@ impl Asset {
     }
 }
 
-/// One widget as the manifest records it, and its folded document.
+/// One widget as the manifest records it, and its folded document (none
+/// for a custom widget that falls back to its poster).
 struct Planned {
     json: Value,
     id: String,
-    doc: String,
+    doc: Option<String>,
     /// The frame origins this widget declared (empty for runtime widgets).
     frames: Vec<String>,
 }
@@ -439,11 +449,162 @@ struct Plan<'a> {
     theme: &'a crate::theme::Theme,
     assets: BTreeMap<String, Asset>,
     warnings: Vec<BundleWarning>,
+    /// Whether custom runtimes are judged (export) or not (preview).
+    gate: Gate<'a>,
+    /// The widgets using each custom runtime, in document order.
+    users: BTreeMap<String, Vec<String>>,
+    /// Each custom runtime read and judged once per export.
+    runtimes: BTreeMap<String, std::rc::Rc<RuntimeUse>>,
+    /// The manifest's `runtimes` map: every runtime a live widget runs.
+    runtime_entries: Map<String, Value>,
+    /// Custom widgets that fall back to their posters, by runtime: why, and
+    /// which widgets.
+    fallbacks: BTreeMap<String, (Fallback, Vec<String>)>,
+    /// The note a fallback widget's figure carries, by widget id.
+    notes: BTreeMap<String, String>,
 }
+
+/// Whether an export judges custom runtimes against the approval store at
+/// this base, or runs them unjudged (the browser preview, as html widgets).
+#[derive(Clone, Copy)]
+enum Gate<'a> {
+    Approvals(&'a Path),
+    Preview,
+}
+
+/// Why a custom widget exports as its poster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Fallback {
+    Missing,
+    Invalid(String),
+    Unapproved,
+    Denied,
+}
+
+impl Fallback {
+    /// The manifest's `fallback` value.
+    fn name(&self) -> &'static str {
+        match self {
+            Fallback::Missing => "runtime-missing",
+            Fallback::Invalid(_) => "runtime-invalid",
+            Fallback::Unapproved => "unapproved",
+            Fallback::Denied => "denied",
+        }
+    }
+
+    /// The note under the poster.
+    fn note(&self, r: &str) -> String {
+        let why = match self {
+            Fallback::Missing => "is not installed",
+            Fallback::Invalid(_) => "did not pass validation",
+            Fallback::Unapproved | Fallback::Denied => "was not approved by the author",
+        };
+        format!("Interactive version not included in this copy: runtime {r} {why}.")
+    }
+
+    /// The export warning for the runtime and the widgets it affects.
+    fn warning(&self, r: &str, ids: &str) -> String {
+        match self {
+            Fallback::Missing => format!(
+                "runtime {r} is not installed in this project (no {}/{r}/{}): {ids} export as posters only.",
+                crate::runtimes::RUNTIMES_DIR,
+                crate::runtimes::MANIFEST
+            ),
+            Fallback::Invalid(reason) => {
+                format!("runtime {r} is invalid ({reason}): {ids} export as posters only.")
+            }
+            Fallback::Unapproved => format!(
+                "runtime {r} is not approved in this project: {ids} export as posters only. Approve it in {} and export again.",
+                crate::widget_approval::PANEL
+            ),
+            Fallback::Denied => format!(
+                "runtime {r} is denied in this project: {ids} export as posters only. Allow it in {} to export it live.",
+                crate::widget_approval::PANEL
+            ),
+        }
+    }
+}
+
+/// A custom runtime as this export found it.
+enum RuntimeUse {
+    Unusable(Fallback),
+    Valid(Box<ValidRuntime>),
+}
+
+/// A valid package: the snapshot that was hashed (and judged), its
+/// manifest, and why its widgets do not run live, if they do not.
+struct ValidRuntime {
+    snap: crate::widget_approval::RuntimeSnapshot,
+    manifest: crate::runtimes::RuntimeManifest,
+    verdict: Option<Fallback>,
+}
+
+/// A custom widget's folded document and bound options, both absent when
+/// it falls back to its poster.
+type CustomPlan = (Option<String>, Option<Map<String, Value>>);
 
 impl Plan<'_> {
     fn warn(&mut self, kind: BundleWarningKind, message: String) {
         self.warnings.push(BundleWarning { kind, message });
+    }
+
+    /// Runtime `r` read once for this export, judged unless previewing.
+    fn runtime(&mut self, r: &str) -> Result<std::rc::Rc<RuntimeUse>, String> {
+        if let Some(u) = self.runtimes.get(r) {
+            return Ok(u.clone());
+        }
+        let users = self.users.get(r).cloned().unwrap_or_default();
+        let checked = match self.gate {
+            Gate::Approvals(base) => {
+                crate::widget_approval::check_runtime_at(base, self.cx, self.root_id, r, &users)
+                    .map(|c| (c.snapshot, c.status))
+            }
+            Gate::Preview => crate::widget_approval::snapshot_runtime(self.cx, self.root_id, r)
+                .map(|s| (s, None)),
+        };
+        let used = match checked {
+            Err(_) => RuntimeUse::Unusable(Fallback::Missing),
+            Ok((snap, status)) => match snap.manifest.clone() {
+                None => {
+                    let reason = snap.invalid.clone().unwrap_or_default();
+                    let reason = reason
+                        .strip_prefix(&format!("runtime {r}: "))
+                        .map(str::to_string)
+                        .unwrap_or(reason);
+                    RuntimeUse::Unusable(Fallback::Invalid(reason))
+                }
+                Some(manifest) => {
+                    use crate::widget_approval::WidgetApprovalStatus as S;
+                    let verdict = match (self.gate, status) {
+                        (Gate::Preview, _) => None,
+                        (_, Some(S::Approved(_))) => None,
+                        (_, Some(S::ApprovalRequired(a)))
+                            if a.cause == maleficium_events::WidgetApprovalCause::Revoked =>
+                        {
+                            Some(Fallback::Denied)
+                        }
+                        (_, _) => Some(Fallback::Unapproved),
+                    };
+                    RuntimeUse::Valid(Box::new(ValidRuntime {
+                        snap,
+                        manifest,
+                        verdict,
+                    }))
+                }
+            },
+        };
+        let used = std::rc::Rc::new(used);
+        self.runtimes.insert(r.to_string(), used.clone());
+        Ok(used)
+    }
+
+    fn fall_back(&mut self, r: &str, id: &str, why: Fallback) {
+        self.notes.insert(id.to_string(), why.note(r));
+        self.fallbacks
+            .entry(r.to_string())
+            .or_insert_with(|| (why, Vec::new()))
+            .1
+            .push(id.to_string());
     }
 
     /// A project file named relative to the main file's folder: resolved
@@ -688,6 +849,126 @@ pub(crate) fn runtime_options(w: &Widget) -> Map<String, Value> {
         .collect()
 }
 
+/// The licence notice a folded runtime document ends with: the runtime and
+/// each vendored library, name, version, licence and licence text, in one
+/// HTML comment that no text can close (every `--` is split).
+fn licence_block(
+    m: &crate::runtimes::RuntimeManifest,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> String {
+    let text = |p: &str| {
+        files
+            .get(p)
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .unwrap_or_default()
+    };
+    let mut body = format!(
+        "\n{} {} ({})\n{}",
+        m.name,
+        m.version,
+        m.license,
+        text("LICENSE")
+    );
+    for v in &m.vendored {
+        body.push_str(&format!(
+            "\n{} {} ({})\n{}",
+            v.name,
+            v.version,
+            v.license,
+            text(&v.license_file)
+        ));
+    }
+    let mut safe = String::with_capacity(body.len());
+    for c in body.chars() {
+        if c == '-' && safe.ends_with('-') {
+            safe.push(' ');
+        }
+        safe.push(c);
+    }
+    format!("<!-- Licences:{safe} -->")
+}
+
+/// A custom widget: its runtime read and judged once per export, bound
+/// (an error refuses the export), then folded live with its sources, or
+/// left to its poster with a note. Returns the document and the bound
+/// options when live.
+fn plan_custom(
+    p: &mut Plan,
+    w: &Widget,
+    sources: &mut Map<String, Value>,
+) -> Result<CustomPlan, String> {
+    let id = w.id.clone();
+    let r = w.runtime.clone().unwrap_or_default();
+    let used = p.runtime(&r)?;
+    let (snap, m, verdict) = match &*used {
+        RuntimeUse::Unusable(why) => {
+            p.fall_back(&r, &id, why.clone());
+            return Ok((None, None));
+        }
+        RuntimeUse::Valid(v) => (&v.snap, &v.manifest, &v.verdict),
+    };
+    let bound = crate::runtimes::bind(w, m)?;
+    if let Some(why) = verdict {
+        p.fall_back(&r, &id, why.clone());
+        return Ok((None, None));
+    }
+    for (role, s) in &bound.sources {
+        let key = format!("{id}-{role}");
+        p.add_local(key.clone(), &id, &s.path, false)?;
+        let bytes = p.assets.get(&key).map_or(0, |a| a.bytes);
+        crate::runtimes::check_size(w, m, role, bytes)?;
+        sources.insert(role.clone(), key.into());
+    }
+    // The judged snapshot's files, never a second read of the folder.
+    let fold_input: BTreeMap<String, Vec<u8>> = snap
+        .files
+        .iter()
+        .filter(|(path, _)| !m.is_metadata(path))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let folded = fold::fold_bundle(&fold_input, &fold::widget_policy(None))
+        .map_err(|e| format!("widget {id}: runtime {r}: {e}"))?;
+    if !folded.unfolded.is_empty() {
+        let shown: Vec<_> = folded.unfolded.iter().take(8).cloned().collect();
+        let more = folded.unfolded.len() - shown.len();
+        p.warn(
+            BundleWarningKind::UnfoldedFiles,
+            format!(
+                "widget {id}: runtime {r} files not inlined, so a page that fetches them at run time will not find them: {}{}",
+                shown.join(", "),
+                if more > 0 { format!(" and {more} more") } else { String::new() }
+            ),
+        );
+    }
+    for e in &folded.external {
+        p.warn(
+            BundleWarningKind::ExternalReference,
+            format!("widget {id}: runtime {r} references {e}, which its policy blocks"),
+        );
+    }
+    for n in &folded.notes {
+        p.warn(
+            BundleWarningKind::FoldLimit,
+            format!("widget {id}: runtime {r}: {n}"),
+        );
+    }
+    let doc = folded.html + &licence_block(m, &snap.files);
+    p.runtime_entries.insert(
+        r.clone(),
+        json!({
+            "name": m.name,
+            "version": m.version,
+            "digest": snap.digest,
+            "license": m.license,
+            "capabilities": { "webgl": m.capabilities.webgl },
+            "vendored": m.vendored.iter().map(|v| json!({
+                "name": v.name, "version": v.version, "license": v.license
+            })).collect::<Vec<_>>(),
+        }),
+    );
+    Ok((Some(doc), Some(bound.options)))
+}
+
 fn plan_widget(
     p: &mut Plan,
     w: &Widget,
@@ -750,8 +1031,10 @@ fn plan_widget(
     // A widget's declared origins come from the snapshot whose files are
     // folded, never from an earlier read: the policy and the code match.
     let mut csp: Option<crate::widgets::WidgetCsp> = None;
+    // A live custom widget's bound options.
+    let mut custom_options: Option<Map<String, Value>> = None;
 
-    let doc: String = if w.kind == WidgetType::Html {
+    let doc: Option<String> = if w.kind == WidgetType::Html {
         let target = crate::widget_approval::WidgetTarget::of(p.main_rel, w)?
             .ok_or_else(|| format!("widget {id}: an html widget has no bundle folder"))?;
         let snap = crate::widget_approval::snapshot(p.cx, p.root_id, &target)?;
@@ -780,7 +1063,11 @@ fn plan_widget(
         for n in &folded.notes {
             p.warn(BundleWarningKind::FoldLimit, format!("widget {id}: {n}"));
         }
-        folded.html
+        Some(folded.html)
+    } else if w.kind == WidgetType::Custom {
+        let (doc, options) = plan_custom(p, w, &mut sources)?;
+        custom_options = options;
+        doc
     } else {
         let mut video_local: Option<&str> = None;
         for (role_key, s) in role_keys(w)? {
@@ -819,10 +1106,10 @@ fn plan_widget(
         let runtime = w.runtime.as_deref().unwrap_or("");
         let host = runtime_host(runtime)
             .ok_or_else(|| format!("widget {id}: no {runtime} runtime in this build"))?;
-        fold::with_policy(host, &fold::widget_policy(None))
+        Some(fold::with_policy(host, &fold::widget_policy(None)))
     };
-    let entry =
-        (p.profile != BundleProfile::SingleFile).then(|| format!("widgets/{id}/index.html"));
+    let entry = (p.profile != BundleProfile::SingleFile && doc.is_some())
+        .then(|| format!("widgets/{id}/index.html"));
 
     let mut j = Map::new();
     j.insert("id".into(), id.clone().into());
@@ -852,9 +1139,22 @@ fn plan_widget(
     if w.kind != WidgetType::Html {
         j.insert("sources".into(), Value::Object(sources));
     }
-    let opts = runtime_options(w);
-    if !opts.is_empty() {
-        j.insert("options".into(), Value::Object(opts));
+    if w.kind == WidgetType::Custom {
+        match custom_options {
+            Some(o) => {
+                j.insert("options".into(), Value::Object(o));
+            }
+            None => {
+                let r = w.runtime.as_deref().unwrap_or("");
+                let why = p.fallbacks.get(r).map_or("", |(f, _)| f.name());
+                j.insert("fallback".into(), why.into());
+            }
+        }
+    } else {
+        let opts = runtime_options(w);
+        if !opts.is_empty() {
+            j.insert("options".into(), Value::Object(opts));
+        }
     }
     if let Some(c) = &csp {
         j.insert(
@@ -956,6 +1256,48 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
             return Err(format!("widget {id} has an entry in a single-file bundle"));
         }
     }
+    // Custom runtimes: every live widget's runtime is listed and every
+    // listed runtime is run by a live widget; a listed runtime's name and
+    // major match its ref; a fallback widget carries nothing to run; no
+    // custom widget declares origins.
+    let runtimes = m["runtimes"].as_object().cloned().unwrap_or_default();
+    let mut used = BTreeSet::new();
+    for w in widgets.iter().filter(|w| w["type"] == "custom") {
+        let id = w["id"].as_str().unwrap_or("");
+        let r = w["runtime"].as_str().unwrap_or("");
+        if w.get("csp").is_some() {
+            return Err(format!("custom widget {id} declares a csp"));
+        }
+        if w.get("fallback").is_some() {
+            let empty = w["sources"].as_object().is_some_and(|s| s.is_empty());
+            if !empty || w.get("entry").is_some() || w.get("options").is_some() {
+                return Err(format!(
+                    "widget {id} falls back to its poster but carries sources, an entry or options"
+                ));
+            }
+        } else if !runtimes.contains_key(r) {
+            return Err(format!(
+                "widget {id} runs runtime {r}, which the manifest does not list"
+            ));
+        } else {
+            used.insert(r.to_string());
+        }
+    }
+    for (r, e) in &runtimes {
+        if !used.contains(r) {
+            return Err(format!("runtime {r} is listed but no live widget runs it"));
+        }
+        let major = e["version"]
+            .as_str()
+            .and_then(|v| v.split('.').next())
+            .unwrap_or("");
+        let named = format!("{}@{major}", e["name"].as_str().unwrap_or(""));
+        if !crate::runtimes::valid_ref(r) || named != *r {
+            return Err(format!(
+                "runtime {r} is listed as {named}, or names a reserved runtime"
+            ));
+        }
+    }
     if profile == "single-file" {
         if assets.values().any(|a| a["mode"] == "bundled") {
             return Err("a single-file bundle has a bundled asset".to_string());
@@ -985,6 +1327,7 @@ fn island(id: &str, v: &Value) -> String {
 fn mounts<'a>(
     list: &'a [Widget],
     assets: &BTreeMap<String, Asset>,
+    notes: &BTreeMap<String, String>,
 ) -> Result<Vec<reflow::article::Mount<'a>>, String> {
     list.iter()
         .map(|w| {
@@ -1014,6 +1357,7 @@ fn mounts<'a>(
                 width: w.rect.x1 - w.rect.x0,
                 height: w.rect.y1 - w.rect.y0,
                 poster,
+                note: notes.get(&w.id).cloned(),
             })
         })
         .collect()
@@ -1364,13 +1708,16 @@ pub(crate) fn preview_bundle_in(
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("cannot create the preview folder {}: {e}", dir.display()))?;
     let dest = dir.join("index.html");
-    let r = export_bundle(
+    // The preview runs custom runtimes unjudged, as it runs html widgets:
+    // the approval gate applies to exports only.
+    let r = export_inner(
         cx,
         root_id,
         main_rel,
         &dest.to_string_lossy(),
         BundleProfile::SingleFile,
-        None,
+        &BundleOptions::default(),
+        Gate::Preview,
     );
     if r.is_err() {
         let _ = std::fs::remove_dir_all(&dir);
@@ -1391,7 +1738,7 @@ fn preview_dir(base: &Path, root: &Path) -> PathBuf {
 }
 
 /// Exports a paper bundle of `main_rel`'s last compile to `dest`, outside the
-/// project.
+/// project. Custom runtimes are judged against the app's approvals.
 pub fn export_bundle_with(
     cx: &Core,
     root_id: &str,
@@ -1399,6 +1746,49 @@ pub fn export_bundle_with(
     dest: &str,
     profile: BundleProfile,
     opts: &BundleOptions,
+) -> Result<BundleExported, String> {
+    let base = crate::widget_approval::store_base();
+    export_inner(
+        cx,
+        root_id,
+        main_rel,
+        dest,
+        profile,
+        opts,
+        Gate::Approvals(&base),
+    )
+}
+
+/// [`export_bundle`] judging custom runtimes against the approval store at
+/// `base` (tests stand in for app data).
+#[cfg(test)]
+pub(crate) fn export_bundle_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    dest: &str,
+    profile: BundleProfile,
+) -> Result<BundleExported, String> {
+    export_inner(
+        cx,
+        root_id,
+        main_rel,
+        dest,
+        profile,
+        &BundleOptions::default(),
+        Gate::Approvals(base),
+    )
+}
+
+fn export_inner(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    dest: &str,
+    profile: BundleProfile,
+    opts: &BundleOptions,
+    gate: Gate,
 ) -> Result<BundleExported, String> {
     let root = crate::fs::session_root(cx, root_id)?;
     let out = check_destination(&root, dest, profile)?;
@@ -1450,7 +1840,18 @@ pub fn export_bundle_with(
         theme: &theme,
         assets: BTreeMap::new(),
         warnings: Vec::new(),
+        gate,
+        users: BTreeMap::new(),
+        runtimes: BTreeMap::new(),
+        runtime_entries: Map::new(),
+        fallbacks: BTreeMap::new(),
+        notes: BTreeMap::new(),
     };
+    for w in list.widgets.iter().filter(|w| w.kind == WidgetType::Custom) {
+        if let Some(r) = &w.runtime {
+            plan.users.entry(r.clone()).or_default().push(w.id.clone());
+        }
+    }
 
     let stem = o
         .main_file
@@ -1464,6 +1865,9 @@ pub fn export_bundle_with(
     let mut planned = Vec::new();
     for w in &list.widgets {
         planned.push(plan_widget(&mut plan, w, &pdf, pages)?);
+    }
+    for (r, (why, ids)) in std::mem::take(&mut plan.fallbacks) {
+        plan.warn(BundleWarningKind::Runtime, why.warning(&r, &ids.join(", ")));
     }
     let single = profile == BundleProfile::SingleFile;
 
@@ -1482,7 +1886,7 @@ pub fn export_bundle_with(
         format!("{main_rel} could not be converted to HTML, so the bundle has no article: {e}")
     })?;
     let sidecar = std::fs::read_to_string(o.outdir.join(format!("{stem}.mfw"))).ok();
-    let mount_units = mounts(&list.widgets, &plan.assets)?;
+    let mount_units = mounts(&list.widgets, &plan.assets, &plan.notes)?;
     let article = reflow::article::build(reflow::article::Input {
         html: &converted,
         root: &main_dir,
@@ -1558,6 +1962,12 @@ pub fn export_bundle_with(
         "widgets".into(),
         Value::Array(planned.iter().map(|p| p.json.clone()).collect()),
     );
+    if !plan.runtime_entries.is_empty() {
+        manifest.insert(
+            "runtimes".into(),
+            Value::Object(std::mem::take(&mut plan.runtime_entries)),
+        );
+    }
     manifest.insert(
         "assets".into(),
         Value::Object(
@@ -1605,7 +2015,7 @@ pub fn export_bundle_with(
             }
             let widgets: Map<String, Value> = planned
                 .iter()
-                .map(|p| (p.id.clone(), p.doc.clone().into()))
+                .filter_map(|p| p.doc.clone().map(|d| (p.id.clone(), d.into())))
                 .collect();
             let islands = [
                 island("mfw-manifest", &manifest),
@@ -1644,12 +2054,14 @@ pub fn export_bundle_with(
             )?;
             put(&stage, "theme/theme.css", theme_css.as_bytes(), &mut total)?;
             for p in &planned {
-                put(
-                    &stage,
-                    &format!("widgets/{}/index.html", p.id),
-                    p.doc.as_bytes(),
-                    &mut total,
-                )?;
+                if let Some(doc) = &p.doc {
+                    put(
+                        &stage,
+                        &format!("widgets/{}/index.html", p.id),
+                        doc.as_bytes(),
+                        &mut total,
+                    )?;
+                }
             }
             let mut inline = Map::new();
             let mut stored = BTreeSet::new();
