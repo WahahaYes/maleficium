@@ -5,10 +5,9 @@
 #   <dir>/interactive-paper
 #                     a copy of the e2e/fixtures/playground interactive paper
 #                     (a real glb model, h264 clip, csv, vega chart and an html
-#                     widget; media provenance in its NOTICE). It does not hold
-#                     maleficium-interactive.sty: open the folder in the app,
-#                     run Tools > Install Interactive Package (or the fix on
-#                     the pre-compile warning), then compile. The first compile
+#                     widget; media provenance in its NOTICE). It holds a copy
+#                     of maleficium-interactive.sty, as a project made from a
+#                     template does. The first compile
 #                     fetches `subcaption` from the TeX bundle, so allow the
 #                     network once (Make available offline); later ones are
 #                     offline. File > Preview in Browser shows the widgets.
@@ -38,6 +37,8 @@ add() { # <name> <source dir>
 
 add simple "$ROOT/e2e/fixtures/simple"
 add interactive-paper "$ROOT/e2e/fixtures/playground"
+[ -e "$DEST/interactive-paper/maleficium-interactive.sty" ] \
+    || cp "$ROOT/src-tauri/interactive/maleficium-interactive.sty" "$DEST/interactive-paper/"
 for p in "$ROOT"/e2e/fixtures/vendored/*/; do
     add "$(basename "$p")" "$p"
 done

@@ -23,6 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 [ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -74,7 +75,6 @@ def porcelain():
 
 g = mcp.tool("grant", {"root_id": "ip", "root": ROOT})
 check("grant project root", g[0], str(g))
-check("install the package", mcp.tool("interactive_install", {"root_id": "ip"})[0])
 ok, r = mcp.tool("compile_run", {"root_id": "ip", "rel": "main.tex"})
 job = (r or {}).get("job_id", "") if ok else ""
 rec = {"status": "not-started"}
@@ -84,7 +84,7 @@ for _ in range(ROUNDS if job else 0):
     if rec.get("status") != "running":
         break
 check("fixture compiles", rec.get("status") == "success", str(rec)[:300])
-# The run commits what install and the compile left, so later diffs show
+# The run commits what the compile left, so later diffs show
 # only what this run edits on purpose.
 subprocess.run(["git", "add", "-A"], cwd=ROOT, check=True)
 subprocess.run(["git", "-c", "user.email=driver@local", "-c", "user.name=driver", "commit", "-qm", "compiled", "--allow-empty"], cwd=ROOT, check=True)

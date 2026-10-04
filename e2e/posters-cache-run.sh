@@ -11,7 +11,7 @@
 #   3. deleting .maleficium regenerates it on the next compile;
 #   4. an edited chart never shows its stale poster: the compile renders
 #      the new one, embeds it, and collects the old;
-#   5. porcelain shows only the package and .maleficium/, search and
+#   5. porcelain shows only the edited paper and .maleficium/, search and
 #      find_files never list the cache, the watcher never queues it (core
 #      test), and a hand-edited README survives;
 #   6. export_zip carries posters, map and README; the unzipped paper
@@ -45,6 +45,7 @@ timeout 600 cargo test -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" -p mal
 echo "ok: the watcher never queues poster cache writes (core test)"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 cat > "$SCRATCH/proj/auto.tex" <<'TEX'
 \documentclass{article}
 \usepackage{maleficium-interactive}
@@ -129,7 +130,6 @@ def tree(root):
     return out
 
 check("grant project root", call("grant", {"root_id": "pc", "root": ROOT})["ok"])
-check("install the package", call("interactive_install", {"root_id": "pc"})["ok"])
 
 # 1. First compile: no widget list before the engine, so the posters render
 # after it and a second engine run embeds them.
@@ -198,8 +198,8 @@ check("the hand-edited README is kept", open(os.path.join(CACHE, "README.md")).r
 st = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=ROOT,
                     capture_output=True, text=True).stdout.split("\n")
 st = sorted(l for l in st if l)
-check("porcelain shows only the package, the edited paper and .maleficium/",
-      st == [" M auto.tex", "?? .maleficium/", "?? maleficium-interactive.sty"], str(st))
+check("porcelain shows only the edited paper and .maleficium/",
+      st == [" M auto.tex", "?? .maleficium/"], str(st))
 s = call("search", {"root_id": "pc", "pattern": "safe to delete"})
 check("search never reads the cache (README and map say it)", s["ok"] and s.get("hits") == 0, str(s)[:300])
 f = call("find_files", {"root_id": "pc", "query": "map"})

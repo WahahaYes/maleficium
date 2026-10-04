@@ -1,6 +1,6 @@
 #!/bin/bash
 # Playground-paper run over the stdio sidecar. Spawns `maleficium-mcp`,
-# installs the interactive package into a scratch copy of
+# copies the interactive package into a scratch copy of
 # e2e/fixtures/playground/, compiles main.tex, and asserts both that the PDF
 # builds cleanly (bibliography resolved, no undefined references) and that
 # the MCP `widgets` tool lists every widget the paper declares.
@@ -20,18 +20,19 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 [ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
 # The by-hand route: scripts/playground.sh yields a folder with real media and
-# without the package (the user installs it from the app).
+# and the package, as a project made from a template holds it.
 sh "$DEVROOT/scripts/playground.sh" "$SCRATCH/hand" >/dev/null || fail "playground.sh failed"
 HAND="$SCRATCH/hand/interactive-paper"
-[ -f "$HAND/main.tex" ] && [ ! -e "$HAND/maleficium-interactive.sty" ] \
-  || fail "by-hand copy must hold main.tex and no package"
+[ -f "$HAND/main.tex" ] && cmp -s "$HAND/maleficium-interactive.sty" "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" \
+  || fail "by-hand copy must hold main.tex and the package"
 [ "$(head -c 4 "$HAND/models/mesh.glb")" = "glTF" ] || fail "model is not a binary glTF"
 [ "$(dd if="$HAND/media/clip.mp4" bs=1 skip=4 count=4 2>/dev/null)" = "ftyp" ] || fail "clip is not an mp4"
 [ -s "$HAND/NOTICE" ] || fail "media provenance NOTICE missing"
 [ ! -e "$HAND/fixture.json" ] || fail "fixture.json leaked into the by-hand copy"
-pass "playground.sh yields a package-free interactive-paper with real media and a NOTICE"
+pass "playground.sh yields an interactive-paper with the package with real media and a NOTICE"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -77,8 +78,6 @@ def call(name, args):
 
 g = call("grant", {"root_id": "pg", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
-r = call("interactive_install", {"root_id": "pg"})
-check("install writes the package", r["ok"] and r.get("file") == "maleficium-interactive.sty", str(r))
 
 # subcaption is not in the warm cache on a fresh machine; networked lets the
 # first run fetch it, later runs are offline.
@@ -190,8 +189,8 @@ cd "$ROOT"
 # .maleficium/ is the poster cache: with a display the compile renders the
 # model and chart posters into it (the standing exception to "no writes").
 new="$(git status --porcelain | grep -v -e '^?? main\.\(aux\|bbl\|blg\|log\|out\|pdf\|xdv\|mfw\)$' -e '^?? \.maleficium/$' || true)"
-[ "$new" = "?? maleficium-interactive.sty" ] || fail "unexpected project writes: $new"
-pass "porcelain shows only the installed package (and the poster cache)"
+[ -z "$new" ] || fail "unexpected project writes: $new"
+pass "porcelain shows no project writes (apart from the poster cache)"
 
 echo ""
 echo "PLAYGROUND PROOFS COMPLETE: live MCP run green."
