@@ -6,6 +6,7 @@
 import type {
   ApprovalRequired,
   ReviewFile,
+  VendoredId,
   WidgetApprovalStatus,
   WidgetCsp,
   WidgetsStatus,
@@ -267,4 +268,172 @@ export function promptFrom(r: ApprovalRequired): ApprovalPrompt {
     cause: r.cause,
     origins: originLines(r.declaredOrigins),
   };
+}
+
+// ---- Custom runtimes --------------------------------------------------
+// Panel sections and the export pop-up read the `runtimes` entries of the
+// status (one per `<name>@<major>` the document uses) plus the
+// `runtimes/<ref>` rows of `unavailable` (missing or invalid packages).
+
+export type RuntimeSection = 'needs' | 'allowed' | 'allowed-auto' | 'changed' | 'denied';
+
+export const RUNTIME_SECTION_LABEL: Record<RuntimeSection, string> = {
+  needs: 'Needs approval',
+  allowed: 'Allowed',
+  'allowed-auto': 'Allowed (auto)',
+  changed: 'Changed',
+  denied: 'Denied',
+};
+
+export interface RuntimeRow {
+  /** `<name>@<major>`, the key the user allows or denies. */
+  ref: string;
+  title: string;
+  version: string;
+  license: string;
+  digest: string;
+  /** `runtimes/<ref>` inside the project. */
+  path: string;
+  widgets: string[];
+  warnings: string[];
+  webgl: boolean;
+  vendored: VendoredId[];
+  section: RuntimeSection;
+  sectionLabel: string;
+  /** Why it waits, in a sentence; null when allowed. */
+  detail: string | null;
+  /** Allowed by auto-approval after a change the user had allowed before. */
+  viaAuto: boolean;
+  canAllow: boolean;
+  canDeny: boolean;
+  /** An earlier allowed version exists to diff against. */
+  hasApproved: boolean;
+}
+
+function runtimeSectionOf(s: WidgetApprovalStatus): RuntimeSection {
+  if (s.status === 'approved') return s.via === 'auto' ? 'allowed-auto' : 'allowed';
+  if (s.cause === 'revoked') return 'denied';
+  if (s.cause === 'never_approved') return 'needs';
+  return 'changed';
+}
+
+export function buildRuntimeRow(s: WidgetApprovalStatus): RuntimeRow | null {
+  if (s.kind !== 'custom_runtime') return null;
+  const info = s.runtime;
+  const ref = info?.reference ?? s.path.replace(/^runtimes\//, '');
+  const section = runtimeSectionOf(s);
+  return {
+    ref,
+    title: info?.title ?? ref,
+    version: info?.version ?? '',
+    license: info?.license ?? '',
+    digest: s.digest,
+    path: s.path,
+    widgets: info?.widgets ?? [s.widget],
+    warnings: info?.warnings ?? [],
+    webgl: info?.webgl ?? false,
+    vendored: info?.vendored ?? [],
+    section,
+    sectionLabel: RUNTIME_SECTION_LABEL[section],
+    detail: s.status === 'approved' ? null : causeDetail(s.cause),
+    viaAuto: section === 'allowed-auto',
+    canAllow: section === 'needs' || section === 'changed' || section === 'denied',
+    canDeny: section === 'needs' || section === 'allowed' || section === 'changed',
+    hasApproved: s.status === 'approval_required' && s.approvedDigest != null,
+  };
+}
+
+export function buildRuntimeRows(status: WidgetsStatus): RuntimeRow[] {
+  const out: RuntimeRow[] = [];
+  for (const s of status.runtimes) {
+    const row = buildRuntimeRow(s);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+export interface RuntimeUnavailable {
+  ref: string;
+  widget: string;
+  error: string;
+  /** No `runtimes/<ref>/` copy in the project, so nothing to review. */
+  notInstalled: boolean;
+}
+
+/** Missing or invalid packages: never approvable, never asked about. */
+export function runtimeUnavailable(status: WidgetsStatus): RuntimeUnavailable[] {
+  const out: RuntimeUnavailable[] = [];
+  for (const u of status.unavailable) {
+    if (!u.path.startsWith('runtimes/')) continue;
+    out.push({
+      ref: u.path.slice('runtimes/'.length),
+      widget: u.widget,
+      error: u.error,
+      notInstalled: /not installed/i.test(u.error),
+    });
+  }
+  return out;
+}
+
+// ---- The export pop-up -------------------------------------------------
+
+export interface RuntimePrompt {
+  /** `ref@digest`: one pop-up per runtime version. */
+  key: string;
+  reference: string;
+  title: string;
+  digest: string;
+  cause: WidgetApprovalCause;
+  /** The compiled main file whose widgets use it. */
+  main: string;
+  widgets: string[];
+  version: string;
+  license: string;
+  webgl: boolean;
+  vendored: VendoredId[];
+  warnings: string[];
+}
+
+export function promptFromRuntime(s: ApprovalRequired, main: string): RuntimePrompt {
+  const info = s.runtime;
+  const reference = info?.reference ?? s.path.replace(/^runtimes\//, '');
+  return {
+    key: `${reference}@${s.digest}`,
+    reference,
+    title: info?.title ?? reference,
+    digest: s.digest,
+    cause: s.cause,
+    main,
+    widgets: info?.widgets ?? [s.widget],
+    version: info?.version ?? '',
+    license: info?.license ?? '',
+    webgl: info?.webgl ?? false,
+    vendored: info?.vendored ?? [],
+    warnings: info?.warnings ?? [],
+  };
+}
+
+/** Pending runtimes the export asks about: denied and missing ones are not asked. */
+export function pendingExportRuntimes(status: WidgetsStatus): ApprovalRequired[] {
+  const out: ApprovalRequired[] = [];
+  for (const s of status.runtimes) {
+    if (s.status !== 'approval_required' || s.kind !== 'custom_runtime') continue;
+    if (s.cause === 'revoked') continue;
+    out.push(s);
+  }
+  return out;
+}
+
+export function runtimePromptTitle(p: RuntimePrompt): string {
+  return `Allow runtime \u201c${p.title}\u201d (${p.reference})?`;
+}
+
+export function runtimePromptBody(p: RuntimePrompt): string {
+  const n = p.widgets.length;
+  return (
+    `${n} widget${n === 1 ? '' : 's'} in ${p.main} ` +
+    `use${n === 1 ? 's' : ''} this runtime. Allowing it puts its code into every ` +
+    `exported copy of this paper, and every reader of that copy runs it. ` +
+    `Allow only code you have reviewed or trust.`
+  );
 }
