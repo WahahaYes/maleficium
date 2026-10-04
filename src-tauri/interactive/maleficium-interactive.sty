@@ -2,9 +2,8 @@
 % Dedicated to the public domain under CC0 1.0.
 % https://creativecommons.org/publicdomain/zero/1.0/
 %
-% Each macro typesets a poster at the requested size with an interactive
-% mark, emits a named PDF annotation (/NM (mfw:<id>)) over the poster box,
-% and records the widget in the \jobname.mfw sidecar the compile leaves in
+% Each macro typesets a poster at the requested size, emits a named PDF
+% annotation (/NM (mfw:<id>)) over the poster box, and records the widget in the \jobname.mfw sidecar the compile leaves in
 % the outdir. Needs the XeTeX engine (xdvipdfmx specials).
 %
 % Posters: poster= is the document's own and always wins, so it stands in
@@ -21,8 +20,6 @@
 %
 % Usage:
 %   \maleficiumtheme{house}                    % optional; house is default
-%   \maleficiumsetup{bundleurl=https://...}    % optional; link per widget, one QR
-%   \maleficiumsetup{qr=none}                 % qr=footer (default) | none
 %   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
 %   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
 %   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
@@ -63,10 +60,13 @@
 \ProvidesPackage{maleficium-interactive}[2026/10/01 Maleficium interactive widgets]
 
 \RequirePackage{keyval}
+% Unknown options name their family (`zoom' undefined in families `mfw'):
+% xkeyval used to arrive with qrcode, which is gone, so it is asked for
+% directly.
+\RequirePackage{xkeyval}
 \RequirePackage{graphicx}
 \RequirePackage{xcolor}
 \RequirePackage{tikz}
-\RequirePackage{qrcode}
 \RequirePackage{pgfplotstable}
 \RequirePackage{etoolbox}
 \@ifpackageloaded{hyperref}{}{\RequirePackage[hidelinks]{hyperref}}
@@ -124,6 +124,8 @@
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
 \define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
 \define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
+% Legacy setup keys: old documents still compile, but nothing reads the
+% values anymore (the PDF carries no links or QR codes).
 \define@key{mfwsetup}{bundleurl}{\gdef\mfw@bundleurl{#1}}
 \define@key{mfwsetup}{qr}{%
   \def\mfw@tmp{#1}%
@@ -264,7 +266,8 @@
 \ExplSyntaxOff
 
 % The float's own label, and only that: entering a float clears it, labels
-% record only while inside one, and leaving clears it again. A widget outside
+% record only while inside one, and leaving clears it again. Entering a
+% subfigure clears it too, so panels never read each other's labels. A widget outside
 % a float, or placed before its float's \caption\label, records empty label
 % and figure instead of a neighbour's.
 \newif\ifmfw@infloat
@@ -283,6 +286,14 @@
 \AtEndEnvironment{table}{\mfw@leavefloat}
 \AtEndEnvironment{figure*}{\mfw@leavefloat}
 \AtEndEnvironment{table*}{\mfw@leavefloat}
+% A new panel clears the last one's label, but the float is still open:
+% unlike entering a float this never touches \ifmfw@infloat, so the outer
+% \caption\label still records. Without it a widget before its panel's
+% \caption\label reads its neighbour's label and figure number (whose value
+% may also hold caption internals no expansion survives), instead of empty.
+\newcommand{\mfw@clearsub}{\gdef\mfw@floatlabel{}}
+\AtBeginEnvironment{subfigure}{\mfw@clearsub}
+\AtEndEnvironment{subfigure}{\mfw@clearsub}
 % The figure number rides along only when a label anchors it; otherwise the
 % counter still holds whatever came before and is left out.
 \newcommand{\mfw@snap@fig}{%
@@ -389,41 +400,7 @@
 % \centering put the poster's left edge at the centre of the column.
 \newcommand{\mfw@emit}{%
   \leavevmode\rlap{\usebox{\mfw@box}}\mfw@dospec\kern\wd\mfw@box\par
-  \mfw@markline\par
 }
-% One line per widget: the mark, and a text link when a bundle URL is set.
-% No QR here; the single QR lives in the page footer (below).
-\newcommand{\mfw@markline}{%
-  \noindent\mfwSlash\ %
-  \textcolor{mfwaccent}{\sffamily\bfseries\scriptsize Interactive version}%
-  \ifx\mfw@bundleurl\empty\else
-    \ \textcolor{mfwmuted}{\sffamily\scriptsize
-      \href{\mfw@bundleurl}{open}}%
-  \fi
-}
-
-% -- footer QR -----------------------------------------------------------------
-% One QR (1.5cm) with the URL beside it, drawn once on the first shipped page
-% in the foreground layer: it takes no flow space, so floats and widget rects
-% never move. It sits in the bottom-right corner, flush with the right text
-% edge, below the text block; the URL wraps in a 3cm column to its left so it
-% stays clear of the centred page number.
-\newif\ifmfw@qrdone
-\newcommand{\mfw@footerqr}{%
-  \ifmfw@qrdone\else\ifx\mfw@bundleurl\empty\else
-  \ifx\mfw@qr\mfw@qr@footer
-    \global\mfw@qrdonetrue
-    \setlength{\mfw@dim}{\dimexpr1in+\hoffset+\oddsidemargin+\textwidth-1.5cm\relax}%
-    \edef\mfw@qry{-\strip@pt\dimexpr\paperheight-0.8cm\relax}%
-    \put(\strip@pt\mfw@dim,\mfw@qry){\qrcode[height=1.5cm]{\mfw@bundleurl}}%
-    \setlength{\mfw@dim}{\dimexpr\mfw@dim-3.2cm\relax}%
-    \put(\strip@pt\mfw@dim,\mfw@qry){\parbox[b]{3cm}{\raggedleft\sffamily
-      \fontsize{5}{6}\selectfont\color{mfwmuted}%
-      \href{\mfw@bundleurl}{\expandafter\nolinkurl\expandafter{\mfw@bundleurl}}}}%
-  \fi
-  \fi\fi
-}
-\AtBeginDocument{\AddToHook{shipout/foreground}{\mfw@footerqr}}
 
 % -- shared checks -----------------------------------------------------------
 \newcommand{\mfw@needfile}[1]{%
