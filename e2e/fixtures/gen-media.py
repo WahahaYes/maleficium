@@ -9,6 +9,9 @@ dedicated to the public domain under CC0 1.0.
                    written with the standard library only.
   media/clip.mp4   a 2 s, 160x90 H.264 test pattern from ffmpeg's built-in
                    `testsrc2` generator (needs ffmpeg with libx264).
+  playground/figures/clip.png  frame 1 s into clip.mp4, scaled to 640x360: the
+                   video's poster, a picture of the real clip (video posters
+                   are not rendered by the app yet).
 Never write these through a text tool: the bytes are binary.
 """
 import json
@@ -105,6 +108,12 @@ def main() -> None:
     for t in TARGETS[1:]:
         (t / "media").mkdir(exist_ok=True)
         (t / "media" / "clip.mp4").write_bytes(clip.read_bytes())
+        (t / "figures").mkdir(exist_ok=True)
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-ss", "1", "-i", str(t / "media" / "clip.mp4"), "-frames:v", "1",
+             "-vf", "scale=640:360:flags=lanczos", str(t / "figures" / "clip.png")],
+            check=True,
+        )
 
 
 if __name__ == "__main__":

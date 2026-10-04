@@ -7,13 +7,15 @@
 % and records the widget in the \jobname.mfw sidecar the compile leaves in
 % the outdir. Needs the XeTeX engine (xdvipdfmx specials).
 %
-% Posters: poster= is the document's own and always wins. Model, chart and
-% html widgets may leave it out: Maleficium then renders one (an html
+% Posters: poster= is the document's own and always wins, so it stands in
+% for the widget: leave it out for a model, chart or html widget, whose real
+% render the pdf then shows, and keep it for a video (not rendered yet) or a
+% figure you drew by hand. Model, chart and html widgets may leave it out: Maleficium then renders one (an html
 % widget's only once the user approved its folder) into the project's
 % .maleficium/posters/ folder and lists it in .maleficium/posters/
 % \jobname.map, which this package reads. A widget uses its listed poster
 % only while its recorded runtime, sources and options match the list;
-% otherwise, or with no list (another LaTeX setup, a first compile), it
+% otherwise, or with no list (another LaTeX setup), it
 % shows a placeholder box of the same size. A box without width= is 4:3,
 % or a model's size= aspect, so the poster replacing it keeps the layout.
 %
@@ -377,14 +379,16 @@
   \edef\mfw@spec{pdf: ann @mfw@\mfw@id\space
     width \the\wd\mfw@box\space height \the\ht\mfw@box\space
     depth \the\dp\mfw@box\space
-    << /Type /Annot /Subtype /Text
+    << /Type /Annot /Subtype /Link /Border [0 0 0]
     /Contents (Maleficium interactive widget \mfw@id) /NM (mfw:\mfw@id) >>}%
   \expandafter\special\expandafter{\mfw@spec}%
 }
 % The poster box goes down first (visible, zero advance), the annotation
-% lands on its origin, then the line advances past it.
+% lands on its origin, then the line advances past it. The advance is a
+% kern, not glue: \par drops trailing glue, which left the line zero wide so
+% \centering put the poster's left edge at the centre of the column.
 \newcommand{\mfw@emit}{%
-  \leavevmode\rlap{\usebox{\mfw@box}}\mfw@dospec\hskip\wd\mfw@box\par
+  \leavevmode\rlap{\usebox{\mfw@box}}\mfw@dospec\kern\wd\mfw@box\par
   \mfw@markline\par
 }
 % One line per widget: the mark, and a text link when a bundle URL is set.
