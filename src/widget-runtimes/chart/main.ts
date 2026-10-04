@@ -1,11 +1,15 @@
 // The chart runtime (`chart@1`): renders the widget's Vega-Lite spec, with the
 // data files it names, from bytes delivered in `init`. See ./core.ts. Option:
-// `scale`, the snapshot's pixels per CSS pixel.
+// `scale`, the snapshot's pixels per CSS pixel. Marks hover a tooltip (see
+// ./tooltip.ts).
 import { applyTheme, startBridge, status, type Init, type Theme } from '../bridge';
 import { compileSpec, createView, parseScale, parseSpec, resolveData } from './core';
+import { makeTip } from './tooltip';
 import type { View } from 'vega';
 
 const host = document.getElementById('chart') as HTMLElement;
+const tip = makeTip(document.getElementById('tip') as HTMLElement);
+host.addEventListener('mouseleave', tip.hide);
 let spec: Record<string, unknown> | null = null;
 let theme: Theme | null = null;
 let view: View | null = null;
@@ -22,10 +26,12 @@ function fail(message: string): void {
 
 async function draw(): Promise<boolean> {
   if (!spec || !theme) return false;
+  tip.hide();
   view?.finalize();
   host.textContent = '';
   const size = { width: host.clientWidth, height: host.clientHeight };
   view = createView(compileSpec(spec, theme.tokens, size), 'svg');
+  view.tooltip(tip.handler);
   view.initialize(host);
   await view.runAsync();
   return true;
@@ -63,6 +69,7 @@ startBridge({
   onInit: (m) => void init(m),
   onTheme: (t) => {
     theme = t;
+    tip.hide();
     applyTheme(t);
     void draw().then(capture);
   },
