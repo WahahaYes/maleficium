@@ -383,7 +383,8 @@ body.m-reader {
   display: none;
 }
 .m-reader figure.ltx_figure > figure[data-widget],
-.m-reader figure.ltx_table > figure[data-widget] {
+.m-reader figure.ltx_table > figure[data-widget],
+.m-reader figure.ltx_figure_panel > figure[data-widget] {
   margin: 0;
   width: 100%;
 }

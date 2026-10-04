@@ -23,7 +23,7 @@ reads the same in print and on screen; the widgets below add an
 interactive layer on top of that~\cite{shannon1948mathematical}.
 Section~\ref{sec:guide} explains each widget, and
 Figures~\ref{fig:model}, \ref{fig:video}, \ref{fig:chart} and~\ref{fig:html},
-Table~\ref{tab:results} and Figure~\ref{fig:subs} show them.
+Table~\ref{tab:results} and Figures~\ref{fig:subs} and~\ref{fig:pair} show them.
 
 \section{Widgets}\label{sec:widgets}
 
@@ -72,6 +72,28 @@ three rows; the interactive view carries all five.
 \label{fig:html}
 \interactive[height=5cm, id=fig-html,
   alt={The live HTML demo}]{widgets/demo/}
+\end{figure}
+
+\subsection{Widgets side by side}
+Figure~\ref{fig:pair} holds one figure with two subfigures, each embedding
+its own widget: the left panel reuses the chart spec as
+Figure~\ref{fig:pair-a}, the right panel as Figure~\ref{fig:pair-b}.
+\begin{figure}[ht]
+\centering
+\begin{subfigure}{0.45\textwidth}
+\centering
+\interactivechart[height=3cm, id=fig-pair-a,
+  alt={Small copy of the accuracy chart, left panel}]{charts/ablation.vl.json}
+\caption{Left panel.}\label{fig:pair-a}
+\end{subfigure}\hfill
+\begin{subfigure}{0.45\textwidth}
+\centering
+\interactivechart[height=3cm, id=fig-pair-b,
+  alt={Small copy of the accuracy chart, right panel}]{charts/ablation.vl.json}
+\caption{Right panel.}\label{fig:pair-b}
+\end{subfigure}
+\caption{Two widgets side by side.}
+\label{fig:pair}
 \end{figure}
 
 \subsection{Widget in a float without a caption}

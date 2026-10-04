@@ -266,7 +266,8 @@
 \ExplSyntaxOff
 
 % The float's own label, and only that: entering a float clears it, labels
-% record only while inside one, and leaving clears it again. A widget outside
+% record only while inside one, and leaving clears it again. Entering a
+% subfigure clears it too, so panels never read each other's labels. A widget outside
 % a float, or placed before its float's \caption\label, records empty label
 % and figure instead of a neighbour's.
 \newif\ifmfw@infloat
@@ -285,6 +286,14 @@
 \AtEndEnvironment{table}{\mfw@leavefloat}
 \AtEndEnvironment{figure*}{\mfw@leavefloat}
 \AtEndEnvironment{table*}{\mfw@leavefloat}
+% A new panel clears the last one's label, but the float is still open:
+% unlike entering a float this never touches \ifmfw@infloat, so the outer
+% \caption\label still records. Without it a widget before its panel's
+% \caption\label reads its neighbour's label and figure number (whose value
+% may also hold caption internals no expansion survives), instead of empty.
+\newcommand{\mfw@clearsub}{\gdef\mfw@floatlabel{}}
+\AtBeginEnvironment{subfigure}{\mfw@clearsub}
+\AtEndEnvironment{subfigure}{\mfw@clearsub}
 % The figure number rides along only when a label anchors it; otherwise the
 % counter still holds whatever came before and is left out.
 \newcommand{\mfw@snap@fig}{%
