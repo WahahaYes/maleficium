@@ -83,7 +83,7 @@ export function describeMissing(m: MissingDependency): string {
     case 'fetch-failed':
       return `could not download ${f}: check the network connection`;
     case 'not-in-bundle':
-      return `${f} is not in the TeX bundle: fetching cannot help`;
+      return `${f} is not in the TeX bundle: add it to your project folder next to your main file.`;
     case 'bundle-unreachable':
       return 'the TeX bundle is not cached and cannot be reached';
     case 'bundle-invalid':
@@ -316,7 +316,7 @@ export function describeFinding(f: Finding): string {
   const at = `${f.path}:${f.line}`;
   switch (f.kind) {
     case 'not-in-bundle':
-      return `${f.name} is in neither the TeX bundle nor the project (${at})`;
+      return `${f.name} is not in the TeX bundle: add it to your project folder next to your main file (${at}).`;
     case 'external-tool':
       return (
         `${at} needs ${f.name}, a program outside the TeX bundle` +

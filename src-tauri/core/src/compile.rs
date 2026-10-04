@@ -135,6 +135,14 @@ impl Jobs {
     }
 }
 
+/// The one sentence for a package or class the pinned bundle does not carry:
+/// the project folder is the only place it can come from.
+fn missing_package_text(file: &str) -> String {
+    format!(
+        "{file} is not in the TeX bundle: add it to your project folder next to your main file."
+    )
+}
+
 /// The failure message: the first 500 bytes of the last run's stderr, or
 /// the flow's own account when it stopped before spawning. A missing
 /// external tool is named instead: the engine's own "No such file or
@@ -154,6 +162,15 @@ pub fn failure_text(c: &engine::Compiled) -> String {
         } else {
             format!("{tool} is not installed: the engine runs it to finish this document. Install {tool} and compile again")
         };
+    }
+    if let Some(MissingDependency {
+        file: Some(file),
+        reason: MissingReason::NotInBundle,
+    }) = &c.missing
+    {
+        if file.ends_with(".sty") || file.ends_with(".cls") {
+            return missing_package_text(file);
+        }
     }
     if c.lines.is_empty() {
         return String::from("no TeX support files are cached yet and there is no network");
@@ -587,6 +604,28 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("bundled tectonic failed"), "{text}");
+    }
+
+    fn not_in_bundle(file: &str) -> Option<MissingDependency> {
+        Some(MissingDependency {
+            file: Some(file.into()),
+            reason: MissingReason::NotInBundle,
+        })
+    }
+
+    #[test]
+    fn a_package_the_bundle_lacks_names_the_file_and_the_project_folder() {
+        for file in ["maleficium-interactive.sty", "myclass.cls"] {
+            assert_eq!(
+                failure_text(&failed(not_in_bundle(file))),
+                format!(
+                    "{file} is not in the TeX bundle: add it to your project folder next to your main file."
+                )
+            );
+        }
+        // Other support files the bundle lacks keep the engine's own text.
+        let text = failure_text(&failed(not_in_bundle("nofont.tfm")));
+        assert!(text.starts_with("bundled tectonic failed"), "{text}");
     }
 
     #[test]
