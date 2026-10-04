@@ -2,9 +2,17 @@
   'use strict';
   var FOLDER = __FOLDER__;
   var body = document.body;
+  // A missing or malformed island reads as empty: the page then shows its
+  // posters, it never throws.
   function island(id) {
     var el = document.getElementById(id);
-    return el ? JSON.parse(el.textContent) : {};
+    if (!el) return {};
+    try {
+      var v = JSON.parse(el.textContent);
+      return v && typeof v === 'object' ? v : {};
+    } catch (_) {
+      return {};
+    }
   }
   if (FOLDER && location.protocol === 'file:') {
     var main = document.querySelector('main');
@@ -42,9 +50,11 @@
   }
 
   var widgets = {};
-  (manifest.widgets || []).forEach(function (w) {
-    widgets[w.id] = w;
+  (Array.isArray(manifest.widgets) ? manifest.widgets : []).forEach(function (w) {
+    if (w && typeof w.id === 'string') widgets[w.id] = w;
   });
+  // The kinds this reader mounts; anything else keeps its poster.
+  var KINDS = ['model', 'video', 'table', 'chart', 'html', 'custom'];
   var frames = [];
   // A widget that fails gives its place back to the poster: the frame is
   // hidden again and the caption says so.
@@ -115,7 +125,11 @@
       if (frames[i].win !== e.source) continue;
       if (d.type === 'ready' && !frames[i].started) {
         frames[i].started = true;
-        init(frames[i]);
+        try {
+          init(frames[i]);
+        } catch (_) {
+          fail(frames[i].fig);
+        }
       } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       return;
     }
@@ -159,9 +173,45 @@
       '"></iframe>'
     );
   }
+  // A widget this copy cannot run keeps its poster and says why: no record,
+  // a fallback, a kind or a custom runtime this reader does not know, or no
+  // document to mount.
+  function posterOnly(fig, w) {
+    fig.setAttribute('data-state', 'poster-only');
+    if (fig.querySelector('.m-widget-note')) return;
+    var name = (w && (w.runtime || w.type)) || fig.getAttribute('data-type') || 'unknown';
+    var p = document.createElement('p');
+    p.className = 'm-widget-note';
+    p.textContent =
+      'Interactive version unavailable: this reader does not know runtime ' + String(name) + '.';
+    fig.appendChild(p);
+  }
+  function runnable(w) {
+    if (!w || w.fallback || KINDS.indexOf(w.type) < 0) return false;
+    if (
+      w.type === 'custom' &&
+      !Object.prototype.hasOwnProperty.call(manifest.runtimes || {}, w.runtime)
+    )
+      return false;
+    return FOLDER || typeof docs[w.id] === 'string';
+  }
   Array.prototype.forEach.call(document.querySelectorAll('figure[data-widget]'), function (fig) {
     var w = widgets[fig.getAttribute('data-widget')];
-    if (!w) return;
+    try {
+      if (!runnable(w)) {
+        posterOnly(fig, w);
+        return;
+      }
+      mount(fig, w);
+    } catch (_) {
+      try {
+        posterOnly(fig, w);
+      } catch (_e) {
+        /* the poster stays as it is */
+      }
+    }
+  });
+  function mount(fig, w) {
     var f = document.createElement('iframe');
     f.setAttribute('sandbox', 'allow-scripts');
     f.setAttribute('title', w.alt || w.id);
@@ -179,7 +229,7 @@
     }
     if (FOLDER) f.src = w.entry;
     else f.srcdoc = wrap(w, docs[w.id]);
-  });
+  }
 })();
 
 // The article's own niceties. Everything here is optional: with scripts off

@@ -326,3 +326,55 @@ fn deep_nesting_does_not_overflow() {
         out.matches("</span>").count()
     );
 }
+
+#[test]
+fn a_custom_mount_unit_survives_once_for_a_known_id_and_never_otherwise() {
+    let unit = |id: &str, kind: &str| {
+        format!("<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>")
+    };
+    let good = unit("fig-a", "custom");
+    assert_eq!(clean(&good), good, "a custom mount unit passes unchanged");
+    // Twice: mounted once.
+    let out = clean(&[good.clone(), good.clone()].concat());
+    assert_eq!(out.matches("data-widget=").count(), 1, "{out}");
+    assert_eq!(out.matches("data-type=\"custom\"").count(), 1, "{out}");
+    // An unknown id, or a kind no reader knows: no mount attributes at all.
+    for bad in [
+        unit("fig-z", "custom"),
+        unit("fig-b", "custom-runtime"),
+        unit("fig-b", "stl-viewer@1"),
+        unit("fig-b", "Custom"),
+    ] {
+        let out = clean(&bad);
+        assert!(
+            !out.contains("data-widget") && !out.contains("data-type") && !out.contains("style="),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn a_fallback_note_survives_as_text_only() {
+    let note = |text: &str| {
+        format!("<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"custom\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption><p class=\"m-widget-note\">{text}</p></figure>")
+    };
+    let plain =
+        note("Interactive version not included in this copy: runtime heat@1 is not installed.");
+    assert_eq!(clean(&plain), plain, "the note passes unchanged");
+    // Markup in a note is escaped by the exporter (fold::text); were it not,
+    // nothing that runs or loads would survive the sanitizer either.
+    let escaped = note(&crate::bundle::fold::text(
+        "<img src=x onerror=alert(1)><script>alert(2)</script>",
+    ));
+    let out = clean(&escaped);
+    assert_eq!(out, escaped);
+    assert!(!out.contains("<img src=x") && !out.contains("<script"));
+    let raw = assert_inert(&note(
+        "<img src=x onerror=alert(1)><script>alert(2)</script><a href=\"javascript:x\">y</a>",
+    ));
+    assert!(raw.contains("<p class=\"m-widget-note\">"), "{raw}");
+    assert!(
+        !raw.contains("onerror") && !raw.contains("<script") && !raw.contains("javascript:"),
+        "{raw}"
+    );
+}
