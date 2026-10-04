@@ -31,10 +31,15 @@
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %   \interactive[height=6cm, alt={...},
 %     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
+%   \interactiveruntime[runtime=stl-viewer@1, poster=figures/part.png,
+%     alt={...}, sources={texture=img/steel.png}, color=accent]{models/part.stl}
 %
 % Sidecar line (pipe-separated, one per widget):
 %   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
 % sources is role=path,... and options is k=v,...; empty fields are empty.
+% A custom runtime's widget has type custom, runtime <name>@<major> and its
+% main argument under the reserved role primary (the runtime names the role
+% when the exporter binds it; this package needs no runtime installed).
 % Recorded values never contain |, # or braces; dimensions ride as pt.
 %
 % Theme lines (written at the end of the document, see "theme" below):
@@ -129,6 +134,16 @@
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
 \define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
 \define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
+% \interactiveruntime takes its own key family: the keys it shares with the
+% others fill the same macros, and every other key is an author option for the
+% runtime (see \mfw@rt@option).
+\define@key{mfwrt}{runtime}{\def\mfw@runtime{#1}}
+\define@key{mfwrt}{poster}{\def\mfw@poster{#1}}
+\define@key{mfwrt}{alt}{\def\mfw@alt{#1}}
+\define@key{mfwrt}{height}{\def\mfw@height{#1}}
+\define@key{mfwrt}{width}{\def\mfw@width{#1}}
+\define@key{mfwrt}{id}{\def\mfw@id{#1}}
+\define@key{mfwrt}{sources}{\def\mfw@rt@sources{#1}}
 \newcommand{\mfw@resetkeys}{%
   \def\mfw@poster{}\def\mfw@height{6cm}\def\mfw@width{}%
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
@@ -197,7 +212,7 @@
   \mfw_syncok:
 }
 \cs_new_protected:Npn \mfw_nobar:n #1 {
-  \str_if_in:nnTF {|} {#1}
+  \str_if_in:nnTF {#1} {|}
     { \bool_set_false:N \l_mfw_ok_bool }
     { \bool_set_true:N \l_mfw_ok_bool }
   \mfw_syncok:
@@ -232,6 +247,54 @@
 }
 \cs_new_protected:Npn \mfw@check@framedomains { \mfw_origins:N \mfw@p@framedomains }
 \cs_new_protected:Npn \mfw@check@resourcedomains { \mfw_origins:N \mfw@p@resourcedomains }
+% Custom runtimes: shapes of the ref, a source role and an option key (the
+% app checks the same ones again). The reserved names are the built-in kinds
+% and the package's own prefixes; the reserved keys are every key the other
+% macros take plus the two the sidecar uses (sources, primary). Each takes
+% the macro holding the text and sets \ifmfw@ok.
+\cs_new_protected:Npn \mfw@rt@isref #1
+  { \mfw_match:Nn #1 { \A[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}\Z } }
+\cs_new_protected:Npn \mfw@rt@isreservedname #1
+  { \mfw_match:Nn #1 { \A(?:model|video|table|chart|html|custom)\Z|\Am-|\Amaleficium } }
+% The name of a ref (up to the @) into \mfw@rt@n. Not a delimited macro: the
+% @ in the document is not a letter, as it is here.
+\cs_new_protected:Npn \mfw@rt@setname #1
+  {
+    \tl_set_eq:NN \mfw@rt@n #1
+    \regex_replace_once:nnN { @.*\Z } { } \mfw@rt@n
+  }
+\cs_new_protected:Npn \mfw@rt@iskey #1
+  { \mfw_match:Nn #1 { \A[a-z][a-z0-9]{0,23}\Z } }
+\cs_new_protected:Npn \mfw@rt@isreservedkey #1
+  { \mfw_match:Nn #1
+    { \A(?:runtime|poster|height|width|id|alt|sources|primary|inline|remote|sha256|pdfrows|data|camera|size|background|scale|framedomains|resourcedomains)\Z } }
+% A role is a plain word and never the reserved primary.
+\cs_new_protected:Npn \mfw@rt@isrole #1
+  {
+    \mfw_match:Nn #1 { \A[a-z][a-z0-9]{0,15}\Z }
+    \ifmfw@ok
+      \mfw_match:Nn #1 { \Aprimary\Z }
+      \ifmfw@ok \mfw@okfalse \else \mfw@oktrue \fi
+    \fi
+  }
+% Recorded options and sources are split on commas by the app, so no value
+% may hold one (\mfw@ok is true when it does not).
+\cs_new_protected:Npn \mfw@rt@nocomma #1
+  {
+    \tl_if_in:NnTF #1 { , }
+      { \bool_set_false:N \l_mfw_ok_bool }
+      { \bool_set_true:N \l_mfw_ok_bool }
+    \mfw_syncok:
+  }
+% Trim the spaces round a key or a value held in a macro.
+\cs_new_protected:Npn \mfw@rt@trim #1 { \tl_trim_spaces:N #1 }
+% Append ,<key>=<value> (macros \mfw@rt@k and \mfw@rt@v, kept verbatim) to #1.
+\cs_new_protected:Npn \mfw@rt@add #1
+  { \tl_put_right:Nx #1 { , \exp_not:V \mfw@rt@k = \exp_not:V \mfw@rt@v } }
+% Run \mfw@rt@... item handler #1 on every entry of the comma list in macro #2
+% (spaces round an entry are trimmed, empty entries skipped).
+\cs_new_protected:Npn \mfw@rt@map #1 #2
+  { \exp_args:NV \clist_map_inline:nn #2 { #1 {##1} } }
 % Record strings as the poster map holds them: detokenized, every run of
 % white space one space (TeX folds them when it reads the map back).
 \str_new:N \l_mfw_fold_str
@@ -815,6 +878,143 @@
   \mfw@posterbox{}{bundle=#2}{\mfw@opts}%
   \mfw@record{\mfw@type}{}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{bundle=#2}{\mfw@opts}%
+  \mfw@emit
+}
+
+% \interactiveruntime: a widget run by a custom runtime, named by runtime=
+% <name>@<major>. The package cannot know the runtime's roles or options
+% (it must compile with none installed), so the main argument is recorded
+% under the reserved role primary and every key that is not the macro's own
+% rides to the app as an option, verbatim. xkeyval's \setkeys* leaves such
+% keys untouched in \XKV@rm, braces and = inside values included. What is
+% checked here needs no runtime: shapes, reserved names, files, commas.
+\newif\ifmfw@rt@eq
+% Split an entry at its first top-level =, into \mfw@rt@k and \mfw@rt@v;
+% \ifmfw@rt@eq tells whether there was one.
+\def\mfw@rt@split#1=#2\@nil{\def\mfw@rt@k{#1}\def\mfw@rt@v{#2}}
+\newcommand{\mfw@rt@kv}[1]{%
+  \in@{=}{#1}%
+  \ifin@
+    \mfw@rt@eqtrue\mfw@rt@split#1\@nil
+  \else
+    \mfw@rt@eqfalse\def\mfw@rt@k{#1}\def\mfw@rt@v{}%
+  \fi
+  \mfw@rt@trim\mfw@rt@k\mfw@rt@trim\mfw@rt@v
+}
+\newcommand{\mfw@rt@checkcomma}[1]{%
+  \mfw@rt@nocomma\mfw@rt@v
+  \ifmfw@ok\else
+    \PackageError{maleficium-interactive}%
+      {character `,' is not allowed in #1}%
+      {Recorded values are split on commas; remove it from the value or path.}%
+  \fi
+}
+\newcommand{\mfw@rt@checkref}{%
+  \ifx\mfw@runtime\empty
+    \PackageError{maleficium-interactive}%
+      {\string\interactiveruntime\space needs runtime=<name>@<major>}%
+      {Pass runtime=stl-viewer@1.}%
+  \else
+    \mfw@rt@isref\mfw@runtime
+    \ifmfw@ok
+      \mfw@rt@setname\mfw@runtime
+      \mfw@rt@isreservedname\mfw@rt@n
+      \ifmfw@ok
+        \PackageError{maleficium-interactive}%
+          {runtime name `\mfw@rt@n' is reserved}%
+          {The built-in kinds, m-... and maleficium... are taken; name your runtime otherwise.}%
+      \fi
+    \else
+      \PackageError{maleficium-interactive}%
+        {runtime= `\mfw@runtime' must be <name>@<major>: a lowercase letter,
+          1 to 39 letters, digits or dashes, then @ and a major version 1 to 9999}%
+        {Pass runtime=stl-viewer@1.}%
+    \fi
+  \fi
+}
+\newcommand{\mfw@rt@needposter}{%
+  \ifx\mfw@poster\empty
+    \PackageError{maleficium-interactive}%
+      {poster= is required for \string\interactiveruntime: the PDF shows it}%
+      {Pass poster=figures/preview.png, the image the PDF shows in place of the runtime.}%
+  \else
+    \mfw@needfile{\mfw@poster}%
+  \fi
+}
+% One sources= entry: role=path, the role a plain word, not primary and not
+% given before (a flag per widget id and role), the file there.
+\newcommand{\mfw@rt@source}[1]{%
+  \mfw@rt@kv{#1}%
+  \ifmfw@rt@eq\ifx\mfw@rt@v\empty\mfw@rt@eqfalse\fi\fi
+  \ifmfw@rt@eq
+    \mfw@rt@isrole\mfw@rt@k
+    \ifmfw@ok
+      \ifcsname mfw@rt@r@\mfw@id @\mfw@rt@k\endcsname
+        \PackageError{maleficium-interactive}%
+          {source role `\mfw@rt@k' is given twice}%
+          {Each role may appear once in sources=.}%
+      \fi
+      \expandafter\gdef\csname mfw@rt@r@\mfw@id @\mfw@rt@k\endcsname{}%
+    \else
+      \PackageError{maleficium-interactive}%
+        {source role `\mfw@rt@k' must be a lowercase letter then up to 15
+          letters or digits, and not primary}%
+        {Write sources={texture=img/steel.png, labels=data/labels.csv}.}%
+    \fi
+    \mfw@rt@checkcomma{\mfw@rt@k}%
+    \mfw@needfile{\mfw@rt@v}%
+    \mfw@rt@add\mfw@srcs
+  \else
+    \PackageError{maleficium-interactive}%
+      {sources= entry `#1' must be role=path}%
+      {Write sources={texture=img/steel.png, labels=data/labels.csv}.}%
+  \fi
+}
+% One leftover key: an author option. It needs a value (an empty one means
+% the runtime's default), is a plain word and none of the package's own keys.
+\newcommand{\mfw@rt@option}[1]{%
+  \mfw@rt@kv{#1}%
+  \ifmfw@rt@eq
+    \mfw@rt@isreservedkey\mfw@rt@k
+    \ifmfw@ok
+      \PackageError{maleficium-interactive}%
+        {option key `\mfw@rt@k' is reserved by the package}%
+        {\string\interactiveruntime\space gives these keys a meaning of their own; pick another option name.}%
+    \else
+      \mfw@rt@iskey\mfw@rt@k
+      \ifmfw@ok\else
+        \PackageError{maleficium-interactive}%
+          {option key `\mfw@rt@k' must be a lowercase letter then up to 23
+            letters or digits}%
+          {Option keys are the runtime's own names, such as color or autorotate.}%
+      \fi
+    \fi
+    \mfw@rt@checkcomma{\mfw@rt@k}%
+    \mfw@rt@add\mfw@opts
+  \else
+    \PackageError{maleficium-interactive}%
+      {option `\mfw@rt@k' needs a value: write \mfw@rt@k=...}%
+      {An option is written key=value; key= alone uses the runtime's default.}%
+  \fi
+}
+\newcommand{\interactiveruntime}[2][]{%
+  \mfw@resetkeys\def\mfw@rt@sources{}\def\XKV@rm{}%
+  \setkeys*{mfwrt}{#1}%
+  \def\mfw@type{custom}%
+  \mfw@rt@checkref
+  \mfw@needalt
+  \mfw@rt@needposter
+  \mfw@needfile{#2}%
+  \def\mfw@rt@v{#2}\mfw@rt@checkcomma{primary}%
+  \mfw@resolve@id\mfw@sizecanon
+  \mfw@snap@fig
+  \def\mfw@srcs{primary=#2}%
+  \mfw@rt@map\mfw@rt@source\mfw@rt@sources
+  \def\mfw@opts{\mfw@dims@opt}%
+  \mfw@rt@map\mfw@rt@option\XKV@rm
+  \mfw@sbox@graphic{\mfw@poster}%
+  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
+    {\mfw@poster}{\mfw@srcs}{\mfw@opts}%
   \mfw@emit
 }
 
