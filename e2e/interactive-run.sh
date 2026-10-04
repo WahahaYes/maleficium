@@ -4,7 +4,8 @@
 # copy of e2e/fixtures/interactive/, then asserts the sidecar, the named
 # PDF annotations, the table row cap, porcelain discipline, and the failing
 # documents (bad ids, files, alt, unknown options, misplaced or malformed
-# poster parameters).
+# poster parameters, every \interactiveruntime error) and the custom runtime
+# widget's sidecar line.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -200,7 +201,26 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-param.tex", "camera= does not apply to chart widgets"),
                       ("bad-origins.tex", "framedomains= `http://a.example.org' is malformed"),
                       ("bad-origins-type.tex", "framedomains= does not apply to video widgets"),
-                      ("bad-size.tex", "size= `large' is malformed")]:
+                      ("bad-size.tex", "size= `large' is malformed"),
+                      # \interactiveruntime: one document per .sty message.
+                      ("bad-runtime-missing.tex", "\\interactiveruntime needs runtime=<name>@<major>"),
+                      ("bad-runtime-ref.tex", "runtime= `Stl_Viewer' must be <name>@<major>: a lowercase letter, 1 to 39 letters, digits or dashes, then @ and a major version 1 to 9999"),
+                      ("bad-runtime-reserved.tex", "runtime name `model' is reserved"),
+                      ("bad-runtime-reserved-prefix.tex", "runtime name `maleficium-x' is reserved"),
+                      ("bad-runtime-noposter.tex", "poster= is required for \\interactiveruntime: the PDF shows it"),
+                      ("bad-runtime-noalt.tex", "alt= is required"),
+                      ("bad-runtime-missing-file.tex", "File `figures/no-such.png' not found"),
+                      ("bad-runtime-source.tex", "sources= entry `figures/runtime-texture.png' must be role=path"),
+                      ("bad-runtime-role.tex", "source role `Tex' must be a lowercase letter then up to 15 letters or digits, and not primary"),
+                      ("bad-runtime-role-primary.tex", "source role `primary' must be a lowercase letter then up to 15 letters or digits, and not primary"),
+                      ("bad-runtime-role-twice.tex", "source role `tex' is given twice"),
+                      ("bad-runtime-source-missing.tex", "File `figures/no-such.png' not found"),
+                      ("bad-runtime-novalue.tex", "option `autorotate' needs a value: write autorotate=..."),
+                      ("bad-runtime-reserved-key.tex", "option key `camera' is reserved by the package"),
+                      ("bad-runtime-key.tex", "option key `Color' must be a lowercase letter then up to 23 letters or digits"),
+                      ("bad-runtime-comma.tex", "character `,' is not allowed in color"),
+                      ("bad-runtime-comma-path.tex", "character `,' is not allowed in tex"),
+                      ("bad-runtime-bar.tex", "character `|' is not allowed")]:
     fr = compile(bad_doc, rounds=15)
     flog = (fr.get("log") or "") + "\n" + "\n".join(fr.get("lines") or [])
     check(f"{bad_doc} fails", fr.get("status") == "failed", str(fr)[:200])
@@ -211,6 +231,21 @@ pr = compile("plain.tex", rounds=20)
 check("package-free document compiles", pr.get("status") == "success", str(pr)[:200])
 wp = call("widgets", {"root_id": "ip", "main_rel": "plain.tex"})
 check("package-free document lists no widgets", wp["ok"] and wp.get("widgets") == [], str(wp)[:200])
+
+# A custom runtime widget compiles with no runtimes/ folder in the project and
+# writes exactly one sidecar line: type custom, the main argument under the
+# reserved role primary, option values verbatim.
+rr = compile("runtime.tex", rounds=20)
+check("custom runtime document compiles with no runtimes/ folder",
+      rr.get("status") == "success" and not os.path.exists(os.path.join(ROOT, "runtimes")), str(rr)[:200])
+rmfw = os.path.join(os.path.dirname(rr.get("pdf_url") or ""), "runtime.mfw")
+rlines = open(rmfw).read().splitlines() if os.path.isfile(rmfw) else []
+check("custom runtime sidecar line is exact",
+      [l for l in rlines if l.startswith("widget|")] == [
+          "widget|fig-part|custom|stl-viewer@1|||house|figures/runtime-poster.png"
+          "|primary=models/mesh.glb,texture=figures/runtime-texture.png,labels=data/results.csv"
+          "|height=170.71652pt,color=accent,autorotate=true,expr=a=b,ratio=0.5|Orbitable flange"],
+      str(rlines)[:400])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)
