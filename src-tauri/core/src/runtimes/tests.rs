@@ -410,7 +410,7 @@ fn every_documented_sample_passes_the_package_check() {
 fn widget(sources: &[(&str, &str)], options: &[(&str, &str)]) -> Widget {
     Widget {
         id: "fig-h".into(),
-        kind: WidgetType::Model,
+        kind: WidgetType::Custom,
         runtime: Some("heat@1".into()),
         label: None,
         figure: None,

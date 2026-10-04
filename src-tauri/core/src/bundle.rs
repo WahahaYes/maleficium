@@ -809,7 +809,7 @@ fn plan_widget(
             WidgetType::Video => Some("video"),
             WidgetType::Table => Some("data"),
             WidgetType::Chart => Some("spec"),
-            WidgetType::Html => None,
+            WidgetType::Html | WidgetType::Custom => None,
         };
         if let Some(role) = required {
             if !sources.contains_key(role) {
@@ -1006,6 +1006,7 @@ fn mounts<'a>(
                     WidgetType::Table => "table",
                     WidgetType::Chart => "chart",
                     WidgetType::Html => "html",
+                    WidgetType::Custom => "custom",
                 },
                 figure: w.figure.as_deref(),
                 label: w.label.as_deref(),

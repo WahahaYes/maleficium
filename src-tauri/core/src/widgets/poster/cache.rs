@@ -183,6 +183,12 @@ pub fn poster_key(
                 w.id
             ))
         }
+        WidgetType::Custom => {
+            return Err(format!(
+                "widget {}: a custom widget's poster is its poster= file",
+                w.id
+            ))
+        }
     };
     let runtime = w.runtime.as_deref().unwrap_or("");
     let doc = super::host_document(runtime)

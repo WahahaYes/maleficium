@@ -169,7 +169,7 @@
       "required": ["id", "type", "page", "rect", "poster", "alt"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$" },
-        "type": { "enum": ["model", "video", "table", "chart", "html"] },
+        "type": { "enum": ["model", "video", "table", "chart", "html", "custom"] },
         "runtime": {
           "type": "string",
           "pattern": "^(model|video|table|chart)@\\d+$",
