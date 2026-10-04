@@ -104,7 +104,7 @@ pub enum FigureReason {
 }
 
 impl FigureReason {
-    fn describe(&self) -> String {
+    pub(crate) fn describe(&self) -> String {
         match self {
             FigureReason::NoSource => "the converter recorded no file name".into(),
             FigureReason::Escapes => "the path is not inside the project".into(),

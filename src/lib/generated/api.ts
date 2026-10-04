@@ -260,7 +260,7 @@ export type ExportBundleParams = { rootId: string, mainRel: string, dest: string
 
 export type ExportCancelParams = Record<symbol, never>;
 
-export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata";
+export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata" | "conversion" | "widget-join" | "figure";
 
 export type BundleWarning = { kind: BundleWarningKind, message: string, };
 

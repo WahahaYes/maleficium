@@ -19,6 +19,7 @@
 pub(crate) mod fold;
 mod reader;
 
+use crate::reflow;
 use crate::widgets::poster::PosterSource;
 use crate::widgets::{Widget, WidgetRect, WidgetSource, WidgetType};
 use crate::Core;
@@ -80,6 +81,15 @@ pub enum BundleWarningKind {
     FoldLimit,
     /// Paper metadata the export could not read from the source.
     Metadata,
+    /// The conversion to HTML reported errors (its log, or raw TeX latexml
+    /// left inline); the article was still produced.
+    Conversion,
+    /// The article's widget placeholders and the compile's widget sidecar
+    /// disagree; the widgets are listed at the end of the article.
+    WidgetJoin,
+    /// A figure the article shows as a placeholder (missing, outside the
+    /// main file's folder, EPS, too large).
+    Figure,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -393,6 +403,26 @@ fn paper_meta(tex: &str, stem: &str, warnings: &mut Vec<BundleWarning>) -> Meta 
         authors,
         abstract_text,
     }
+}
+
+/// The directories of the main file's `\graphicspath{{a/}{b/}}`, in order.
+fn graphics_paths(tex: &str) -> Vec<String> {
+    let tex = strip_comments(tex);
+    let Some(arg) = command_arg(&tex, "graphicspath") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(off) = arg[i..].find('{') {
+        match brace_group(&arg, i + off) {
+            Some((dir, end)) => {
+                out.push(dir.trim().to_string());
+                i = end;
+            }
+            None => break,
+        }
+    }
+    out
 }
 
 // ---- the planner --------------------------------------------------------
@@ -949,12 +979,12 @@ fn island(id: &str, v: &Value) -> String {
     format!("<script type=\"application/json\" id=\"{id}\">{s}</script>")
 }
 
-/// The page's view of each widget, in manifest order: caption fields from the
-/// widget list, and the poster as a bundled path or an inline `data:` url.
-fn reader_widgets<'a>(
+/// Each widget's mount unit: caption fields from the widget list, and the
+/// poster as a bundled path or an inline `data:` url.
+fn mounts<'a>(
     list: &'a [Widget],
     assets: &BTreeMap<String, Asset>,
-) -> Result<Vec<reader::ReaderWidget<'a>>, String> {
+) -> Result<Vec<reflow::article::Mount<'a>>, String> {
     list.iter()
         .map(|w| {
             let key = format!("{}-poster", w.id);
@@ -967,7 +997,7 @@ fn reader_widgets<'a>(
                 (_, Bytes::Mem(b)) => data_url(&a.mime, b),
                 _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
             };
-            Ok(reader::ReaderWidget {
+            Ok(reflow::article::Mount {
                 id: &w.id,
                 kind: match w.kind {
                     WidgetType::Model => "model",
@@ -985,6 +1015,78 @@ fn reader_widgets<'a>(
             })
         })
         .collect()
+}
+
+/// An app-owned scratch folder for one export's conversion and figures,
+/// removed when the export ends either way.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(outdir: &Path) -> Result<Scratch, String> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = outdir.join(format!("reader-export-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("convert"))
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        Ok(Scratch(dir))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// At most this many log errors are quoted in the report.
+const QUOTED_ERRORS: usize = 5;
+
+/// The report lines for what the article pipeline found.
+fn article_warnings(
+    log_errors: &[String],
+    issues: &[reflow::article::Issue],
+) -> Vec<BundleWarning> {
+    use reflow::article::Issue;
+    let mut out = Vec::new();
+    if !log_errors.is_empty() {
+        let shown = log_errors[..log_errors.len().min(QUOTED_ERRORS)].join("; ");
+        let more = log_errors.len().saturating_sub(QUOTED_ERRORS);
+        out.push(BundleWarning {
+            kind: BundleWarningKind::Conversion,
+            message: format!(
+                "the conversion to HTML reported {} error{}; the article was still produced: {shown}{}",
+                log_errors.len(),
+                if log_errors.len() == 1 { "" } else { "s" },
+                if more > 0 { format!(" and {more} more") } else { String::new() }
+            ),
+        });
+    }
+    for i in issues {
+        out.push(match i {
+            Issue::Errors(n) => BundleWarning {
+                kind: BundleWarningKind::Conversion,
+                message: format!(
+                    "{n} place{} in the article show{} raw TeX the converter could not handle",
+                    if *n == 1 { "" } else { "s" },
+                    if *n == 1 { "s" } else { "" }
+                ),
+            },
+            Issue::Join(e) => BundleWarning {
+                kind: BundleWarningKind::WidgetJoin,
+                message: format!("the widgets could not be placed in the article ({e}); they are listed at its end"),
+            },
+            Issue::Figure(w) => BundleWarning {
+                kind: BundleWarningKind::Figure,
+                message: if w.file.is_empty() {
+                    format!("a figure is not shown: {}", w.reason.describe())
+                } else {
+                    format!("figure {} is not shown: {}", w.file, w.reason.describe())
+                },
+            },
+        });
+    }
+    out
 }
 
 fn data_url(mime: &str, bytes: &[u8]) -> String {
@@ -1233,6 +1335,41 @@ pub fn export_bundle_with(
     for w in &list.widgets {
         planned.push(plan_widget(&mut plan, w, &pdf, pages)?);
     }
+    let single = profile == BundleProfile::SingleFile;
+
+    // The article: the main file converted to HTML, then the reader pipeline
+    // (figures, widget mounts, contents, sanitizing). Its problems are
+    // reported; only a conversion that produced no HTML at all refuses.
+    let scratch = Scratch::new(&o.outdir)?;
+    let main_canon = crate::fs::resolve_in(cx, root_id, main_rel)?;
+    let main_dir = main_canon
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!("{main_rel} has no folder"))?;
+    let conversion =
+        reflow::convert::converter(cx).convert(cx, &main_canon, &scratch.0.join("convert"));
+    let converted = conversion.html.map_err(|e| {
+        format!("{main_rel} could not be converted to HTML, so the bundle has no article: {e}")
+    })?;
+    let sidecar = std::fs::read_to_string(o.outdir.join(format!("{stem}.mfw"))).ok();
+    let mount_units = mounts(&list.widgets, &plan.assets)?;
+    let article = reflow::article::build(reflow::article::Input {
+        html: &converted,
+        root: &main_dir,
+        mode: if single {
+            reflow::figures::Mode::SingleFile
+        } else {
+            reflow::figures::Mode::Folder {
+                dir: scratch.0.clone(),
+            }
+        },
+        graphics_paths: graphics_paths(&tex),
+        sidecar: sidecar.as_deref(),
+        mounts: &mount_units,
+        title: &meta.title,
+    })?;
+    plan.warnings
+        .extend(article_warnings(&conversion.errors, &article.issues));
 
     let mut paper = Map::new();
     paper.insert("title".into(), meta.title.clone().into());
@@ -1255,7 +1392,6 @@ pub fn export_bundle_with(
     if let Some(a) = &meta.abstract_text {
         paper.insert("abstract".into(), a.clone().into());
     }
-    let single = profile == BundleProfile::SingleFile;
     let cap = opts.size_cap_bytes.unwrap_or(DEFAULT_SIZE_CAP_BYTES);
     let mut manifest = Map::new();
     manifest.insert("format".into(), FORMAT.into());
@@ -1307,7 +1443,6 @@ pub fn export_bundle_with(
     let _ = std::fs::remove_file(&stage);
     let mut total = 0u64;
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n";
-    let authors: Vec<String> = meta.authors.iter().map(|a| a.0.clone()).collect();
 
     // Every frame origin some widget declared: the reader's own frame-src.
     let frames: Vec<String> = planned
@@ -1348,10 +1483,8 @@ pub fn export_bundle_with(
             let html = reader::render(
                 &reader::Reader {
                     title: &meta.title,
-                    authors: &authors,
-                    abstract_text: meta.abstract_text.as_deref(),
                     folder: false,
-                    widgets: reader_widgets(&list.widgets, &plan.assets)?,
+                    article: &article.html,
                     pdf: Some(&pdf_bytes),
                     islands: &islands,
                     frames: &frames,
@@ -1414,13 +1547,27 @@ pub fn export_bundle_with(
                 },
             ]
             .concat();
+            // The figures the article references, written by the pipeline
+            // into the scratch folder (content-addressed names).
+            let figures = scratch.0.join("figures");
+            if figures.is_dir() {
+                let entries = std::fs::read_dir(&figures)
+                    .map_err(|e| format!("cannot list {}: {e}", figures.display()))?;
+                for e in entries.flatten() {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.ends_with(".part") {
+                        continue;
+                    }
+                    let bytes = std::fs::read(e.path())
+                        .map_err(|err| format!("cannot read {}: {err}", e.path().display()))?;
+                    put(&stage, &format!("figures/{name}"), &bytes, &mut total)?;
+                }
+            }
             let html = reader::render(
                 &reader::Reader {
                     title: &meta.title,
-                    authors: &authors,
-                    abstract_text: meta.abstract_text.as_deref(),
                     folder: true,
-                    widgets: reader_widgets(&list.widgets, &plan.assets)?,
+                    article: &article.html,
                     pdf: None,
                     islands: &islands,
                     frames: &frames,
