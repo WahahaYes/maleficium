@@ -114,6 +114,8 @@ EXPECT = {  # id: (type, runtime, label)
     "fig-html": ("html", "", "fig:html"),
     "chart-bare": ("chart", "chart@1", ""),
     "chart-inline": ("chart", "chart@1", ""),
+    "fig-pair-a": ("chart", "chart@1", ""),
+    "fig-pair-b": ("chart", "chart@1", ""),
 }
 check("sidecar lists every widget", {w[1] for w in rows} == set(EXPECT), str([w[1] for w in rows]))
 by_id = {w[1]: w for w in rows}
@@ -128,6 +130,9 @@ check("uncaptioned and floatless widgets have no figure number",
       all(by_id[i][5] == "" for i in ("chart-bare", "chart-inline")), str([by_id[i] for i in ("chart-bare", "chart-inline")]))
 check("captioned widgets carry a figure number",
       all(by_id[i][5] != "" for i in ("fig-model", "fig-video", "fig-chart", "fig-html")), str([by_id[i][5] for i in by_id]))
+check("pre-caption subfigure widgets record no label or figure",
+      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("fig-pair-a", "fig-pair-b")),
+      str({i: by_id[i][4:6] for i in ("fig-pair-a", "fig-pair-b")}))
 
 data = open(pdf, "rb").read()
 blobs = [data]
@@ -159,12 +164,19 @@ wby = {x["id"]: x for x in wl}
 check("widget sources and options are typed",
       wby["fig-model"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
       and {"key": "pdfrows", "value": "3"} in wby["tab-results"]["options"]
-      and wby["fig-html"]["sources"][0]["role"] == "bundle", str(wl)[:300])
+      and wby["fig-html"]["sources"][0]["role"] == "bundle"
+      and wby["fig-pair-a"]["sources"] == [{"role": "spec", "path": "charts/ablation.vl.json"}]
+      and wby["fig-pair-b"]["sources"] == wby["fig-pair-a"]["sources"], str(wl)[:300])
 check("the html widget declares the origin it wants, nothing else does",
       wby["fig-html"].get("csp", {}).get("connectDomains") == ["https://example.org"]
       and all("csp" not in wby[i] for i in wby if i != "fig-html"), str(wby["fig-html"].get("csp")))
 check("uncaptioned and floatless widgets list no label",
       all("label" not in wby[i] for i in ("chart-bare", "chart-inline")), str([wby[i] for i in ("chart-bare", "chart-inline")]))
+check("subfigure widgets sit side by side",
+      wby["fig-pair-a"]["page"] == wby["fig-pair-b"]["page"]
+      and (wby["fig-pair-a"]["rect"]["x1"] <= wby["fig-pair-b"]["rect"]["x0"]
+           or wby["fig-pair-b"]["rect"]["x1"] <= wby["fig-pair-a"]["rect"]["x0"]),
+      str([(wby[i]["page"], wby[i]["rect"]) for i in ("fig-pair-a", "fig-pair-b")]))
 
 import shutil, subprocess
 if shutil.which("mutool"):
@@ -174,6 +186,7 @@ if shutil.which("mutool"):
     check("bibliography resolved in the pdf", "theory of communication" in txt.lower() and "[1]" in txt, txt[-300:])
     check("table keeps pdfrows rows", "ours-base" in txt and "ours-large" not in txt, txt[:200])
     check("subfigure captions print", "First panel" in txt and "Second panel" in txt)
+    check("widget subfigure captions print", "Left panel" in txt and "Right panel" in txt)
 else:
     print("skip: pdf text checks need mutool (absent)")
 
