@@ -17,8 +17,11 @@
 //! reads the previous compile's widget list (the document is never
 //! pre-scanned), renders the auto-posters it lacks through the configured
 //! [`PosterRenderer`], and writes the map; the package then typesets each
-//! mapped poster, or a placeholder. A widget new in this compile gets its
-//! placeholder now and its poster on the next compile. [`after_compile`]
+//! mapped poster, or a placeholder. A widget new in this compile is only
+//! known once the engine has written its widget list, so the compile calls
+//! [`before_compile`] again after the engine and, when that rendered a
+//! poster, runs the engine once more: the pdf it hands back shows the new
+//! widget's poster, not a placeholder. [`after_compile`]
 //! rewrites the map from the new widget list and collects garbage: posters
 //! no widget uses go, then the oldest beyond the byte cap.
 //!
@@ -622,8 +625,15 @@ fn job_of(main_file: &str) -> &str {
 /// and write the map. Does nothing before a first compile (no widget list),
 /// and creates the cache only when a widget needs it. Never fails the
 /// compile: problems, and html widgets waiting for approval (each as an
-/// `approval_required` line), are reported through `say`.
-pub fn before_compile(cx: &Core, root_id: &str, main_rel: &str, say: &mut dyn FnMut(String)) {
+/// `approval_required` line), are reported through `say`. Returns how many
+/// posters it rendered: the compile runs the engine again when that is
+/// more than zero after a compile, so the pdf shows them.
+pub fn before_compile(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    say: &mut dyn FnMut(String),
+) -> usize {
     before_compile_at(&widget_approval::store_base(), cx, root_id, main_rel, say)
 }
 
@@ -634,12 +644,12 @@ pub(crate) fn before_compile_at(
     root_id: &str,
     main_rel: &str,
     say: &mut dyn FnMut(String),
-) {
+) -> usize {
     let Ok(list) = widgets(cx, root_id, main_rel) else {
-        return;
+        return 0;
     };
     let Ok(o) = crate::outputs::outputs_of(cx, root_id, main_rel) else {
-        return;
+        return 0;
     };
     let c = Cache::at(&o.dir);
     let (want, pending) = wanted(base, cx, root_id, main_rel, &list.widgets, &c, say);
@@ -647,11 +657,11 @@ pub(crate) fn before_compile_at(
         say(approval_line(r));
     }
     if want.is_empty() && !c.present() {
-        return;
+        return 0;
     }
     if let Err(e) = c.ensure() {
         say(format!("posters: {e}"));
-        return;
+        return 0;
     }
     if let Err(e) = write_readme(&c) {
         say(format!("posters: {e}"));
@@ -714,6 +724,7 @@ pub(crate) fn before_compile_at(
         want.len() - missing.len(),
         want.len() - map.len()
     ));
+    rendered
 }
 
 /// The second pass, after a successful compile: rewrite the map from the

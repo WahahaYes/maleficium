@@ -308,9 +308,18 @@ pub fn run_blocking(
         },
     );
     *cx.jobs().current.lock().unwrap() = Some(id.clone());
-    let c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
+    let mut c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
         sink.push(l);
     });
+    // A widget new in this compile has no poster yet: render what its widget
+    // list now asks for and compile again, so the pdf shows the posters.
+    if matches!(&c, Ok(r) if r.status == JobStatus::Success)
+        && posters::before_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text))) > 0
+    {
+        c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
+            sink.push(l);
+        });
+    }
     if cx.jobs().current.lock().unwrap().as_deref() == Some(id.as_str()) {
         *cx.jobs().current.lock().unwrap() = None;
     }
@@ -412,7 +421,15 @@ pub fn run(
             }
         };
         posters::before_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
-        let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
+        let mut compiled = engine::compile(&out, &child, timeout_secs, networked, &mut on_line);
+        // A widget new in this compile has no poster yet: render what its
+        // widget list now asks for and compile again, so the pdf shows them.
+        if matches!(&compiled, Ok(r) if r.status == JobStatus::Success)
+            && posters::before_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text))) > 0
+        {
+            compiled = engine::compile(&out, &child, timeout_secs, networked, &mut on_line);
+        }
+        let record = match compiled {
             Err(e) => JobRecord {
                 status: JobStatus::Failed,
                 pdf_url: None,
