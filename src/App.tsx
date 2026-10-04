@@ -41,6 +41,7 @@ import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
 import type { OutlineEntry } from './lib/generated/structure';
 import type { ZoomAction } from './lib/zoom';
+import ExportReportDialog from './components/ExportReportDialog';
 import { useExport } from './hooks/useExport';
 import { INTERACTIVE_PACKAGE } from './lib/interactiveInstall';
 import { useInteractiveInstall } from './hooks/useInteractiveInstall';
@@ -969,6 +970,7 @@ export default function App({
         restoringRev={restoringRev}
         onRestore={(rev) => void restoreRevision(rev)}
       />
+      <ExportReportDialog report={exporter.bundleReport} onClose={exporter.closeBundleReport} />
       <TemplateDialogs
         mode={templateMode}
         onClose={() => setTemplateMode(null)}
