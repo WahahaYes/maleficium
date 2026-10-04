@@ -200,7 +200,15 @@ fn pairs(field: &str, what: &str, id: &str) -> Result<Vec<(String, String)>, Str
     Ok(out)
 }
 
-pub fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
+/// A parsed sidecar: the widget records in document order, and the theme
+/// the package recorded (None from a sidecar without theme lines).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sidecar {
+    pub records: Vec<Record>,
+    pub theme: Option<crate::theme::Theme>,
+}
+
+pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
     let mut lines = text.lines();
     match lines.next() {
         Some(SIDECAR_HEADER) => {}
@@ -212,12 +220,17 @@ pub fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
         }
     }
     let mut out: Vec<Record> = Vec::new();
+    let mut theme = crate::theme::Lines::default();
     for (n, line) in lines.enumerate() {
         let n = n + 2;
         if line.trim().is_empty() {
             continue;
         }
         let f: Vec<&str> = line.split('|').collect();
+        if f[0] == "theme" {
+            theme.add(n, &f[1..])?;
+            continue;
+        }
         if f[0] != "widget" {
             return Err(format!(
                 "widget sidecar line {n}: unknown record `{}`",
@@ -265,7 +278,10 @@ pub fn parse_sidecar(text: &str) -> Result<Vec<Record>, String> {
             alt: f[10].to_string(),
         });
     }
-    Ok(out)
+    Ok(Sidecar {
+        records: out,
+        theme: theme.finish()?,
+    })
 }
 
 /// A named annotation found on a page.
@@ -574,6 +590,17 @@ fn sidecar_file(o: &crate::MainOutputs) -> std::path::PathBuf {
 /// widget's bundle manifest is invalid. A compile of a document without
 /// widgets leaves neither sidecar nor annotations and lists nothing.
 pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, String> {
+    read(cx, root_id, main_rel).map(|(list, _)| list)
+}
+
+/// [`widgets`] and the theme of the same compile, from one read of the
+/// sidecar: its theme record, or [`Theme::house`](crate::theme::Theme::house)
+/// when the compile recorded none (the document does not use the package).
+pub fn read(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+) -> Result<(WidgetList, crate::theme::Theme), String> {
     let o = super::outputs::outputs_of(cx, root_id, main_rel)?;
     let pdf_path = o.outdir.join(&o.pdf_name);
     let bytes = std::fs::read(&pdf_path)
@@ -581,13 +608,16 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
     let found = marks(bytes).map_err(|e| format!("{main_rel}: {e}"))?;
 
     let sidecar_path = sidecar_file(&o);
-    let records = match std::fs::read_to_string(&sidecar_path) {
+    let sidecar = match std::fs::read_to_string(&sidecar_path) {
         Ok(text) => parse_sidecar(&text).map_err(|e| format!("{main_rel}: {e}"))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             if found.is_empty() {
-                return Ok(WidgetList {
-                    widgets: Vec::new(),
-                });
+                return Ok((
+                    WidgetList {
+                        widgets: Vec::new(),
+                    },
+                    crate::theme::Theme::house(),
+                ));
             }
             return Err(format!(
                 "{main_rel}: the pdf carries widget annotations ({}) but the compile left no widget sidecar; recompile the document",
@@ -602,7 +632,8 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     let mut out = Vec::new();
-    for (r, m) in join(records, found).map_err(|e| format!("{main_rel}: {e}"))? {
+    let theme = sidecar.theme.unwrap_or_else(crate::theme::Theme::house);
+    for (r, m) in join(sidecar.records, found).map_err(|e| format!("{main_rel}: {e}"))? {
         let csp = match r.kind {
             WidgetType::Html => match r.sources.iter().find(|s| s.role == "bundle") {
                 Some(s) => {
@@ -646,7 +677,7 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
             .then(b.rect.y1.total_cmp(&a.rect.y1))
             .then(a.rect.x0.total_cmp(&b.rect.x0))
     });
-    Ok(WidgetList { widgets: out })
+    Ok((WidgetList { widgets: out }, theme))
 }
 
 /// Each widget's sidecar record as the package wrote it, runtime, sources

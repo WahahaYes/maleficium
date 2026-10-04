@@ -36,6 +36,12 @@
 %   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
 % sources is role=path,... and options is k=v,...; empty fields are empty.
 % Recorded values never contain |, # or braces; dimensions ride as pt.
+%
+% Theme lines (written at the end of the document, see "theme" below):
+%   theme|light|<token>|<value>   every token of the reader and the widgets
+%   theme|dark|<token>|<value>    the tokens that change in dark mode
+% The values are CSS (a #rrggbb colour, a font-family list, a length);
+% the exporter, the reader and the poster renderer read them from here.
 % Every widget declares its text alternative with alt= (used as the HTML
 % img alt); there is no caption fallback because the exporter cannot read
 % caption text back.
@@ -256,6 +262,20 @@
   \regex_replace_all:nnN { \s+ } { \  } \l_mfw_fold_str
   \tl_set:Nx \mfw@folded { \l_mfw_fold_str }
 }
+% A font family's key for the theme's font table: lowercase letters and
+% digits of the NFSS family (lmr) or the fontspec one (LibertinusSerif(0),
+% LibertinusSerif-Regular.otf(0)), without the instance number, the file
+% extension and a -Regular suffix.
+\str_new:N \l_mfw_font_str
+\cs_new_protected:Npn \mfw@fontkey #1 {
+  \str_set:Nx \l_mfw_font_str {#1}
+  \str_set:Nx \l_mfw_font_str { \exp_args:NV \str_foldcase:n \l_mfw_font_str }
+  \regex_replace_once:nnN { \(\d*\)\Z } {} \l_mfw_font_str
+  \regex_replace_once:nnN { \.(otf|ttf)\Z } {} \l_mfw_font_str
+  \regex_replace_once:nnN { -regular\Z } {} \l_mfw_font_str
+  \regex_replace_all:nnN { [^a-z0-9] } {} \l_mfw_font_str
+  \tl_set:Nx \mfw@key { \l_mfw_font_str }
+}
 % Plain-name entry points for the LaTeX2e body below.
 \cs_new_protected:Npn \mfw@slugify { \mfw_slugify: }
 \cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
@@ -382,6 +402,180 @@
   \immediate\write\mfw@sidecar{widget|\mfw@s@id|\mfw@s@type|\mfw@s@rt|%
     \mfw@s@label|\mfw@s@fig|\mfw@s@theme|\mfw@s@poster|\mfw@s@src|\mfw@s@opt|\mfw@s@alt}%
 }
+
+% -- theme -------------------------------------------------------------------
+% The token set of the reader and the widgets, with the house values. What
+% follows the document: the figure plate (--m-figure-bg, behind every
+% widget) is the page colour (\pagecolor; white when none is set) in light
+% mode and its dark counterpart in dark mode, and the ink, surface, accent
+% and data colours on the plate are chosen to read on it. The fonts follow
+% the document's \rmdefault, \sfdefault and \ttdefault when they are a
+% family this table knows; otherwise the house stack stands. Every value
+% written comes from the tables below, never from the document's text.
+\begingroup
+\catcode`\#=12 \catcode`\%=12
+\gdef\mfw@hash{#}\gdef\mfw@pct{%}
+\endgroup
+\def\mfw@names@shared{}
+\def\mfw@names@moded{}
+\def\mfw@names@fig{}
+\newcommand{\mfw@addto}[2]{%
+  \ifx#1\empty\xdef#1{#2}\else\xdef#1{#1,#2}\fi}
+% \mfw@tok{name}{value}: one value in both modes.
+\newcommand{\mfw@tok}[2]{%
+  \expandafter\gdef\csname mfw@v@#1\endcsname{#2}\mfw@addto\mfw@names@shared{#1}}
+% \mfw@col{name}{light hex}{dark hex}: a colour per mode.
+\newcommand{\mfw@col}[3]{%
+  \expandafter\gdef\csname mfw@l@#1\endcsname{\mfw@hash#2}%
+  \expandafter\gdef\csname mfw@d@#1\endcsname{\mfw@hash#3}%
+  \mfw@addto\mfw@names@moded{#1}}
+% \mfw@mtok{name}{light}{dark}: another value per mode.
+\newcommand{\mfw@mtok}[3]{%
+  \expandafter\gdef\csname mfw@l@#1\endcsname{#2}%
+  \expandafter\gdef\csname mfw@d@#1\endcsname{#3}%
+  \mfw@addto\mfw@names@moded{#1}}
+% \mfw@fig{name}{on a light plate}{on a dark plate}: a colour on the plate.
+\newcommand{\mfw@fig}[3]{%
+  \expandafter\gdef\csname mfw@fl@#1\endcsname{\mfw@hash#2}%
+  \expandafter\gdef\csname mfw@fd@#1\endcsname{\mfw@hash#3}%
+  \mfw@addto\mfw@names@fig{#1}}
+% Fonts: the house stack's first names, replaced by the document's family.
+\def\mfw@font@body{"Libertinus Serif"}
+\def\mfw@font@heading{"Libertinus Sans"}
+\def\mfw@font@mono{"Libertinus Mono"}
+\mfw@tok{--m-font-math}{"Libertinus Math", math}
+\mfw@tok{--m-size-base}{1.0625rem}
+\mfw@tok{--m-scale}{1.2}
+\mfw@tok{--m-size-small}{0.875em}
+\mfw@tok{--m-leading}{1.6}
+\mfw@tok{--m-measure}{68ch}
+\mfw@tok{--m-figure-max}{min(100\mfw@pct, 64rem)}
+\mfw@tok{--m-space-1}{0.25rem}
+\mfw@tok{--m-space-2}{0.5rem}
+\mfw@tok{--m-space-3}{1rem}
+\mfw@tok{--m-space-4}{1.5rem}
+\mfw@tok{--m-space-5}{2.5rem}
+\mfw@tok{--m-space-6}{4rem}
+\mfw@tok{--m-radius}{6px}
+\mfw@col{--m-color-bg}{FBFAF7}{16181D}
+\mfw@col{--m-color-surface}{F1EFE9}{1F2229}
+\mfw@col{--m-color-text}{1E1B24}{DFE1E6}
+\mfw@col{--m-color-muted}{6B6676}{9AA1AD}
+\mfw@col{--m-color-rule}{D9D5E0}{343944}
+\mfw@col{--m-color-link}{5B2A86}{B79AD4}
+\mfw@col{--m-color-accent}{5B2A86}{B79AD4}
+\mfw@col{--m-color-target}{FFF4C2}{3A3420}
+\mfw@col{--m-color-error}{B3261E}{FF8A80}
+\mfw@col{--m-color-error-bg}{FDECEA}{3A2220}
+\mfw@col{--m-color-warning}{8A5A00}{F0B73C}
+\mfw@col{--m-tooltip-bg}{FFFFFF}{262A32}
+\mfw@col{--m-tooltip-fg}{1E1B24}{DFE1E6}
+\mfw@col{--m-tooltip-border}{D9D5E0}{434957}
+\mfw@mtok{--m-shadow}{0 2px 8px rgba(30, 27, 36, 0.16)}{0 2px 10px rgba(0, 0, 0, 0.5)}
+% On the plate. The categorical, sequential and diverging colours are the
+% validated reference palette, stepped for each kind of plate.
+\mfw@fig{--m-figure-ink}{1E1B24}{DFE1E6}
+\mfw@fig{--m-figure-accent}{5B2A86}{B79AD4}
+\mfw@fig{--m-cat-1}{2A78D6}{3987E5}
+\mfw@fig{--m-cat-2}{EB6834}{D95926}
+\mfw@fig{--m-cat-3}{1BAF7A}{199E70}
+\mfw@fig{--m-cat-4}{EDA100}{C98500}
+\mfw@fig{--m-cat-5}{E87BA4}{D55181}
+\mfw@fig{--m-cat-6}{008300}{008300}
+\mfw@fig{--m-cat-7}{4A3AA7}{9085E9}
+\mfw@fig{--m-cat-8}{E34948}{E66767}
+\mfw@fig{--m-seq-1}{CDE2FB}{0D366B}
+\mfw@fig{--m-seq-2}{86B6EF}{1C5CAB}
+\mfw@fig{--m-seq-3}{3987E5}{3987E5}
+\mfw@fig{--m-seq-4}{1C5CAB}{86B6EF}
+\mfw@fig{--m-seq-5}{0D366B}{CDE2FB}
+\mfw@fig{--m-div-low}{256ABF}{3987E5}
+\mfw@fig{--m-div-mid}{F0EFEC}{383835}
+\mfw@fig{--m-div-high}{E34948}{E66767}
+% The plate's dark counterpart, unless the page itself is dark.
+\definecolor{mfwdarkplate}{HTML}{1C1F25}
+% The page colour: \pagecolor and \nopagecolor are followed from here on
+% (a \pagecolor before this package loads is not seen).
+\colorlet{mfwpage}{white}
+\let\mfw@orig@pagecolor\set@page@color
+\def\set@page@color{\xglobal\colorlet{mfwpage}{.}\mfw@orig@pagecolor}
+\@ifundefined{no@page@color}{}{%
+  \let\mfw@orig@nopagecolor\no@page@color
+  \def\no@page@color{\xglobal\colorlet{mfwpage}{white}\mfw@orig@nopagecolor}}
+% Families this table knows, by their key (see \mfw@fontkey).
+\def\mfw@fontmap#1#2{\expandafter\def\csname mfw@fm@#1\endcsname{#2}}
+\mfw@fontmap{lmr}{"Latin Modern Roman"}
+\mfw@fontmap{cmr}{"Latin Modern Roman"}
+\mfw@fontmap{lmss}{"Latin Modern Sans"}
+\mfw@fontmap{cmss}{"Latin Modern Sans"}
+\mfw@fontmap{lmtt}{"Latin Modern Mono"}
+\mfw@fontmap{cmtt}{"Latin Modern Mono"}
+\mfw@fontmap{libertinusserif}{"Libertinus Serif"}
+\mfw@fontmap{libertinusseriftlf}{"Libertinus Serif"}
+\mfw@fontmap{libertinussans}{"Libertinus Sans"}
+\mfw@fontmap{libertinussanstlf}{"Libertinus Sans"}
+\mfw@fontmap{libertinusmono}{"Libertinus Mono"}
+\mfw@fontmap{libertinusmonotlf}{"Libertinus Mono"}
+\mfw@fontmap{ptm}{"TeX Gyre Termes", "Times New Roman", Times}
+\mfw@fontmap{qtm}{"TeX Gyre Termes", "Times New Roman", Times}
+\mfw@fontmap{texgyretermes}{"TeX Gyre Termes", "Times New Roman", Times}
+\mfw@fontmap{ppl}{"TeX Gyre Pagella", Palatino}
+\mfw@fontmap{qpl}{"TeX Gyre Pagella", Palatino}
+\mfw@fontmap{texgyrepagella}{"TeX Gyre Pagella", Palatino}
+\mfw@fontmap{phv}{"TeX Gyre Heros", Helvetica, Arial}
+\mfw@fontmap{qhv}{"TeX Gyre Heros", Helvetica, Arial}
+\mfw@fontmap{texgyreheros}{"TeX Gyre Heros", Helvetica, Arial}
+\mfw@fontmap{pcr}{"TeX Gyre Cursor", "Courier New"}
+\mfw@fontmap{qcr}{"TeX Gyre Cursor", "Courier New"}
+\mfw@fontmap{texgyrecursor}{"TeX Gyre Cursor", "Courier New"}
+% \mfw@usefont{<family macro>}{<slot macro>}: the slot takes the family's
+% mapped names when the table knows it.
+\newcommand{\mfw@usefont}[2]{%
+  \mfw@fontkey{#1}%
+  \ifcsname mfw@fm@\mfw@key\endcsname
+    \expandafter\let\expandafter#2\csname mfw@fm@\mfw@key\endcsname
+  \fi}
+% \ifmfw@darkplate: whether colour #1 is dark (xcolor's gray below 0.45,
+% where light ink reads better than dark).
+\newif\ifmfw@darkplate
+\newcommand{\mfw@isdark}[1]{%
+  \extractcolorspecs{#1}\mfw@cm\mfw@cs
+  \convertcolorspec{\mfw@cm}{\mfw@cs}{gray}\mfw@gray
+  \ifdim\mfw@gray pt<0.45pt\relax\mfw@darkplatetrue\else\mfw@darkplatefalse\fi}
+\newcommand{\mfw@hexof}[2]{%
+  \extractcolorspecs{#1}\mfw@cm\mfw@cs
+  \convertcolorspec{\mfw@cm}{\mfw@cs}{HTML}#2}
+\newcommand{\mfw@line}[3]{\immediate\write\mfw@sidecar{theme|#1|#2|#3}}
+% #1 mode, #2 the plate's colour name: the plate and what sits on it.
+\newcommand{\mfw@plate}[2]{%
+  \mfw@isdark{#2}%
+  \mfw@hexof{#2}\mfw@platehex
+  \mfw@line{#1}{--m-figure-bg}{\mfw@hash\mfw@platehex}%
+  \ifmfw@darkplate\colorlet{mfw@fs}{#2!94!white}\else\colorlet{mfw@fs}{#2!94!black}\fi
+  \mfw@hexof{mfw@fs}\mfw@fshex
+  \mfw@line{#1}{--m-figure-surface}{\mfw@hash\mfw@fshex}%
+  \@for\mfw@n:=\mfw@names@fig\do{%
+    \mfw@line{#1}{\mfw@n}{\csname mfw@\ifmfw@darkplate fd\else fl\fi @\mfw@n\endcsname}}%
+}
+\newcommand{\mfw@write@theme}{%
+  \mfw@open@sidecar
+  \mfw@usefont{\rmdefault}{\mfw@font@body}%
+  \mfw@usefont{\sfdefault}{\mfw@font@heading}%
+  \mfw@usefont{\ttdefault}{\mfw@font@mono}%
+  \mfw@line{light}{--m-font-body}{\mfw@font@body, Georgia, serif}%
+  \mfw@line{light}{--m-font-heading}{\mfw@font@heading, system-ui, sans-serif}%
+  \mfw@line{light}{--m-font-mono}{\mfw@font@mono, ui-monospace, monospace}%
+  \@for\mfw@n:=\mfw@names@shared\do{%
+    \mfw@line{light}{\mfw@n}{\csname mfw@v@\mfw@n\endcsname}}%
+  \@for\mfw@n:=\mfw@names@moded\do{%
+    \mfw@line{light}{\mfw@n}{\csname mfw@l@\mfw@n\endcsname}}%
+  \mfw@plate{light}{mfwpage}%
+  \@for\mfw@n:=\mfw@names@moded\do{%
+    \mfw@line{dark}{\mfw@n}{\csname mfw@d@\mfw@n\endcsname}}%
+  \mfw@isdark{mfwpage}%
+  \ifmfw@darkplate\mfw@plate{dark}{mfwpage}\else\mfw@plate{dark}{mfwdarkplate}\fi
+}
+\AtEndDocument{\mfw@write@theme}
 
 % -- annotation and placement ------------------------------------------------
 % The special must sit inline with the poster box: bare in vertical mode the
