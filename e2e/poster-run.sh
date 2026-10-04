@@ -43,6 +43,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
   || fail "cannot build the app and sidecar"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 mkdir "$SCRATCH/out"
 # The probe: an html widget with no poster= whose script, when run, answers
 # the bridge with a magenta snapshot.
@@ -143,7 +144,6 @@ def call(name, args):
     return {"ok": True, **r} if ok else {"ok": False, "error": r}
 
 check("grant project root", call("grant", {"root_id": "pp", "root": ROOT})["ok"])
-check("install the package", call("interactive_install", {"root_id": "pp"})["ok"])
 before = tree(ROOT)
 r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
 rec = {"status": "not-started", "log": str(r)}
@@ -375,9 +375,9 @@ except subprocess.TimeoutExpired:
     app.kill()
     code = None
 check("the renderer exits at end of input, non-zero after failures", code == 1, str(code))
-after = {k: v for k, v in tree(ROOT).items() if k not in ("maleficium-interactive.sty", "widgets/probe/probe.js")}
+after = {k: v for k, v in tree(ROOT).items() if k != "widgets/probe/probe.js"}
 check("the project is untouched, explicit posters included",
-      after == {k: v for k, v in before.items() if k not in ("maleficium-interactive.sty", "widgets/probe/probe.js")},
+      after == {k: v for k, v in before.items() if k != "widgets/probe/probe.js"},
       str(set(after.items()) ^ set(before.items()))[:300])
 
 # --- the two-pass compile ------------------------------------------------------

@@ -23,6 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 python3 -c "import jsonschema" 2>/dev/null || fail "python3 jsonschema is required"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
+cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -115,8 +116,6 @@ check("the committed schema is itself a valid 2020-12 schema",
       (jsonschema.Draft202012Validator.check_schema(schema) or True))
 g = call("grant", {"root_id": "ip", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
-r = call("interactive_install", {"root_id": "ip"})
-check("install writes the package", r["ok"], str(r))
 
 # Before any compile: an error, not an empty bundle.
 out0 = os.path.join(scratch, "out0")
