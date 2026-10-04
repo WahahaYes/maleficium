@@ -91,6 +91,13 @@ body.m-reader {
   margin-top: var(--m-space-2);
   font-size: var(--m-size-small);
 }
+.m-reader figure[data-state='error'] iframe {
+  opacity: 0;
+  pointer-events: none;
+}
+.m-reader figure[data-state='error'] .poster {
+  display: block;
+}
 .m-reader figure[data-state='error'] figcaption::after {
   content: ' (the interactive view failed; the poster is shown)';
   color: var(--m-color-muted);

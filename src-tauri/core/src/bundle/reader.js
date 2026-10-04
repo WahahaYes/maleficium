@@ -46,6 +46,12 @@
     widgets[w.id] = w;
   });
   var frames = [];
+  // A widget that fails gives its place back to the poster: the frame is
+  // hidden again and the caption says so.
+  function fail(fig) {
+    fig.classList.remove('live');
+    fig.setAttribute('data-state', 'error');
+  }
   function bytesOf(key) {
     var a = (manifest.assets || {})[key];
     if (!a) return Promise.reject(new Error('no asset ' + key));
@@ -99,7 +105,7 @@
         rec.fig.setAttribute('data-state', 'ready');
       })
       .catch(function () {
-        rec.fig.setAttribute('data-state', 'error');
+        fail(rec.fig);
       });
   }
   window.addEventListener('message', function (e) {
@@ -110,8 +116,7 @@
       if (d.type === 'ready' && !frames[i].started) {
         frames[i].started = true;
         init(frames[i]);
-      } else if (d.type === 'status' && d.state === 'error')
-        frames[i].fig.setAttribute('data-state', 'error');
+      } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       return;
     }
   });
@@ -167,6 +172,7 @@
     // An author bundle need not speak the host protocol: it is shown once it has loaded.
     if (w.type === 'html') {
       f.addEventListener('load', function () {
+        if (fig.getAttribute('data-state') === 'error') return;
         fig.classList.add('live');
         fig.setAttribute('data-state', 'ready');
       });
