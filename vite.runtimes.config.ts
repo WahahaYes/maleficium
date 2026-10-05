@@ -36,6 +36,23 @@ function classicScript(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
+  // The bridge authors copy into their own runtimes: bridge.ts as one
+  // classic script, committed beside the built-ins the scaffold copies it from.
+  if (mode === 'bridge') {
+    return {
+      build: {
+        outDir: 'src-tauri/widget-runtimes/bridge',
+        emptyOutDir: true,
+        target: 'es2020',
+        lib: {
+          entry: 'src/widget-runtimes/bridge.ts',
+          formats: ['iife'],
+          name: 'mfwBridge',
+          fileName: () => 'bridge.js',
+        },
+      },
+    };
+  }
   const runtime = process.env.RUNTIME ?? (RUNTIMES.includes(mode) ? mode : 'table');
   return {
     root: `src/widget-runtimes/${runtime}`,
