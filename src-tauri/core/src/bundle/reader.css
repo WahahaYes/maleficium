@@ -138,6 +138,15 @@ body.m-reader {
   hyphens: auto;
   overflow-wrap: break-word;
 }
+/* Reader flags (paper.reader.measure): closed tokens only, overriding the
+   theme's --m-measure for the article column. `default` is the theme's
+   68ch and needs no rule. */
+.m-reader[data-measure='narrow'] {
+  --m-measure: 56ch;
+}
+.m-reader[data-measure='wide'] {
+  --m-measure: 80ch;
+}
 .m-reader .ltx_page_footer,
 .m-reader .ltx_page_logo {
   display: none;

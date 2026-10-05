@@ -20,6 +20,8 @@
 %
 % Usage:
 %   \maleficiumtheme{house}                    % optional; house is default
+%   \maleficiumcontents{off}                   % optional; on is default
+%   \maleficiummeasure{wide}                   % optional; default is default
 %   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
 %   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
 %   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
@@ -102,6 +104,8 @@
 \newlength{\mfw@dimw}
 \newif\ifmfw@ok
 \def\mfw@theme{house}
+\def\mfw@contents{on}
+\def\mfw@measure{default}
 \def\mfw@floatlabel{}
 \newwrite\mfw@sidecar
 \newif\ifmfw@sidecar@open
@@ -169,6 +173,30 @@
       {Use \protect\maleficiumtheme{house} or another id matching [a-z0-9-]+.}%
   \fi
   \gdef\mfw@theme{#1}%
+}
+
+% Reader flags: document-level reader settings. They change nothing in the
+% PDF (no output, no sidecar line); the HTML conversion carries each call as
+% a marker. Closed sets only: anything else fails the compile like a bad id.
+\newcommand{\maleficiumcontents}[1]{%
+  \def\mfw@flag{#1}%
+  \mfw@ifin{\mfw@flag}{on,off}{%
+    \gdef\mfw@contents{#1}%
+  }{%
+    \PackageError{maleficium-interactive}%
+      {Contents flag `#1' must be on or off}%
+      {Pass \protect\maleficiumcontents{on} or \protect\maleficiumcontents{off}.}%
+  }%
+}
+\newcommand{\maleficiummeasure}[1]{%
+  \def\mfw@flag{#1}%
+  \mfw@ifin{\mfw@flag}{narrow,default,wide}{%
+    \gdef\mfw@measure{#1}%
+  }{%
+    \PackageError{maleficium-interactive}%
+      {Measure flag `#1' must be narrow, default or wide}%
+      {Pass \protect\maleficiummeasure{narrow}, \protect\maleficiummeasure{default} or \protect\maleficiummeasure{wide}.}%
+  }%
 }
 
 % -- strings -------------------------------------------------------------------

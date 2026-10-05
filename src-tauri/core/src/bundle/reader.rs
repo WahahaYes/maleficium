@@ -12,6 +12,7 @@
 //! points the frame at `widgets/<id>/index.html` (http or https only: over
 //! file:// the page says so instead of showing a broken view).
 
+use super::flags::Measure;
 use super::fold;
 use base64::Engine;
 
@@ -23,6 +24,9 @@ pub(super) struct Reader<'a> {
     pub folder: bool,
     /// The sanitized `<article>`, mount units in place.
     pub article: &'a str,
+    /// The article column width (`paper.reader.measure`): a closed token,
+    /// rendered as a `data-measure` override of the theme's `--m-measure`.
+    pub measure: Measure,
     /// The pdf bytes of a single-file bundle (a folder links `paper.pdf`).
     pub pdf: Option<&'a [u8]>,
     /// The `<script type="application/json">` islands the page reads.
@@ -76,7 +80,13 @@ pub(super) fn render(r: &Reader) -> String {
     );
     page.push_str(r.theme_css);
     page.push_str(CSS);
-    page.push_str("</style></head><body class=\"m-reader\"><main>");
+    page.push_str("</style></head><body class=\"m-reader\"");
+    // Only a non-default measure rides along, as its closed token (the
+    // widths live in reader.css): `default` is the theme's 68ch.
+    if r.measure.width().is_some() {
+        page.push_str(&format!(" data-measure=\"{}\"", r.measure.token()));
+    }
+    page.push_str("><main>");
     page.push_str("<noscript><p class=\"note\">Scripts are off, so the interactive figures show their posters.</p></noscript>");
     page.push_str(&format!(
         "<p class=\"m-version\"><a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\">paper.pdf</a> is the version of record.</p>"
@@ -97,17 +107,49 @@ mod tests {
     const ARTICLE: &str = "<article class=\"ltx_document\"><h1 class=\"ltx_title ltx_title_document\">T</h1><figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"model\" style=\"--ar:2.00 / 1.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>A</figcaption></figure></article>";
 
     fn page(folder: bool) -> String {
+        page_with(folder, Measure::Default)
+    }
+
+    fn page_with(folder: bool, measure: Measure) -> String {
         let theme = crate::theme::Theme::house();
         render(&Reader {
             title: "T & <title>",
             folder,
             article: ARTICLE,
+            measure,
             pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
             islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
             frames: &[],
             theme: &theme,
             theme_css: &theme.css().unwrap(),
         })
+    }
+
+    #[test]
+    fn the_measure_flag_overrides_the_article_column_with_a_closed_token() {
+        let default = page(false);
+        assert!(
+            !default.contains("<body class=\"m-reader\" data-measure"),
+            "default is the theme's 68ch"
+        );
+        for (measure, width) in [(Measure::Narrow, "56ch"), (Measure::Wide, "80ch")] {
+            let h = page_with(false, measure);
+            let token = measure.token();
+            assert!(
+                h.contains(&format!(
+                    "<body class=\"m-reader\" data-measure=\"{token}\">"
+                )),
+                "{token}"
+            );
+            assert!(
+                h.contains(&format!(".m-reader[data-measure='{token}']")),
+                "{token} has its override rule"
+            );
+            assert!(
+                h.contains(&format!("--m-measure: {width};")),
+                "{token} maps to its closed width"
+            );
+        }
     }
 
     #[test]

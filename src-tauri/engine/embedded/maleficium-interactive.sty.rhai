@@ -19,8 +19,17 @@
 //   \interactive, \interactivemodel, \interactivevideo, \interactivetable,
 //   \interactivechart, \interactiveruntime   placeholder, arguments read
 //                       verbatim and dropped (custom: the runtime's own widget)
+//   \maleficiumcontents{on|off}             one empty flag marker per call:
+//                       <ltx:text class="m-flag m-flag-contents-on|off"/>
+//   \maleficiummeasure{narrow|default|wide}  one empty flag marker per call:
+//                       <ltx:text class="m-flag m-flag-measure-*"/>
 //   \maleficiumtheme   no output (the theme is a PDF/sidecar concern)
 //   \mfwSlash           no output (the PDF's brand mark)
+// A flag marker is the reader-flag analog of a widget placeholder: one empty
+// element, the value riding in a closed class token (`ltx:text` takes no
+// value attributes). The PDF compile already rejected anything outside the
+// closed sets, so anything else here is a conversion error, never an open
+// class token. The exporter joins the markers in document order.
 // The package's colors are defined so \textcolor{mfwaccent} still works.
 //
 // Packages: the .sty loads graphicx, xcolor and keyval, and hyperref when the
@@ -46,3 +55,25 @@ DefConstructor("\\interactivevideo [Semiverbatim] Semiverbatim", "<ltx:text clas
 DefConstructor("\\interactivetable [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-table\"/>");
 DefConstructor("\\interactivechart [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-chart\"/>");
 DefConstructor("\\interactiveruntime [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-custom\"/>");
+
+DefConstructor("\\maleficiumcontents Semiverbatim", |document, v| {
+  let s = ToString(v);
+  if s == "on" || s == "off" {
+    document.openElement("ltx:text");
+    document.setAttribute("class", "m-flag m-flag-contents-" + s);
+    document.closeElement("ltx:text");
+  } else {
+    Error("maleficium", "maleficiumcontents", "contents flag `" + s + "' must be on or off");
+  }
+});
+
+DefConstructor("\\maleficiummeasure Semiverbatim", |document, v| {
+  let s = ToString(v);
+  if s == "narrow" || s == "default" || s == "wide" {
+    document.openElement("ltx:text");
+    document.setAttribute("class", "m-flag m-flag-measure-" + s);
+    document.closeElement("ltx:text");
+  } else {
+    Error("maleficium", "maleficiummeasure", "measure flag `" + s + "' must be narrow, default or wide");
+  }
+});
