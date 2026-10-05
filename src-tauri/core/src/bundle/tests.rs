@@ -797,6 +797,14 @@ fn the_committed_schema_is_the_one_the_note_describes() {
         s["$defs"]["widget"]["properties"]["type"]["enum"],
         json!(["model", "video", "table", "chart", "html", "custom"])
     );
+    assert_eq!(
+        s["properties"]["paper"]["properties"]["reader"]["properties"]["measure"]["enum"],
+        json!(["narrow", "default", "wide"])
+    );
+    assert_eq!(
+        s["properties"]["paper"]["properties"]["reader"]["properties"]["contents"]["type"],
+        "boolean"
+    );
 }
 
 // ---- paper metadata -----------------------------------------------------
@@ -1141,6 +1149,112 @@ fn the_reader_is_the_article_and_the_pdf_a_download() {
     assert!(!files_under(&p.root)
         .iter()
         .any(|f| f.ends_with(".html") && !f.starts_with("widgets/")));
+}
+
+// ---- reader flags -------------------------------------------------------
+
+/// The clean conversion with flag markers as the Rhai binding emits them,
+// plus one hostile token.
+fn flagged_conversion() -> String {
+    let html = clean_conversion();
+    let markers = concat!(
+        "<span class=\"ltx_text m-flag m-flag-contents-on\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-measure-narrow\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-contents-off\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-measure-wide\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-contents-sideways\"></span>",
+    );
+    html.replacen("</article>", &format!("{markers}</article>"), 1)
+}
+
+#[test]
+fn reader_flags_resolve_to_the_manifest_and_shape_the_page() {
+    let p = project("flags", REAL_SIDECAR);
+    converts_to(&p, Ok(flagged_conversion()), &[]);
+    for (name, profile) in [
+        ("one.html", BundleProfile::SingleFile),
+        ("folder", BundleProfile::Folder),
+    ] {
+        let d = dest(&p, name);
+        let r = export(&p, &d, profile).unwrap();
+        // Last valid marker of each kind wins; the hostile token falls back.
+        if profile == BundleProfile::Folder {
+            let m = manifest_of(Path::new(&d));
+            assert_eq!(
+                m["paper"]["reader"],
+                json!({"contents": false, "measure": "wide"})
+            );
+        }
+        let html = reader_html(&d, profile);
+        assert!(!html.contains("m-flag"), "{name}: markers are stripped");
+        assert!(
+            !html.contains("<nav class=\"m-contents\""),
+            "{name}: contents:false omits the nav"
+        );
+        assert!(
+            html.contains("<body class=\"m-reader\" data-measure=\"wide\">"),
+            "{name}: the wide token overrides the column"
+        );
+        let flag = r
+            .warnings
+            .iter()
+            .find(|w| w.message.contains("m-flag-contents-sideways"))
+            .unwrap();
+        assert_eq!(flag.kind, BundleWarningKind::Conversion, "{name}");
+        assert!(flag.message.contains("default"), "{name}: {}", flag.message);
+    }
+}
+
+#[test]
+fn reader_flags_default_to_contents_with_the_theme_measure() {
+    let p = project("flag-defaults", REAL_SIDECAR);
+    let d = dest(&p, "folder");
+    export(&p, &d, BundleProfile::Folder).unwrap();
+    let m = manifest_of(Path::new(&d));
+    assert_eq!(
+        m["paper"]["reader"],
+        json!({"contents": true, "measure": "default"})
+    );
+    let html = reader_html(&d, BundleProfile::Folder);
+    assert!(
+        html.contains("<nav class=\"m-contents\""),
+        "nav still emitted"
+    );
+    assert!(
+        !html.contains("data-measure=\""),
+        "default is the theme's 68ch"
+    );
+}
+
+#[test]
+fn the_reader_block_enforces_its_closed_shapes() {
+    let good = good_manifest();
+    assert_eq!(
+        good["paper"]["reader"],
+        json!({"contents": true, "measure": "default"})
+    );
+    validate_manifest(&good).unwrap();
+    // A bundle from before flags existed still validates.
+    let mut old = good.clone();
+    old["paper"].as_object_mut().unwrap().remove("reader");
+    validate_manifest(&old).unwrap();
+    let bad = |f: &dyn Fn(&mut Value)| -> String {
+        let mut m = good.clone();
+        f(&mut m);
+        validate_manifest(&m).unwrap_err()
+    };
+    assert!(bad(&|m| m["paper"]["reader"] = "wide".into()).contains("not an object"));
+    assert!(bad(&|m| m["paper"]["reader"]["contents"] = 1.into()).contains("not a boolean"));
+    assert!(
+        bad(&|m| m["paper"]["reader"]["contents"] = "false".into()).contains("not a boolean"),
+        "no string coerces to a boolean"
+    );
+    assert!(
+        bad(&|m| m["paper"]["reader"]["measure"] = "huge".into())
+            .contains("not narrow, default or wide"),
+        "no open width reaches CSS"
+    );
+    assert!(bad(&|m| m["paper"]["reader"]["extra"] = true.into()).contains("schema"));
 }
 
 #[test]
