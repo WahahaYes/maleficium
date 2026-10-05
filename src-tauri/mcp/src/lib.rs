@@ -220,6 +220,45 @@ struct WidgetCheckParams {
     widget: String,
 }
 
+/// Unknown fields are refused: the scaffold takes a name and an
+/// optional `--from`, nothing that could approve or install.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeScaffoldParams {
+    /// The new runtime's name (`<name>` of `<name>@1`).
+    name: String,
+    /// Fork a built-in: only `model@1` (its built entry plus sources).
+    from: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeScaffoldOut {
+    reference: String,
+    /// Absolute path of the draft folder in the user library.
+    path: String,
+}
+
+/// Unknown fields are refused: the validator reads one package, nothing
+/// that could approve, install or allow.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeValidateParams {
+    /// The package ref (`<name>@<major>`).
+    reference: String,
+    /// With it, the project's installed copy; without it, the library's.
+    root_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeValidateOut {
+    reference: String,
+    path: String,
+    valid: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    manifest: Option<serde_json::Value>,
+}
+
 /// Unknown fields are refused: the export has no approval argument for an
 /// agent to pass, so an `approved_fetch` (or anything like it) is an error,
 /// not something quietly ignored.
@@ -881,6 +920,66 @@ impl Maleficium {
                 let _ = core::eventlog::append(std::slice::from_ref(&e));
             }
             Ok(Json(checked.status))
+        })
+    }
+
+    #[tool(
+        description = "Scaffold a custom widget runtime draft in the user library (maleficium-runtimes/<name>@1): a caption-overlay-shaped package (runtime.json, a classic index.html loading the built bridge.js, a sample for the required role, LICENSE), or with from model@1 a fork of the built-in model viewer (its built entry plus its sources as reference). Refused when the draft folder exists and is not empty. Writes only to the library, never to a project, and never approves anything: the user reviews and allows the draft in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_scaffold(
+        &self,
+        Parameters(p): Parameters<RuntimeScaffoldParams>,
+    ) -> Result<Json<RuntimeScaffoldOut>, String> {
+        self.tool("runtime_scaffold", || {
+            let dir = core::runtime_author::scaffold(&p.name, p.from.as_deref())?;
+            let reference = dir
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+            Ok(Json(RuntimeScaffoldOut {
+                reference,
+                path: path_string(dir),
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Validate a custom widget runtime package: the manifest, entry, vendored files and samples, plus the static scan (remote loads, eval, module imports, network APIs, workers, storage, dangling references). With root_id it reads the project's installed runtimes/<ref>/ copy; without it the user library's copy. Read-only: it reports errors and warnings and never approves, installs or changes anything.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_validate(
+        &self,
+        Parameters(p): Parameters<RuntimeValidateParams>,
+    ) -> Result<Json<RuntimeValidateOut>, String> {
+        self.tool("runtime_validate", || {
+            let v = match &p.root_id {
+                Some(root_id) => {
+                    core::runtime_author::validate_project(&self.cx, root_id, &p.reference)?
+                }
+                None => core::runtime_author::validate_library(&p.reference)?,
+            };
+            let valid = v.valid();
+            Ok(Json(RuntimeValidateOut {
+                reference: v.reference,
+                path: v.path,
+                valid,
+                errors: v.errors,
+                warnings: v.warnings,
+                manifest: v
+                    .manifest
+                    .map(|m| serde_json::to_value(&m).unwrap_or(serde_json::Value::Null)),
+            }))
         })
     }
 
@@ -1672,6 +1771,83 @@ mod tests {
         assert!(!err.is_empty());
     }
 
+    /// The runtime authoring tools stay on their side of the approval
+    /// boundary: the scaffold writes only to the user library (never to a
+    /// project), the validator only reads, and neither takes a parameter
+    /// that approves, installs or allows.
+    #[test]
+    fn runtime_tools_are_library_scoped_and_cannot_approve() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_scaffold")
+            .expect("runtime_scaffold");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["from", "name"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_validate")
+            .expect("runtime_validate");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["reference", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        assert!(serde_json::from_value::<RuntimeScaffoldParams>(
+            serde_json::json!({"name": "orbit-view", "from": "model@1"})
+        )
+        .is_ok());
+        assert!(serde_json::from_value::<RuntimeValidateParams>(
+            serde_json::json!({"reference": "orbit-view@1"})
+        )
+        .is_ok());
+        for extra in ["approve", "allow", "decide", "digest", "revoke", "mode"] {
+            let mut v = serde_json::json!({"name": "orbit-view"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeScaffoldParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"reference": "orbit-view@1"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeValidateParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+        let m = Maleficium::default();
+        assert!(m
+            .runtime_scaffold(Parameters(
+                serde_json::from_value(serde_json::json!({"name": "nope!"})).unwrap()
+            ))
+            .is_err());
+    }
+
     /// The approval boundary: no tool approves, revokes or switches
     /// auto-approval. No tool is named for it, no tool takes a parameter
     /// for it (and the approval tools refuse unknown fields), and this
@@ -2324,6 +2500,29 @@ mod tests {
             ))
             .is_err());
 
+        // The runtime authoring tools: the scaffold refuses a bad name
+        // before touching the library, and the validator fails closed on
+        // an ungranted root or a missing library copy. Neither writes to
+        // a project, and neither can approve.
+        assert!(m
+            .runtime_scaffold(Parameters(
+                serde_json::from_value(serde_json::json!({"name": "Model"})).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .runtime_validate(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
+                )
+                .unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .runtime_validate(Parameters(
+                serde_json::from_value(serde_json::json!({"reference": "nope@1"})).unwrap()
+            ))
+            .is_err());
+
         let covered = [
             "grant",
             "info",
@@ -2362,6 +2561,8 @@ mod tests {
             "widget_check",
             "export_bundle",
             "preview_bundle",
+            "runtime_scaffold",
+            "runtime_validate",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(
