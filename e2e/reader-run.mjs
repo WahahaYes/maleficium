@@ -423,6 +423,8 @@ if (customProof) {
   await ctx.addInitScript(() => {
     window.__csp = [];
     document.addEventListener('securitypolicyviolation', (e) => {
+      // Not counted: the favicon request (same guard as the main loads).
+      if (e.blockedURI.endsWith('/favicon.ico')) return;
       window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
     });
   });
