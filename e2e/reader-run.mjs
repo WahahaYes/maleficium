@@ -308,15 +308,16 @@ async function reader(label, url, expectCsp) {
       }
       if (!has) continue;
       found = true;
-      // Vega only tooltips over actual marks, so sweep a grid across the
-      // canvas rather than hovering its possibly-empty centre.
+      // The chart renders SVG marks (createView(..., 'svg')); Vega only
+      // tooltips over actual marks, so sweep a grid across the svg rather
+      // than hovering its possibly-empty centre.
       try {
-        const canvas = fr.locator('#chart canvas');
-        const bb = await canvas.boundingBox();
+        const svg = fr.locator('#chart svg');
+        const bb = await svg.boundingBox();
         if (bb) {
           for (const fx of [0.2, 0.4, 0.5, 0.6, 0.8]) {
             for (const fy of [0.25, 0.4, 0.55, 0.7]) {
-              await canvas.hover({
+              await svg.hover({
                 position: { x: Math.floor(bb.width * fx), y: Math.floor(bb.height * fy) },
                 timeout: 5000,
               });
@@ -429,8 +430,10 @@ if (customProof) {
   await page.goto(`${proof.origin}/`);
   // The proof carries the whole playground sidecar: only two widgets are
   // custom (heatmap@1 live, stl-viewer@1 fallback), the rest are built-ins.
-  const heatId = (proofManifest.widgets.find((w) => w.runtime === 'heatmap@1') ?? {}).id;
-  const stlId = (proofManifest.widgets.find((w) => w.runtime === 'stl-viewer@1') ?? {}).id;
+  const heatW = proofManifest.widgets.find((w) => w.runtime === 'heatmap@1') ?? {};
+  const stlW = proofManifest.widgets.find((w) => w.runtime === 'stl-viewer@1') ?? {};
+  const heatId = heatW.id;
+  const stlId = stlW.id;
   check(
     'custom proof: the manifest names the live and the missing runtimes',
     !!heatId && !!stlId,
@@ -467,7 +470,8 @@ if (customProof) {
   check(
     'custom proof: the missing runtime stays poster-only with its note',
     st.stlState === 'poster-only' &&
-      (stlId == null || (st.stlNote?.includes(stlId) && st.stlNote?.includes('not installed'))),
+      (stlW.runtime == null ||
+        (st.stlNote?.includes(stlW.runtime) && st.stlNote?.includes('not installed'))),
     JSON.stringify(st),
   );
   check(
