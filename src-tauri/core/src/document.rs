@@ -332,6 +332,19 @@ pub fn parse(html: &str) -> Parts {
         });
     }
 
+    // Widgets are the conversion's placeholders in document order. Best
+    // effort here: document_structure re-extracts strictly and refuses an
+    // unreadable placeholder, so a malformed span never voids the rest.
+    if let Ok(found) = super::reflow::join::extract_placeholders(html) {
+        out.widgets = found
+            .into_iter()
+            .map(|h| WidgetRef {
+                index: h.index as u32,
+                kind: h.kind,
+            })
+            .collect();
+    }
+
     out
 }
 
