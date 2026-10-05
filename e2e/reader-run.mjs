@@ -243,13 +243,15 @@ async function reader(label, url, expectCsp) {
     !!s.title && s.headings > 0,
     JSON.stringify([s.title, s.headings]),
   );
+  // One section or none means the exporter deliberately omits the list
+  // (pinned by the article unit tests); more than one is the
+  // duplicate-contents bug. When present it is the article's own.
   check(
-    `${label}: one contents list, the article's own, linking to real sections`,
-    s.navCount === 1 &&
+    `${label}: at most one contents list, the article's own, linking to real sections`,
+    s.navCount <= 1 &&
       s.tocCount === 0 &&
-      s.navLinks.length > 0 &&
-      s.navLinks.every((l) => l.ok) &&
-      s.navInArticleBeforeFigures,
+      (s.navCount === 0 ||
+        (s.navLinks.length > 0 && s.navLinks.every((l) => l.ok) && s.navInArticleBeforeFigures)),
     JSON.stringify([s.navCount, s.tocCount, s.navLinks.filter((l) => !l.ok)]),
   );
   check(
