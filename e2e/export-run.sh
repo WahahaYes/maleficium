@@ -257,7 +257,8 @@ for profile, name in [("single-file", "flags-single.html"), ("folder", "flags-fo
           m.get("paper", {}).get("reader") == {"contents": False, "measure": "wide"}, str(m.get("paper")))
     if profile == "folder":
         html = open(os.path.join(dest, "index.html"), encoding="utf-8").read()
-    check(f"flags: {profile} contents:false omits the nav", "m-contents" not in html, "")
+    # The token string also names reader.css rules: assert on the element.
+    check(f"flags: {profile} contents:false omits the nav", '<nav class="m-contents"' not in html, "")
     check(f"flags: {profile} measure wide overrides the article column",
           'data-measure="wide"' in html, "")
     check(f"flags: {profile} no flag marker survives in the article", "m-flag" not in html, "")
