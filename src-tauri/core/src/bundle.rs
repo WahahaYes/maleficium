@@ -22,6 +22,7 @@
 //! never asks: it judges and falls back. The browser preview runs custom
 //! runtimes without the approval gate, as it does html widgets.
 
+mod flags;
 pub(crate) mod fold;
 mod reader;
 
@@ -1197,6 +1198,25 @@ fn validator() -> Result<jsonschema::Validator, String> {
 /// Checks a manifest against the committed schema and the invariants the
 /// schema cannot express. Every violation is named.
 pub fn validate_manifest(m: &Value) -> Result<(), String> {
+    // paper.reader: closed shapes with named errors (the schema repeats
+    // them). Absent means a bundle from before flags existed: still valid.
+    // A boolean is strict: no number or string coerces to it.
+    let reader = &m["paper"]["reader"];
+    if !reader.is_null() {
+        let obj = reader
+            .as_object()
+            .ok_or_else(|| "paper.reader is not an object".to_string())?;
+        if !obj.get("contents").is_some_and(Value::is_boolean) {
+            return Err("paper.reader.contents is not a boolean".to_string());
+        }
+        if !obj
+            .get("measure")
+            .and_then(Value::as_str)
+            .is_some_and(|s| matches!(s, "narrow" | "default" | "wide"))
+        {
+            return Err("paper.reader.measure is not narrow, default or wide".to_string());
+        }
+    }
     let v = validator()?;
     let errors: Vec<String> = v
         .iter_errors(m)
@@ -1885,6 +1905,14 @@ fn export_inner(
     let converted = conversion.html.map_err(|e| {
         format!("{main_rel} could not be converted to HTML, so the bundle has no article: {e}")
     })?;
+    // Reader flags: the marker classes the `\maleficiumcontents` and
+    // `\maleficiummeasure` calls left in the conversion, resolved where the
+    // widgets are joined and stripped from the article.
+    let flag_scan = flags::scan(&converted);
+    for w in &flag_scan.warnings {
+        plan.warn(BundleWarningKind::Conversion, w.clone());
+    }
+    let converted = flag_scan.html;
     let sidecar = std::fs::read_to_string(o.outdir.join(format!("{stem}.mfw"))).ok();
     let mount_units = mounts(&list.widgets, &plan.assets, &plan.notes)?;
     let article = reflow::article::build(reflow::article::Input {
@@ -1907,6 +1935,12 @@ fn export_inner(
         &conversion.errors,
         &article.issues,
     ));
+    // `contents: false` omits the nav (not-emit), rather than hiding it.
+    let article_html = if flag_scan.flags.contents {
+        article.html
+    } else {
+        flags::omit_contents(&article.html)
+    };
 
     let mut paper = Map::new();
     paper.insert("title".into(), meta.title.clone().into());
@@ -1929,6 +1963,13 @@ fn export_inner(
     if let Some(a) = &meta.abstract_text {
         paper.insert("abstract".into(), a.clone().into());
     }
+    paper.insert(
+        "reader".into(),
+        json!({
+            "contents": flag_scan.flags.contents,
+            "measure": flag_scan.flags.measure.token(),
+        }),
+    );
     let cap = opts.size_cap_bytes.unwrap_or(DEFAULT_SIZE_CAP_BYTES);
     let mut manifest = Map::new();
     manifest.insert("format".into(), FORMAT.into());
@@ -2026,7 +2067,8 @@ fn export_inner(
             let html = reader::render(&reader::Reader {
                 title: &meta.title,
                 folder: false,
-                article: &article.html,
+                article: &article_html,
+                measure: flag_scan.flags.measure,
                 pdf: Some(&pdf_bytes),
                 islands: &islands,
                 frames: &frames,
@@ -2110,7 +2152,8 @@ fn export_inner(
             let html = reader::render(&reader::Reader {
                 title: &meta.title,
                 folder: true,
-                article: &article.html,
+                article: &article_html,
+                measure: flag_scan.flags.measure,
                 pdf: None,
                 islands: &islands,
                 frames: &frames,
