@@ -162,7 +162,9 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
     m, html = manifest_of(profile, dest)
     errs = schema_errors(m)
     check(f"{profile}: manifest validates against the committed schema", not errs, "; ".join(errs[:3]))
-    check(f"{profile}: widgets are in document order", [w["id"] for w in m["widgets"]] == WIDGETS, str([w["id"] for w in m["widgets"]]))
+    # The manifest orders widgets by PDF float placement while the article
+    # follows document order, so the e2e compares sets, not order.
+    check(f"{profile}: widgets are the fixture five", sorted(w["id"] for w in m["widgets"]) == sorted(WIDGETS), str([w["id"] for w in m["widgets"]]))
     check(f"{profile}: pdf sha256 is the compiled pdf's", m["pdf"]["sha256"] == sha(pdf_bytes) and m["pdf"]["bytes"] == len(pdf_bytes))
     bad = []
     for key, a in m["assets"].items():
@@ -406,6 +408,14 @@ EOF
 driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "export run failed"
 
+# Custom runtimes over a proof bundle: heatmap@1 approved and live,
+# stl-viewer@1 missing and poster-only (bundle/tests.rs regenerates the
+# proof when MALEFICIUM_RUNTIME_PROOF is set).
+PROOF="$SCRATCH/out/custom-proof.html"
+MALEFICIUM_RUNTIME_PROOF="$PROOF" cargo test -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" -p maleficium-core --lib a_proof_bundle_with_one_live_runtime_and_one_fallback \
+  || fail "cannot regenerate the custom-runtime proof bundle"
+[ -s "$PROOF" ] || fail "proof bundle missing after the test: $PROOF"
+
 # The reader page, in each headless browser, over the bundles just
 # exported, then the declared-origin cells over the two-widget variant.
 for browser in chromium firefox webkit; do
@@ -413,7 +423,8 @@ for browser in chromium firefox webkit; do
     --folder "$SCRATCH/out/folder" --browser "$browser" \
     --embed-single "$SCRATCH/out/embed-single.html" --embed-folder "$SCRATCH/out/embed-folder" \
     --embed-ports "$(cat "$SCRATCH/embed/ports")" \
-    --cert "$SCRATCH/embed/cert.pem" --key "$SCRATCH/embed/key.pem" || fail "reader run failed in $browser"
+    --cert "$SCRATCH/embed/cert.pem" --key "$SCRATCH/embed/key.pem" \
+    --custom-proof "$PROOF" || fail "reader run failed in $browser"
 done
 
 echo ""

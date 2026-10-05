@@ -746,7 +746,11 @@ def state7():
     stop_app()
     portrait = APPLOG.events()
     os.makedirs(FIX + "/beamer", exist_ok=True)
+    # The app instantiates template projects with the build-time shared
+    # overlays (core/build.rs); the bare main.tex alone cannot compile.
     shutil.copy(ROOT + "/src-tauri/templates/beamer/main.tex", FIX + "/beamer/main.tex")
+    for shared in ("maleficium-slides.sty", "maleficium-footer.sty", "maleficium-mark.pdf"):
+        shutil.copy(ROOT + "/src-tauri/templates/shared/" + shared, FIX + "/beamer/" + shared)
     open_compiled(FIX + "/beamer", "beamer")
     shot("07-beamer-open")
     mark("beamer-scroll")
@@ -799,8 +803,9 @@ def state7():
     if p1 and "width" in p1[0]:
         aspect = p1[0]["width"] / p1[0]["height"]
         print("stills: beamer page 1 backing %dx%d (aspect %.3f)" % (p1[0]["width"], p1[0]["height"], aspect))
-        if not 1.30 < aspect < 1.37:
-            bad.append("beamer page 1 must render at its 4:3 aspect")
+        # The beamer template declares aspectratio=169, so 16:9 it is.
+        if not 1.74 < aspect < 1.81:
+            bad.append("beamer page 1 must render at its 16:9 aspect")
     if bad:
         die("preview render counts are off (table above): " + "; ".join(bad))
     print("stills: render counts ok")
@@ -1257,14 +1262,14 @@ def state11():
     shot("11-widgets-revoked")
     # The switch (the review is gone, so the layout is the short one).
     m_on = now_ms()
-    click_at(390, 363)
+    click_at(407, 347)
     wait_event("widgets.auto-approve", m_on, 30)
     time.sleep(2)
     if store_value("autoApprove") is not True:
         die("auto-approval is not persisted as on in the approval store")
     shot("11-widgets-auto-on")
     m_off = now_ms()
-    click_at(390, 363)
+    click_at(407, 347)
     wait_event("widgets.auto-approve", m_off, 30)
     time.sleep(2)
     if store_value("autoApprove") is not False:
