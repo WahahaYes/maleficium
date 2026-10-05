@@ -38,6 +38,7 @@ const arg = (name) => {
   return i < 0 ? null : process.argv[i + 1];
 };
 const singleFile = arg('--single');
+const customProof = arg('--custom-proof');
 const embedSingle = arg('--embed-single');
 const embedFolder = arg('--embed-folder');
 const embedPorts = arg('--embed-ports');
@@ -141,8 +142,15 @@ async function until(fn, ms = 30_000) {
 const inspect = (page) =>
   page.evaluate(() => {
     const figs = [...document.querySelectorAll('figure[data-widget]')];
+    // Resolve the plate token through a dummy so hex and rgb compare equal.
+    const dummy = document.createElement('div');
+    dummy.style.background = 'var(--m-figure-bg)';
+    document.body.append(dummy);
+    const plateToken = getComputedStyle(dummy).backgroundColor;
+    dummy.remove();
     return {
       order: figs.map((f) => f.dataset.widget),
+      plateToken,
       frames: figs.map((f) => {
         const fr = f.querySelectorAll('iframe');
         return {
@@ -156,6 +164,14 @@ const inspect = (page) =>
               f.querySelector('figcaption') ??
               f.parentElement?.closest('figure')?.querySelector(':scope > figcaption')
             )?.textContent ?? '',
+          note: f.querySelector('.m-widget-note')?.textContent?.trim() ?? '',
+          plate: (() => {
+            // The plate is the .frame box inside the figure, not the
+            // figure itself (which stays transparent).
+            const bg = getComputedStyle(f.querySelector('.frame') ?? f).backgroundColor;
+            const alpha = bg.startsWith('rgba') ? Number(bg.split(',').pop().replace(')', '')) : 1;
+            return { bg, opaque: alpha === 1 };
+          })(),
           mounted: !!(fr[0] && (fr[0].srcdoc || fr[0].getAttribute('src'))),
         };
       }),
@@ -243,13 +259,15 @@ async function reader(label, url, expectCsp) {
     !!s.title && s.headings > 0,
     JSON.stringify([s.title, s.headings]),
   );
+  // One section or none means the exporter deliberately omits the list
+  // (pinned by the article unit tests); more than one is the
+  // duplicate-contents bug. When present it is the article's own.
   check(
-    `${label}: one contents list, the article's own, linking to real sections`,
-    s.navCount === 1 &&
+    `${label}: at most one contents list, the article's own, linking to real sections`,
+    s.navCount <= 1 &&
       s.tocCount === 0 &&
-      s.navLinks.length > 0 &&
-      s.navLinks.every((l) => l.ok) &&
-      s.navInArticleBeforeFigures,
+      (s.navCount === 0 ||
+        (s.navLinks.length > 0 && s.navLinks.every((l) => l.ok) && s.navInArticleBeforeFigures)),
     JSON.stringify([s.navCount, s.tocCount, s.navLinks.filter((l) => !l.ok)]),
   );
   check(
@@ -266,6 +284,62 @@ async function reader(label, url, expectCsp) {
     `${label}: each widget has a caption (its own or its float's)`,
     s.frames.every((f) => f.caption.trim().length > 0),
   );
+  check(
+    `${label}: every widget frame sits on the opaque figure plate`,
+    s.frames.length > 0 &&
+      s.plateToken !== 'rgba(0, 0, 0, 0)' &&
+      s.frames.every((f) => f.plate.opaque),
+    JSON.stringify([s.plateToken, s.frames.map((f) => f.plate.bg)]),
+  );
+  // Chart hover tooltip: only pages with a chart widget have one to hover
+  // (the embed variant has none, so absence there is a skip, not a pass).
+  // Single-file nests the widget document inside a per-widget wrapper
+  // frame, so scan every frame rather than the figure's own iframe.
+  {
+    let found = false;
+    let shown = false;
+    let text = '';
+    for (const fr of page.frames()) {
+      let has = false;
+      try {
+        has = (await fr.locator('#tip').count()) > 0;
+      } catch {
+        continue;
+      }
+      if (!has) continue;
+      found = true;
+      // The chart renders SVG marks (createView(..., 'svg')); Vega only
+      // tooltips over actual marks, so sweep a grid across the svg rather
+      // than hovering its possibly-empty centre.
+      try {
+        const svg = fr.locator('#chart svg');
+        const bb = await svg.boundingBox();
+        if (bb) {
+          for (const fx of [0.2, 0.4, 0.5, 0.6, 0.8]) {
+            for (const fy of [0.25, 0.4, 0.55, 0.7]) {
+              await svg.hover({
+                position: { x: Math.floor(bb.width * fx), y: Math.floor(bb.height * fy) },
+                timeout: 5000,
+              });
+              await page.waitForTimeout(250);
+              text = (await fr.locator('#tip').textContent()) ?? '';
+              shown = !(await fr.locator('#tip[hidden]').count()) && text.trim().length > 0;
+              if (shown) break;
+            }
+            if (shown) break;
+          }
+        }
+      } catch {
+        /* detached mid-hover; shown stays false with the evidence below */
+      }
+      break;
+    }
+    check(
+      `${label}: chart hover shows its tooltip`,
+      found && shown,
+      found ? JSON.stringify(text.slice(0, 120)) : 'no chart widget on this page',
+    );
+  }
   check(`${label}: the reader's meta CSP is the exporter's`, s.csp === expectCsp, s.csp);
   const violations = await page.evaluate(() => window.__csp);
   check(
@@ -326,6 +400,89 @@ check(
   fFs?.unsupported,
 );
 await fF.close();
+
+// ---- custom runtimes: one live widget, one fallback poster ----
+// --custom-proof points at a proof bundle (bundle/tests.rs regenerates it
+// with MALEFICIUM_RUNTIME_PROOF set): heatmap@1 approved and live,
+// stl-viewer@1 missing and poster-only. bad-cdn@1 has no cell on purpose:
+// a scan error makes the snapshot invalid, so it can never be approved
+// and always exports poster-only (covered at the unit level).
+if (customProof) {
+  const proofHtml = readFileSync(customProof, 'utf8');
+  const proofManifest = JSON.parse(
+    /<script type="application\/json" id="mfw-manifest">(.*?)<\/script>/s.exec(proofHtml)[1],
+  );
+  check(
+    'custom proof: the manifest carries the approved runtime entry',
+    !!proofManifest.runtimes?.['heatmap@1']?.digest &&
+      proofManifest.runtimes['heatmap@1'].license === 'MIT',
+    Object.keys(proofManifest.runtimes ?? {}).join(','),
+  );
+  const proof = await host(join(customProof, '..'), customProof);
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (e) => {
+      // Not counted: the favicon request (same guard as the main loads).
+      if (e.blockedURI.endsWith('/favicon.ico')) return;
+      window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
+    });
+  });
+  const page = await ctx.newPage();
+  await page.goto(`${proof.origin}/`);
+  // The proof carries the whole playground sidecar: only two widgets are
+  // custom (heatmap@1 live, stl-viewer@1 fallback), the rest are built-ins.
+  const heatW = proofManifest.widgets.find((w) => w.runtime === 'heatmap@1') ?? {};
+  const stlW = proofManifest.widgets.find((w) => w.runtime === 'stl-viewer@1') ?? {};
+  const heatId = heatW.id;
+  const stlId = stlW.id;
+  check(
+    'custom proof: the manifest names the live and the missing runtimes',
+    !!heatId && !!stlId,
+    proofManifest.widgets.map((w) => `${w.id}:${w.runtime ?? w.type}`).join(','),
+  );
+  const c = await until(async () => {
+    const s = await inspect(page);
+    return s.frames.length > 0 && s.frames.every((f) => f.live || f.state === 'poster-only')
+      ? s
+      : null;
+  });
+  check('custom proof: the page settles with every widget live or poster-only', !!c);
+  const st = await page.evaluate(
+    ([h, s]) => {
+      const fig = (id) => document.querySelector(`figure[data-widget="${id}"]`);
+      const heat = fig(h);
+      const stl = fig(s);
+      return {
+        heatLive: heat?.classList.contains('live') ?? null,
+        heatSandbox: heat?.querySelector(':scope iframe')?.getAttribute('sandbox') ?? null,
+        heatPosterShown:
+          heat == null ? null : getComputedStyle(heat.querySelector('.poster')).display !== 'none',
+        stlState: stl?.dataset.state ?? null,
+        stlNote: stl?.querySelector('.m-widget-note')?.textContent?.trim() ?? null,
+      };
+    },
+    [heatId, stlId],
+  );
+  check(
+    'custom proof: the approved runtime mounts live, sandboxed exactly allow-scripts',
+    st.heatLive === true && st.heatSandbox === 'allow-scripts' && st.heatPosterShown === false,
+    JSON.stringify(st),
+  );
+  check(
+    'custom proof: the missing runtime stays poster-only with its note',
+    st.stlState === 'poster-only' &&
+      (stlW.runtime == null ||
+        (st.stlNote?.includes(stlW.runtime) && st.stlNote?.includes('not installed'))),
+    JSON.stringify(st),
+  );
+  check(
+    'custom proof: the reader CSP is the single-file policy with no violations',
+    c?.csp === SINGLE_CSP && (await page.evaluate(() => window.__csp)).length === 0,
+    JSON.stringify([c?.csp?.slice(0, 60), await page.evaluate(() => window.__csp)]),
+  );
+  await ctx.close();
+}
 
 // ---- scripts off: the posters and captions stay ----
 {
