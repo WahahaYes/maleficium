@@ -63,3 +63,14 @@ Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, 
 ```
 
 Copy the folder to `runtimes/caption-overlay@1/` in a project to try it. `bad-cdn@1` next to it is the negative: one CDN `<script src>`, which the scanner fails with exactly `url-load`.
+
+## Authoring flow: scaffold, validate, install, approve, export
+
+An agent drafts the package through the MCP tools; the user carries it the rest of the way:
+
+1. Scaffold: `runtime_scaffold` writes a draft to the user library (`maleficium-runtimes/<name>@1`), either caption-overlay-shaped (`runtime.json`, a classic `index.html`, a sample for the required role, `LICENSE`) or with `from: model@1` a fork of the built-in model viewer (its built entry plus its sources as reference). Refused when the draft folder exists and is not empty.
+2. Validate: `runtime_validate` without `root_id` reads the library copy and reports the manifest, scan errors and warnings; with `root_id` it reads the project's installed copy instead. Read-only either way: it never approves, installs, or changes anything, and approval-shaped fields are refused.
+3. Install: the user copies the library draft into a project as `runtimes/<ref>/` in the app. The agent cannot install.
+4. Approve: the user allows the exact package content in the app (View > Widgets). Export mounts the runtime live only then and shows its poster otherwise.
+
+The scaffold copies the built `bridge.js` into every draft (the plain draft's `index.html` loads it as a classic script): the runtime side of [Bridge messages](#bridge-messages), built from the app's `bridge.ts`, which authors never import.
