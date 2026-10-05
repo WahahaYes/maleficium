@@ -308,11 +308,26 @@ async function reader(label, url, expectCsp) {
       }
       if (!has) continue;
       found = true;
+      // Vega only tooltips over actual marks, so sweep a grid across the
+      // canvas rather than hovering its possibly-empty centre.
       try {
-        await fr.locator('#chart canvas').hover({ timeout: 10000 });
-        await page.waitForTimeout(500);
-        text = (await fr.locator('#tip').textContent()) ?? '';
-        shown = !(await fr.locator('#tip[hidden]').count()) && text.trim().length > 0;
+        const canvas = fr.locator('#chart canvas');
+        const bb = await canvas.boundingBox();
+        if (bb) {
+          for (const fx of [0.2, 0.4, 0.5, 0.6, 0.8]) {
+            for (const fy of [0.25, 0.4, 0.55, 0.7]) {
+              await canvas.hover({
+                position: { x: Math.floor(bb.width * fx), y: Math.floor(bb.height * fy) },
+                timeout: 5000,
+              });
+              await page.waitForTimeout(250);
+              text = (await fr.locator('#tip').textContent()) ?? '';
+              shown = !(await fr.locator('#tip[hidden]').count()) && text.trim().length > 0;
+              if (shown) break;
+            }
+            if (shown) break;
+          }
+        }
       } catch {
         /* detached mid-hover; shown stays false with the evidence below */
       }
@@ -412,26 +427,48 @@ if (customProof) {
   });
   const page = await ctx.newPage();
   await page.goto(`${proof.origin}/`);
+  // The proof carries the whole playground sidecar: only two widgets are
+  // custom (heatmap@1 live, stl-viewer@1 fallback), the rest are built-ins.
+  const heatId = (proofManifest.widgets.find((w) => w.runtime === 'heatmap@1') ?? {}).id;
+  const stlId = (proofManifest.widgets.find((w) => w.runtime === 'stl-viewer@1') ?? {}).id;
+  check(
+    'custom proof: the manifest names the live and the missing runtimes',
+    !!heatId && !!stlId,
+    proofManifest.widgets.map((w) => `${w.id}:${w.runtime ?? w.type}`).join(','),
+  );
   const c = await until(async () => {
     const s = await inspect(page);
-    return s.frames.length === 2 && s.frames.every((f) => f.live || f.state === 'poster-only')
+    return s.frames.length > 0 && s.frames.every((f) => f.live || f.state === 'poster-only')
       ? s
       : null;
   });
-  check('custom proof: the page settles with two widgets', !!c, c ? '' : 'never settled');
-  const live = (c?.frames ?? []).filter((f) => f.live);
-  const posters = (c?.frames ?? []).filter((f) => f.state === 'poster-only');
+  check('custom proof: the page settles with every widget live or poster-only', !!c);
+  const st = await page.evaluate(
+    ([h, s]) => {
+      const fig = (id) => document.querySelector(`figure[data-widget="${id}"]`);
+      const heat = fig(h);
+      const stl = fig(s);
+      return {
+        heatLive: heat?.classList.contains('live') ?? null,
+        heatSandbox: heat?.querySelector(':scope iframe')?.getAttribute('sandbox') ?? null,
+        heatPosterShown:
+          heat == null ? null : getComputedStyle(heat.querySelector('.poster')).display !== 'none',
+        stlState: stl?.dataset.state ?? null,
+        stlNote: stl?.querySelector('.m-widget-note')?.textContent?.trim() ?? null,
+      };
+    },
+    [heatId, stlId],
+  );
   check(
     'custom proof: the approved runtime mounts live, sandboxed exactly allow-scripts',
-    live.length === 1 && live[0].sandbox === 'allow-scripts' && !live[0].posterShown,
-    JSON.stringify(live.map((f) => [f.sandbox, f.posterShown])),
+    st.heatLive === true && st.heatSandbox === 'allow-scripts' && st.heatPosterShown === false,
+    JSON.stringify(st),
   );
   check(
     'custom proof: the missing runtime stays poster-only with its note',
-    posters.length === 1 &&
-      posters[0].note.includes('stl-viewer@1') &&
-      posters[0].note.includes('not installed'),
-    JSON.stringify(posters.map((f) => f.note)),
+    st.stlState === 'poster-only' &&
+      (stlId == null || (st.stlNote?.includes(stlId) && st.stlNote?.includes('not installed'))),
+    JSON.stringify(st),
   );
   check(
     'custom proof: the reader CSP is the single-file policy with no violations',
