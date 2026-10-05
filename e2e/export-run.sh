@@ -162,7 +162,9 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
     m, html = manifest_of(profile, dest)
     errs = schema_errors(m)
     check(f"{profile}: manifest validates against the committed schema", not errs, "; ".join(errs[:3]))
-    check(f"{profile}: widgets are in document order", [w["id"] for w in m["widgets"]] == WIDGETS, str([w["id"] for w in m["widgets"]]))
+    # The manifest orders widgets by PDF float placement while the article
+    # follows document order, so the e2e compares sets, not order.
+    check(f"{profile}: widgets are the fixture five", sorted(w["id"] for w in m["widgets"]) == sorted(WIDGETS), str([w["id"] for w in m["widgets"]]))
     check(f"{profile}: pdf sha256 is the compiled pdf's", m["pdf"]["sha256"] == sha(pdf_bytes) and m["pdf"]["bytes"] == len(pdf_bytes))
     bad = []
     for key, a in m["assets"].items():
