@@ -18,6 +18,7 @@ pub mod outputs;
 pub mod readiness;
 pub mod reflow;
 pub mod replace;
+pub mod runtime_author;
 pub mod runtimes;
 pub mod search;
 pub mod snippet;
