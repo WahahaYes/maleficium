@@ -243,6 +243,27 @@ open(glb, "wb").write(orig)
 os.remove(os.path.join(OUT, "big.html"))
 subprocess.run(["rm", "-rf", os.path.join(OUT, "big-folder")])
 
+# Reader flags: every valid value is called; last valid marker wins.
+frec = compile("reader-flags.tex")
+check("flags variant compiles", frec.get("status") == "success", str(frec)[:300])
+for profile, name in [("single-file", "flags-single.html"), ("folder", "flags-folder")]:
+    r = export(profile, name, main="reader-flags.tex")
+    check(f"flags: {profile} export succeeds", r["ok"], str(r)[:300])
+    if not r["ok"]:
+        continue
+    dest = os.path.join(OUT, name)
+    m, html = manifest_of(profile, dest)
+    check(f"flags: {profile} paper.reader is the last valid markers",
+          m.get("paper", {}).get("reader") == {"contents": False, "measure": "wide"}, str(m.get("paper")))
+    if profile == "folder":
+        html = open(os.path.join(dest, "index.html"), encoding="utf-8").read()
+    check(f"flags: {profile} contents:false omits the nav", "m-contents" not in html, "")
+    check(f"flags: {profile} measure wide overrides the article column",
+          'data-measure="wide"' in html, "")
+    check(f"flags: {profile} no flag marker survives in the article", "m-flag" not in html, "")
+href = compile("bad-measure.tex")
+check("a hostile measure value fails the compile", href.get("status") != "success", str(href)[:200])
+
 # A remote-only asset: refused without approval, and MCP cannot approve it.
 rrec = compile("remote.tex", rounds=30)
 check("remote-only variant compiles", rrec.get("status") == "success", str(rrec)[:300])

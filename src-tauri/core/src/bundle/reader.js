@@ -329,7 +329,13 @@
   // Contents: the list is in the page already (the article carries its own
   // `nav.m-contents`, which reads with scripts off). Here it only gains a
   // collapse on narrow screens and a marker on the section in view.
+  // Defensive: the exporter omits the nav when paper.reader.contents is
+  // false, but a preview reuse may carry one anyway.
   var nav = article.querySelector('nav.m-contents');
+  if (nav && manifest.paper && manifest.paper.reader && manifest.paper.reader.contents === false) {
+    nav.remove();
+  }
+  nav = article.querySelector('nav.m-contents');
   if (!nav) return;
   var links = {};
   var items = [];
