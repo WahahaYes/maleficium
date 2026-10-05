@@ -803,8 +803,9 @@ def state7():
     if p1 and "width" in p1[0]:
         aspect = p1[0]["width"] / p1[0]["height"]
         print("stills: beamer page 1 backing %dx%d (aspect %.3f)" % (p1[0]["width"], p1[0]["height"], aspect))
-        if not 1.30 < aspect < 1.37:
-            bad.append("beamer page 1 must render at its 4:3 aspect")
+        # The beamer template declares aspectratio=169, so 16:9 it is.
+        if not 1.74 < aspect < 1.81:
+            bad.append("beamer page 1 must render at its 16:9 aspect")
     if bad:
         die("preview render counts are off (table above): " + "; ".join(bad))
     print("stills: render counts ok")
