@@ -1162,6 +1162,52 @@ def self_test_oracles():
     return bad
 
 
+def self_test_runtime_authoring(server):
+    """A fresh agent authors a runtime through the MCP tools, no model: the
+    scaffolded draft validates with a silent scan, bad-cdn@1 still fails on
+    url-load, and neither tool takes an approval. Scratch HOME throughout,
+    so the library writes stay contained. Returns a bad count."""
+    bad = 0
+
+    def check(name, good, detail=""):
+        nonlocal bad
+        bad += not good
+        say("self-test runtime-authoring %s: %s%s" % (name, "ok" if good else "WRONG",
+                                                      " (%s)" % detail if detail else ""))
+
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as home:
+        mcp = Mcp(server, home)
+        try:
+            ok, draft = mcp.call("runtime_scaffold", {"name": "self-test-draft"})
+            check("scaffold", ok, draft if not ok else draft["reference"])
+            if ok:
+                want = {"runtime.json", "index.html", "bridge.js", "samples/photo.svg", "LICENSE"}
+                have = {os.path.relpath(os.path.join(r, f), draft["path"])
+                        for r, _, fs in os.walk(draft["path"]) for f in fs}
+                check("draft-shape", draft["reference"] == "self-test-draft@1" and want <= have,
+                      sorted(have))
+                ok, valid = mcp.call("runtime_validate", {"reference": draft["reference"]})
+                check("draft-validates", ok and valid["valid"] and not valid["errors"]
+                      and not valid["warnings"], valid if ok else valid)
+            with tempfile.TemporaryDirectory(dir="/var/tmp") as p:
+                shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
+                                os.path.join(p, "runtimes", "bad-cdn@1"))
+                ok, _ = mcp.call("grant", {"root_id": "rt", "root": p})
+                check("grant", ok)
+                ok, red = mcp.call("runtime_validate",
+                                   {"root_id": "rt", "reference": "bad-cdn@1"})
+                check("bad-cdn-fails-url-load",
+                      ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
+                      red if ok else red)
+            ok, _ = mcp.call("runtime_scaffold", {"name": "nope", "approve": True})
+            check("scaffold-refuses-approval", not ok)
+            ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
+            check("validate-refuses-approval", not ok)
+        finally:
+            mcp.close()
+    return bad
+
+
 def self_test_scripts(scenarios, server, warm, out):
     """Scenarios with a `script` run end to end with the scripted fake agent:
     as written it must pass every oracle; with a wrong answer line, or with
@@ -1190,7 +1236,8 @@ def self_test_scripts(scenarios, server, warm, out):
 def self_test(scenarios, server, warm, out):
     """Solved fixtures must pass every file oracle; raw fixtures must fail one;
     scripted scenarios must pass as scripted and fail when tampered with."""
-    bad = self_test_oracles() + self_test_scripts(scenarios, server, warm, out)
+    bad = self_test_oracles() + self_test_scripts(scenarios, server, warm, out) \
+        + self_test_runtime_authoring(server)
     run_oracles = {"compiles", "clean_log", "outline_has", "file_matches", "file_lacks", "count_equal",
                    "section_matches", "unchanged", "secret_not_leaked"}
     with tempfile.TemporaryDirectory(dir="/var/tmp") as t:
