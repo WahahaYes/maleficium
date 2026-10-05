@@ -52,7 +52,9 @@ cp -r "$FIXTURE/." "$SCRATCH/convert/"
   --tmpfs /tmp --bind "$SCRATCH" "$SCRATCH" --tmpfs /usr/share/texlive \
   --setenv PATH "$SPIKE/shim:/usr/bin:/bin" \
   --setenv LATEXML_DUMP_DIR "$SPIKE/gen/resources/dumps" \
+  --setenv MALEFICIUM_DUMP_DIR "$DEVROOT/src-tauri/resources/dumps" \
   "$ENGINE" convert "$SCRATCH/convert/main.tex" --out "$SCRATCH/convert/out/main.html" \
+  --bundle "$BUNDLE_URL" --cache "$SCRATCH/bundle-cache" \
   >"$SCRATCH/convert.log" 2>&1) || { cat "$SCRATCH/convert.log"; fail "convert failed"; }
 HTML="$SCRATCH/convert/out/main.html"
 head -c 15 "$HTML" | grep -q '<!DOCTYPE html' || fail "output is not HTML (post-processing skipped)"
@@ -71,7 +73,9 @@ cp -r "$DEVROOT/e2e/fixtures/interactive/." "$SCRATCH/runtime/"
   --tmpfs /tmp --bind "$SCRATCH" "$SCRATCH" --tmpfs /usr/share/texlive \
   --setenv PATH "$SPIKE/shim:/usr/bin:/bin" \
   --setenv LATEXML_DUMP_DIR "$SPIKE/gen/resources/dumps" \
+  --setenv MALEFICIUM_DUMP_DIR "$DEVROOT/src-tauri/resources/dumps" \
   "$ENGINE" convert "$SCRATCH/runtime/runtime.tex" --out "$SCRATCH/runtime/out/runtime.html" \
+  --bundle "$BUNDLE_URL" --cache "$SCRATCH/bundle-cache" \
   >"$SCRATCH/runtime.log" 2>&1) || { cat "$SCRATCH/runtime.log"; fail "convert of runtime.tex failed"; }
 grep -q 'Conversion complete: No obvious problems' "$SCRATCH/runtime.log" \
   || { cat "$SCRATCH/runtime.log"; fail "runtime.tex conversion reported problems"; }
