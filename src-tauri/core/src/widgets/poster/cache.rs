@@ -49,7 +49,11 @@ use crate::Core;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::process::Child;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 /// The project folder the app owns, beside the main file.
 pub const CACHE_DIR: &str = ".maleficium";
@@ -76,6 +80,20 @@ const HTML_TIMEOUT_MS: u64 = 5_000;
 pub trait PosterRenderer: Send + Sync {
     /// One result per request, in order.
     fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>>;
+    /// The compile's render: the renderer subprocess (if any) parks in
+    /// `slot` where cancel finds it, and `cancelled` stops the run. The
+    /// default runs [`render`](Self::render) to the end: renderers without
+    /// a subprocess cannot stop mid-request.
+    fn render_cancel(
+        &self,
+        cx: &Core,
+        reqs: &[PosterRequest],
+        slot: &Mutex<Option<Child>>,
+        cancelled: &AtomicBool,
+    ) -> Vec<Result<PosterOutcome, String>> {
+        let _ = (slot, cancelled);
+        self.render(cx, reqs)
+    }
 }
 
 /// The renderer a compile uses: the one the adapter installed, else the
@@ -663,6 +681,41 @@ pub(crate) fn before_compile_at(
     main_rel: &str,
     say: &mut dyn FnMut(String),
 ) -> usize {
+    before_compile_inner(base, cx, root_id, main_rel, say, None, None)
+}
+
+/// [`before_compile`] for a compile job: the renderer subprocess parks in
+/// `slot` and stops on `cancelled`, so a cancel in the poster phase still
+/// reaches the compile. Returns 0 once cancelled, so no second engine run
+/// follows a cancelled poster phase.
+pub fn before_compile_job(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    say: &mut dyn FnMut(String),
+    slot: &Mutex<Option<Child>>,
+    cancelled: &AtomicBool,
+) -> usize {
+    before_compile_inner(
+        &widget_approval::store_base(),
+        cx,
+        root_id,
+        main_rel,
+        say,
+        Some(slot),
+        Some(cancelled),
+    )
+}
+
+fn before_compile_inner(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    say: &mut dyn FnMut(String),
+    slot: Option<&Mutex<Option<Child>>>,
+    cancelled: Option<&AtomicBool>,
+) -> usize {
     let Ok((list, theme)) = read(cx, root_id, main_rel) else {
         return 0;
     };
@@ -715,7 +768,11 @@ pub(crate) fn before_compile_at(
                 reqs.len()
             )),
             Some(r) => {
-                for (w, res) in missing.iter().zip(r.render(cx, &reqs)) {
+                let results = match (slot, cancelled) {
+                    (Some(slot), Some(cancelled)) => r.render_cancel(cx, &reqs, slot, cancelled),
+                    _ => r.render(cx, &reqs),
+                };
+                for (w, res) in missing.iter().zip(results) {
                     match res {
                         Ok(PosterOutcome::Rendered(p)) if Path::new(&p.path) == w.png => {
                             rendered += 1;
@@ -734,6 +791,11 @@ pub(crate) fn before_compile_at(
                 }
             }
         }
+    }
+    // A cancelled poster phase renders no second engine run, even when some
+    // posters finished before the cancel.
+    if cancelled.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        return 0;
     }
     let guards = sidecar_guards(cx, root_id, main_rel).unwrap_or_default();
     let map = entries(&want, &guards, say);
@@ -895,6 +957,18 @@ fn display_available() -> bool {
 
 impl PosterRenderer for ProcessRenderer {
     fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
+        let slot = Mutex::new(None);
+        let cancelled = AtomicBool::new(false);
+        self.render_cancel(cx, reqs, &slot, &cancelled)
+    }
+
+    fn render_cancel(
+        &self,
+        cx: &Core,
+        reqs: &[PosterRequest],
+        slot: &Mutex<Option<Child>>,
+        cancelled: &AtomicBool,
+    ) -> Vec<Result<PosterOutcome, String>> {
         let all = |e: String| -> Vec<Result<PosterOutcome, String>> {
             reqs.iter().map(|_| Err(e.clone())).collect()
         };
@@ -908,7 +982,7 @@ impl PosterRenderer for ProcessRenderer {
             Ok(r) => r,
             Err(e) => return all(e),
         };
-        run_process(&self.exe, &root, reqs).unwrap_or_else(all)
+        run_process(&self.exe, &root, reqs, slot, cancelled).unwrap_or_else(all)
     }
 }
 
@@ -916,6 +990,8 @@ fn run_process(
     exe: &Path,
     root: &Path,
     reqs: &[PosterRequest],
+    slot: &Mutex<Option<Child>>,
+    cancelled: &AtomicBool,
 ) -> Result<Vec<Result<PosterOutcome, String>>, String> {
     use std::io::{BufRead, Write};
     use std::process::Stdio;
@@ -954,29 +1030,51 @@ fn run_process(
         .sum::<u64>()
         + PROCESS_SLACK_MS;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget);
+    // The renderer parks in the compile's child slot: a cancel between
+    // engine runs kills it like an engine child. Plain kill and wait, as
+    // for the engine.
+    slot.lock().unwrap().replace(child);
     let mut out = Vec::with_capacity(reqs.len());
+    let mut stopped = false;
     while out.len() < reqs.len() {
-        let left = deadline.saturating_duration_since(std::time::Instant::now());
-        let Ok(line) = rx.recv_timeout(left) else {
+        if cancelled.load(Ordering::SeqCst) {
+            stopped = true;
             break;
-        };
-        let v: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
-        out.push(if v["ok"] == serde_json::Value::Bool(true) {
-            serde_json::from_value::<PosterOutcome>(v["result"].clone())
-                .map_err(|e| format!("the poster renderer answered oddly: {e}"))
-        } else {
-            Err(v["error"]
-                .as_str()
-                .unwrap_or("the poster renderer failed")
-                .to_string())
-        });
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(left.min(std::time::Duration::from_millis(50))) {
+            Ok(line) => {
+                let v: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+                out.push(if v["ok"] == serde_json::Value::Bool(true) {
+                    serde_json::from_value::<PosterOutcome>(v["result"].clone())
+                        .map_err(|e| format!("the poster renderer answered oddly: {e}"))
+                } else {
+                    Err(v["error"]
+                        .as_str()
+                        .unwrap_or("the poster renderer failed")
+                        .to_string())
+                });
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    // A cancel takes the child from the slot and reaps it; otherwise it is
+    // still parked here.
+    if let Some(mut parked) = slot.lock().unwrap().take() {
+        let _ = parked.kill();
+        let _ = parked.wait();
+    }
+    let unanswered = if stopped || cancelled.load(Ordering::SeqCst) {
+        "compile cancelled"
+    } else {
+        "the poster renderer stopped before answering"
+    };
     while out.len() < reqs.len() {
-        out.push(Err(String::from(
-            "the poster renderer stopped before answering",
-        )));
+        out.push(Err(String::from(unanswered)));
     }
     Ok(out)
 }
