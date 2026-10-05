@@ -746,7 +746,11 @@ def state7():
     stop_app()
     portrait = APPLOG.events()
     os.makedirs(FIX + "/beamer", exist_ok=True)
+    # The app instantiates template projects with the build-time shared
+    # overlays (core/build.rs); the bare main.tex alone cannot compile.
     shutil.copy(ROOT + "/src-tauri/templates/beamer/main.tex", FIX + "/beamer/main.tex")
+    for shared in ("maleficium-slides.sty", "maleficium-footer.sty", "maleficium-mark.pdf"):
+        shutil.copy(ROOT + "/src-tauri/templates/shared/" + shared, FIX + "/beamer/" + shared)
     open_compiled(FIX + "/beamer", "beamer")
     shot("07-beamer-open")
     mark("beamer-scroll")
