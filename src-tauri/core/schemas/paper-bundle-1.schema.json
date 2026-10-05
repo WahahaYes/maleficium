@@ -52,6 +52,23 @@
           "type": "string",
           "description": "SPDX id of the paper's license, e.g. CC-BY-4.0"
         },
+        "reader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contents", "measure"],
+          "properties": {
+            "contents": {
+              "type": "boolean",
+              "default": true,
+              "description": "whether the article shows its contents list; false omits the nav"
+            },
+            "measure": {
+              "enum": ["narrow", "default", "wide"],
+              "default": "default",
+              "description": "the article column width: narrow 56ch, default 68ch (the theme's --m-measure), wide 80ch"
+            }
+          }
+        },
         "links": {
           "type": "array",
           "items": {
