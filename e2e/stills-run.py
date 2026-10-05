@@ -1262,14 +1262,14 @@ def state11():
     shot("11-widgets-revoked")
     # The switch (the review is gone, so the layout is the short one).
     m_on = now_ms()
-    click_at(390, 363)
+    click_at(445, 368)
     wait_event("widgets.auto-approve", m_on, 30)
     time.sleep(2)
     if store_value("autoApprove") is not True:
         die("auto-approval is not persisted as on in the approval store")
     shot("11-widgets-auto-on")
     m_off = now_ms()
-    click_at(390, 363)
+    click_at(445, 368)
     wait_event("widgets.auto-approve", m_off, 30)
     time.sleep(2)
     if store_value("autoApprove") is not False:
