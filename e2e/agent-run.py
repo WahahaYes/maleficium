@@ -1199,6 +1199,51 @@ def self_test_runtime_authoring(server):
                 check("bad-cdn-fails-url-load",
                       ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
                       red if ok else red)
+            ok, fork = mcp.call("runtime_scaffold",
+                                {"name": "self-test-fork", "from": "model@1"})
+            check("fork-scaffold", ok, fork if not ok else fork["reference"])
+            if ok:
+                want = {"runtime.json", "index.html", "bridge.js", "src/main.ts",
+                        "src/core.ts", "src/index.html", "samples/mesh.glb", "LICENSE"}
+                have = {os.path.relpath(os.path.join(r, f), fork["path"])
+                        for r, _, fs in os.walk(fork["path"]) for f in fs}
+                check("fork-shape", fork["reference"] == "self-test-fork@1" and want <= have,
+                      sorted(have))
+                ok, red = mcp.call("runtime_validate", {"reference": fork["reference"]})
+                # The fork carries the built viewer, which fetches, and its
+                # src/index.html reference copy points at ./main.ts (package
+                # root, so missing): invalid, naming network-api and
+                # missing-ref plus unreferenced/global-hook warnings, so the
+                # author knows the rework (init bytes, a bundled entry).
+                check("fork-names-network-api",
+                      ok and not red["valid"]
+                      and any("network-api" in e for e in red["errors"])
+                      and all("network-api" in e or "missing-ref" in e
+                              for e in red["errors"])
+                      and all("[global-hook]" in w or "[unreferenced]" in w
+                              for w in red["warnings"]),
+                      red if ok else red)
+            with tempfile.TemporaryDirectory(dir="/var/tmp") as q:
+                shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
+                                os.path.join(q, "runtimes", "bad-cdn@1"))
+                ok, _ = mcp.call("grant", {"root_id": "rt-fix", "root": q})
+                check("grant-fix", ok)
+                ok, red = mcp.call("runtime_validate",
+                                   {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                check("repair-fails-url-load",
+                      ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
+                      red if ok else red)
+                entry = os.path.join(q, "runtimes", "bad-cdn@1", "index.html")
+                with open(entry) as f:
+                    text = f.read()
+                fixed = "\n".join(l for l in text.split("\n") if "cdn.example.com" not in l)
+                with open(entry, "w") as f:
+                    f.write(fixed)
+                ok, green = mcp.call("runtime_validate",
+                                     {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                check("repair-fixed-validates",
+                      ok and green["valid"] and not green["errors"],
+                      green if ok else green)
             ok, _ = mcp.call("runtime_scaffold", {"name": "nope", "approve": True})
             check("scaffold-refuses-approval", not ok)
             ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
