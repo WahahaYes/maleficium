@@ -166,7 +166,9 @@ const inspect = (page) =>
             )?.textContent ?? '',
           note: f.querySelector('.m-widget-note')?.textContent?.trim() ?? '',
           plate: (() => {
-            const bg = getComputedStyle(f).backgroundColor;
+            // The plate is the .frame box inside the figure, not the
+            // figure itself (which stays transparent).
+            const bg = getComputedStyle(f.querySelector('.frame') ?? f).backgroundColor;
             const alpha = bg.startsWith('rgba') ? Number(bg.split(',').pop().replace(')', '')) : 1;
             return { bg, opaque: alpha === 1 };
           })(),
@@ -291,21 +293,30 @@ async function reader(label, url, expectCsp) {
   );
   // Chart hover tooltip: only pages with a chart widget have one to hover
   // (the embed variant has none, so absence there is a skip, not a pass).
+  // Single-file nests the widget document inside a per-widget wrapper
+  // frame, so scan every frame rather than the figure's own iframe.
   {
-    const n = await page.locator('figure[data-widget] iframe').count();
     let found = false;
     let shown = false;
     let text = '';
-    for (let i = 0; i < n; i++) {
-      const fr = page.frameLocator('figure[data-widget] iframe').nth(i);
-      if (await fr.locator('#tip').count()) {
-        found = true;
+    for (const fr of page.frames()) {
+      let has = false;
+      try {
+        has = (await fr.locator('#tip').count()) > 0;
+      } catch {
+        continue;
+      }
+      if (!has) continue;
+      found = true;
+      try {
         await fr.locator('#chart canvas').hover({ timeout: 10000 });
         await page.waitForTimeout(500);
         text = (await fr.locator('#tip').textContent()) ?? '';
         shown = !(await fr.locator('#tip[hidden]').count()) && text.trim().length > 0;
-        break;
+      } catch {
+        /* detached mid-hover; shown stays false with the evidence below */
       }
+      break;
     }
     check(
       `${label}: chart hover shows its tooltip`,
