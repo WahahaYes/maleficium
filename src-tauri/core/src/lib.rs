@@ -6,6 +6,7 @@
 pub mod api;
 pub mod bundle;
 pub mod compile;
+pub mod document;
 pub mod engine;
 pub mod eventlog;
 pub mod export;

@@ -391,6 +391,15 @@ struct MainParams {
     main_rel: String,
 }
 
+/// Unknown fields are refused: the document takes a project and a main
+/// file, nothing that could approve or fetch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocumentParams {
+    root_id: String,
+    main_rel: String,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct DiagnosticsParams {
     root_id: String,
@@ -1322,6 +1331,28 @@ impl Maleficium {
     }
 
     #[tool(
+        description = "Document structure of main_rel from its conversion to HTML (never the PDF): sections with levels, theorems with kinds, equations with TeX, citations with bibliography entries, figures with captions, and widget placeholders in order. Citation keys are the conversion's bibliography ids; the citations tool has the source-level keys. Needs no compile; widget ids and rects are the widgets tool's job.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn document_structure(
+        &self,
+        Parameters(p): Parameters<DocumentParams>,
+    ) -> Result<Json<core::document::DocumentStructure>, String> {
+        self.tool("document_structure", || {
+            Ok(Json(core::document::document_structure(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+            )?))
+        })
+    }
+
+    #[tool(
         description = "Dependency checks over the whole document from main_rel, before compiling: every package or class neither the project nor the TeX bundle provides (all at once), biblatex needing biber (suggests backend=bibtex), shell-escape packages and \\write18, and fontspec fonts not installed. bundleChecked is false until a first compile has cached the bundle index.",
         annotations(
             read_only_hint = true,
@@ -1584,6 +1615,29 @@ pub fn serve_stdio() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    /// A latexml-shaped conversion (see core's reflow/article): the fixed
+    /// HTML the document cases convert instead of running the engine.
+    const CONVERTED: &str =
+        include_str!("../../core/src/reflow/fixtures/interactive-converted.frag");
+
+    /// A converter that hands back fixed HTML.
+    struct FixedHtml(String);
+
+    impl core::reflow::convert::Converter for FixedHtml {
+        fn convert(
+            &self,
+            _cx: &core::Core,
+            _main: &std::path::Path,
+            _work: &std::path::Path,
+        ) -> core::reflow::convert::Conversion {
+            core::reflow::convert::Conversion {
+                html: Ok(self.0.clone()),
+                errors: Vec::new(),
+                log: String::new(),
+            }
+        }
+    }
+
     /// Every tool call reports an agent event through the shared writer's
     /// shape: the call name, its outcome, and actor `agent`.
     #[test]
@@ -1677,6 +1731,72 @@ mod tests {
         let m = Maleficium::default();
         let err = m
             .widgets(Parameters(WidgetsParams {
+                root_id: "nope".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The document structure only reads the conversion: hosts may call it
+    /// without confirmation. Its parameters refuse unknown fields, and its
+    /// failures reach the client as tool errors, never as an empty document.
+    #[test]
+    fn document_structure_is_a_read_only_tool_over_the_conversion() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "document_structure")
+            .expect("document_structure");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["main_rel", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(serde_json::from_value::<DocumentParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "main.tex"})
+        )
+        .is_ok());
+        assert!(serde_json::from_value::<DocumentParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "main.tex", "approve": true})
+        )
+        .is_err());
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-document");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\section{Hi}\n").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "docm", &root.to_string_lossy()).unwrap();
+        m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
+        let d = m
+            .document_structure(Parameters(DocumentParams {
+                root_id: "docm".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .expect("a fixed conversion parses")
+            .0;
+        assert_eq!(d.main, "main.tex");
+        assert_eq!(d.sections.len(), 2);
+        assert_eq!(d.figures.len(), 4);
+        assert_eq!(d.widgets.len(), 5);
+        assert_eq!(d.citations.len(), 1);
+
+        let err = m
+            .document_structure(Parameters(DocumentParams {
                 root_id: "nope".into(),
                 main_rel: "main.tex".into(),
             }))
@@ -2380,6 +2500,15 @@ mod tests {
                 main_rel: "main.tex".into()
             }))
             .is_ok());
+        m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
+        let doc = m
+            .document_structure(Parameters(DocumentParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert_eq!(doc.0.sections.len(), 2);
+        assert_eq!(doc.0.widgets.len(), 5);
         assert!(m
             .precompile_checks(Parameters(MainParams {
                 root_id: "cov".into(),
@@ -2548,6 +2677,7 @@ mod tests {
             "file_graph",
             "labels_refs",
             "citations",
+            "document_structure",
             "precompile_checks",
             "search",
             "replace_preview",
