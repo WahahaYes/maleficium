@@ -28,6 +28,26 @@ impl<R: Runtime> PosterRenderer for AppRenderer<R> {
     fn render(&self, cx: &Core, reqs: &[PosterRequest]) -> Vec<Result<PosterOutcome, String>> {
         reqs.iter().map(|r| run(&self.0, cx, r)).collect()
     }
+
+    fn render_cancel(
+        &self,
+        cx: &Core,
+        reqs: &[PosterRequest],
+        _slot: &std::sync::Mutex<Option<std::process::Child>>,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Vec<Result<PosterOutcome, String>> {
+        // No subprocess to park: stop between posters instead, so a cancel
+        // in the poster phase still skips the compile's second engine run.
+        let mut out = Vec::with_capacity(reqs.len());
+        for r in reqs {
+            if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+                out.push(Err(String::from("compile cancelled")));
+            } else {
+                out.push(run(&self.0, cx, r));
+            }
+        }
+        out
+    }
 }
 
 #[tauri::command]
