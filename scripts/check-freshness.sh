@@ -2,15 +2,22 @@
 # Warn when the dev loop may run stale artifacts: a debug app binary older
 # than the sources, or a missing sidecar for this host. With --all, also
 # compare the packaged frontend dist against the sources (release builds).
-# Always exits 0: the toolchain rebuilds what it can; these warnings exist
-# so a stale-looking run is diagnosed in seconds.
+# With --strict, a missing sidecar exits 1 instead of warning.
+# Default mode always exits 0: the toolchain rebuilds what it can; these
+# warnings exist so a stale-looking run is diagnosed in seconds.
 # POSIX sh (npm runs scripts under sh/dash).
 set -eu
 unset CDPATH
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 BIN="$ROOT/src-tauri/target/debug/maleficium"
 ALL=0
-if [ "${1:-}" = "--all" ]; then ALL=1; fi
+STRICT=0
+for arg in "$@"; do
+    case "$arg" in
+        --all) ALL=1 ;;
+        --strict) STRICT=1 ;;
+    esac
+done
 
 warn() { printf '%s\n' "$1" >&2; }
 
@@ -55,10 +62,17 @@ if [ -z "$triple" ]; then
 else
     exe=""
     case "$os" in MINGW* | MSYS* | CYGWIN*) exe=".exe" ;; esac
-    if [ -x "$ROOT/src-tauri/binaries/maleficium-engine-$triple$exe" ]; then
+    sidecar="$ROOT/src-tauri/binaries/maleficium-engine-$triple$exe"
+    if [ -x "$sidecar" ]; then
         echo "freshness: engine sidecar present for $triple."
+        # shellcheck disable=SC2046
+        stale_engine=$(newer_than "$sidecar" "$ROOT/src-tauri/engine/src" "$ROOT/src-tauri/engine/Cargo.toml" "$ROOT/src-tauri/engine/Cargo.lock" | head -n 10)
+        if [ -n "$stale_engine" ]; then
+            warn "FRESHNESS WARN: engine sidecar older than engine sources — run: sh scripts/build-engine.sh"
+        fi
     else
         warn "freshness ERROR: engine sidecar missing or not executable: src-tauri/binaries/maleficium-engine-$triple$exe — run: sh scripts/build-engine.sh"
+        if [ "$STRICT" -eq 1 ]; then exit 1; fi
     fi
 fi
 
