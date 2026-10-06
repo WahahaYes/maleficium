@@ -1301,10 +1301,13 @@ def state13():
     start_app(FIX + "/simple")
     wait_window(300)
     window_size(1600, 900)
+    # From before the open: the warm auto-compile finishes about a second
+    # after file.open, so a timestamp taken later would miss it entirely.
+    m = now_ms()
     open_project()
     click_editor()
     # The open auto-compiles warm; one measured Ctrl+R after it settles.
-    wait_event("compile.finish", now_ms(), 300)
+    wait_event("compile.finish", m, 300)
     m = now_ms()
     key("ctrl+r")
     wait_event("compile.finish", m, 300)
