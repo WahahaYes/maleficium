@@ -1,0 +1,103 @@
+// ArticleView.tsx — the Article tab body.
+//
+// The bundle bytes render in a sandboxed frame: sandbox="allow-scripts"
+// exactly (the reader e2e probes pin this shape), opaque origin, no bridge
+// inside. The bytes keep the reader's own CSP meta. An unapproved widget
+// shows its poster with an Approve button from the bytes themselves; the
+// approve round-trip (and every other frame message) arrives later — for
+// now the listener below drops everything after the denial check.
+
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
+import { useEffect, useRef } from 'react';
+import { articleSandbox, isArticleMessage } from '../lib/article';
+
+export interface ArticleViewProps {
+  /** The bundle bytes, or null before the first load. */
+  html: string | null;
+  loading: boolean;
+  error: string | null;
+  /** False with no compiled output to read (nothing to load yet). */
+  canLoad: boolean;
+  /** True while a compile runs (the bytes would describe the old document). */
+  compiling: boolean;
+  zoomPercent: number;
+  onLoad: () => void;
+}
+
+export default function ArticleView({
+  html,
+  loading,
+  error,
+  canLoad,
+  compiling,
+  zoomPercent,
+  onLoad,
+}: ArticleViewProps) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  // Denial point for frame messages. Validates origin, source and shape,
+  // then drops everything: approval handling arrives in a later slice.
+  useEffect(() => {
+    if (!html) return;
+    const onMessage = (e: MessageEvent) => {
+      if (!isArticleMessage(e.data, e.origin, e.source, frameRef.current?.contentWindow)) return;
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [html]);
+
+  if (loading) return <Typography variant="body1">Loading article…</Typography>;
+
+  if (error)
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 2 }}>
+        <Typography variant="body1" color="error">
+          {error}
+        </Typography>
+        <Box>
+          <Button size="small" onClick={onLoad} disabled={compiling}>
+            Try again
+          </Button>
+        </Box>
+      </Box>
+    );
+
+  if (!html) {
+    if (compiling) return <Typography variant="body1">Compiling…</Typography>;
+    if (!canLoad)
+      return <Typography variant="body1">No article yet — compile the paper first</Typography>;
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 2 }}>
+        <Typography variant="body1">The article is not loaded</Typography>
+        <Box>
+          <Button size="small" onClick={onLoad}>
+            Load article
+          </Button>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      <iframe
+        ref={frameRef}
+        title="Article"
+        sandbox={articleSandbox()}
+        referrerPolicy="no-referrer"
+        srcDoc={html}
+        style={
+          {
+            width: '100%',
+            height: '100%',
+            border: 0,
+            backgroundColor: 'transparent',
+            zoom: zoomPercent / 100,
+          } as React.CSSProperties
+        }
+      />
+    </Box>
+  );
+}

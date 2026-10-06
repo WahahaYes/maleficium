@@ -561,6 +561,8 @@ pub fn typescript() -> String {
         crate::bundle::BundleWarningKind::decl(&cfg),
         crate::bundle::BundleWarning::decl(&cfg),
         BundleExported::decl(&cfg),
+        crate::bundle::ArticleAnchor::decl(&cfg),
+        crate::bundle::ArticleView::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),

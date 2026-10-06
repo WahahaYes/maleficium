@@ -33,7 +33,9 @@
 //!   cannot shadow the reader's own elements;
 //! - the mount unit: `data-widget`, `data-type` and the one `style` the page
 //!   needs (`--ar:W / H`) are kept only on a `figure` whose `data-widget`
-//!   names a widget of this export, at most once per widget.
+//!   names a widget of this export, at most once per widget; the in-app
+//!   article's `data-approval="required"` marker passes on the same figures,
+//!   with that exact value only.
 
 use std::collections::BTreeSet;
 
@@ -211,7 +213,10 @@ pub const ELEMENT_ATTRS: &[(&str, &[&str])] = &[
     ("a", &["href"]),
     ("col", &["span"]),
     ("colgroup", &["span"]),
-    ("figure", &["data-widget", "data-type", "style"]),
+    (
+        "figure",
+        &["data-widget", "data-type", "data-approval", "style"],
+    ),
     ("img", &["alt", "height", "src", "width"]),
     ("li", &["value"]),
     ("ol", &["reversed", "start", "type"]),
@@ -415,6 +420,9 @@ fn kept_attrs(
             ("a", "href") => safe_href(value),
             ("img", "src") => safe_src(value),
             ("figure", "data-widget" | "data-type") => mount,
+            // The in-app article marks html widgets held back for approval;
+            // only the exact marker passes, never author text.
+            ("figure", "data-approval") => mount && value == "required",
             ("figure", "style") => mount && aspect_style(value),
             _ => true,
         };

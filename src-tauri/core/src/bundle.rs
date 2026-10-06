@@ -122,6 +122,24 @@ pub struct BundleExported {
     pub warnings: Vec<BundleWarning>,
 }
 
+/// One heading anchor of the in-app article, in document order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ArticleAnchor {
+    pub id: String,
+    pub text: String,
+}
+
+/// The in-app article: the single-file reader page's bytes (its own CSP
+/// meta intact) with unapproved html widgets held back, plus the heading
+/// anchors the editor-to-article sync scrolls to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ArticleView {
+    pub html: String,
+    pub anchors: Vec<ArticleAnchor>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Bundled,
@@ -463,14 +481,21 @@ struct Plan<'a> {
     fallbacks: BTreeMap<String, (Fallback, Vec<String>)>,
     /// The note a fallback widget's figure carries, by widget id.
     notes: BTreeMap<String, String>,
+    /// Html widgets the in-app article holds back for approval, by widget
+    /// id. Exports and the browser preview never gate html widgets; the
+    /// article view does.
+    gated: BTreeSet<String>,
 }
 
 /// Whether an export judges custom runtimes against the approval store at
-/// this base, or runs them unjudged (the browser preview, as html widgets).
+/// this base, runs them unjudged (the browser preview, as html widgets), or
+/// renders the in-app article (judged runtimes, plus html widgets held back
+/// for approval).
 #[derive(Clone, Copy)]
 enum Gate<'a> {
     Approvals(&'a Path),
     Preview,
+    Article(&'a Path),
 }
 
 /// Why a custom widget exports as its poster.
@@ -556,7 +581,7 @@ impl Plan<'_> {
         }
         let users = self.users.get(r).cloned().unwrap_or_default();
         let checked = match self.gate {
-            Gate::Approvals(base) => {
+            Gate::Approvals(base) | Gate::Article(base) => {
                 crate::widget_approval::check_runtime_at(base, self.cx, self.root_id, r, &users)
                     .map(|c| (c.snapshot, c.status))
             }
@@ -1064,7 +1089,25 @@ fn plan_widget(
         for n in &folded.notes {
             p.warn(BundleWarningKind::FoldLimit, format!("widget {id}: {n}"));
         }
-        Some(folded.html)
+        // The in-app article holds back what the user has not approved: the
+        // figure keeps its poster with an approval affordance, and the folded
+        // document is left out. Exports and the browser preview run it.
+        let held_back = match p.gate {
+            Gate::Article(base) => crate::widget_approval::check_at(base, p.cx, p.root_id, &target)
+                .map(|c| !c.status.is_approved())
+                .unwrap_or(true),
+            _ => false,
+        };
+        if held_back {
+            p.notes.insert(
+                id.clone(),
+                "This interactive figure needs your approval before it runs here.".to_string(),
+            );
+            p.gated.insert(id.clone());
+            None
+        } else {
+            Some(folded.html)
+        }
     } else if w.kind == WidgetType::Custom {
         let (doc, options) = plan_custom(p, w, &mut sources)?;
         custom_options = options;
@@ -1348,6 +1391,7 @@ fn mounts<'a>(
     list: &'a [Widget],
     assets: &BTreeMap<String, Asset>,
     notes: &BTreeMap<String, String>,
+    gated: &BTreeSet<String>,
 ) -> Result<Vec<reflow::article::Mount<'a>>, String> {
     list.iter()
         .map(|w| {
@@ -1378,6 +1422,7 @@ fn mounts<'a>(
                 height: w.rect.y1 - w.rect.y0,
                 poster,
                 note: notes.get(&w.id).cloned(),
+                approval_required: gated.contains(&w.id),
             })
         })
         .collect()
@@ -1745,6 +1790,73 @@ pub(crate) fn preview_bundle_in(
     r
 }
 
+/// The in-app article: the single-file bundle of `main_rel`'s last compile,
+/// written as `index.html` into a scratch folder under the OS app-data dir
+/// (never in the project, beside the browser previews but separate from
+/// them). One folder per project, replaced on the next run. Unlike the
+/// browser preview, the approval gate applies: custom runtimes are judged
+/// and unapproved html widgets are held back to their posters.
+pub fn article_bundle(cx: &Core, root_id: &str, main_rel: &str) -> Result<ArticleView, String> {
+    article_bundle_in(
+        cx,
+        root_id,
+        main_rel,
+        &crate::data_base_dir().join("article-previews"),
+        &crate::widget_approval::store_base(),
+    )
+}
+
+/// `article_bundle` with the scratch base and the approval store chosen by
+/// the caller.
+pub(crate) fn article_bundle_in(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    base: &Path,
+    approvals: &Path,
+) -> Result<ArticleView, String> {
+    let root = crate::fs::session_root(cx, root_id)?;
+    let dir = preview_dir(base, &root);
+    if dir.starts_with(&root) || root.starts_with(&dir) {
+        return Err(format!(
+            "the article folder {} overlaps the project: refusing to write there",
+            dir.display()
+        ));
+    }
+    // Clean the previous article first, so a failed run leaves nothing stale.
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| format!("cannot clear the old article {}: {e}", dir.display()))?;
+    }
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("cannot create the article folder {}: {e}", dir.display()))?;
+    let dest = dir.join("index.html");
+    let r = export_inner(
+        cx,
+        root_id,
+        main_rel,
+        &dest.to_string_lossy(),
+        BundleProfile::SingleFile,
+        &BundleOptions::default(),
+        Gate::Article(approvals),
+    );
+    if r.is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+        r?;
+        unreachable!("a failed article run returns above");
+    }
+    let html = std::fs::read_to_string(&dest)
+        .map_err(|e| format!("cannot read the article {}: {e}", dest.display()))?;
+    let anchors = reflow::article::anchors_of(&html)
+        .into_iter()
+        .map(|a| ArticleAnchor {
+            id: a.id,
+            text: a.text,
+        })
+        .collect();
+    Ok(ArticleView { html, anchors })
+}
+
 /// `<base>/<first 16 hex of sha256(project root)>`: stable per project.
 fn preview_dir(base: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.to_string_lossy().as_bytes());
@@ -1866,6 +1978,7 @@ fn export_inner(
         runtime_entries: Map::new(),
         fallbacks: BTreeMap::new(),
         notes: BTreeMap::new(),
+        gated: BTreeSet::new(),
     };
     for w in list.widgets.iter().filter(|w| w.kind == WidgetType::Custom) {
         if let Some(r) = &w.runtime {
@@ -1914,7 +2027,7 @@ fn export_inner(
     }
     let converted = flag_scan.html;
     let sidecar = std::fs::read_to_string(o.outdir.join(format!("{stem}.mfw"))).ok();
-    let mount_units = mounts(&list.widgets, &plan.assets, &plan.notes)?;
+    let mount_units = mounts(&list.widgets, &plan.assets, &plan.notes, &plan.gated)?;
     let article = reflow::article::build(reflow::article::Input {
         html: &converted,
         root: &main_dir,

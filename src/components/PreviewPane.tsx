@@ -1,10 +1,66 @@
+// The preview column: PDF and Article tabs sharing one pane.
+//
+// The PDF tab is the SyncTeX bitmap view. The Article tab renders the last
+// compile's reader bundle in a sandboxed frame (no bridge inside). Sync,
+// anchor jumps and the approve round-trip arrive later: for now the Article
+// tab loads on demand, reloads by hand, and its reload stays off while a
+// compile runs. The article has no pages, so only zoom carries over.
+
 import type { ComponentProps } from 'react';
+import { useState } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import Typography from '@mui/material/Typography';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import Preview from './Preview';
+import ArticleView from './ArticleView';
+import { articleZoomLabel, stepArticleZoom } from '../lib/article';
 import { emit } from '../lib/events';
 
-// The preview column: the PDF view plus the zoom event it reports.
-export default function PreviewPane(props: Omit<ComponentProps<typeof Preview>, 'onZoom'>) {
+type PreviewTab = 'pdf' | 'article';
+
+export interface PreviewPaneProps extends Omit<ComponentProps<typeof Preview>, 'onZoom'> {
+  /** True while a compile runs (article reload stays off). */
+  compiling?: boolean;
+  articleHtml: string | null;
+  articleLoading: boolean;
+  articleError: string | null;
+  /** False with no compiled output to read. */
+  canLoadArticle: boolean;
+  onLoadArticle: () => void;
+}
+
+export default function PreviewPane({
+  compiling = false,
+  articleHtml,
+  articleLoading,
+  articleError,
+  canLoadArticle,
+  onLoadArticle,
+  ...pdf
+}: PreviewPaneProps) {
+  const [tab, setTab] = useState<PreviewTab>('pdf');
+  const [articleZoom, setArticleZoom] = useState(100);
+
+  const select = (next: PreviewTab) => {
+    setTab(next);
+    // First visit loads the article; later visits keep what is shown.
+    if (
+      next === 'article' &&
+      canLoadArticle &&
+      !compiling &&
+      !articleHtml &&
+      !articleLoading &&
+      !articleError
+    ) {
+      onLoadArticle();
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -15,18 +71,77 @@ export default function PreviewPane(props: Omit<ComponentProps<typeof Preview>, 
         overflow: 'hidden',
       }}
     >
-      <Preview
-        {...props}
-        onZoom={(mode, percent) =>
-          emit({
-            scope: 'preview',
-            kind: 'info',
-            actor: 'user',
-            message: `preview zoom ${mode.kind === 'percent' ? '' : mode.kind + ' '}${Math.round(percent)}%`,
-            event: { action: 'preview.zoom', mode: mode.kind, percent: Math.round(percent) },
-          })
-        }
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Tabs
+          aria-label="Preview type"
+          value={tab}
+          onChange={(_, v: PreviewTab) => select(v)}
+          sx={{ minHeight: 36 }}
+        >
+          <Tab label="PDF" value="pdf" sx={{ minHeight: 36, py: 0.5 }} />
+          <Tab label="Article" value="article" sx={{ minHeight: 36, py: 0.5 }} />
+        </Tabs>
+        {tab === 'article' ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+            {compiling ? (
+              <Typography variant="caption" color="text.secondary">
+                Compiling…
+              </Typography>
+            ) : null}
+            <Button
+              size="small"
+              aria-label="Reload article"
+              title={compiling ? 'Unavailable while compiling' : 'Reload article'}
+              startIcon={<RefreshIcon fontSize="small" />}
+              onClick={onLoadArticle}
+              disabled={compiling || articleLoading || !canLoadArticle}
+            >
+              Reload
+            </Button>
+            <Button
+              size="small"
+              aria-label="Zoom article out"
+              onClick={() => setArticleZoom((z) => stepArticleZoom(z, 'out'))}
+            >
+              <ZoomOutIcon fontSize="small" />
+            </Button>
+            <Typography variant="caption" aria-label="Article zoom">
+              {articleZoomLabel(articleZoom)}
+            </Typography>
+            <Button
+              size="small"
+              aria-label="Zoom article in"
+              onClick={() => setArticleZoom((z) => stepArticleZoom(z, 'in'))}
+            >
+              <ZoomInIcon fontSize="small" />
+            </Button>
+          </Box>
+        ) : null}
+      </Box>
+      {tab === 'pdf' ? (
+        <Preview
+          {...pdf}
+          onZoom={(mode, percent) =>
+            emit({
+              scope: 'preview',
+              kind: 'info',
+              actor: 'user',
+              message: `preview zoom ${mode.kind === 'percent' ? '' : mode.kind + ' '}${Math.round(percent)}%`,
+              event: { action: 'preview.zoom', mode: mode.kind, percent: Math.round(percent) },
+            })
+          }
+        />
+      ) : (
+        <ArticleView
+          html={articleHtml}
+          loading={articleLoading}
+          error={articleError}
+          canLoad={canLoadArticle}
+          compiling={compiling}
+          zoomPercent={articleZoom}
+          onLoad={onLoadArticle}
+        />
+      )}
     </Box>
   );
 }
