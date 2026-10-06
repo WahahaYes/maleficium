@@ -259,6 +259,20 @@
 // the article still reads, so nothing below is needed to read it.
 (function () {
   'use strict';
+  // Its own manifest read: the widget IIFE above owns its `manifest`, and
+  // sharing across the scopes reads as a ReferenceError that kills every
+  // nicety below on a multi-section page.
+  function island(id) {
+    var el = document.getElementById(id);
+    if (!el) return {};
+    try {
+      var v = JSON.parse(el.textContent);
+      return v && typeof v === 'object' ? v : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  var manifest = island('mfw-manifest');
   var main = document.querySelector('main');
   var article = document.querySelector('article') || main;
   if (!main || !article) return;
@@ -341,6 +355,35 @@
     if (flashed) flashed.classList.remove('m-flash');
     flashed = to;
     // :target already marks the first visit; the class covers a repeat click.
+    to.classList.remove('m-flash');
+    void to.offsetWidth;
+    to.classList.add('m-flash');
+    setTimeout(function () {
+      to.classList.remove('m-flash');
+    }, 1800);
+  });
+
+  // Editor-to-article sync, forward only. The app posts the caret's section
+  // and the article scrolls to it with the same flash an in-page link gets.
+  // Only the embedding parent is heard (e.source === parent): a widget frame
+  // or a stray page cannot steer the article. The article never replies.
+  // Up here, before the contents early-return below: a single-section
+  // article has no nav, but its one anchor still syncs.
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || d.mfw !== 1 || e.source !== parent) return;
+    if (d.type !== 'article-scroll' || typeof d.id !== 'string' || !d.id) return;
+    var to = document.getElementById(d.id);
+    if (!to) return;
+    if (to.scrollIntoView) {
+      try {
+        to.scrollIntoView({ block: 'start' });
+      } catch (_) {
+        to.scrollIntoView();
+      }
+    }
+    if (flashed) flashed.classList.remove('m-flash');
+    flashed = to;
     to.classList.remove('m-flash');
     void to.offsetWidth;
     to.classList.add('m-flash');
@@ -436,31 +479,4 @@
   );
   window.addEventListener('resize', spy);
   spy();
-
-  // Editor-to-article sync, forward only. The app posts the caret's section
-  // and the article scrolls to it with the same flash an in-page link gets.
-  // Only the embedding parent is heard (e.source === parent): a widget frame
-  // or a stray page cannot steer the article. The article never replies.
-  window.addEventListener('message', function (e) {
-    var d = e.data;
-    if (!d || d.mfw !== 1 || e.source !== parent) return;
-    if (d.type !== 'article-scroll' || typeof d.id !== 'string' || !d.id) return;
-    var to = document.getElementById(d.id);
-    if (!to) return;
-    if (to.scrollIntoView) {
-      try {
-        to.scrollIntoView({ block: 'start' });
-      } catch (_) {
-        to.scrollIntoView();
-      }
-    }
-    if (flashed) flashed.classList.remove('m-flash');
-    flashed = to;
-    to.classList.remove('m-flash');
-    void to.offsetWidth;
-    to.classList.add('m-flash');
-    setTimeout(function () {
-      to.classList.remove('m-flash');
-    }, 1800);
-  });
 })();
