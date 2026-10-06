@@ -60,6 +60,7 @@ import { useFileOps } from './hooks/useFileOps';
 import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
+import { useArticle } from './hooks/useArticle';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -778,6 +779,8 @@ export default function App({
 
   const mainDoc =
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
+  // The Article tab's bytes: loaded on demand, reloaded by hand.
+  const article = useArticle();
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -899,6 +902,14 @@ export default function App({
             }}
             syncDisabled={compilePhase === 'compiling'}
             zoomActionRef={zoomActionRef}
+            compiling={compilePhase === 'compiling'}
+            articleHtml={article.html}
+            articleLoading={article.loading}
+            articleError={article.error}
+            canLoadArticle={mainDoc != null && pdfUrl != null}
+            onLoadArticle={() => {
+              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel);
+            }}
           />
         }
       />
