@@ -570,7 +570,7 @@ fn a_request_for_another_digest_than_the_folder_has_is_refused() {
     m.digest = Some("0".repeat(64));
     assert!(prepare_at(&h.base, &h.cx, &m)
         .unwrap_err()
-        .contains("html widgets only"));
+        .contains("html and custom widgets only"));
 }
 
 #[test]
@@ -663,4 +663,371 @@ fn first_party_runtime_widgets_render_without_any_approval() {
             "{w}: {res:?}"
         );
     }
+}
+
+// ---- custom runtimes: the proposed-poster gate ---------------------------------
+
+/// fig-chart as a custom widget on the heatmap sample, with no poster= of
+/// its own: the runtime may propose one. Mirrors the bundle tests' project.
+const HEAT_CUSTOM: &str = "widget|fig-chart|custom|heatmap@1|||house||primary=data/grid.csv|height=142.26378pt,scheme=div|Ablation chart";
+const HEAT_POSTER: &str = "widget|fig-chart|custom|heatmap@1|||house|figures/chart.png|primary=data/grid.csv|height=142.26378pt,scheme=div|Ablation chart";
+const GRID: &str = "0,1,2,3,4,5\n1,2,3,4,5,4\n2,3,4,5,4,3\n3,4,5,4,3,2\n4,5,4,3,2,1\n";
+
+/// A real 8-bit RGB PNG: the top half one colour, the bottom half another
+/// (equal halves are blank, split halves never are).
+fn rgb_png(w: u32, h: u32, top: [u8; 3], bottom: [u8; 3]) -> Vec<u8> {
+    use png::{BitDepth, ColorType, Encoder};
+    let mut px = Vec::with_capacity(w as usize * h as usize * 3);
+    for y in 0..h {
+        let c = if y < h.div_ceil(2) { top } else { bottom };
+        for _ in 0..w {
+            px.extend_from_slice(&c);
+        }
+    }
+    let mut buf = Vec::new();
+    {
+        let mut enc = Encoder::new(&mut buf, w, h);
+        enc.set_color(ColorType::Rgb);
+        enc.set_depth(BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&px).unwrap();
+    }
+    buf
+}
+
+/// A custom widget project with its own approval store: the heatmap sample
+/// installed, its grid source present, fig-chart on `heat` (no poster=
+/// unless the line says so).
+struct CustomRt {
+    cx: Core,
+    id: String,
+    root: PathBuf,
+    out: PathBuf,
+    base: PathBuf,
+}
+
+impl CustomRt {
+    fn new(name: &str, heat: &str) -> Self {
+        let cx = Core::default();
+        let (id, root, out) = project(&cx, name, "height=170.71652pt");
+        let o = crate::outputs::outputs_of(&cx, &id, "main.tex").unwrap();
+        let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+        let chart = "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart";
+        assert!(side.contains(chart), "the fixture sidecar changed shape");
+        std::fs::write(o.outdir.join("main.mfw"), side.replace(chart, heat)).unwrap();
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::write(root.join("data/grid.csv"), GRID).unwrap();
+        copy_sample(&root.join("runtimes/heatmap@1"));
+        CustomRt {
+            cx,
+            id,
+            root,
+            out,
+            base: store(name),
+        }
+    }
+    fn req(&self) -> PosterRequest {
+        req(&self.id, "fig-chart", &self.out)
+    }
+    fn check(&self) -> widget_approval::RuntimeChecked {
+        widget_approval::check_runtime_at(
+            &self.base,
+            &self.cx,
+            &self.id,
+            "heatmap@1",
+            &["fig-chart".to_string()],
+        )
+        .unwrap()
+    }
+    fn decide(&self, decision: widget_approval::RuntimeDecision) {
+        let digest = self.check().snapshot.digest;
+        widget_approval::decide_runtime_at(
+            &self.base,
+            &self.cx,
+            &widget_approval::RuntimeDecisionParams {
+                root_id: self.id.clone(),
+                main_rel: "main.tex".into(),
+                runtime: "heatmap@1".into(),
+                digest,
+                decision,
+            },
+        )
+        .unwrap();
+    }
+    fn set_licence(&self, from: &str, to: &str) {
+        let m = self.root.join("runtimes/heatmap@1/runtime.json");
+        let text = std::fs::read_to_string(&m).unwrap().replace(from, to);
+        assert_ne!(text, std::fs::read_to_string(&m).unwrap());
+        std::fs::write(&m, text).unwrap();
+    }
+}
+
+fn copy_sample(to: &Path) {
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtimes/samples/heatmap@1");
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let t = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_sample_dir(&e.path(), &t);
+        } else {
+            std::fs::copy(e.path(), &t).unwrap();
+        }
+    }
+}
+
+fn copy_sample_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let t = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_sample_dir(&e.path(), &t);
+        } else {
+            std::fs::copy(e.path(), &t).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_custom_widget_proposes_only_while_its_runtime_is_approved() {
+    let c = CustomRt::new("custom-unapproved", HEAT_CUSTOM);
+    let mut ran = false;
+    let res = run_at(&c.base, &c.cx, &c.req(), |_job| {
+        ran = true;
+        Ok(data_url(&png(4, 3)))
+    });
+    let r = approval(&res);
+    assert_eq!(r.widget, "fig-chart");
+    assert_eq!(
+        r.cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
+    assert_eq!(r.digest, c.check().snapshot.digest);
+    assert!(!ran, "the unapproved runtime ran");
+    assert!(!c.out.join("fig-chart.png").exists());
+    // prepare alone says the same and builds no job.
+    assert!(matches!(
+        prepare_at(&c.base, &c.cx, &c.req()).unwrap(),
+        Prepared::ApprovalRequired(_)
+    ));
+}
+
+#[test]
+fn a_denied_runtime_proposes_nothing() {
+    let c = CustomRt::new("custom-denied", HEAT_CUSTOM);
+    c.decide(widget_approval::RuntimeDecision::Denied);
+    let mut ran = false;
+    let res = run_at(&c.base, &c.cx, &c.req(), |_job| {
+        ran = true;
+        Ok(data_url(&png(4, 3)))
+    });
+    let r = approval(&res);
+    assert_eq!(r.cause, maleficium_events::WidgetApprovalCause::Revoked);
+    assert!(!ran && !c.out.join("fig-chart.png").exists());
+}
+
+#[test]
+fn a_missing_runtime_is_an_error_not_a_proposal() {
+    let cx = Core::default();
+    let (id, _root, out) = project(&cx, "custom-missing", "height=170.71652pt");
+    let o = crate::outputs::outputs_of(&cx, &id, "main.tex").unwrap();
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    std::fs::write(
+        o.outdir.join("main.mfw"),
+        side.replace(
+            "widget|fig-chart|chart|chart@1|||house|figures/chart.png|spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart",
+            "widget|fig-chart|custom|nope@1|||house||primary=data/grid.csv|height=142.26378pt|Ablation chart",
+        ),
+    )
+    .unwrap();
+    let base = store("custom-missing");
+    let e = run_at(&base, &cx, &req(&id, "fig-chart", &out), |_job| {
+        Ok(String::new())
+    })
+    .unwrap_err();
+    assert!(e.contains("not installed"), "{e}");
+    assert!(!out.join("fig-chart.png").exists());
+}
+
+#[test]
+fn an_invalid_runtime_is_an_error() {
+    let c = CustomRt::new("custom-invalid", HEAT_CUSTOM);
+    c.set_licence("\"MIT\"", "\"GPL-3.0\"");
+    let e = run_at(&c.base, &c.cx, &c.req(), |_job| Ok(String::new())).unwrap_err();
+    assert!(e.contains("is invalid"), "{e}");
+    assert!(!c.out.join("fig-chart.png").exists());
+}
+
+#[test]
+fn a_licence_change_after_approval_asks_again() {
+    let c = CustomRt::new("custom-licence", HEAT_CUSTOM);
+    c.decide(widget_approval::RuntimeDecision::Allowed);
+    // MIT and Apache-2.0 are both allowlisted: the package stays valid,
+    // but the verdict lapses until the user allows the new licence.
+    c.set_licence("\"MIT\"", "\"Apache-2.0\"");
+    let mut ran = false;
+    let res = run_at(&c.base, &c.cx, &c.req(), |_job| {
+        ran = true;
+        Ok(String::new())
+    });
+    let r = approval(&res);
+    assert_eq!(
+        r.cause,
+        maleficium_events::WidgetApprovalCause::LicenseOrVendoredChanged
+    );
+    assert!(!ran, "the licence-changed runtime ran");
+    assert!(!c.out.join("fig-chart.png").exists());
+}
+
+#[test]
+fn an_approved_runtime_renders_the_judged_bytes_in_both_modes() {
+    let c = CustomRt::new("custom-approved", HEAT_CUSTOM);
+    c.decide(widget_approval::RuntimeDecision::Allowed);
+    let light = rgb_png(4, 3, [200, 10, 10], [10, 10, 200]);
+    let dark = rgb_png(4, 3, [10, 10, 200], [200, 10, 10]);
+    let mut modes = Vec::new();
+    let res = run_at(&c.base, &c.cx, &c.req(), |job| {
+        modes.push(job.init["theme"]["mode"].as_str().unwrap().to_string());
+        if modes.len() == 1 {
+            assert!(
+                job.dark_init.is_some(),
+                "the light run carries its dark twin"
+            );
+        } else {
+            assert!(job.dark_init.is_none(), "the dark run is a single shot");
+        }
+        let bytes = if job.init["theme"]["mode"] == "light" {
+            &light
+        } else {
+            &dark
+        };
+        Ok(data_url(bytes))
+    });
+    match res {
+        Ok(PosterOutcome::Rendered(p)) => assert_eq!((p.width, p.height), (4, 3)),
+        other => panic!("expected rendered, got {other:?}"),
+    }
+    assert_eq!(modes, ["light", "dark"], "the proposal runs once per mode");
+    assert_eq!(std::fs::read(c.out.join("fig-chart.png")).unwrap(), light);
+    // The job the renderer ran: the judged snapshot's files folded (the
+    // package's own page), core-built inits in each mode, the bound source
+    // as bytes beside the init (never inside it).
+    let job = match prepare_at(&c.base, &c.cx, &c.req()).unwrap() {
+        Prepared::Job(j) => j,
+        Prepared::ApprovalRequired(a) => panic!("expected a job, got {a:?}"),
+    };
+    assert!(
+        job.document.contains("Heatmap"),
+        "the package's page is the document"
+    );
+    assert_eq!(job.init["theme"]["mode"], "light");
+    let dark_init = job
+        .dark_init
+        .clone()
+        .expect("a proposal carries its dark init");
+    assert_eq!(dark_init["theme"]["mode"], "dark");
+    assert_ne!(
+        job.init["theme"]["tokens"], dark_init["theme"]["tokens"],
+        "the two modes answer different tokens"
+    );
+    assert_eq!(job.init["runtime"], "heatmap@1");
+    assert_eq!(job.init["options"]["scheme"], "div");
+    assert_eq!(
+        job.init["sources"]["data"]["sha256"],
+        Value::from(sha_of(GRID.as_bytes()))
+    );
+    let init_text = serde_json::to_string(&job.init).unwrap();
+    assert!(
+        !init_text.contains("bytes"),
+        "source bytes never ride the init"
+    );
+    assert_eq!(job.sources.len(), 1);
+    assert_eq!(job.sources[0].key, "data");
+    assert_eq!(job.sources[0].bytes, GRID.as_bytes());
+    assert!(job.expect.is_none());
+}
+
+#[test]
+fn a_custom_widget_with_its_own_poster_still_gates_the_render() {
+    // D1: an explicit poster= wins the picture, but author code still runs
+    // only while approved.
+    let c = CustomRt::new("custom-explicit", HEAT_POSTER);
+    let res = run_at(&c.base, &c.cx, &c.req(), |_job| Ok(String::new()));
+    let r = approval(&res);
+    assert_eq!(
+        r.cause,
+        maleficium_events::WidgetApprovalCause::NeverApproved
+    );
+    c.decide(widget_approval::RuntimeDecision::Allowed);
+    assert!(matches!(
+        prepare_at(&c.base, &c.cx, &c.req()).unwrap(),
+        Prepared::Job(_)
+    ));
+}
+
+#[test]
+fn a_digest_the_runtime_no_longer_has_is_refused() {
+    let c = CustomRt::new("custom-stale", HEAT_CUSTOM);
+    c.decide(widget_approval::RuntimeDecision::Allowed);
+    let at = c.check().snapshot.digest;
+    std::fs::write(
+        c.root.join("runtimes/heatmap@1/index.html"),
+        std::fs::read_to_string(c.root.join("runtimes/heatmap@1/index.html")).unwrap()
+            + "<!-- edit -->",
+    )
+    .unwrap();
+    let mut r = c.req();
+    r.digest = Some(at);
+    let e = run_at(&c.base, &c.cx, &r, |_job| Ok(String::new())).unwrap_err();
+    assert!(e.contains("changed since"), "{e}");
+    assert!(!c.out.join("fig-chart.png").exists());
+}
+
+fn pair_job(dir: &Path, expect: Option<(u32, u32)>) -> PosterJob {
+    PosterJob {
+        widget_id: "w".into(),
+        document: String::new(),
+        init: Value::Null,
+        dark_init: None,
+        sources: vec![],
+        frame: (4, 3),
+        expect,
+        timeout: Duration::from_secs(1),
+        out: dir.join("w.png"),
+    }
+}
+
+#[test]
+fn proposals_must_be_sane_non_blank_pngs_that_answer_the_theme() {
+    let dir = crate::test_scratch::dir("poster-pair");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let job = pair_job(&dir, None);
+    let red = rgb_png(4, 3, [200, 10, 10], [200, 10, 10]);
+    let split = rgb_png(4, 3, [200, 10, 10], [10, 10, 200]);
+    let other = rgb_png(4, 3, [10, 10, 200], [200, 10, 10]);
+    let e = finish_pair(&job, &data_url(b"not a png at all"), &data_url(&split)).unwrap_err();
+    assert!(e.contains("light snapshot is not a PNG"), "{e}");
+    let e = finish_pair(&job, &data_url(&red), &data_url(&split)).unwrap_err();
+    assert!(e.contains("light snapshot is blank"), "{e}");
+    let e = finish_pair(&job, &data_url(&split), &data_url(&red)).unwrap_err();
+    assert!(e.contains("dark snapshot is blank"), "{e}");
+    let e = finish_pair(&job, &data_url(&split), &data_url(&split)).unwrap_err();
+    assert!(e.contains("match"), "{e}");
+    let wide = rgb_png(4097, 1, [1, 2, 3], [1, 2, 3]);
+    let e = finish_pair(&job, &data_url(&wide), &data_url(&other)).unwrap_err();
+    assert!(e.contains("4097x1"), "{e}");
+    let sized = pair_job(&dir, Some((4, 3)));
+    let big = rgb_png(5, 3, [200, 10, 10], [10, 10, 200]);
+    let e = finish_pair(&sized, &data_url(&big), &data_url(&other)).unwrap_err();
+    assert!(e.contains("is 5x3, expected 4x3"), "{e}");
+    assert!(!job.out.exists(), "a refused proposal writes nothing");
+    let r = finish_pair(&job, &data_url(&split), &data_url(&other)).unwrap();
+    assert_eq!((r.width, r.height), (4, 3));
+    assert_eq!(
+        std::fs::read(&job.out).unwrap(),
+        split,
+        "the light one is the poster"
+    );
+    assert_eq!(r.sha256, sha_of(&split));
+    assert!(!dir.join("w.png.part").exists());
+    let _ = std::fs::remove_dir_all(dir);
 }
