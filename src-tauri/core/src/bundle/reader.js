@@ -175,9 +175,15 @@
   }
   // A widget this copy cannot run keeps its poster and says why: no record,
   // a fallback, a kind or a custom runtime this reader does not know, or no
-  // document to mount.
+  // document to mount. A figure the in-app article marked for approval keeps
+  // its poster and offers approval instead: the button only asks the app
+  // (a message the app may ignore); the widget itself never runs here.
   function posterOnly(fig, w) {
     fig.setAttribute('data-state', 'poster-only');
+    if (fig.getAttribute('data-approval') === 'required') {
+      approvalButton(fig);
+      return;
+    }
     if (fig.querySelector('.m-widget-note')) return;
     var name = (w && (w.runtime || w.type)) || fig.getAttribute('data-type') || 'unknown';
     var p = document.createElement('p');
@@ -185,6 +191,23 @@
     p.textContent =
       'Interactive version unavailable: this reader does not know runtime ' + String(name) + '.';
     fig.appendChild(p);
+  }
+  function approvalButton(fig) {
+    if (fig.querySelector('.m-approve')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'm-approve';
+    var id = fig.getAttribute('data-widget') || 'this widget';
+    b.textContent = 'Approve';
+    b.setAttribute('aria-label', 'Approve ' + id + ' so it can run here');
+    b.addEventListener('click', function () {
+      try {
+        parent.postMessage({ mfw: 1, type: 'approve-widget', widgetId: id }, '*');
+      } catch (_) {
+        /* no app listening: the poster stays */
+      }
+    });
+    fig.appendChild(b);
   }
   function runnable(w) {
     if (!w || w.fallback || KINDS.indexOf(w.type) < 0) return false;

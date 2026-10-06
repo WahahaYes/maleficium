@@ -41,6 +41,10 @@ pub struct Mount<'a> {
     /// Why the widget shows only its poster (a custom runtime left out of
     /// this copy), shown as text under the caption.
     pub note: Option<String>,
+    /// An html widget the in-app article holds back for approval: its figure
+    /// carries `data-approval="required"` so the page can offer approval
+    /// without running the widget.
+    pub approval_required: bool,
 }
 
 /// What the pipeline found wrong; never a reason to drop the article.
@@ -146,8 +150,13 @@ pub fn mount_unit(m: &Mount) -> String {
     let note = m.note.as_deref().map_or(String::new(), |n| {
         format!("<p class=\"m-widget-note\">{}</p>", fold::text(n))
     });
+    let approval = if m.approval_required {
+        " data-approval=\"required\""
+    } else {
+        ""
+    };
     format!(
-        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption>{note}</figure>",
+        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\"{approval} style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption>{note}</figure>",
         id = fold::attr(m.id),
         kind = fold::attr(m.kind),
         poster = fold::attr(&m.poster),
@@ -397,6 +406,40 @@ fn write_entries(entries: &[Entry], out: &mut String) {
         out.push_str("</li>");
     }
     out.push_str("</ol>");
+}
+
+/// One heading anchor of a reader page, in document order: the section id
+/// the editor-to-article sync scrolls to, with its heading text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Anchor {
+    pub id: String,
+    pub text: String,
+}
+
+/// The heading anchors of a rendered reader page: the same sections the
+/// contents list links (top level plus one nesting level), flattened in
+/// document order. Reads the article element only, so the JSON islands
+/// (whose `<` bytes are escaped) can never contribute one.
+pub fn anchors_of(page_html: &str) -> Vec<Anchor> {
+    let doc = dom_query::Document::from(page_html);
+    let found = doc.select("article.ltx_document").first();
+    let Some(article) = found.nodes().first() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for e in contents(article, 0) {
+        out.push(Anchor {
+            id: e.id,
+            text: e.text,
+        });
+        for c in e.children {
+            out.push(Anchor {
+                id: c.id,
+                text: c.text,
+            });
+        }
+    }
+    out
 }
 
 #[cfg(test)]

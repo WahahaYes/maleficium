@@ -378,3 +378,47 @@ fn a_fallback_note_survives_as_text_only() {
         "{raw}"
     );
 }
+
+#[test]
+fn data_approval_passes_only_as_required_on_a_mount_figure() {
+    let unit = |approval: &str| {
+        format!("<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"html\" data-approval=\"{approval}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>")
+    };
+    let good = unit("required");
+    assert_eq!(clean(&good), good, "the held-back marker passes unchanged");
+    for bad in [
+        "yes",
+        "Required",
+        "REQUIRED",
+        "",
+        " required",
+        "required ",
+        "true",
+    ] {
+        let out = clean(&unit(bad));
+        assert!(!out.contains("data-approval"), "{bad:?} was kept: {out}");
+        assert!(
+            out.contains("data-widget=\"fig-a\""),
+            "the mount itself stays: {out}"
+        );
+    }
+    // Off a mount figure the marker never passes.
+    assert!(
+        !clean("<figure data-approval=\"required\"><p>x</p></figure>").contains("data-approval")
+    );
+    assert_eq!(
+        clean("<div data-widget=\"fig-a\" data-type=\"html\" data-approval=\"required\">x</div>"),
+        "<div>x</div>"
+    );
+    // An unknown widget or kind drops the mount and the marker with it.
+    let out = clean(&good.replace("fig-a", "fig-z"));
+    assert!(
+        !out.contains("data-approval") && !out.contains("data-widget"),
+        "{out}"
+    );
+    let out = clean(&good.replace("data-type=\"html\"", "data-type=\"script\""));
+    assert!(
+        !out.contains("data-approval") && !out.contains("data-widget"),
+        "{out}"
+    );
+}
