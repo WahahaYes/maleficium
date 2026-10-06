@@ -15,7 +15,7 @@ probes measure that case.
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
 STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10 11"; 12 is the opt-in
-worker-failure proof), STILLS_MIRROR_PORT /
+worker-failure proof, 13 the opt-in article-tab proof), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -1288,6 +1288,53 @@ def state11():
           "changed (diff shown), revoked; auto-approval on and off persisted; events %s" % acts_seen)
 
 
+def state13():
+    """Article tab: the multi-section fixture compiles, the Article tab's
+    first visit loads the reader bytes (article.load on the bus) and the
+    still shows the article, then a forward-sync jump from the end of the
+    editor scrolls the tab to the caret's section (article.sync on the
+    bus). Opt-in (STILLS_STATES=13): needs the engine cache warm, so it
+    pre-warms through the driver like state 2."""
+    log("pre-warming engine cache via driver")
+    if not run_driver("driver-warm13.jsonl", 150, FIX + "/simple"):
+        die("warm driver failed")
+    start_app(FIX + "/simple")
+    wait_window(300)
+    window_size(1600, 900)
+    open_project()
+    click_editor()
+    # The open auto-compiles warm; one measured Ctrl+R after it settles.
+    wait_event("compile.finish", now_ms(), 300)
+    m = now_ms()
+    key("ctrl+r")
+    wait_event("compile.finish", m, 300)
+    wait_event("preview.page-render", m, 120)
+    # First visit to the Article tab loads the bundle (the Reload control
+    # stays off while compiling, so this runs settled). Two tab spots: the
+    # preview column's offset moves with the layout, the load event says
+    # which one landed.
+    click_at(1170, 68)
+    time.sleep(2)
+    if not seen("article.load", m):
+        click_at(1250, 68)
+        time.sleep(2)
+    wait_event("article.load", m, 120)
+    time.sleep(2)
+    shot("13-article-tab")
+    # Caret to the end of the paper, then forward sync: the tab must follow
+    # to the caret's section.
+    click_editor()
+    key("ctrl+End")
+    msync = now_ms()
+    key("ctrl+alt+j")
+    wait_event("article.sync", msync, 60)
+    time.sleep(2)
+    shot("13-article-synced")
+    stop_app()
+    check_log("log.open compile.finish preview.pdf-load preview.page-render article.load article.sync")
+    print("stills: article tab loaded its reader bytes on first visit and forward sync scrolled it to the caret section")
+
+
 def compile_asking_none(since):
     """Ctrl+R on an approved widget: the compile asks nothing."""
     click_editor()
@@ -1346,7 +1393,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 13):
+    for n in range(1, 14):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)
