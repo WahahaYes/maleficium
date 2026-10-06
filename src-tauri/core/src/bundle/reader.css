@@ -115,6 +115,23 @@ body.m-reader {
   font-size: var(--m-size-small);
   color: var(--m-color-muted);
 }
+/* The in-app article's approval offer under a held-back widget's poster:
+   a plain button in the theme's accent, keyboard-visible. */
+.m-reader .m-approve {
+  margin: var(--m-space-1) 0 0;
+  font: inherit;
+  font-size: var(--m-size-small);
+  padding: var(--m-space-1) var(--m-space-2);
+  color: var(--m-color-background);
+  background: var(--m-color-accent);
+  border: 1px solid transparent;
+  border-radius: var(--m-radius);
+  cursor: pointer;
+}
+.m-reader .m-approve:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
 .m-reader .unsupported {
   padding: var(--m-space-3);
   background: var(--m-color-target);

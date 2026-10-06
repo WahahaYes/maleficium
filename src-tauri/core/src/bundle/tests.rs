@@ -2116,3 +2116,134 @@ fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
     assert!(script.contains("manifest.runtimes || {}"));
     assert!(script.contains("Interactive version unavailable: this reader does not know runtime "));
 }
+
+// ---- in-app article ---------------------------------------------------------
+
+/// A fresh approval store home (stands in for app data): cleared, so the
+/// html widget starts unapproved.
+fn fresh_approvals(name: &str) -> PathBuf {
+    let base = crate::test_scratch::dir(&format!("bundle-{name}-appdata"));
+    let _ = std::fs::remove_dir_all(&base);
+    base
+}
+
+fn approve_demo(p: &Project, approvals: &Path) {
+    let list = crate::widgets::widgets(&p.cx, &p.id, "main.tex").unwrap();
+    let w = list.widgets.iter().find(|w| w.id == "fig-demo").unwrap();
+    let target = crate::widget_approval::WidgetTarget::of("main.tex", w)
+        .unwrap()
+        .unwrap();
+    let digest = crate::widget_approval::check_at(approvals, &p.cx, &p.id, &target)
+        .unwrap()
+        .snapshot
+        .digest;
+    crate::widget_approval::approve_at(
+        approvals,
+        &p.cx,
+        &crate::widget_approval::WidgetApproveParams {
+            root_id: p.id.clone(),
+            main_rel: "main.tex".into(),
+            widget: "fig-demo".into(),
+            digest,
+        },
+    )
+    .unwrap();
+}
+
+fn demo_figure(html: &str) -> &str {
+    let demo = &html[html.find("data-widget=\"fig-demo\"").unwrap()..];
+    &demo[..demo.find("</figure>").unwrap()]
+}
+
+#[test]
+fn an_unapproved_html_widget_is_held_back_in_the_article_only() {
+    let p = project("article-gate", REAL_SIDECAR);
+    let base = p.out.join("articles");
+    let approvals = fresh_approvals("article-gate");
+
+    let view = article_bundle_in(&p.cx, &p.id, "main.tex", &base, &approvals).unwrap();
+    let demo = demo_figure(&view.html);
+    assert!(demo.contains("data-approval=\"required\""), "{demo}");
+    assert!(demo.contains("class=\"poster\""), "the poster stays");
+    assert!(demo.contains("needs your approval"), "{demo}");
+    assert!(
+        island_json(&view.html, "mfw-widgets")
+            .get("fig-demo")
+            .is_none(),
+        "no document until it is approved"
+    );
+    assert_eq!(
+        view.anchors
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect::<Vec<_>>(),
+        ["S1", "S1.SS1", "bib"],
+        "sync still lists the headings"
+    );
+
+    approve_demo(&p, &approvals);
+    let view = article_bundle_in(&p.cx, &p.id, "main.tex", &base, &approvals).unwrap();
+    assert!(
+        !demo_figure(&view.html).contains("data-approval"),
+        "an approved widget runs"
+    );
+    assert!(island_json(&view.html, "mfw-widgets")["fig-demo"].is_string());
+
+    // The browser preview never holds html widgets back.
+    let r = preview_bundle_in(&p.cx, &p.id, "main.tex", &p.out.join("previews")).unwrap();
+    let html = std::fs::read_to_string(&r.path).unwrap();
+    assert!(!demo_figure(&html).contains("data-approval"));
+    assert!(island_json(&html, "mfw-widgets")["fig-demo"].is_string());
+}
+
+#[test]
+fn an_article_lands_outside_the_project_and_the_next_run_replaces_it() {
+    let p = project("article-outside", REAL_SIDECAR);
+    let base = p.out.join("articles");
+    let approvals = fresh_approvals("article-outside");
+    let before = files_under(&p.root);
+
+    article_bundle_in(&p.cx, &p.id, "main.tex", &base, &approvals).unwrap();
+    let dir = preview_dir(&base, &p.root);
+    assert!(dir.join("index.html").is_file());
+    assert!(!dir.starts_with(&p.root), "never inside the project");
+    assert_eq!(files_under(&p.root), before, "the project is untouched");
+
+    // A stray file in the article folder is gone after the next run.
+    std::fs::write(dir.join("stale.txt"), "old").unwrap();
+    article_bundle_in(&p.cx, &p.id, "main.tex", &base, &approvals).unwrap();
+    assert!(!dir.join("stale.txt").exists(), "only the latest is kept");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+}
+
+#[test]
+fn an_article_base_that_overlaps_the_project_is_refused() {
+    let p = project("article-inside", REAL_SIDECAR);
+    let approvals = fresh_approvals("article-inside");
+    let r = article_bundle_in(
+        &p.cx,
+        &p.id,
+        "main.tex",
+        &p.root.join("articles"),
+        &approvals,
+    );
+    assert!(r.unwrap_err().contains("overlaps the project"));
+    assert!(!p.root.join("articles").exists());
+}
+
+#[test]
+fn a_failed_article_leaves_no_stale_folder() {
+    let p = project("article-fail", REAL_SIDECAR);
+    let base = p.out.join("articles");
+    let approvals = fresh_approvals("article-fail");
+    let r = article_bundle_in(&p.cx, &p.id, "nothere.tex", &base, &approvals);
+    assert!(r.is_err());
+    assert!(std::fs::read_dir(&base).map(|d| d.count()).unwrap_or(0) == 0);
+}
+
+#[test]
+fn an_article_for_an_unknown_root_fails_without_naming_a_path() {
+    let cx = Core::default();
+    let e = article_bundle(&cx, "no-such-root", "main.tex").unwrap_err();
+    assert!(!e.is_empty() && !e.contains('/'), "{e}");
+}
