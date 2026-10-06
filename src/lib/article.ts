@@ -77,6 +77,28 @@ export function articleScrollMessage(id: string): { mfw: 1; type: 'article-scrol
   return { mfw: 1, type: 'article-scroll', id };
 }
 
+/**
+ * Whether a new compile stamp should reload the article: bytes shown, a
+ * newer output stamp, no compile running, and something to load from.
+ * Never loads on its own: with no bytes shown the first visit stays manual.
+ */
+export function shouldRefreshArticle(
+  html: string | null,
+  loadedStamp: number,
+  docStamp: number | null,
+  compiling: boolean,
+  canLoad: boolean,
+): boolean {
+  return (
+    html != null &&
+    html !== '' &&
+    canLoad &&
+    !compiling &&
+    docStamp != null &&
+    docStamp > loadedStamp
+  );
+}
+
 /** The only sandbox the article frame ever gets (mirrors the reader probes). */
 export const ARTICLE_SANDBOX = 'allow-scripts';
 

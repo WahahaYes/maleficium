@@ -62,7 +62,7 @@ import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
 import { useArticle } from './hooks/useArticle';
-import { anchorForLine } from './lib/article';
+import { anchorForLine, shouldRefreshArticle } from './lib/article';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -783,6 +783,28 @@ export default function App({
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
   // The Article tab's bytes: loaded on demand, reloaded by hand.
   const article = useArticle();
+  const articleHtml = article.html;
+  const articleStamp = article.stamp;
+  const articleLoad = article.load;
+  const articleAnchors = article.anchors;
+  // Auto-refresh: a finished compile bumps the preview stamp; when the
+  // article shows older bytes, reload it. Never loads on its own: the
+  // first visit stays manual (see shouldRefreshArticle).
+  const previewStamp = previewDoc?.stamp ?? null;
+  useEffect(() => {
+    if (!mainDoc) return;
+    if (
+      shouldRefreshArticle(
+        articleHtml,
+        articleStamp,
+        previewStamp,
+        compilePhase === 'compiling',
+        true,
+      )
+    ) {
+      void articleLoad(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
+    }
+  }, [mainDoc, previewStamp, compilePhase, articleHtml, articleStamp, articleLoad]);
   // Forward-only sync: the caret line's section maps to the article anchor
   // the frame scrolls to. Sections come from the active buffer's outline;
   // the article names the same headings with latexml numbers attached.
@@ -791,9 +813,9 @@ export default function App({
       anchorForLine(
         currentLine,
         outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
-        article.anchors,
+        articleAnchors,
       ),
-    [currentLine, outline, article.anchors],
+    [currentLine, outline, articleAnchors],
   );
   const handleArticleSync = useCallback((anchor: string) => {
     emit({
@@ -955,7 +977,7 @@ export default function App({
             articleError={article.error}
             canLoadArticle={mainDoc != null && pdfUrl != null}
             onLoadArticle={() => {
-              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel);
+              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
             }}
             articleAnchor={articleAnchor}
             onArticleSync={handleArticleSync}
