@@ -1056,10 +1056,20 @@ fn plan_widget(
 
     // The poster is what the pdf shows: the document's own, else the
     // cached auto-poster, else (a table's typeset rows, a placeholder)
-    // cropped from the pdf.
+    // cropped from the pdf. The cache is read against the same approval
+    // store the export judges runtimes by, so an isolated store (tests,
+    // the article) sees its own posters.
     let poster_key = format!("{id}-poster");
-    let cached =
-        crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w, p.theme);
+    let cached = match p.gate {
+        Gate::Approvals(base) | Gate::Article(base) => {
+            crate::widgets::poster::cache::cached_poster_at(
+                base, p.cx, p.root_id, p.main_rel, w, p.theme,
+            )
+        }
+        Gate::Preview => {
+            crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w, p.theme)
+        }
+    };
     let source = crate::widgets::poster::poster_source(w, cached.as_deref());
     match source {
         PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {

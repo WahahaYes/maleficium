@@ -1055,6 +1055,9 @@ pub(crate) fn custom_key_now_at(
     w: &Widget,
     theme: &Theme,
 ) -> Option<(String, String)> {
+    if !auto(w) {
+        return None;
+    }
     let Keyed::Key(key, Some(digest)) = custom_keyed(base, cx, root_id, main_rel, w, theme).ok()?
     else {
         return None;
