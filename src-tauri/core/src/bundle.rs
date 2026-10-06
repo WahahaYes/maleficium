@@ -100,6 +100,10 @@ pub enum BundleWarningKind {
     /// A custom runtime's widgets export as posters only (not installed,
     /// invalid, not approved or denied); one warning per runtime.
     Runtime,
+    /// A custom widget's cached poster was rendered for an older state of
+    /// its runtime: the export shows a placeholder until the next compile
+    /// renders it. Never refused.
+    RuntimeDigestChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -914,6 +918,26 @@ fn licence_block(
     format!("<!-- Licences:{safe} -->")
 }
 
+/// A custom widget with no usable poster whose map still names one: its
+/// poster was rendered for an older state (often a changed runtime
+/// digest). The export keeps the placeholder and says so; it never refuses.
+fn stale_custom_poster(p: &Plan, w: &Widget) -> Option<String> {
+    use crate::widgets::poster::cache::{custom_key_now_at, map_key_for};
+    let base = match p.gate {
+        Gate::Approvals(base) | Gate::Article(base) => base,
+        Gate::Preview => return None,
+    };
+    let r = w.runtime.as_deref().unwrap_or("");
+    let mapped = map_key_for(p.cx, p.root_id, p.main_rel, &w.id)?;
+    let (now, _) = custom_key_now_at(base, p.cx, p.root_id, p.main_rel, w, p.theme)?;
+    (mapped != now).then(|| {
+        format!(
+            "widget {}: its poster was rendered for an older state of runtime {r}; it shows a placeholder until the next compile renders it.",
+            w.id
+        )
+    })
+}
+
 /// A custom widget: its runtime read and judged once per export, bound
 /// (an error refuses the export), then folded live with its sources, or
 /// left to its poster with a note. Returns the document and the bound
@@ -1036,7 +1060,8 @@ fn plan_widget(
     let poster_key = format!("{id}-poster");
     let cached =
         crate::widgets::poster::cache::cached_poster(p.cx, p.root_id, p.main_rel, w, p.theme);
-    match crate::widgets::poster::poster_source(w, cached.as_deref()) {
+    let source = crate::widgets::poster::poster_source(w, cached.as_deref());
+    match source {
         PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {
             p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
         }
@@ -1048,6 +1073,11 @@ fn plan_widget(
             p.add_local(poster_key.clone(), &id, &rel.to_string_lossy(), inline_opt)?
         }
         _ => {
+            if w.kind == WidgetType::Custom {
+                if let Some(msg) = stale_custom_poster(p, w) {
+                    p.warn(BundleWarningKind::RuntimeDigestChanged, msg);
+                }
+            }
             let png = crop_png(pdf, w.page, &w.rect).map_err(|e| format!("widget {id}: {e}"))?;
             p.add_mem(poster_key.clone(), "png", png, inline_opt)?;
         }

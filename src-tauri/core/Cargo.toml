@@ -24,6 +24,9 @@ maleficium-events = { path = "../events" }
 maleficium-index = { path = "../index" }
 # Base64 previews over the JSON contract (bytes have no JSON shape).
 base64 = "0.22.1"
+# Poster snapshots are decoded to check they are sane, non-blank and
+# theme-responsive; only decoding is used, never encoding.
+png = "0.18.1"
 # Renders pdf pages for snippets. No embedded fonts: Tectonic embeds every font.
 hayro = { version = "0.7", default-features = false }
 # The core-owned file watcher (notify thread per session root). No Tauri.

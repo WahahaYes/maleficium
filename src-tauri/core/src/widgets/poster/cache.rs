@@ -34,12 +34,15 @@
 //! covers its folder: its key is made from the approval digest of the
 //! folder, so any edit names a poster that does not exist yet, and an
 //! unapproved, revoked or changed widget gets no map entry at all, cached
-//! file or not. The renderer checks the approval again when it runs the
+//! file or not. A custom widget takes part only while its runtime is
+//! approved, and its key is made from the runtime's digest with the same
+//! effect. The renderer checks the approval again when it runs the
 //! job (see [`super::prepare`]); the check here only decides what to ask
 //! for and what to map.
 
 use super::{
-    poster_source, read_sources, PosterOutcome, PosterRequest, PosterSource, HTML_RUNTIME,
+    poster_source, read_sources, PosterOutcome, PosterRequest, PosterSource, CUSTOM_TIMEOUT_MS,
+    HTML_RUNTIME,
 };
 use crate::bundle::fold;
 use crate::theme::Theme;
@@ -153,12 +156,13 @@ pub(crate) fn digest(
 }
 
 /// Whether a widget's poster can come from the cache: first-party model and
-/// chart runtimes and html widgets (the latter only while approved, see
-/// [`keyed`]), and never when the document gives its own poster.
+/// chart runtimes, html widgets (the latter only while approved, see
+/// [`keyed`]), and custom widgets (only while their runtime is approved),
+/// and never when the document gives its own poster.
 fn auto(w: &Widget) -> bool {
     matches!(
         w.kind,
-        WidgetType::Model | WidgetType::Chart | WidgetType::Html
+        WidgetType::Model | WidgetType::Chart | WidgetType::Html | WidgetType::Custom
     ) && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
@@ -203,7 +207,7 @@ pub fn poster_key(
         }
         WidgetType::Custom => {
             return Err(format!(
-                "widget {}: a custom widget's poster is its poster= file",
+                "widget {}: a custom widget's poster is keyed by its runtime digest",
                 w.id
             ))
         }
@@ -243,6 +247,55 @@ pub fn html_key(w: &Widget, folder: &str, approval_digest: &str, theme: &Theme) 
     )
 }
 
+/// The cache key material of a custom widget judged approved on `snap`:
+/// the runtime's digest and ref, the bound sources and options, the poster
+/// theme and the renderer version. Any change names a poster that does not
+/// exist yet.
+fn custom_material(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+    theme: &Theme,
+    snap: &widget_approval::RuntimeSnapshot,
+    manifest: &crate::runtimes::RuntimeManifest,
+) -> Result<(String, String), String> {
+    let reference = w.runtime.clone().unwrap_or_default();
+    let bound = crate::runtimes::bind(w, manifest)?;
+    let main_dir = Path::new(main_rel)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut sources: Vec<KeySource> = vec![(
+        "runtime".to_string(),
+        reference.clone(),
+        snap.digest.as_bytes().to_vec(),
+    )];
+    for (role, s) in &bound.sources {
+        let path = crate::fs::resolve_in(cx, root_id, &main_dir.join(&s.path).to_string_lossy())
+            .map_err(|e| format!("widget {}: {}: {e}", w.id, s.path))?;
+        let bytes = std::fs::read(&path)
+            .map_err(|e| format!("widget {}: cannot read {}: {e}", w.id, s.path))?;
+        sources.push((role.clone(), s.path.clone(), bytes));
+    }
+    let options: Vec<(String, String)> = bound
+        .options
+        .iter()
+        .map(|(k, v)| (k.clone(), v.to_string()))
+        .collect();
+    Ok((
+        digest(
+            "custom",
+            &reference,
+            &fold::widget_policy(None),
+            &options,
+            &sources,
+            &key_tokens(theme),
+        ),
+        snap.digest.clone(),
+    ))
+}
+
 /// How a widget stands with the cache.
 enum Keyed {
     /// Its poster's key, and for an html widget the approval digest the key
@@ -260,6 +313,9 @@ fn keyed(
     w: &Widget,
     theme: &Theme,
 ) -> Result<Keyed, String> {
+    if w.kind == WidgetType::Custom {
+        return custom_keyed(base, cx, root_id, main_rel, w, theme);
+    }
     let Some(target) = WidgetTarget::of(main_rel, w)? else {
         return poster_key(cx, root_id, main_rel, w, theme).map(|k| Keyed::Key(k, None));
     };
@@ -271,6 +327,52 @@ fn keyed(
         }
         WidgetApprovalStatus::ApprovalRequired(r) => Keyed::Approval(Box::new(r)),
     })
+}
+
+/// A custom widget's standing: judged on one snapshot of its runtime
+/// package, keyed only while the verdict is approved (allowed at this
+/// digest, or an auto-covered change). Anything else gets no map entry.
+fn custom_keyed(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+    theme: &Theme,
+) -> Result<Keyed, String> {
+    let reference = w.runtime.clone().unwrap_or_default();
+    let list = read(cx, root_id, main_rel)?.0;
+    let users: Vec<String> = list
+        .widgets
+        .iter()
+        .filter(|v| {
+            v.kind == WidgetType::Custom && v.runtime.as_deref() == Some(reference.as_str())
+        })
+        .map(|v| v.id.clone())
+        .collect();
+    let checked = widget_approval::check_runtime_at(base, cx, root_id, &reference, &users)?;
+    let approved = matches!(checked.status, Some(WidgetApprovalStatus::Approved(_)));
+    if !approved {
+        return Ok(match checked.status {
+            Some(WidgetApprovalStatus::ApprovalRequired(r)) => Keyed::Approval(Box::new(r)),
+            _ => {
+                let reason = checked
+                    .snapshot
+                    .invalid
+                    .clone()
+                    .unwrap_or_else(|| format!("runtime {reference} cannot be judged"));
+                return Err(format!("widget {}: {reason}", w.id));
+            }
+        });
+    }
+    let snap = &checked.snapshot;
+    let manifest = snap.manifest.as_ref().ok_or_else(|| {
+        snap.invalid
+            .clone()
+            .unwrap_or_else(|| format!("runtime {reference} is not valid"))
+    })?;
+    let (key, digest) = custom_material(cx, root_id, main_rel, w, theme, snap, manifest)?;
+    Ok(Keyed::Key(key, Some(digest)))
 }
 
 /// The compile line for an html widget that waits for the user.
@@ -377,7 +479,8 @@ pub const README: &str = "# .maleficium
 Maleficium writes this folder when it compiles a paper that uses
 `maleficium-interactive.sty`. It holds auto-posters: still images of the
 interactive model and chart widgets that have no `poster=` of their own,
-and of html widgets without one that you approved in View > Widgets.
+of html widgets without one that you approved in View > Widgets, and of
+custom-runtime widgets without one whose runtime you allowed there.
 
 - `posters/<sha256>.png` is one poster. Its name is a hash of the widget's
   source files, its options, the runtime and the renderer version, so any
@@ -594,7 +697,8 @@ struct Wanted<'w> {
     widget: &'w Widget,
     key: String,
     png: PathBuf,
-    /// An html widget's approval digest, which the render must still match.
+    /// An html widget's approval digest, or a custom widget's runtime
+    /// digest, which the render must still match.
     digest: Option<String>,
 }
 
@@ -758,7 +862,13 @@ fn before_compile_inner(
                 main_rel: main_rel.to_string(),
                 widget_id: w.widget.id.clone(),
                 out_path: w.png.to_string_lossy().into_owned(),
-                timeout_ms: w.digest.as_ref().map(|_| HTML_TIMEOUT_MS),
+                timeout_ms: w.digest.as_ref().map(|_| {
+                    if w.widget.kind == WidgetType::Custom {
+                        CUSTOM_TIMEOUT_MS
+                    } else {
+                        HTML_TIMEOUT_MS
+                    }
+                }),
                 digest: w.digest.clone(),
             })
             .collect();
@@ -916,6 +1026,40 @@ pub(crate) fn cached_poster_at(
     let c = Cache::at(&o.dir);
     let png = c.png(&key);
     (c.present() && png.is_file()).then_some(png)
+}
+
+/// The map's key for one widget id, when the map names it.
+pub(crate) fn map_key_for(
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    widget_id: &str,
+) -> Option<String> {
+    let o = crate::outputs::outputs_of(cx, root_id, main_rel).ok()?;
+    let c = Cache::at(&o.dir);
+    let text = std::fs::read_to_string(c.map(job_of(&o.main_file))).ok()?;
+    parse_map(&text)
+        .into_iter()
+        .find(|e| e.id == widget_id)
+        .map(|e| e.key)
+}
+
+/// The current cache key of a custom widget, or None when it has none
+/// (an explicit poster, an unapproved runtime, a missing or invalid
+/// package, or a bind error).
+pub(crate) fn custom_key_now_at(
+    base: &Path,
+    cx: &Core,
+    root_id: &str,
+    main_rel: &str,
+    w: &Widget,
+    theme: &Theme,
+) -> Option<(String, String)> {
+    let Keyed::Key(key, Some(digest)) = custom_keyed(base, cx, root_id, main_rel, w, theme).ok()?
+    else {
+        return None;
+    };
+    Some((key, digest))
 }
 
 /// Runs the app binary's headless renderer (`maleficium --render-posters

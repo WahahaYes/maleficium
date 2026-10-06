@@ -16,6 +16,14 @@
 //! runs. An approved html widget runs under the strict widget policy: its
 //! declared origins are not reachable from a poster render.
 //!
+//! A `custom` widget may propose its poster: when its runtime is approved
+//! (allowed at this digest, or an auto-covered change; never when missing,
+//! invalid, unapproved, denied or licence-changed) the judged snapshot's
+//! files are folded like an export and the runtime renders them twice,
+//! once per colour mode. Both snapshots must be sane, non-blank PNGs that
+//! differ (the runtime answers the theme); the light one is the poster.
+//! Failure writes nothing.
+//!
 //! Poster precedence for a widget is [`poster_source`]: an explicit
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
@@ -26,6 +34,7 @@ use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, Widge
 use crate::Core;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use ts_rs::TS;
@@ -40,6 +49,13 @@ const CSS_PER_PT: f64 = 96.0 / 72.0;
 const DEFAULT_DENSITY: u32 = 2;
 /// The largest snapshot the bridge carries (a data URL under 8 MiB).
 const MAX_SNAPSHOT: usize = 8 * 1024 * 1024;
+/// A proposal's sides must fit in these pixels.
+const MAX_PROPOSAL_SIDE: u32 = 4096;
+
+/// A compile's time limit for one custom widget's proposal: author code
+/// that never answers the snapshot request costs each compile this long,
+/// per colour mode.
+pub(crate) const CUSTOM_TIMEOUT_MS: u64 = 10_000;
 
 /// A debug-only runtime that announces itself, then spins forever on
 /// `init`: the renderer's hard time limit is proven against it. Release
@@ -116,6 +132,10 @@ pub struct PosterJob {
     /// The bridge `init` body: sources carry name, mime and sha256; the
     /// renderer adds each one's bytes.
     pub init: Value,
+    /// A custom proposal's second `init` body, in dark mode: the renderer
+    /// runs the job once per body and the pair must differ. None for every
+    /// other kind.
+    pub dark_init: Option<Value>,
     pub sources: Vec<PosterSourceBytes>,
     /// The frame's size in CSS pixels.
     pub frame: (u32, u32),
@@ -216,7 +236,9 @@ fn read_sources<'w>(
 }
 
 /// Builds the render job for one widget of a compiled main file. An html
-/// widget's approval is checked here, on the snapshot the job is built from.
+/// widget's approval is checked here, on the snapshot the job is built from;
+/// a custom widget's runtime decision is checked the same way, and only an
+/// approved runtime is rendered.
 pub fn prepare(cx: &Core, req: &PosterRequest) -> Result<Prepared, String> {
     prepare_at(&widget_approval::store_base(), cx, req)
 }
@@ -244,6 +266,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
     match w.kind {
         WidgetType::Model | WidgetType::Chart => {}
         WidgetType::Html => return html_job(base, cx, req, w, &theme, out, timeout),
+        WidgetType::Custom => return custom_job(base, cx, req, w, &theme, out, timeout),
         WidgetType::Table => {
             return Err(format!(
                 "widget {id}: a table's poster is its typeset rows, nothing to render"
@@ -254,15 +277,10 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
                 "widget {id}: video posters are not rendered yet; give it poster="
             ))
         }
-        WidgetType::Custom => {
-            return Err(format!(
-                "widget {id}: a custom widget's poster is its poster= file, nothing to render"
-            ))
-        }
     }
     if req.digest.is_some() {
         return Err(format!(
-            "widget {id}: a digest applies to html widgets only"
+            "widget {id}: a digest applies to html and custom widgets only"
         ));
     }
     let runtime = w.runtime.as_deref().unwrap_or("");
@@ -313,7 +331,8 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
     Ok(Prepared::Job(PosterJob {
         widget_id: id.clone(),
         document,
-        init: init(w, runtime, options, meta, &theme),
+        init: init(w, runtime, options, meta, &theme, Mode::Light),
+        dark_init: None,
         sources,
         frame,
         expect,
@@ -330,14 +349,24 @@ fn rect_css(w: &Widget) -> (f64, f64) {
     )
 }
 
-/// The bridge `init` body.
+/// The bridge `init` body, in one colour mode.
 fn init(
     w: &Widget,
     runtime: &str,
     options: Map<String, Value>,
     sources: Map<String, Value>,
     theme: &Theme,
+    mode: Mode,
 ) -> Value {
+    let tokens: Map<String, Value> = theme
+        .tokens(mode)
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::from(v.as_str())))
+        .collect();
+    let mode = match mode {
+        Mode::Light => "light",
+        Mode::Dark => "dark",
+    };
     json!({
         "type": "init",
         "protocol": 1,
@@ -345,7 +374,7 @@ fn init(
         "runtime": runtime,
         "alt": w.alt,
         "options": options,
-        "theme": { "mode": "light", "tokens": poster_tokens(theme) },
+        "theme": { "mode": mode, "tokens": tokens },
         "sources": sources,
     })
 }
@@ -392,8 +421,130 @@ fn html_job(
             Ok(Prepared::Job(PosterJob {
                 widget_id: id.clone(),
                 document: folded.html,
-                init: init(w, HTML_RUNTIME, options, Map::new(), theme),
+                init: init(w, HTML_RUNTIME, options, Map::new(), theme, Mode::Light),
+                dark_init: None,
                 sources: Vec::new(),
+                frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
+                expect: None,
+                timeout,
+                out,
+            }))
+        }
+    }
+}
+
+/// A custom widget's proposal job, built only while its runtime is
+/// approved: allowed at this digest, or an auto-covered content change. A
+/// missing, invalid, unapproved, denied or licence-changed runtime renders
+/// nothing (the first two are errors, the rest come back as
+/// approval_required). The document is the judged snapshot's files folded
+/// exactly as the export folds them, so the bytes that run are the bytes
+/// that were approved; the runtime then renders them once per colour mode.
+fn custom_job(
+    base: &Path,
+    cx: &Core,
+    req: &PosterRequest,
+    w: &Widget,
+    theme: &Theme,
+    out: PathBuf,
+    timeout: Duration,
+) -> Result<Prepared, String> {
+    let id = &w.id;
+    let reference = w.runtime.clone().unwrap_or_default();
+    if reference.is_empty() {
+        return Err(format!("widget {id}: a custom widget records no runtime"));
+    }
+    let list = read(cx, &req.root_id, &req.main_rel)?.0;
+    let users: Vec<String> = list
+        .widgets
+        .iter()
+        .filter(|v| {
+            v.kind == WidgetType::Custom && v.runtime.as_deref() == Some(reference.as_str())
+        })
+        .map(|v| v.id.clone())
+        .collect();
+    let checked = widget_approval::check_runtime_at(base, cx, &req.root_id, &reference, &users)
+        .map_err(|e| format!("widget {id}: {e}"))?;
+    let snap = &checked.snapshot;
+    let manifest = snap.manifest.as_ref().ok_or_else(|| {
+        let reason = snap.invalid.as_deref().unwrap_or("it is not valid");
+        let reason = reason
+            .strip_prefix(&format!("runtime {reference}: "))
+            .unwrap_or(reason);
+        format!("widget {id}: runtime {reference} is invalid ({reason})")
+    })?;
+    if let Some(want) = &req.digest {
+        if *want != snap.digest {
+            return Err(format!(
+                "widget {id}: its runtime changed since the poster was asked for; the next compile renders it"
+            ));
+        }
+    }
+    match checked.status {
+        None => Err(format!("widget {id}: runtime {reference} cannot be judged")),
+        Some(WidgetApprovalStatus::ApprovalRequired(r)) => {
+            Ok(Prepared::ApprovalRequired(Box::new(r)))
+        }
+        Some(WidgetApprovalStatus::Approved(_)) => {
+            let bound =
+                crate::runtimes::bind(w, manifest).map_err(|e| format!("widget {id}: {e}"))?;
+            let main_dir = Path::new(&req.main_rel)
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            let mut sources = Vec::new();
+            let mut meta = Map::new();
+            for (role, s) in &bound.sources {
+                let path = crate::fs::resolve_in(
+                    cx,
+                    &req.root_id,
+                    &main_dir.join(&s.path).to_string_lossy(),
+                )
+                .map_err(|e| format!("widget {id}: {}: {e}", s.path))?;
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| format!("widget {id}: cannot read {}: {e}", s.path))?;
+                crate::runtimes::check_size(w, manifest, role, bytes.len() as u64)?;
+                let name = Path::new(&s.path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| role.clone());
+                let ext = Path::new(&s.path)
+                    .extension()
+                    .map(|e| e.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                meta.insert(
+                    role.clone(),
+                    json!({ "name": name, "mime": fold::mime_for(&ext), "sha256": sha_of(&bytes) }),
+                );
+                sources.push(PosterSourceBytes {
+                    key: role.clone(),
+                    bytes,
+                });
+            }
+            // The judged snapshot's files, never a second read of the
+            // folder, folded exactly as the export folds them.
+            let fold_input: BTreeMap<String, Vec<u8>> = snap
+                .files
+                .iter()
+                .filter(|(path, _)| !manifest.is_metadata(path))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let folded = fold::fold_bundle(&fold_input, &fold::widget_policy(None))
+                .map_err(|e| format!("widget {id}: runtime {reference}: {e}"))?;
+            let rect_css = rect_css(w);
+            Ok(Prepared::Job(PosterJob {
+                widget_id: id.clone(),
+                document: folded.html,
+                init: init(
+                    w,
+                    &reference,
+                    bound.options.clone(),
+                    meta.clone(),
+                    theme,
+                    Mode::Light,
+                ),
+                dark_init: Some(init(w, &reference, bound.options, meta, theme, Mode::Dark)),
+                sources,
                 frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
                 expect: None,
                 timeout,
@@ -405,12 +556,14 @@ fn html_job(
 
 /// Prepares, executes and finishes one request. `exec` runs a job and
 /// returns the runtime's PNG data URL; it is reached only with a job that
-/// may run (a first-party runtime, or an html widget approved at the
-/// snapshot the job holds).
+/// may run (a first-party runtime, an approved html widget, or an approved
+/// custom runtime, each at the snapshot the job holds). A custom proposal
+/// runs twice, once per colour mode, and only differing sane non-blank
+/// snapshots are written.
 pub fn run(
     cx: &Core,
     req: &PosterRequest,
-    exec: impl FnOnce(std::sync::Arc<PosterJob>) -> Result<String, String>,
+    exec: impl FnMut(std::sync::Arc<PosterJob>) -> Result<String, String>,
 ) -> Result<PosterOutcome, String> {
     run_at(&widget_approval::store_base(), cx, req, exec)
 }
@@ -420,14 +573,25 @@ pub(crate) fn run_at(
     base: &Path,
     cx: &Core,
     req: &PosterRequest,
-    exec: impl FnOnce(std::sync::Arc<PosterJob>) -> Result<String, String>,
+    mut exec: impl FnMut(std::sync::Arc<PosterJob>) -> Result<String, String>,
 ) -> Result<PosterOutcome, String> {
     match prepare_at(base, cx, req)? {
         Prepared::ApprovalRequired(r) => Ok(PosterOutcome::ApprovalRequired(r)),
         Prepared::Job(job) => {
             let job = std::sync::Arc::new(job);
-            let png = exec(job.clone())?;
-            finish(&job, &png).map(PosterOutcome::Rendered)
+            if let Some(dark) = job.dark_init.clone() {
+                let pair = PosterJob {
+                    init: dark,
+                    dark_init: None,
+                    ..job.as_ref().clone()
+                };
+                let light = exec(job.clone())?;
+                let dark_png = exec(std::sync::Arc::new(pair))?;
+                finish_pair(&job, &light, &dark_png).map(PosterOutcome::Rendered)
+            } else {
+                let png = exec(job.clone())?;
+                finish(&job, &png).map(PosterOutcome::Rendered)
+            }
         }
     }
 }
@@ -446,28 +610,154 @@ pub fn png_size(b: &[u8]) -> Option<(u32, u32)> {
 /// Checks the runtime's snapshot (a PNG data URL) and writes it to the
 /// job's path, replacing any earlier file there in one step.
 pub fn finish(job: &PosterJob, data_url: &str) -> Result<PosterRendered, String> {
-    use base64::Engine;
-    let id = &job.widget_id;
-    if data_url.len() >= MAX_SNAPSHOT {
-        return Err(format!("widget {id}: the snapshot is over 8 MiB"));
-    }
-    let b64 = data_url
-        .strip_prefix("data:image/png;base64,")
-        .ok_or_else(|| format!("widget {id}: the snapshot is not a PNG data URL"))?;
-    let png = base64::engine::general_purpose::STANDARD
-        .decode(b64)
-        .map_err(|e| format!("widget {id}: the snapshot is not valid base64: {e}"))?;
-    let (width, height) =
-        png_size(&png).ok_or_else(|| format!("widget {id}: the snapshot is not a PNG"))?;
+    let png = snapshot_bytes(&job.widget_id, data_url, None)?;
+    let (width, height) = png_size(&png)
+        .ok_or_else(|| format!("widget {}: the snapshot is not a PNG", job.widget_id))?;
     if let Some((ew, eh)) = job.expect {
         if (width, height) != (ew, eh) {
             return Err(format!(
-                "widget {id}: the snapshot is {width}x{height}, expected {ew}x{eh}"
+                "widget {}: the snapshot is {width}x{height}, expected {ew}x{eh}",
+                job.widget_id
             ));
         }
     }
+    write_png(job, &png, width, height)
+}
+
+/// One snapshot data URL decoded: size-capped, PNG magic checked.
+fn snapshot_bytes(id: &str, data_url: &str, which: Option<&str>) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let what = match which {
+        Some(mode) => format!("the {mode} snapshot"),
+        None => "the snapshot".to_string(),
+    };
+    if data_url.len() >= MAX_SNAPSHOT {
+        return Err(format!("widget {id}: {what} is over 8 MiB"));
+    }
+    let b64 = data_url
+        .strip_prefix("data:image/png;base64,")
+        .ok_or_else(|| format!("widget {id}: {what} is not a PNG data URL"))?;
+    base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| format!("widget {id}: {what} is not valid base64: {e}"))
+}
+
+/// A snapshot's pixels as RGB triples, or None when it is not a plain
+/// non-interlaced 8-bit PNG (what a canvas snapshot is).
+fn decode_png(b: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    use png::{BitDepth, ColorType};
+    let mut read = png::Decoder::new(std::io::Cursor::new(b))
+        .read_info()
+        .ok()?;
+    let info = read.info();
+    if info.interlaced || info.bit_depth != BitDepth::Eight {
+        return None;
+    }
+    let (w, h) = (info.width, info.height);
+    let channels = match info.color_type {
+        ColorType::Rgb => 3,
+        ColorType::Rgba => 4,
+        ColorType::Grayscale => 1,
+        ColorType::GrayscaleAlpha => 2,
+        _ => return None,
+    };
+    let size = read.output_buffer_size()?;
+    let mut buf = vec![0u8; size];
+    read.next_frame(&mut buf).ok()?;
+    if buf.len() != w as usize * h as usize * channels {
+        return None;
+    }
+    let rgb = match channels {
+        3 => buf,
+        4 => buf
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2]])
+            .collect(),
+        1 => buf.iter().flat_map(|v| [*v, *v, *v]).collect(),
+        _ => buf
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[0], p[0]])
+            .collect(),
+    };
+    Some((w, h, rgb))
+}
+
+/// A proposal snapshot's size and pixels: magic, sane sides, readable
+/// pixels.
+fn proposal_png(id: &str, bytes: &[u8], which: &str) -> Result<(u32, u32, Vec<u8>), String> {
+    let (w, h) =
+        png_size(bytes).ok_or_else(|| format!("widget {id}: the {which} snapshot is not a PNG"))?;
+    if w == 0 || h == 0 || w > MAX_PROPOSAL_SIDE || h > MAX_PROPOSAL_SIDE {
+        return Err(format!(
+            "widget {id}: the {which} snapshot is {w}x{h}: a poster side is 1 to {MAX_PROPOSAL_SIDE} pixels"
+        ));
+    }
+    decode_png(bytes)
+        .ok_or_else(|| format!("widget {id}: the {which} snapshot's pixels cannot be read"))
+        .map(|(w, h, px)| {
+            assert_eq!(px.len(), w as usize * h as usize * 3);
+            (w, h, px)
+        })
+}
+
+/// Whether every pixel is the same colour: an unpainted canvas.
+fn is_blank(px: &[u8]) -> bool {
+    let Some(first) = px.as_chunks::<3>().0.first() else {
+        return true;
+    };
+    px.as_chunks::<3>().0.iter().all(|p| p == first)
+}
+
+/// Checks a custom proposal's two snapshots and writes the light one to
+/// the job's path, replacing any earlier file there in one step. Each must
+/// be a sane non-blank PNG and the two must differ (the runtime answers
+/// the theme); anything else writes nothing.
+pub fn finish_pair(
+    job: &PosterJob,
+    light_url: &str,
+    dark_url: &str,
+) -> Result<PosterRendered, String> {
+    let id = &job.widget_id;
+    let light = snapshot_bytes(id, light_url, Some("light"))?;
+    let dark = snapshot_bytes(id, dark_url, Some("dark"))?;
+    let (lw, lh, lp) = proposal_png(id, &light, "light")?;
+    let (dw, dh, dp) = proposal_png(id, &dark, "dark")?;
+    if is_blank(&lp) {
+        return Err(format!("widget {id}: the light snapshot is blank"));
+    }
+    if is_blank(&dp) {
+        return Err(format!("widget {id}: the dark snapshot is blank"));
+    }
+    if (lw, lh, &lp) == (dw, dh, &dp) {
+        return Err(format!(
+            "widget {id}: its light and dark snapshots match, so it ignores the theme; no poster was written"
+        ));
+    }
+    if let Some((ew, eh)) = job.expect {
+        if (lw, lh) != (ew, eh) {
+            return Err(format!(
+                "widget {id}: the light snapshot is {lw}x{lh}, expected {ew}x{eh}"
+            ));
+        }
+    }
+    write_png(job, &light, lw, lh)
+}
+
+/// Writes `png` to the job's path, replacing any earlier file there in one
+/// step.
+fn write_png(
+    job: &PosterJob,
+    png: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<PosterRendered, String> {
+    let id = &job.widget_id;
     let tmp = job.out.with_extension("png.part");
-    std::fs::write(&tmp, &png)
+    std::fs::write(&tmp, png)
         .and_then(|_| std::fs::rename(&tmp, &job.out))
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
@@ -478,7 +768,7 @@ pub fn finish(job: &PosterJob, data_url: &str) -> Result<PosterRendered, String>
         path: job.out.to_string_lossy().into_owned(),
         width,
         height,
-        sha256: sha_of(&png),
+        sha256: sha_of(png),
     })
 }
 
