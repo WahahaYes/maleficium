@@ -36,6 +36,7 @@ pub fn run() {
             commands::history::history_get,
             commands::history::history_restore,
             commands::preview::preview_in_browser,
+            commands::preview::article_bundle,
             commands::poster::render_poster,
             commands::widget_approval::widget_approve,
             commands::widget_approval::widget_revoke,
