@@ -458,6 +458,15 @@ body.m-reader {
   background: var(--m-paper);
   border-radius: 2px;
 }
+/* A figure's image fills its float: latexml drops the author's
+   \includegraphics size (no image tools run), so raw pixels would show a
+   tiny source as a dot and a huge one overflowing. The float, not the
+   pixel count, decides the size; small sources upscale, large ones keep
+   their clamp from the generic img rule above. */
+.m-reader figure img.ltx_graphics {
+  width: 100%;
+  height: auto;
+}
 .m-reader .ltx_flex_figure,
 .m-reader .ltx_flex_cell {
   display: flex;
