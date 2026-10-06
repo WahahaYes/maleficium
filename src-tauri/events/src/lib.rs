@@ -634,6 +634,22 @@ pub enum AppEvent {
         direction: SyncDirection,
         error: String,
     },
+    /// Editor-to-article sync scrolled the Article tab to the caret's
+    /// section. Forward only: the article never reports back.
+    #[serde(rename = "article.sync")]
+    ArticleSync { anchor: String },
+    /// The Article tab's Approve button asked for a widget: the Widgets
+    /// panel opens so the user reviews and approves it there.
+    #[serde(rename = "article.approve-request")]
+    ArticleApproveRequest { widget: String },
+    /// The Article tab loaded the reader bytes; `anchors` is how many
+    /// heading anchors the editor-to-article sync can scroll to.
+    #[serde(rename = "article.load")]
+    ArticleLoad { anchors: u32 },
+    /// The Article tab could not load the reader bytes (no compiled pdf:
+    /// compile first; unknown project).
+    #[serde(rename = "article.load-failed")]
+    ArticleLoadFailed { error: String },
 
     #[serde(rename = "revision.record")]
     RevisionRecord {

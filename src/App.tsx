@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CompileButton from './components/CompileButton';
@@ -30,7 +30,8 @@ import { listDir1Level, loadTex, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
-import { emit } from './lib/events';
+import { emit, eventOf } from './lib/events';
+import { transport } from './lib/event-transport';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
@@ -61,6 +62,7 @@ import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
 import { useArticle } from './hooks/useArticle';
+import { anchorForLine, shouldRefreshArticle } from './lib/article';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -781,6 +783,73 @@ export default function App({
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
   // The Article tab's bytes: loaded on demand, reloaded by hand.
   const article = useArticle();
+  const articleHtml = article.html;
+  const articleStamp = article.stamp;
+  const articleLoad = article.load;
+  const articleAnchors = article.anchors;
+  // Auto-refresh: a finished compile bumps the preview stamp; when the
+  // article shows older bytes, reload it. Never loads on its own: the
+  // first visit stays manual (see shouldRefreshArticle).
+  const previewStamp = previewDoc?.stamp ?? null;
+  useEffect(() => {
+    if (!mainDoc) return;
+    if (
+      shouldRefreshArticle(
+        articleHtml,
+        articleStamp,
+        previewStamp,
+        compilePhase === 'compiling',
+        true,
+      )
+    ) {
+      void articleLoad(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
+    }
+  }, [mainDoc, previewStamp, compilePhase, articleHtml, articleStamp, articleLoad]);
+  // Forward-only sync: the caret line's section maps to the article anchor
+  // the frame scrolls to. Sections come from the active buffer's outline;
+  // the article names the same headings with latexml numbers attached.
+  const articleAnchor = useMemo(
+    () =>
+      anchorForLine(
+        currentLine,
+        outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
+        articleAnchors,
+      ),
+    [currentLine, outline, articleAnchors],
+  );
+  const handleArticleSync = useCallback((anchor: string) => {
+    emit({
+      scope: 'preview',
+      kind: 'info',
+      actor: 'user',
+      message: `article sync → ${anchor}`,
+      event: { action: 'article.sync', anchor },
+    });
+  }, []);
+  // Approve round-trip: the bytes' Approve button opens the Widgets panel
+  // (approval wants the panel's review, never a blind click-through); the
+  // approval settled there re-exports the article below.
+  const handleArticleApproveRequest = useCallback(
+    (widget: string) => {
+      emit({
+        scope: 'preview',
+        kind: 'info',
+        actor: 'user',
+        message: `article asks approval for ${widget}`,
+        event: { action: 'article.approve-request', widget },
+      });
+      widgetApproval.openPanel();
+    },
+    [widgetApproval],
+  );
+  const articleReload = article.reload;
+  useEffect(() => {
+    if (!projectId) return;
+    return transport().subscribe((e) => {
+      const acted = eventOf(e, 'widget.approved') ?? eventOf(e, 'widget.revoked');
+      if (acted && acted.rootId === projectId) articleReload();
+    });
+  }, [projectId, articleReload]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -908,8 +977,11 @@ export default function App({
             articleError={article.error}
             canLoadArticle={mainDoc != null && pdfUrl != null}
             onLoadArticle={() => {
-              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel);
+              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
             }}
+            articleAnchor={articleAnchor}
+            onArticleSync={handleArticleSync}
+            onApproveArticle={handleArticleApproveRequest}
           />
         }
       />
