@@ -6,9 +6,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { fetchArticle } from './article.tauri';
 import {
   ARTICLE_SANDBOX,
+  anchorForLine,
+  anchorMatchesSection,
   articleAvailable,
   articleCspOf,
   articleSandbox,
+  articleScrollMessage,
   articleZoomLabel,
   clampArticleZoom,
   hasTauriInternals,
@@ -82,6 +85,56 @@ describe('frame message gate', () => {
   ])('drops the hostile message: %s', (_label, args) => {
     const [data, origin, source, expected] = args as [unknown, string, unknown, unknown];
     expect(isArticleMessage(data, origin, source, expected)).toBe(false);
+  });
+});
+
+describe('editor-to-article anchor sync', () => {
+  const sections = [
+    { line: 1, title: 'First' },
+    { line: 20, title: 'Second' },
+    { line: 40, title: 'Deep dive' },
+  ];
+  const anchors = [
+    { id: 'S1', text: '1 First' },
+    { id: 'S2', text: '2 Second' },
+    { id: 'S2-1', text: '2.1 Deep dive' },
+  ];
+  it('maps the caret line to its section anchor through the number prefix', () => {
+    expect(anchorForLine(1, sections, anchors)).toBe('S1');
+    expect(anchorForLine(19, sections, anchors)).toBe('S1');
+    expect(anchorForLine(20, sections, anchors)).toBe('S2');
+    expect(anchorForLine(99, sections, anchors)).toBe('S2-1');
+  });
+  it('is null with no anchors, no sections, or titles the article lacks', () => {
+    expect(anchorForLine(5, sections, [])).toBeNull();
+    expect(anchorForLine(5, [], anchors)).toBeNull();
+    expect(anchorForLine(5, [{ line: 1, title: 'Elsewhere' }], anchors)).toBeNull();
+  });
+  it('falls back to the parent when the caret sits in a flattened subsection', () => {
+    const deep = [...sections, { line: 45, title: 'Detail' }];
+    expect(anchorForLine(46, deep, anchors)).toBe('S2-1');
+  });
+  it('takes the Nth same-titled anchor for the Nth same-titled section', () => {
+    const dup = [
+      { line: 1, title: 'Notes' },
+      { line: 20, title: 'Notes' },
+    ];
+    const dupAnchors = [
+      { id: 'S1', text: '1 Notes' },
+      { id: 'S2', text: '2 Notes' },
+    ];
+    expect(anchorForLine(2, dup, dupAnchors)).toBe('S1');
+    expect(anchorForLine(21, dup, dupAnchors)).toBe('S2');
+  });
+  it('matches exact titles and ignores blank ones on both sides', () => {
+    expect(anchorMatchesSection('First', 'First')).toBe(true);
+    expect(anchorMatchesSection('1 First', 'First')).toBe(true);
+    expect(anchorMatchesSection('Firstborn', 'First')).toBe(false);
+    expect(anchorMatchesSection('', 'First')).toBe(false);
+    expect(anchorMatchesSection('1 First', '')).toBe(false);
+  });
+  it('builds the exact scroll message the bytes answer', () => {
+    expect(articleScrollMessage('S2')).toEqual({ mfw: 1, type: 'article-scroll', id: 'S2' });
   });
 });
 

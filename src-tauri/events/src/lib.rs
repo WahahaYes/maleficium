@@ -634,6 +634,10 @@ pub enum AppEvent {
         direction: SyncDirection,
         error: String,
     },
+    /// Editor-to-article sync scrolled the Article tab to the caret's
+    /// section. Forward only: the article never reports back.
+    #[serde(rename = "article.sync")]
+    ArticleSync { anchor: String },
 
     #[serde(rename = "revision.record")]
     RevisionRecord {

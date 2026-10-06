@@ -9,6 +9,73 @@
 // Editor-to-article anchor sync, inverse sync, and the approve round-trip
 // arrive later. For now every frame message is dropped after the denial
 // check below, including well-formed ones.
+//
+// Editor-to-article sync is forward-only: the caret's section maps to an
+// anchor (below) and the frame scrolls there. There is no inverse sync:
+// the article never reports back (no tex-line granularity either).
+
+/** One editor section that can own the caret, with its buffer line. */
+export interface SectionLine {
+  line: number;
+  title: string;
+}
+
+/** Collapse whitespace so latexml numbers compare against plain titles. */
+function flatTitle(s: string): string {
+  return s.split(/\s+/).join(' ').trim();
+}
+
+/**
+ * Whether an anchor's heading names an editor section: exact, or the
+ * anchor's latexml number prefix plus the title ("1 First" owns "First").
+ */
+export function anchorMatchesSection(anchorText: string, title: string): boolean {
+  const a = flatTitle(anchorText);
+  const t = flatTitle(title);
+  if (!a || !t) return false;
+  return a === t || a.endsWith(' ' + t);
+}
+
+/**
+ * The anchor the caret's line belongs to: the last section at or above the
+ * line, walked back until one names an anchor (a deeper subsection the
+ * article flattened away falls back to its parent). Occurrence-aware: the
+ * Nth same-titled section takes the Nth same-titled anchor. Null when
+ * nothing matches (no anchors, no sections, or titles the article lacks).
+ */
+export function anchorForLine(
+  line: number,
+  sections: readonly SectionLine[],
+  anchors: readonly { id: string; text: string }[],
+): string | null {
+  if (!anchors.length || !sections.length) return null;
+  let at = -1;
+  for (let k = 0; k < sections.length; k++) {
+    if (sections[k].line <= line) at = k;
+    else break;
+  }
+  if (at < 0) at = 0;
+  for (let j = at; j >= 0; j--) {
+    const title = flatTitle(sections[j].title);
+    if (!title) continue;
+    let occ = 0;
+    for (let k = 0; k <= j; k++) {
+      if (flatTitle(sections[k].title) === title) occ++;
+    }
+    let seen = 0;
+    for (const a of anchors) {
+      if (!anchorMatchesSection(a.text, title)) continue;
+      seen++;
+      if (seen === occ) return a.id;
+    }
+  }
+  return null;
+}
+
+/** The parent-to-frame scroll the bytes answer (reader.js scrolls + flashes). */
+export function articleScrollMessage(id: string): { mfw: 1; type: 'article-scroll'; id: string } {
+  return { mfw: 1, type: 'article-scroll', id };
+}
 
 /** The only sandbox the article frame ever gets (mirrors the reader probes). */
 export const ARTICLE_SANDBOX = 'allow-scripts';
