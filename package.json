@@ -15,7 +15,7 @@
   },
   "scripts": {
     "predev": "sh scripts/reclaim.sh",
-    "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh",
+    "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh --strict",
     "dev": "sh scripts/dev.sh web",
     "dev:desktop": "sh scripts/dev.sh desktop",
     "dev:serve": "vite",
