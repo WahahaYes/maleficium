@@ -808,3 +808,195 @@ fn a_widgets_key_follows_the_papers_theme() {
         "a new page colour renders new posters"
     );
 }
+
+// ---- custom runtimes: the proposed-poster key ------------------------------
+
+/// fig-chart as a custom widget on the heatmap sample, with no poster= of
+/// its own.
+const HEAT_KEY_LINE: &str = "widget|fig-chart|custom|heatmap@1|||house||primary=data/grid.csv|height=142.26378pt,scheme=div|Ablation chart";
+const GRID_KEY: &str = "0,1,2,3,4,5\n1,2,3,4,5,4\n2,3,4,5,4,3\n3,4,5,4,3,2\n4,5,4,3,2,1\n";
+
+/// The heatmap sample project with its grid source, and a private approval
+/// store. Returns the core, the root id, the root and the store base.
+fn custom_setup(name: &str) -> (Core, String, PathBuf, PathBuf) {
+    let cx = Core::default();
+    let (id, root) = project(&cx, name);
+    let o = crate::outputs::outputs_of(&cx, &id, "main.tex").unwrap();
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    let chart = "widget|fig-chart|chart|chart@1|||house||spec=charts/ablation.vl.json|height=142.26378pt|Ablation chart";
+    assert!(side.contains(chart), "the fixture sidecar changed shape");
+    std::fs::write(
+        o.outdir.join("main.mfw"),
+        side.replace(chart, HEAT_KEY_LINE),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("data")).unwrap();
+    std::fs::write(root.join("data/grid.csv"), GRID_KEY).unwrap();
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtimes/samples/heatmap@1");
+    let to = root.join("runtimes/heatmap@1");
+    std::fs::create_dir_all(&to).unwrap();
+    for e in std::fs::read_dir(&from).unwrap().flatten() {
+        let t = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            std::fs::create_dir_all(&t).unwrap();
+            for f in std::fs::read_dir(e.path()).unwrap().flatten() {
+                std::fs::copy(f.path(), t.join(f.file_name())).unwrap();
+            }
+        } else {
+            std::fs::copy(e.path(), &t).unwrap();
+        }
+    }
+    let base = crate::test_scratch::dir(&format!("cache-{name}-appdata"));
+    let _ = std::fs::remove_dir_all(&base);
+    (cx, id, root, base)
+}
+
+fn custom_check(c: &(Core, String, PathBuf, PathBuf)) -> crate::widget_approval::RuntimeChecked {
+    crate::widget_approval::check_runtime_at(
+        &c.3,
+        &c.0,
+        &c.1,
+        "heatmap@1",
+        &["fig-chart".to_string()],
+    )
+    .unwrap()
+}
+
+fn custom_allow(c: &(Core, String, PathBuf, PathBuf)) {
+    let digest = custom_check(c).snapshot.digest;
+    crate::widget_approval::decide_runtime_at(
+        &c.3,
+        &c.0,
+        &crate::widget_approval::RuntimeDecisionParams {
+            root_id: c.1.clone(),
+            main_rel: "main.tex".into(),
+            runtime: "heatmap@1".into(),
+            digest,
+            decision: crate::widget_approval::RuntimeDecision::Allowed,
+        },
+    )
+    .unwrap();
+}
+
+fn custom_deny(c: &(Core, String, PathBuf, PathBuf)) {
+    let digest = custom_check(c).snapshot.digest;
+    crate::widget_approval::decide_runtime_at(
+        &c.3,
+        &c.0,
+        &crate::widget_approval::RuntimeDecisionParams {
+            root_id: c.1.clone(),
+            main_rel: "main.tex".into(),
+            runtime: "heatmap@1".into(),
+            digest,
+            decision: crate::widget_approval::RuntimeDecision::Denied,
+        },
+    )
+    .unwrap();
+}
+
+fn custom_widget(c: &(Core, String, PathBuf, PathBuf)) -> Widget {
+    widgets(&c.0, &c.1, "main.tex")
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|w| w.id == "fig-chart")
+        .unwrap()
+}
+
+fn custom_key(c: &(Core, String, PathBuf, PathBuf), theme: &Theme) -> Option<(String, String)> {
+    custom_key_now_at(&c.3, &c.0, &c.1, "main.tex", &custom_widget(c), theme)
+}
+
+#[test]
+fn a_custom_widget_is_keyed_only_while_its_runtime_is_approved() {
+    let c = custom_setup("custom-keyed");
+    let house = Theme::house();
+    assert!(custom_key(&c, &house).is_none(), "unapproved, no key");
+    custom_allow(&c);
+    let (key, digest) = custom_key(&c, &house).expect("approved, keyed");
+    assert!(is_key(&key));
+    assert_eq!(digest, custom_check(&c).snapshot.digest);
+    custom_deny(&c);
+    assert!(custom_key(&c, &house).is_none(), "denied, no key");
+}
+
+#[test]
+fn a_custom_widget_with_its_own_poster_has_no_key() {
+    let c = custom_setup("custom-key-explicit");
+    let o = crate::outputs::outputs_of(&c.0, &c.1, "main.tex").unwrap();
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    std::fs::write(
+        o.outdir.join("main.mfw"),
+        side.replace("|||house||primary=", "|||house|figures/chart.png|primary="),
+    )
+    .unwrap();
+    custom_allow(&c);
+    assert!(
+        custom_key(&c, &Theme::house()).is_none(),
+        "an explicit poster= wins, so nothing is keyed"
+    );
+}
+
+#[test]
+fn a_custom_key_names_runtime_digest_ref_sources_options_theme_and_renderer() {
+    let c = custom_setup("custom-keyvec");
+    custom_allow(&c);
+    let house = Theme::house();
+    let (k0, d0) = custom_key(&c, &house).unwrap();
+    // Stable for the same input.
+    assert_eq!(custom_key(&c, &house).unwrap().0, k0);
+    // The golden vector: runtime digest, ref, sources+options, theme and
+    // renderer version, in that composition. A changed key orphans cached
+    // posters, so update this only when the material intentionally changes.
+    assert_eq!(
+        k0, "b89b6a4d56993a4be1cdacb550adc1903ea534574cd24cd45b0c4c5ca1a2bfba",
+        "the key composition changed"
+    );
+    // A new page colour renders a new poster.
+    let cream = include_str!("../../../../testdata/theme/cream-times.mfw");
+    let cream = crate::widgets::parse_sidecar(cream).unwrap().theme.unwrap();
+    assert_ne!(custom_key(&c, &cream).unwrap().0, k0, "theme");
+    // New bound options name a poster that does not exist yet (the runtime
+    // is untouched, so this stays approved).
+    let o = crate::outputs::outputs_of(&c.0, &c.1, "main.tex").unwrap();
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    std::fs::write(
+        o.outdir.join("main.mfw"),
+        side.replace("scheme=div", "scheme=seq"),
+    )
+    .unwrap();
+    assert_ne!(custom_key(&c, &house).unwrap().0, k0, "options");
+    std::fs::write(
+        o.outdir.join("main.mfw"),
+        std::fs::read_to_string(o.outdir.join("main.mfw"))
+            .unwrap()
+            .replace("scheme=seq", "scheme=div"),
+    )
+    .unwrap();
+    // New source bytes do too.
+    std::fs::write(c.2.join("data/grid.csv"), "9,9\n").unwrap();
+    assert_ne!(custom_key(&c, &house).unwrap().0, k0, "sources");
+    std::fs::write(c.2.join("data/grid.csv"), GRID_KEY).unwrap();
+    // A changed runtime digest names one as well, once allowed again.
+    std::fs::write(
+        c.2.join("runtimes/heatmap@1/index.html"),
+        std::fs::read_to_string(c.2.join("runtimes/heatmap@1/index.html")).unwrap() + "<!-- v2 -->",
+    )
+    .unwrap();
+    assert!(
+        custom_key(&c, &house).is_none(),
+        "changed runtime lapses the approval"
+    );
+    custom_allow(&c);
+    let (k1, d1) = custom_key(&c, &house).unwrap();
+    assert_ne!(k1, k0, "runtime digest");
+    assert_ne!(d1, d0);
+    // The ref itself is key material.
+    let snap = custom_check(&c).snapshot;
+    let manifest = snap.manifest.clone().unwrap();
+    let mut other = custom_widget(&c);
+    other.runtime = Some("other@1".into());
+    let (kr, _) =
+        custom_material(&c.0, &c.1, "main.tex", &other, &house, &snap, &manifest).unwrap();
+    assert_ne!(kr, k1, "ref");
+}
