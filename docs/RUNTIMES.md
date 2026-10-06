@@ -64,6 +64,12 @@ Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, 
 
 Copy the folder to `runtimes/caption-overlay@1/` in a project to try it. `bad-cdn@1` next to it is the negative: one CDN `<script src>`, which the scanner fails with exactly `url-load`.
 
+## Proposed posters
+
+`poster=` is the document's own and always wins (D1). Without one, an approved runtime may propose the poster's pixels (D2): during the compile's poster pass the app folds the judged snapshot's files exactly as the export folds them and runs the runtime twice, once per colour mode. Both snapshots must be sane non-blank PNGs that differ (the runtime answers the theme); the light one becomes the poster. Anything else — a missing, invalid, unapproved, denied or licence-changed runtime, a blank or matching pair, a hang past the time limit — writes nothing, and the PDF shows the placeholder.
+
+The proposal runs only while the runtime is approved (allowed at this digest, or an auto-covered content change): the poster cache keys it by the runtime digest, the ref, the bound sources and options, the poster theme and the renderer version, so any change names a poster that does not exist yet. The export's PDF picture is the mapped file; a map entry for an older state holds the placeholder with a `runtime-digest-changed` warning, never a refusal. The reader, the sanitizer and the manifest are untouched by proposals: a fallback widget is poster-only with its visible note, as before.
+
 ## Authoring flow: scaffold, validate, install, approve, export
 
 An agent drafts the package through the MCP tools; the user carries it the rest of the way:
