@@ -3,8 +3,9 @@
 // The PDF tab is the SyncTeX bitmap view. The Article tab renders the last
 // compile's reader bundle in a sandboxed frame (no bridge inside). Sync is
 // forward-only: the caret's section posts its anchor into the frame and the
-// bytes scroll there; the article never reports back, and the approve
-// round-trip arrives later. For now the Article tab loads on demand,
+// bytes scroll there; the article never reports back. The bytes' Approve
+// button opens the Widgets panel; an approval settled there re-exports and
+// re-renders the article. For now the Article tab loads on demand,
 // reloads by hand, and its reload stays off while a compile runs. The
 // article has no pages, so only zoom carries over.
 
@@ -38,6 +39,8 @@ export interface PreviewPaneProps extends Omit<ComponentProps<typeof Preview>, '
   articleAnchor: string | null;
   /** Fires when the caret section is posted into the article frame. */
   onArticleSync: (anchorId: string) => void;
+  /** Fires when the bytes' Approve button asks for a widget. */
+  onApproveArticle: (widgetId: string) => void;
 }
 
 export default function PreviewPane({
@@ -49,6 +52,7 @@ export default function PreviewPane({
   onLoadArticle,
   articleAnchor,
   onArticleSync,
+  onApproveArticle,
   ...pdf
 }: PreviewPaneProps) {
   const [tab, setTab] = useState<PreviewTab>('pdf');
@@ -150,6 +154,7 @@ export default function PreviewPane({
           onLoad={onLoadArticle}
           anchorId={articleAnchor}
           onSync={onArticleSync}
+          onApproveRequest={onApproveArticle}
         />
       )}
     </Box>

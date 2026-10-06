@@ -638,6 +638,10 @@ pub enum AppEvent {
     /// section. Forward only: the article never reports back.
     #[serde(rename = "article.sync")]
     ArticleSync { anchor: String },
+    /// The Article tab's Approve button asked for a widget: the Widgets
+    /// panel opens so the user reviews and approves it there.
+    #[serde(rename = "article.approve-request")]
+    ArticleApproveRequest { widget: String },
 
     #[serde(rename = "revision.record")]
     RevisionRecord {

@@ -4,8 +4,8 @@
 // exactly (the reader e2e probes pin this shape), opaque origin, no bridge
 // inside. The bytes keep the reader's own CSP meta. An unapproved widget
 // shows its poster with an Approve button from the bytes themselves; the
-// approve round-trip (and every other frame message) arrives later — for
-// now the listener below drops everything after the denial check.
+// button only asks the app (the Widgets panel opens so the user reviews
+// and approves there, then the article re-exports and re-renders).
 // Editor-to-article sync is forward-only: the caret's anchor posts into the
 // frame and the bytes scroll to it; the article never reports back.
 
@@ -30,6 +30,8 @@ export interface ArticleViewProps {
   anchorId: string | null;
   /** Fires when the caret section is posted into the frame. */
   onSync?: (anchorId: string) => void;
+  /** Fires when the bytes' Approve button asks for a widget. */
+  onApproveRequest?: (widgetId: string) => void;
 }
 
 export default function ArticleView({
@@ -42,17 +44,21 @@ export default function ArticleView({
   onLoad,
   anchorId,
   onSync,
+  onApproveRequest,
 }: ArticleViewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const syncRef = useRef(onSync);
   syncRef.current = onSync;
+  const approveRef = useRef(onApproveRequest);
+  approveRef.current = onApproveRequest;
 
   // Denial point for frame messages. Validates origin, source and shape,
-  // then drops everything: approval handling arrives in a later slice.
+  // then hands the approval ask to the Widgets panel round-trip.
   useEffect(() => {
     if (!html) return;
     const onMessage = (e: MessageEvent) => {
       if (!isArticleMessage(e.data, e.origin, e.source, frameRef.current?.contentWindow)) return;
+      approveRef.current?.(e.data.widgetId);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);

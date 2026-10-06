@@ -30,7 +30,8 @@ import { listDir1Level, loadTex, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
-import { emit } from './lib/events';
+import { emit, eventOf } from './lib/events';
+import { transport } from './lib/event-transport';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
@@ -803,6 +804,30 @@ export default function App({
       event: { action: 'article.sync', anchor },
     });
   }, []);
+  // Approve round-trip: the bytes' Approve button opens the Widgets panel
+  // (approval wants the panel's review, never a blind click-through); the
+  // approval settled there re-exports the article below.
+  const handleArticleApproveRequest = useCallback(
+    (widget: string) => {
+      emit({
+        scope: 'preview',
+        kind: 'info',
+        actor: 'user',
+        message: `article asks approval for ${widget}`,
+        event: { action: 'article.approve-request', widget },
+      });
+      widgetApproval.openPanel();
+    },
+    [widgetApproval],
+  );
+  const articleReload = article.reload;
+  useEffect(() => {
+    if (!projectId) return;
+    return transport().subscribe((e) => {
+      const acted = eventOf(e, 'widget.approved') ?? eventOf(e, 'widget.revoked');
+      if (acted && acted.rootId === projectId) articleReload();
+    });
+  }, [projectId, articleReload]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -934,6 +959,7 @@ export default function App({
             }}
             articleAnchor={articleAnchor}
             onArticleSync={handleArticleSync}
+            onApproveArticle={handleArticleApproveRequest}
           />
         }
       />
