@@ -316,6 +316,10 @@ path: string, profile: BundleProfile,
  */
 bytes: number, widgets: number, assets: number, warnings: Array<BundleWarning>, };
 
+export type ArticleAnchor = { id: string, text: string, };
+
+export type ArticleView = { html: string, anchors: Array<ArticleAnchor>, };
+
 export type ForwardSyncParams = { rootId: string, mainRel: string, texRel: string, line: number, };
 
 export type InverseSyncParams = { rootId: string, mainRel: string, page: number, x: number, y: number, };
