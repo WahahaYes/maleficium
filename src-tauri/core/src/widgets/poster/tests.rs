@@ -215,6 +215,7 @@ fn finish_checks_the_snapshot_and_writes_it_in_one_step() {
         widget_id: "w".into(),
         document: String::new(),
         init: Value::Null,
+        dark_init: None,
         sources: vec![],
         frame: (4, 3),
         expect: Some((4, 3)),

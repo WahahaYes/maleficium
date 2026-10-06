@@ -2236,6 +2236,7 @@ dependencies = [
  "maleficium-index",
  "maleficium-structure",
  "notify",
+ "png 0.18.1",
  "regex",
  "schemars 1.2.2",
  "serde",
