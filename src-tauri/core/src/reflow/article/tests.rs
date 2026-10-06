@@ -287,3 +287,93 @@ fn a_non_trailing_qed_stays_text() {
     assert!(html.contains('∎'));
     assert!(!html.contains("m-qed"));
 }
+
+#[test]
+fn a_doubled_final_qed_becomes_one_drawn_mark() {
+    // An explicit `\qed` plus latexml's own mark (the shape an author-added
+    // `\qed` converts to): every trailing mark goes, one mark is drawn.
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Explicit qed at end ∎∎</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert_eq!(html.matches("m-qed").count(), 1);
+    assert!(!html.contains('∎'));
+}
+
+#[test]
+fn a_lone_paragraph_qed_becomes_a_drawn_mark() {
+    // A proof ending in display math: latexml parks its mark in its own
+    // paragraph after the equation.
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Text then display math:</p><table class=\"ltx_equation ltx_eqn_table\"><tbody><tr><td class=\"ltx_eqn_cell ltx_align_center\"><math display=\"block\"><mrow><msup><mi>x</mi><mn>2</mn></msup></mrow></math></td></tr></tbody></table><p class=\"ltx_p\">∎</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>"));
+    assert!(!html.contains('∎'));
+}
+
+#[test]
+fn a_qedhere_in_display_math_moves_the_mark_out() {
+    // `\qedhere` inside display math: latexml wraps the mark in an `mo`
+    // inside the formula. The wrapper goes; the drawn mark follows it.
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Qedhere inside display math:</p><table class=\"ltx_equation ltx_eqn_table\"><tbody><tr><td class=\"ltx_eqn_cell ltx_align_center\"><math display=\"block\"><mrow><msup><mi>x</mi><mn>2</mn></msup><mo class=\"ltx_mathvariant_italic\" mathvariant=\"italic\" separator=\"true\">∎</mo></mrow></math></td></tr></tbody></table></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(!html.contains('∎'));
+    assert!(!html.contains("<mo"));
+    let math = html.find("</math>").expect("the formula stays");
+    assert!(
+        html[math..].contains("m-qed"),
+        "the mark follows the formula"
+    );
+}
+
+#[test]
+fn a_qedhere_at_the_end_of_inline_math_moves_the_mark_out() {
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Ends with inline math <math display=\"inline\"><mrow><msup><mi>x</mi><mn>2</mn></msup><mo class=\"ltx_mathvariant_italic\" mathvariant=\"italic\" separator=\"true\">∎</mo></mrow></math></p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(!html.contains('∎'));
+    let math = html.find("</math>").expect("the formula stays");
+    assert!(
+        html[math..].contains("m-qed"),
+        "the mark follows the formula"
+    );
+}
+
+#[test]
+fn a_mid_proof_math_mark_stays_text() {
+    // `\qedhere` inside math with text after it is not the proof end: the
+    // wrapped mark stays, and no drawn mark appears.
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Qedhere in inline math <math display=\"inline\"><mrow><msup><mi>x</mi><mn>2</mn></msup><mo class=\"ltx_mathvariant_italic\" mathvariant=\"italic\" separator=\"true\">∎</mo></mrow></math> done.</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(html.contains('∎'));
+    assert!(!html.contains("m-qed"));
+}
+
+#[test]
+fn an_equation_number_after_the_mark_does_not_hide_it() {
+    // `\qedhere` in a numbered equation: the `(1)` tag follows the mark in
+    // the tree, but it is chrome, so the drawn mark still replaces the mark.
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Qedhere inside equation:</p><table class=\"ltx_equation ltx_eqn_table\"><tbody><tr><td class=\"ltx_eqn_cell ltx_align_center\"><math display=\"block\"><mrow><msup><mi>x</mi><mn>2</mn></msup><mo class=\"ltx_mathvariant_italic\" mathvariant=\"italic\" separator=\"true\">∎</mo></mrow></math></td><td class=\"ltx_eqn_cell ltx_eqn_eqno ltx_align_right\"><span class=\"ltx_tag ltx_tag_equation ltx_align_right\">(1)</span></td></tr></tbody></table></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(!html.contains('∎'));
+    assert!(html.contains("(1)"), "the equation number stays");
+    let math = html.find("</math>").expect("the formula stays");
+    assert!(
+        html[math..].contains("m-qed"),
+        "the mark follows the formula"
+    );
+}
