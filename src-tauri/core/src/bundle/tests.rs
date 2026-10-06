@@ -2107,6 +2107,12 @@ fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
     let chart = &main[main.find("data-widget=\"fig-chart\"").unwrap()..];
     let chart = &chart[..chart.find("</figure>").unwrap()];
     assert!(!chart.contains("m-widget-note"));
+    // The author's height reaches the frame: the free width sizes from the
+    // content box, not the column.
+    assert!(
+        chart.contains("--aw:") && chart.contains("--ah:142.26pt"),
+        "{chart}"
+    );
     // The ref never reaches a sanitized attribute.
     assert!(!main.contains("heatmap@1") && !main.contains("data-runtime"));
     // The reader knows the six kinds, needs a runtimes entry for a custom

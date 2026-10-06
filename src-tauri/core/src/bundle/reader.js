@@ -57,7 +57,9 @@
   var KINDS = ['model', 'video', 'table', 'chart', 'html', 'custom'];
   var frames = [];
   // A widget that fails gives its place back to the poster: the frame is
-  // hidden again and the caption says so.
+  // hidden again and the caption says so. A figure goes live only when its
+  // widget reports painted (`status loaded`): until then the poster covers
+  // the frame, so a screenshot never catches a mounted-but-blank widget.
   function fail(fig) {
     fig.classList.remove('live');
     fig.setAttribute('data-state', 'error');
@@ -111,8 +113,7 @@
           '*',
           bufs,
         );
-        rec.fig.classList.add('live');
-        rec.fig.setAttribute('data-state', 'ready');
+        rec.fig.setAttribute('data-state', 'loading');
       })
       .catch(function () {
         fail(rec.fig);
@@ -129,6 +130,12 @@
           init(frames[i]);
         } catch (_) {
           fail(frames[i].fig);
+        }
+      } else if (d.type === 'status' && d.state === 'loaded') {
+        var fig = frames[i].fig;
+        if (!fig.classList.contains('live') && fig.getAttribute('data-state') !== 'error') {
+          fig.classList.add('live');
+          fig.setAttribute('data-state', 'ready');
         }
       } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       return;

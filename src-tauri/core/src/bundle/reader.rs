@@ -243,6 +243,29 @@ mod tests {
     }
 
     #[test]
+    fn plain_figures_fill_their_float_whatever_the_source_pixels() {
+        let h = page(false);
+        assert!(
+            h.contains("figure img.ltx_graphics") && h.contains("width: 100%"),
+            "a figure's image fills its float, however small its source"
+        );
+    }
+
+    #[test]
+    fn figures_go_live_on_painted_not_on_init() {
+        let h = page(false);
+        // The init send only marks loading; the widget's painted report
+        // swaps the poster for the frame, so a screenshot never catches a
+        // mounted-but-blank widget.
+        assert!(h.contains("rec.fig.setAttribute('data-state', 'loading')"));
+        assert!(h.contains("d.state === 'loaded'"));
+        assert!(
+            !h.contains("rec.fig.classList.add('live')"),
+            "live is set on the loaded report, never on the init send"
+        );
+    }
+
+    #[test]
     fn the_page_css_and_the_widget_tokens_come_from_one_theme() {
         let h = page(false);
         let theme = crate::theme::Theme::house();
