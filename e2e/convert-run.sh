@@ -74,6 +74,24 @@ convert "$SCRATCH/simple/broken.tex" "$SCRATCH/out/broken.html" "$SCRATCH/out/br
 grep -q 'undefinedmacro' "$SCRATCH/out/broken.log" || fail "the undefined macro is not in the log"
 pass "an undefined macro still yields the article and is logged"
 
+# A paper carrying the interactive setup macro: the binding swallows the
+# call and its keys, so the conversion is clean and no setup text leaks.
+mkdir -p "$SCRATCH/setup"
+cat > "$SCRATCH/setup/main.tex" <<'TEX'
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\maleficiumsetup{bundleurl=https://example.org/papers/playground}
+\begin{document}
+Hello.
+\end{document}
+TEX
+convert "$SCRATCH/setup/main.tex" "$SCRATCH/out/setup.html" "$SCRATCH/out/setup.log" >/dev/null 2>&1 \
+  || fail "a paper with the setup macro did not convert"
+grep -q 'No obvious problems' "$SCRATCH/out/setup.log" || fail "the setup macro left conversion problems"
+[ "$(count "$SCRATCH/out/setup.html" 'maleficiumsetup\|bundleurl')" = 0 ] || fail "the setup macro leaked into the article"
+grep -q 'Hello\.' "$SCRATCH/out/setup.html" || fail "the article lost its text"
+pass "the setup macro is swallowed: clean conversion, no leak"
+
 # An author's own package, beside the paper, loads raw: a plain one and an
 # expl3 one render their macros; one that does not exist is a warning only.
 mkdir -p "$SCRATCH/pkgs"
