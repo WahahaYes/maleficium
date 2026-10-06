@@ -29,6 +29,8 @@ fn mounts() -> Vec<Mount<'static>> {
         alt: "Alt & text",
         width: 200.0,
         height: 100.0,
+        author_width: None,
+        author_height: None,
         poster: format!("assets/{id}.png"),
         note: None,
         approval_required: false,
@@ -65,6 +67,59 @@ fn the_mount_unit_is_the_markup_the_page_script_mounts() {
     };
     assert!(mount_unit(&bare).contains("--ar:4 / 3"));
     assert!(mount_unit(&bare).contains("<figcaption>Alt &amp; text</figcaption>"));
+}
+
+#[test]
+fn frames_honor_author_dims_and_size_the_free_side_from_content() {
+    // Both dims: the author's box.
+    assert_eq!(
+        frame("video", None, (Some(100.0), Some(50.0)), (9.0, 9.0)),
+        ((100.0, 50.0), Some((100.0, 50.0)))
+    );
+    // Height only: a model with size= sizes its width from it ...
+    assert_eq!(
+        frame("model", Some((800, 600)), (None, Some(150.0)), (9.0, 9.0)),
+        ((800.0, 600.0), Some((200.0, 150.0)))
+    );
+    // ... without size= it is 4:3, the box the package draws for it.
+    assert_eq!(
+        frame("model", None, (None, Some(150.0)), (9.0, 9.0)),
+        ((4.0, 3.0), Some((200.0, 150.0)))
+    );
+    // Other kinds keep the rect's aspect: a table's rows box already is
+    // its content, and a poster the author chose stands in for the rest.
+    assert_eq!(
+        frame("chart", None, (None, Some(100.0)), (60.0, 30.0)),
+        ((60.0, 30.0), Some((200.0, 100.0)))
+    );
+    // Width only is symmetric; neither keeps the rect.
+    assert_eq!(
+        frame("chart", None, (Some(200.0), None), (60.0, 30.0)),
+        ((60.0, 30.0), Some((200.0, 100.0)))
+    );
+    assert_eq!(
+        frame("chart", None, (None, None), (60.0, 30.0)),
+        ((60.0, 30.0), None)
+    );
+    // A degenerate rect falls back to 4:3, never a zero aspect.
+    assert_eq!(
+        frame("chart", None, (None, None), (0.0, 0.0)),
+        ((4.0, 3.0), None)
+    );
+}
+
+#[test]
+fn a_mount_unit_with_author_dims_carries_the_author_box() {
+    let mut m = mounts().remove(0);
+    m.width = 4.0;
+    m.height = 3.0;
+    m.author_width = Some(200.0);
+    m.author_height = Some(150.0);
+    let html = mount_unit(&m);
+    assert!(
+        html.contains("style=\"--ar:4.00 / 3.00; --aw:200.00pt; --ah:150.00pt\""),
+        "{html}"
+    );
 }
 
 #[test]

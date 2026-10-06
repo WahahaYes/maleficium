@@ -230,6 +230,8 @@ fn a_mount_unit_survives_once_per_known_widget() {
     };
     let good = unit("fig-a", "200.00 / 100.00");
     assert_eq!(clean(&good), good, "the mount unit passes unchanged");
+    let boxed = unit("fig-a", "4.00 / 3.00; --aw:200.00pt; --ah:150.00pt");
+    assert_eq!(clean(&boxed), boxed, "the author's box passes unchanged");
     // A second copy of the same widget, an unknown id, a widened style.
     let out = clean(&[good.clone(), unit("fig-z", "4 / 3")].concat());
     assert_eq!(out.matches("data-widget=").count(), 1, "{out}");
@@ -252,8 +254,20 @@ fn a_mount_unit_survives_once_per_known_widget() {
         "<div>x</div>"
     );
     assert!(aspect_style("--ar:4 / 3") && aspect_style("--ar:595.28 / 841.89"));
+    // The author's box follows the aspect, --aw then --ah, numbers only.
+    assert!(aspect_style(
+        "--ar:4.00 / 3.00; --aw:200.00pt; --ah:150.00pt"
+    ));
+    assert!(aspect_style("--ar:4 / 3; --aw:200pt"));
     for bad in [
         "--ar:4/3",
+        "--ar:4 / 3; --ah:150.00pt; --aw:200.00pt",
+        "--ar:4 / 3; --aw:200.00pt; --aw:200.00pt",
+        "--ar:4 / 3; --aw:200.00pt; --ah:150.00pt; --aw:1pt",
+        "--ar:4 / 3; color:red",
+        "--ar:4 / 3; --aw:200.00",
+        "--ar:4 / 3; --aw:200.00px",
+        "--ar:4 / 3; --aw:expression(alert(1))",
         "--ar:4 / 3;",
         "--ar: 4 / 3",
         "--ar:-4 / 3",
