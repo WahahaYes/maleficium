@@ -33,9 +33,15 @@ pub struct Mount<'a> {
     pub figure: Option<&'a str>,
     pub label: Option<&'a str>,
     pub alt: &'a str,
-    /// The widget's rect on its pdf page, in points.
+    /// The frame's `--ar` pair: the author's box when the sidecar recorded
+    /// author dims (see [`frame`]), else the pdf rect.
     pub width: f64,
     pub height: f64,
+    /// The author's own box in points, when the sidecar recorded author
+    /// dims: the frame keeps this width (at most the column) so a tall
+    /// poster never stretches the frame past what the author asked.
+    pub author_width: Option<f64>,
+    pub author_height: Option<f64>,
     /// An `<img src>`: a bundled path or a `data:` url.
     pub poster: String,
     /// Why the widget shows only its poster (a custom runtime left out of
@@ -132,12 +138,59 @@ pub struct Article {
     pub issues: Vec<Issue>,
 }
 
+/// A widget frame's box: the `--ar` pair and the author's box in points,
+/// when the sidecar recorded author dims.
+///
+/// The author's dims win. Both given is the author's box; one given keeps
+/// that side and sizes the other from the content; neither keeps the pdf
+/// rect. The content is the model's `size=` when it has one, else the rect
+/// (a table's rows box already is its content; a poster the author chose
+/// stands in for the rest). A model without `size=` is 4:3, the box the
+/// package draws for it.
+pub fn frame(
+    kind: &str,
+    size: Option<(u32, u32)>,
+    author: (Option<f64>, Option<f64>),
+    rect: (f64, f64),
+) -> ((f64, f64), Option<(f64, f64)>) {
+    let content = if kind == "model" {
+        size.map(|(w, h)| (f64::from(w), f64::from(h)))
+            .filter(|(w, h)| *w > 0.0 && *h > 0.0)
+            .unwrap_or((4.0, 3.0))
+    } else if rect.0 > 0.0 && rect.1 > 0.0 {
+        rect
+    } else {
+        (4.0, 3.0)
+    };
+    match author {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => ((w, h), Some((w, h))),
+        (Some(w), None) if w > 0.0 => {
+            ((content.0, content.1), Some((w, w * content.1 / content.0)))
+        }
+        (None, Some(h)) if h > 0.0 => {
+            ((content.0, content.1), Some((h * content.0 / content.1, h)))
+        }
+        _ => {
+            let ar = if rect.0 > 0.0 && rect.1 > 0.0 {
+                rect
+            } else {
+                (4.0, 3.0)
+            };
+            (ar, None)
+        }
+    }
+}
+
 /// The mount unit markup `reader.js` mounts a widget into.
 pub fn mount_unit(m: &Mount) -> String {
     let ar = if m.width > 0.0 && m.height > 0.0 {
         format!("{:.2} / {:.2}", m.width, m.height)
     } else {
         "4 / 3".to_string()
+    };
+    let author = match (m.author_width, m.author_height) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => format!("; --aw:{w:.2}pt; --ah:{h:.2}pt"),
+        _ => String::new(),
     };
     let name = m
         .figure
@@ -156,7 +209,7 @@ pub fn mount_unit(m: &Mount) -> String {
         ""
     };
     format!(
-        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\"{approval} style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption>{note}</figure>",
+        "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\"{approval} style=\"--ar:{ar}{author}\"><div class=\"frame\"><img class=\"poster\" src=\"{poster}\" alt=\"{alt}\"></div><figcaption>{cap}</figcaption>{note}</figure>",
         id = fold::attr(m.id),
         kind = fold::attr(m.kind),
         poster = fold::attr(&m.poster),

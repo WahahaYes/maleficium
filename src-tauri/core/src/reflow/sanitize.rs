@@ -32,7 +32,8 @@
 //! - `id`: never one the page itself owns ([`reserved_id`]), so the article
 //!   cannot shadow the reader's own elements;
 //! - the mount unit: `data-widget`, `data-type` and the one `style` the page
-//!   needs (`--ar:W / H`) are kept only on a `figure` whose `data-widget`
+//!   needs (`--ar:W / H`, then the author's box as `; --aw:Npt; --ah:Mpt`)
+//!   are kept only on a `figure` whose `data-widget`
 //!   names a widget of this export, at most once per widget; the in-app
 //!   article's `data-approval="required"` marker passes on the same figures,
 //!   with that exact value only.
@@ -484,7 +485,9 @@ fn safe_src(raw: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// Exactly `--ar:W / H` with plain decimal numbers: the mount unit's aspect.
+/// Exactly `--ar:W / H`, optionally followed by `; --aw:Npt` and `; --ah:Mpt`:
+/// the mount unit's aspect and the author's box. Nothing else passes: the
+/// numbers are formatter-made, never author text.
 fn aspect_style(v: &str) -> bool {
     let num = |s: &str| {
         let mut parts = s.splitn(2, '.');
@@ -495,9 +498,26 @@ fn aspect_style(v: &str) -> bool {
             && frac
                 .is_none_or(|f| (1..=4).contains(&f.len()) && f.bytes().all(|b| b.is_ascii_digit()))
     };
-    v.strip_prefix("--ar:")
-        .and_then(|r| r.split_once(" / "))
-        .is_some_and(|(w, h)| num(w) && num(h))
+    let pt = |s: &str| s.strip_suffix("pt").is_some_and(num);
+    let mut parts = v.split("; ");
+    let ar = parts.next().is_some_and(|a| {
+        a.strip_prefix("--ar:")
+            .and_then(|r| r.split_once(" / "))
+            .is_some_and(|(w, h)| num(w) && num(h))
+    });
+    if !ar {
+        return false;
+    }
+    // The author's box follows the aspect, `--aw` then `--ah`, each at
+    // most once; anything else (swapped, doubled, unknown) drops the style.
+    match parts.collect::<Vec<_>>().as_slice() {
+        [] => true,
+        [aw] => aw.strip_prefix("--aw:").is_some_and(pt),
+        [aw, ah] => {
+            aw.strip_prefix("--aw:").is_some_and(pt) && ah.strip_prefix("--ah:").is_some_and(pt)
+        }
+        _ => false,
+    }
 }
 
 fn escape_text(s: &str, out: &mut String) {

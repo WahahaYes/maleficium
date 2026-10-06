@@ -1405,27 +1405,58 @@ fn mounts<'a>(
                 (_, Bytes::Mem(b)) => data_url(&a.mime, b),
                 _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
             };
+            let kind = match w.kind {
+                WidgetType::Model => "model",
+                WidgetType::Video => "video",
+                WidgetType::Table => "table",
+                WidgetType::Chart => "chart",
+                WidgetType::Html => "html",
+                WidgetType::Custom => "custom",
+            };
+            let size = (w.kind == WidgetType::Model)
+                .then(|| {
+                    w.options
+                        .iter()
+                        .find(|o| o.key == "size")
+                        .map(|o| crate::widgets::params::size(&o.value))
+                })
+                .flatten()
+                .transpose()
+                .map_err(|e| format!("widget {}: {e}", w.id))?;
+            let rect = (w.rect.x1 - w.rect.x0, w.rect.y1 - w.rect.y0);
+            let author = (
+                author_pt(&w.options, "width"),
+                author_pt(&w.options, "height"),
+            );
+            let (frame, author_box) = reflow::article::frame(kind, size, author, rect);
             Ok(reflow::article::Mount {
                 id: &w.id,
-                kind: match w.kind {
-                    WidgetType::Model => "model",
-                    WidgetType::Video => "video",
-                    WidgetType::Table => "table",
-                    WidgetType::Chart => "chart",
-                    WidgetType::Html => "html",
-                    WidgetType::Custom => "custom",
-                },
+                kind,
                 figure: w.figure.as_deref(),
                 label: w.label.as_deref(),
                 alt: &w.alt,
-                width: w.rect.x1 - w.rect.x0,
-                height: w.rect.y1 - w.rect.y0,
+                width: frame.0,
+                height: frame.1,
+                author_width: author_box.map(|b| b.0),
+                author_height: author_box.map(|b| b.1),
                 poster,
                 note: notes.get(&w.id).cloned(),
                 approval_required: gated.contains(&w.id),
             })
         })
         .collect()
+}
+
+/// An author's `width=`/`height=` sidecar value in points: the package
+/// canonicalizes dims through a length, so a well-formed one ends in `pt`.
+/// Anything else is no dims, never a failure.
+fn author_pt(options: &[crate::widgets::WidgetOption], key: &str) -> Option<f64> {
+    options
+        .iter()
+        .find(|o| o.key == key)
+        .and_then(|o| o.value.strip_suffix("pt"))
+        .and_then(|n| n.parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v > 0.0)
 }
 
 /// An app-owned scratch folder for one export's conversion and figures,
