@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CompileButton from './components/CompileButton';
@@ -61,6 +61,7 @@ import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
 import { useArticle } from './hooks/useArticle';
+import { anchorForLine } from './lib/article';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -781,6 +782,27 @@ export default function App({
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
   // The Article tab's bytes: loaded on demand, reloaded by hand.
   const article = useArticle();
+  // Forward-only sync: the caret line's section maps to the article anchor
+  // the frame scrolls to. Sections come from the active buffer's outline;
+  // the article names the same headings with latexml numbers attached.
+  const articleAnchor = useMemo(
+    () =>
+      anchorForLine(
+        currentLine,
+        outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
+        article.anchors,
+      ),
+    [currentLine, outline, article.anchors],
+  );
+  const handleArticleSync = useCallback((anchor: string) => {
+    emit({
+      scope: 'preview',
+      kind: 'info',
+      actor: 'user',
+      message: `article sync → ${anchor}`,
+      event: { action: 'article.sync', anchor },
+    });
+  }, []);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -910,6 +932,8 @@ export default function App({
             onLoadArticle={() => {
               if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel);
             }}
+            articleAnchor={articleAnchor}
+            onArticleSync={handleArticleSync}
           />
         }
       />

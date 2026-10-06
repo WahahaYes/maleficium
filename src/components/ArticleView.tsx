@@ -6,12 +6,14 @@
 // shows its poster with an Approve button from the bytes themselves; the
 // approve round-trip (and every other frame message) arrives later — for
 // now the listener below drops everything after the denial check.
+// Editor-to-article sync is forward-only: the caret's anchor posts into the
+// frame and the bytes scroll to it; the article never reports back.
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { useEffect, useRef } from 'react';
-import { articleSandbox, isArticleMessage } from '../lib/article';
+import { articleSandbox, articleScrollMessage, isArticleMessage } from '../lib/article';
 
 export interface ArticleViewProps {
   /** The bundle bytes, or null before the first load. */
@@ -24,6 +26,10 @@ export interface ArticleViewProps {
   compiling: boolean;
   zoomPercent: number;
   onLoad: () => void;
+  /** The caret section's anchor, or null when the caret names none. */
+  anchorId: string | null;
+  /** Fires when the caret section is posted into the frame. */
+  onSync?: (anchorId: string) => void;
 }
 
 export default function ArticleView({
@@ -34,8 +40,12 @@ export default function ArticleView({
   compiling,
   zoomPercent,
   onLoad,
+  anchorId,
+  onSync,
 }: ArticleViewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const syncRef = useRef(onSync);
+  syncRef.current = onSync;
 
   // Denial point for frame messages. Validates origin, source and shape,
   // then drops everything: approval handling arrives in a later slice.
@@ -47,6 +57,23 @@ export default function ArticleView({
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [html]);
+
+  // Forward-only sync: post the caret's anchor into the frame, where the
+  // bytes scroll to it. The post repeats twice: a fresh srcDoc frame may
+  // not have its listener yet on the first one. The article never replies.
+  useEffect(() => {
+    if (!html || !anchorId) return;
+    const msg = articleScrollMessage(anchorId);
+    const post = () => frameRef.current?.contentWindow?.postMessage(msg, '*');
+    post();
+    const t = setInterval(post, 250);
+    const stop = setTimeout(() => clearInterval(t), 500);
+    syncRef.current?.(anchorId);
+    return () => {
+      clearInterval(t);
+      clearTimeout(stop);
+    };
+  }, [html, anchorId]);
 
   if (loading) return <Typography variant="body1">Loading article…</Typography>;
 

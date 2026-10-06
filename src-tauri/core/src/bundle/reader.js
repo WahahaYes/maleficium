@@ -436,4 +436,31 @@
   );
   window.addEventListener('resize', spy);
   spy();
+
+  // Editor-to-article sync, forward only. The app posts the caret's section
+  // and the article scrolls to it with the same flash an in-page link gets.
+  // Only the embedding parent is heard (e.source === parent): a widget frame
+  // or a stray page cannot steer the article. The article never replies.
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || d.mfw !== 1 || e.source !== parent) return;
+    if (d.type !== 'article-scroll' || typeof d.id !== 'string' || !d.id) return;
+    var to = document.getElementById(d.id);
+    if (!to) return;
+    if (to.scrollIntoView) {
+      try {
+        to.scrollIntoView({ block: 'start' });
+      } catch (_) {
+        to.scrollIntoView();
+      }
+    }
+    if (flashed) flashed.classList.remove('m-flash');
+    flashed = to;
+    to.classList.remove('m-flash');
+    void to.offsetWidth;
+    to.classList.add('m-flash');
+    setTimeout(function () {
+      to.classList.remove('m-flash');
+    }, 1800);
+  });
 })();
