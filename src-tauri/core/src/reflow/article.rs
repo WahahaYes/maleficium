@@ -326,11 +326,13 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, Vec<Un
 
 /// Replace a proof-final U+220E with a CSS-drawn end mark (`m-qed` in the
 /// reader stylesheet). Only a trailing mark is touched: a symbol quoted
-/// mid-proof stays text.
+/// mid-proof stays text. Latexml leaves the mark bare, doubled (`\qed` plus
+/// its own), or wrapped in MathML (`\qedhere` in math is a lone `mo`);
+/// equation and item numbers after it are chrome, not content.
 fn qed_box(proof: &dom_query::NodeRef) {
     let mut last: Option<dom_query::NodeRef> = None;
     for n in proof.descendants() {
-        if n.is_text() && !n.text().trim().is_empty() {
+        if n.is_text() && !n.text().trim().is_empty() && !in_chrome(&n) {
             last = Some(n);
         }
     }
@@ -338,15 +340,60 @@ fn qed_box(proof: &dom_query::NodeRef) {
         return;
     };
     let text = t.text().to_string();
-    let Some(stripped) = text.trim_end().strip_suffix('\u{220e}') else {
+    let trimmed = text.trim_end().to_string();
+    let head = trimmed.trim_end_matches(QED).to_string();
+    if head.len() == trimmed.len() {
         return;
-    };
-    t.after_html("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>");
-    if stripped.is_empty() {
+    }
+    if let Some(math) = math_ancestor(&t) {
+        // The mark is all a MathML wrapper holds: drop the wrapper and
+        // draw the mark after the formula, where it reads as the proof end.
+        let mut qed_node = t;
+        let mut at = t.parent();
+        while let Some(p) = at {
+            if !p.is_element() || p.has_name("math") || !is_qed_only(&p) {
+                break;
+            }
+            qed_node = p;
+            at = p.parent();
+        }
+        math.after_html(QED_MARK);
+        qed_node.remove_from_parent();
+        return;
+    }
+    t.after_html(QED_MARK);
+    if head.trim().is_empty() {
         t.remove_from_parent();
     } else {
-        t.set_text(stripped.to_string());
+        t.set_text(head);
     }
+}
+
+/// The proof-final mark latexml emits, drawn in CSS instead (`U+220E`
+/// renders as a solid box in fonts without the glyph).
+const QED: char = '\u{220e}';
+/// The CSS-drawn end mark replacing it.
+const QED_MARK: &str = "<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>";
+
+/// The `math` element a node sits inside, if any.
+fn math_ancestor<'a>(n: &dom_query::NodeRef<'a>) -> Option<dom_query::NodeRef<'a>> {
+    n.ancestors(None).into_iter().find(|a| a.has_name("math"))
+}
+
+/// Whether an element holds nothing but the mark (and whitespace).
+fn is_qed_only(n: &dom_query::NodeRef) -> bool {
+    let s = n.text();
+    !s.trim().is_empty() && s.trim().chars().all(|c| c == QED)
+}
+
+/// Whether a text node is typeset chrome (an equation or item number),
+/// which never counts as content after the mark.
+fn in_chrome(n: &dom_query::NodeRef) -> bool {
+    n.ancestors(None).into_iter().any(|a| {
+        a.attr("class")
+            .map(|c| c.to_string())
+            .is_some_and(|c| c.split_whitespace().any(|t| t == "ltx_tag"))
+    })
 }
 
 struct Entry {
