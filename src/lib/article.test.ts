@@ -16,6 +16,7 @@ import {
   clampArticleZoom,
   hasTauriInternals,
   isArticleMessage,
+  shouldRefreshArticle,
   stepArticleZoom,
 } from './article';
 
@@ -144,6 +145,30 @@ describe('article availability', () => {
     expect(articleAvailable(null, false)).toBe(false);
     expect(articleAvailable('', false)).toBe(false);
     expect(articleAvailable('<html></html>', true)).toBe(false);
+  });
+});
+
+describe('article auto-refresh', () => {
+  it('reloads shown bytes when a newer compile stamp lands', () => {
+    expect(shouldRefreshArticle('<html></html>', 1, 2, false, true)).toBe(true);
+  });
+  it.each([
+    ['never loaded', [null, 0, 1, false, true]],
+    ['empty bytes', ['', 0, 1, false, true]],
+    ['same stamp', ['<html></html>', 2, 2, false, true]],
+    ['older stamp', ['<html></html>', 3, 2, false, true]],
+    ['no stamp yet', ['<html></html>', 0, null, false, true]],
+    ['compiling', ['<html></html>', 1, 2, true, true]],
+    ['nothing to load from', ['<html></html>', 1, 2, false, false]],
+  ])('stays put while %s', (_label, args) => {
+    const [html, loaded, stamp, compiling, canLoad] = args as [
+      string | null,
+      number,
+      number | null,
+      boolean,
+      boolean,
+    ];
+    expect(shouldRefreshArticle(html, loaded, stamp, compiling, canLoad)).toBe(false);
   });
 });
 
