@@ -23,7 +23,8 @@
 //                       <ltx:text class="m-flag m-flag-contents-on|off"/>
 //   \maleficiummeasure{narrow|default|wide}  one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-measure-*"/>
-//   \maleficiumtheme   no output (the theme is a PDF/sidecar concern)
+//   \maleficiumtheme, \maleficiumsetup   no output (their keys are
+//                       consumed, never surfaced in the article)
 //   \mfwSlash           no output (the PDF's brand mark)
 // A flag marker is the reader-flag analog of a widget placeholder: one empty
 // element, the value riding in a closed class token (`ltx:text` takes no
@@ -47,6 +48,7 @@ RequirePackage("hyperref", ["hidelinks"]);
 RawTeX("\\definecolor{mfwaccent}{HTML}{5B2A86}\\definecolor{mfwink}{HTML}{1E1B24}\\definecolor{mfwmuted}{HTML}{6B6676}");
 
 DefMacro("\\maleficiumtheme Semiverbatim", |x| "");
+DefMacro("\\maleficiumsetup Semiverbatim", |x| "");
 DefMacro("\\mfwSlash", || "");
 
 DefConstructor("\\interactive [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-html\"/>");
