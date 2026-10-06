@@ -31,6 +31,7 @@ fn mounts() -> Vec<Mount<'static>> {
         height: 100.0,
         poster: format!("assets/{id}.png"),
         note: None,
+        approval_required: false,
     })
     .collect()
 }
@@ -376,4 +377,48 @@ fn an_equation_number_after_the_mark_does_not_hide_it() {
         html[math..].contains("m-qed"),
         "the mark follows the formula"
     );
+}
+#[test]
+fn anchors_follow_the_contents_flattened_and_ignore_outside_markup() {
+    let a = build_with(FIXTURE, Some(SIDECAR), figures::Mode::SingleFile);
+    // A sibling section and a section-shaped JSON island: neither is the
+    // article, so neither contributes an anchor.
+    let page = format!(
+        "<!doctype html><html><head><title>t</title></head><body>\
+        <section id=\"S9\"><h2>9 Elsewhere</h2></section>\
+        <script id=\"mfw-manifest\" type=\"application/json\">{{\"note\":\"<section id=S9><h2>9 Island</h2></section>\"}}</script>\
+        {}</body></html>",
+        a.html
+    );
+    assert_eq!(
+        anchors_of(&page),
+        vec![
+            Anchor {
+                id: "S1".into(),
+                text: "1 Widgets".into()
+            },
+            Anchor {
+                id: "S1.SS1".into(),
+                text: "1.1 Plain figures".into()
+            },
+            Anchor {
+                id: "bib".into(),
+                text: "References".into()
+            },
+        ]
+    );
+    assert!(anchors_of("<p>no article here</p>").is_empty());
+}
+
+#[test]
+fn a_mount_unit_held_back_for_approval_carries_the_marker_and_its_note() {
+    let mut all = mounts();
+    let held = &mut all[4];
+    held.approval_required = true;
+    held.note = Some("This interactive figure needs your approval before it runs here.".into());
+    let html = mount_unit(held);
+    assert!(html.contains(" data-approval=\"required\""), "{html}");
+    assert!(html.contains("<p class=\"m-widget-note\">"), "{html}");
+    let plain = mount_unit(&mounts()[4]);
+    assert!(!plain.contains("data-approval"), "{plain}");
 }
