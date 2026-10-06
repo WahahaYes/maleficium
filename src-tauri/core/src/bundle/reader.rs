@@ -243,6 +243,15 @@ mod tests {
     }
 
     #[test]
+    fn plain_figures_fill_their_float_whatever_the_source_pixels() {
+        let h = page(false);
+        assert!(
+            h.contains("figure img.ltx_graphics") && h.contains("width: 100%"),
+            "a figure's image fills its float, however small its source"
+        );
+    }
+
+    #[test]
     fn the_page_css_and_the_widget_tokens_come_from_one_theme() {
         let h = page(false);
         let theme = crate::theme::Theme::house();
