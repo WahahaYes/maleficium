@@ -359,13 +359,7 @@
 \cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
 \cs_new_protected:Npn \mfw@valid@slug { \exp_args:NV \mfw_valid:n \g_mfw_slug_str }
 \cs_new_protected:Npn \mfw@valid@theme #1 { \mfw_valid_theme:n {#1} }
-% Reader styling: a colour is six hex digits; a stylesheet a plain .css path.
-\cs_new_protected:Npn \mfw@valid@hex #1 {
-  \regex_match:nnTF { \A[0-9A-Fa-f]{6}\Z } {#1}
-    { \bool_set_true:N \l_mfw_ok_bool }
-    { \bool_set_false:N \l_mfw_ok_bool }
-  \mfw_syncok:
-}
+% Reader styling: a stylesheet is a plain .css path.
 \cs_new_protected:Npn \mfw@valid@css #1 {
   \regex_match:nnTF { \A[A-Za-z0-9._/-]+\.[cC][sS][sS]\Z } {#1}
     { \bool_set_true:N \l_mfw_ok_bool }
@@ -649,36 +643,11 @@
     \mfw@line{#1}{\mfw@n}{\csname mfw@\ifmfw@darkplate fd\else fl\fi @\mfw@n\endcsname}}%
 }
 % -- reader styling ----------------------------------------------------------
-% \maleficiumreader{page=<hex>|follow, accent=<hex>, page dark=<hex>,
-% accent dark=<hex>}: the reflowed reader's page and accent (the PDF never
-% changes). Colours are six hex digits, the light-mode values; the dark
-% ones are derived unless given: the page tinted into the house dark page,
-% the accent lightened to read on it. page=follow is the paper itself: the
-% PDF's page colour (\pagecolor, as it stands at the end of the document)
-% in both modes, with the ink, accent and widget plate that read on it, so
-% the article looks like the PDF whatever the reader's mode. A page dark
-% enough for light text keeps the house dark ink in both modes.
-% \maleficiumreaderstyle{reader.css}: a stylesheet in the project the reader
-% applies after the theme (see the README's Interactive papers for what it
-% may hold; the exporter checks it).
-\def\mfw@r@page{}\def\mfw@r@pagedark{}\def\mfw@r@accent{}\def\mfw@r@accentdark{}
+% \maleficiumreaderstyle{reader.css}: a stylesheet in the project that the
+% reflowed reader applies after its own rules, in light and dark mode alike
+% (the PDF never changes). See the README's Interactive papers for what it
+% may hold; the exporter checks it.
 \def\mfw@r@style{}
-\def\mfw@r@follow{follow}
-\newcommand{\mfw@r@hex}[2]{%
-  \mfw@valid@hex{#2}%
-  \ifmfw@ok\else
-    \PackageError{maleficium-interactive}%
-      {\protect\maleficiumreader: #1=#2 is not a colour}%
-      {Give six hex digits, like #1=FAF3E8.}%
-  \fi}
-\define@key{mfwreader}{page}{%
-  \def\mfw@r@v{#1}\def\mfw@r@follow{follow}%
-  \ifx\mfw@r@v\mfw@r@follow\else\mfw@r@hex{page}{#1}\fi
-  \gdef\mfw@r@page{#1}}
-\define@key{mfwreader}{page dark}{\mfw@r@hex{page dark}{#1}\gdef\mfw@r@pagedark{#1}}
-\define@key{mfwreader}{accent}{\mfw@r@hex{accent}{#1}\gdef\mfw@r@accent{#1}}
-\define@key{mfwreader}{accent dark}{\mfw@r@hex{accent dark}{#1}\gdef\mfw@r@accentdark{#1}}
-\newcommand{\maleficiumreader}[1]{\setkeys{mfwreader}{#1}}
 \newcommand{\maleficiumreaderstyle}[1]{%
   \mfw@valid@css{#1}%
   \ifmfw@ok\else
@@ -688,57 +657,8 @@
   \fi
   \mfw@needfile{#1}%
   \gdef\mfw@r@style{#1}}
-\definecolor{mfwhousedark}{HTML}{16181D}
-% \mfw@r@set{l|d}{token}{colour name}: one token's value in one mode.
-\newcommand{\mfw@r@set}[3]{%
-  \mfw@hexof{#3}\mfw@r@hexv
-  \expandafter\xdef\csname mfw@#1@#2\endcsname{\mfw@hash\mfw@r@hexv}}
-% \mfw@r@copy{token}: the dark value in light mode too.
-\newcommand{\mfw@r@copy}[1]{%
-  \expandafter\global\expandafter\let\csname mfw@l@#1\expandafter\endcsname
-    \csname mfw@d@#1\endcsname}
-\newcommand{\mfw@r@apply}{%
-  \ifx\mfw@r@page\empty\else
-    \def\mfw@r@follow{follow}%
-    \ifx\mfw@r@page\mfw@r@follow\colorlet{mfw@rp}{mfwpage}%
-    \else\definecolor{mfw@rp}{HTML}{\mfw@r@page}\fi
-    \mfw@isdark{mfw@rp}%
-    \ifmfw@darkplate
-      % A dark page: dark in both modes, with the house dark ink.
-      \mfw@r@copy{--m-color-text}\mfw@r@copy{--m-color-muted}%
-      \mfw@r@copy{--m-color-rule}\mfw@r@copy{--m-color-link}%
-      \mfw@r@copy{--m-color-accent}%
-      \colorlet{mfw@rpd}{mfw@rp}%
-      \colorlet{mfw@rs}{mfw@rp!92!white}%
-    \else
-      \colorlet{mfw@rpd}{mfw@rp!6!mfwhousedark}%
-      \colorlet{mfw@rs}{mfw@rp!94!black}%
-    \fi
-    \ifx\mfw@r@pagedark\empty\else\definecolor{mfw@rpd}{HTML}{\mfw@r@pagedark}\fi
-    \colorlet{mfw@rsd}{mfw@rpd!95!white}%
-    \mfw@r@set{l}{--m-color-bg}{mfw@rp}\mfw@r@set{l}{--m-color-surface}{mfw@rs}%
-    \mfw@r@set{d}{--m-color-bg}{mfw@rpd}\mfw@r@set{d}{--m-color-surface}{mfw@rsd}%
-  \fi
-  \ifx\mfw@r@accent\empty\else
-    \definecolor{mfw@ra}{HTML}{\mfw@r@accent}%
-    \ifx\mfw@r@accentdark\empty\colorlet{mfw@rad}{mfw@ra!55!white}%
-    \else\definecolor{mfw@rad}{HTML}{\mfw@r@accentdark}\fi
-    \mfw@r@set{l}{--m-color-accent}{mfw@ra}\mfw@r@set{l}{--m-color-link}{mfw@ra}%
-    \mfw@r@set{d}{--m-color-accent}{mfw@rad}\mfw@r@set{d}{--m-color-link}{mfw@rad}%
-  \fi
-  % page=follow: the paper in both modes (every light value, already chosen
-  % to read on the page, becomes the dark one too).
-  \ifx\mfw@r@page\mfw@r@follow
-    \@for\mfw@n:=\mfw@names@moded\do{%
-      \expandafter\global\expandafter\let\csname mfw@d@\mfw@n\expandafter\endcsname
-        \csname mfw@l@\mfw@n\endcsname}%
-    \global\mfw@r@followtrue
-  \fi}
-\newif\ifmfw@r@follow
-
 \newcommand{\mfw@write@theme}{%
   \mfw@open@sidecar
-  \mfw@r@apply
   \ifx\mfw@r@style\empty\else
     \immediate\write\mfw@sidecar{style|\mfw@r@style}\fi
   \mfw@usefont{\rmdefault}{\mfw@font@body}%
@@ -755,7 +675,6 @@
   \@for\mfw@n:=\mfw@names@moded\do{%
     \mfw@line{dark}{\mfw@n}{\csname mfw@d@\mfw@n\endcsname}}%
   \mfw@isdark{mfwpage}%
-  \ifmfw@r@follow\mfw@darkplatetrue\fi
   \ifmfw@darkplate\mfw@plate{dark}{mfwpage}\else\mfw@plate{dark}{mfwdarkplate}\fi
 }
 \AtEndDocument{\mfw@write@theme}

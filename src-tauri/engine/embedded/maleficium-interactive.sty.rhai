@@ -23,7 +23,7 @@
 //                       <ltx:text class="m-flag m-flag-contents-on|off"/>
 //   \maleficiummeasure{narrow|default|wide}  one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-measure-*"/>
-//   \maleficiumtheme, \maleficiumsetup, \maleficiumreader,
+//   \maleficiumtheme, \maleficiumsetup,
 //   \maleficiumreaderstyle   no output (their keys are
 //                       consumed, never surfaced in the article)
 //   \mfwSlash           no output (the PDF's brand mark)
@@ -50,8 +50,7 @@ RawTeX("\\definecolor{mfwaccent}{HTML}{5B2A86}\\definecolor{mfwink}{HTML}{1E1B24
 
 DefMacro("\\maleficiumtheme Semiverbatim", |x| "");
 DefMacro("\\maleficiumsetup Semiverbatim", |x| "");
-// Reader styling rides the sidecar (theme and style lines), never the article.
-DefMacro("\\maleficiumreader Semiverbatim", |x| "");
+// The reader stylesheet rides the sidecar (a style line), never the article.
 DefMacro("\\maleficiumreaderstyle Semiverbatim", |x| "");
 DefMacro("\\mfwSlash", || "");
 
