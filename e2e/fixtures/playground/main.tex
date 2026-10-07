@@ -5,6 +5,9 @@
 \usepackage{maleficium-interactive}
 \maleficiumtheme{house}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
 \title{The Playground Paper}
 \author{Maleficium}
 \date{}
@@ -14,12 +17,13 @@
 One source that compiles to a PDF today and is meant to become an
 interactive HTML paper later. Every widget macro the package offers
 appears at least once, beside plain figures, subfigures, math,
-citations, cross-references and a theorem.
+citations that preview their reference on hover, cross-references, and
+theorems whose proofs fold away in the HTML paper.
 \end{abstract}
 
 \section{Introduction}
 Text typeset with \TeX{}~\cite{knuth1984texbook} and \LaTeX{}~\cite{lamport1994latex}
-reads the same in print and on screen; the widgets below add an
+(together,~\cite{knuth1984texbook,lamport1994latex}) reads the same in print and on screen; the widgets below add an
 interactive layer on top of that~\cite{shannon1948mathematical}.
 Section~\ref{sec:guide} explains each widget, and
 Figures~\ref{fig:model}, \ref{fig:video}, \ref{fig:chart} and~\ref{fig:html},
@@ -148,16 +152,34 @@ Figures~\ref{fig:suba} and~\ref{fig:subb} as its panels.
 
 \section{Math and theorems}
 Entropy is defined in Equation~\eqref{eq:entropy} and bounded in
-Theorem~\ref{thm:bound}.
+Theorem~\ref{thm:bound}. In the HTML paper, hovering or focusing a
+citation shows its reference, and each proof can be folded away.
+\begin{definition}[Entropy~\cite{shannon1948mathematical}]\label{def:entropy}
+The entropy of a random variable $X$ taking $n$ values with probabilities
+$p_1, \dots, p_n$ is
 \begin{equation}\label{eq:entropy}
 H(X) = -\sum_{i=1}^{n} p_i \log p_i .
 \end{equation}
+\end{definition}
+\begin{lemma}[Gibbs' inequality]\label{lem:gibbs}
+For distributions $p$ and $q$ on the same $n$ outcomes,
+$-\sum_i p_i \log p_i \le -\sum_i p_i \log q_i$~\cite[Thm.~2.6.3]{cover2006elements}.
+\end{lemma}
+\begin{proof}
+Since $\log x \le x - 1$ for every $x > 0$, with equality only at $x = 1$,
+\begin{align*}
+\sum_i p_i \log \frac{q_i}{p_i}
+  &\le \sum_i p_i \left( \frac{q_i}{p_i} - 1 \right) \\
+  &= \sum_i q_i - \sum_i p_i \le 0 . \qedhere
+\end{align*}
+\end{proof}
 \begin{theorem}\label{thm:bound}
 For a distribution on $n$ outcomes, $0 \le H(X) \le \log n$.
 \end{theorem}
-\begin{proof}
-Jensen's inequality gives $H(X) \le \log \sum_i p_i \cdot \tfrac{1}{p_i} = \log n$,
-and each term of Equation~\eqref{eq:entropy} is nonnegative.
+\begin{proof}[Proof of Theorem~\ref{thm:bound}]
+Each term of Equation~\eqref{eq:entropy} is nonnegative, so $H(X) \ge 0$.
+Lemma~\ref{lem:gibbs} with the uniform $q_i = 1/n$ gives
+$H(X) \le -\sum_i p_i \log \tfrac{1}{n} = \log n$.
 \end{proof}
 
 \section{What each widget does}\label{sec:guide}
