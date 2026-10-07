@@ -16,7 +16,7 @@ import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDi
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
-import { projectIndex } from './lib/project-index';
+import { projectIndex, type ProjectMacro } from './lib/project-index';
 import type { Hit } from './lib/generated/index';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -404,16 +404,23 @@ export default function App({
         return;
       }
       const found = l.definitions.length;
+      // A macro with no project definition is built in, not an error.
+      const builtin = found === 0 && l.ref.kind === 'macro';
       emit({
         scope: 'app',
-        kind: found > 0 ? 'info' : 'warn',
+        kind: found > 0 || builtin ? 'info' : 'warn',
         actor: 'user',
-        message: found > 0 ? `definition of ${l.ref.key}` : `no definition for ${l.ref.key}`,
+        message:
+          found > 0
+            ? `definition of ${l.ref.key}`
+            : builtin
+              ? `${l.ref.key} is built in or from a package`
+              : `no definition for ${l.ref.key}`,
         event: { action: 'nav.definition', kind: l.ref.kind, key: l.ref.key, found },
       });
       const d = l.definitions[0];
       if (!d) {
-        setLog(hoverText(l));
+        setLog(hoverText(l) ?? `${l.ref.key} is built in or from a package`);
         return;
       }
       const abs = joinPath(root, d.rel);
@@ -426,6 +433,7 @@ export default function App({
   const definitionRef = useRef<{
     hover: (line: string, col: number) => Promise<string | null>;
     go: (line: string, col: number) => void;
+    macros: () => Promise<ProjectMacro[]>;
   } | null>(null);
   definitionRef.current = {
     hover: (line, col) =>
@@ -434,6 +442,7 @@ export default function App({
         () => null,
       ),
     go: (line, col) => void goToDefinitionAt(line, col),
+    macros: () => (projectId ? projectIndex().macros(projectId) : Promise.resolve([])),
   };
   const goToDefinitionRef = useRef<() => void>(() => {});
   goToDefinitionRef.current = () => {

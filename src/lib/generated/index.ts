@@ -10,6 +10,16 @@ export type Loc = { rel: string, line: number, };
 
 export type MacroDef = { rel: string, line: number, command: string, params: number | null, body: string, };
 
+export type ProjectMacro = { 
+/**
+ * With its backslash, as written.
+ */
+name: string, 
+/**
+ * The defining command (`newcommand`, `DeclareMathOperator`, `def`, ...).
+ */
+command: string, params: number | null, body: string, };
+
 export type Query = { pattern: string, 
 /**
  * Treat `pattern` as a regular expression (else literal text).
