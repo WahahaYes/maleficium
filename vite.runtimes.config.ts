@@ -6,6 +6,7 @@
 // fresh.test.ts fails on a stale build).
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
+import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import type { Plugin } from 'vite';
 
@@ -35,6 +36,26 @@ function classicScript(): Plugin {
   };
 }
 
+/** What a fork's viewer reads from the page's other scripts: three.js
+ *  and its addons from `THREE`, the bridge from `mfwBridge`. */
+const isBridge = (id: string) => /[\\/]bridge(\.ts)?$/.test(id);
+const forkGlobal = (id: string) =>
+  isBridge(id) ? 'mfwBridge' : id === 'three' || id.startsWith('three/') ? 'THREE' : null;
+
+/** three.js's licence beside the vendored script (the fork's `licenseFile`). */
+function threeLicense(): Plugin {
+  return {
+    name: 'three-license',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'LICENSE',
+        source: readFileSync('node_modules/three/LICENSE', 'utf8'),
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // The bridge authors copy into their own runtimes: bridge.ts as one
   // classic script, committed beside the built-ins the scaffold copies it from.
@@ -49,6 +70,46 @@ export default defineConfig(({ mode }) => {
           formats: ['iife'],
           name: 'mfwBridge',
           fileName: () => 'bridge.js',
+        },
+      },
+    };
+  }
+  // A `model@1` fork (the scaffold's `from: model@1`): three.js as a
+  // vendored classic script with its licence, and the viewer as a readable
+  // classic script over it and the bridge, both committed for the scaffold.
+  if (mode === 'fork-three') {
+    return {
+      plugins: [threeLicense()],
+      build: {
+        outDir: 'src-tauri/widget-runtimes/model-fork/vendor/three',
+        emptyOutDir: true,
+        target: 'es2020',
+        chunkSizeWarningLimit: 4000,
+        lib: {
+          entry: 'src/widget-runtimes/model/three-vendor.ts',
+          formats: ['iife'],
+          name: 'THREE',
+          fileName: () => 'three.js',
+        },
+      },
+    };
+  }
+  if (mode === 'fork-viewer') {
+    return {
+      build: {
+        outDir: 'src-tauri/widget-runtimes/model-fork',
+        emptyOutDir: false,
+        target: 'es2020',
+        minify: false,
+        lib: {
+          entry: 'src/widget-runtimes/model/main.ts',
+          formats: ['iife'],
+          name: 'mfwModelViewer',
+          fileName: () => 'viewer.js',
+        },
+        rollupOptions: {
+          external: (id: string) => forkGlobal(id) !== null,
+          output: { globals: (id: string) => forkGlobal(id) ?? id },
         },
       },
     };

@@ -30,7 +30,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "sh scripts/clean.sh",
-    "build:runtimes": "vite build --config vite.runtimes.config.ts --mode table && vite build --config vite.runtimes.config.ts --mode chart && vite build --config vite.runtimes.config.ts --mode model && vite build --config vite.runtimes.config.ts --mode video && vite build --config vite.runtimes.config.ts --mode bridge"
+    "build:runtimes": "vite build --config vite.runtimes.config.ts --mode table && vite build --config vite.runtimes.config.ts --mode chart && vite build --config vite.runtimes.config.ts --mode model && vite build --config vite.runtimes.config.ts --mode video && vite build --config vite.runtimes.config.ts --mode bridge && vite build --config vite.runtimes.config.ts --mode fork-three && vite build --config vite.runtimes.config.ts --mode fork-viewer"
   },
   "dependencies": {
     "@codemirror/language": "^6.12.4",

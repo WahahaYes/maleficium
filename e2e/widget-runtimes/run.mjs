@@ -46,6 +46,21 @@ const withPolicy = (html) =>
   html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${policy}">`);
 const runtime = (name) =>
   withPolicy(readFileSync(join(dev, `src-tauri/widget-runtimes/${name}/index.html`), 'utf8'));
+// A `model@1` fork as the scaffold writes it, folded the way the exporter
+// folds a custom runtime: each `<script src>` inlined in place.
+const forkRuntime = () => {
+  const files = {
+    'vendor/three/three.js': 'src-tauri/widget-runtimes/model-fork/vendor/three/three.js',
+    'bridge.js': 'src-tauri/widget-runtimes/bridge/bridge.js',
+    'viewer.js': 'src-tauri/widget-runtimes/model-fork/viewer.js',
+  };
+  const html = readFileSync(join(dev, 'src/widget-runtimes/model/fork.html'), 'utf8').replace(
+    /<script src="([^"]+)"><\/script>/g,
+    (_, src) =>
+      `<script>${readFileSync(join(dev, files[src]), 'utf8').replaceAll('</script', '<\\/script')}</script>`,
+  );
+  return withPolicy(html);
+};
 
 const scratch = mkdtempSync(join(tmpdir(), 'maleficium-widget-runtimes-'));
 const webm = join(scratch, 'clip.webm');
@@ -331,6 +346,38 @@ check(
 );
 await page.evaluate(() => window.__unmount('sib'));
 await page.evaluate(() => window.__unmount('m1'));
+
+// ---- model@1 fork: the scaffold's viewer over vendored three.js ----
+await page.evaluate((h) => window.__mount('f1', h), forkRuntime());
+check(
+  'model fork: announces ready',
+  !!(await until(async () => (await events('f1')).find((e) => e.data.type === 'ready'))),
+);
+await page.evaluate(
+  (b) => window.__init('f1', 'model', 'mesh.glb', 'model/gltf-binary', b, 'light'),
+  glb,
+);
+const ft = await terminal('f1');
+check('model fork: loads the glb', ft?.data.state === 'loaded', JSON.stringify(ft?.data));
+const forkLight = await snapshot('f1');
+const lookFL = forkLight ? await page.evaluate((p) => window.__look(p), forkLight) : null;
+check(
+  'model fork: the picture is not blank',
+  !!lookFL && lookFL.colors >= 6,
+  JSON.stringify(lookFL),
+);
+await page.evaluate(() => window.__theme('f1', 'dark'));
+await page.waitForTimeout(300);
+const forkDark = await snapshot('f1');
+const lookFD = forkDark ? await page.evaluate((p) => window.__look(p), forkDark) : null;
+check(
+  'model fork: dark theme changes the background',
+  !!lookFD && lookFD.corner[0] < 60 && lookFD.corner[2] < 60,
+  JSON.stringify(lookFD?.corner),
+);
+if (shotsAt && forkLight)
+  writeFileSync(join(shotsAt, 'fork-light.png'), Buffer.from(forkLight.split(',')[1], 'base64'));
+await page.evaluate(() => window.__unmount('f1'));
 
 // bad input: the stub text, and a truncated glb
 await page.evaluate((h) => window.__mount('m2', h), runtime('model'));

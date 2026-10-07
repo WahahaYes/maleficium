@@ -85,7 +85,7 @@ The proposal runs only while the runtime is approved (allowed at this digest, or
 
 An agent drafts the package through the MCP tools; the user carries it the rest of the way:
 
-1. Scaffold: `runtime_scaffold` writes a draft to the user library (`maleficium-runtimes/<name>@1`), either caption-overlay-shaped (`runtime.json`, a classic `index.html`, a sample for the required role, `LICENSE`) or with `from: model@1` a fork of the built-in model viewer (its built entry plus its sources as reference). Refused when the draft folder exists and is not empty.
+1. Scaffold: `runtime_scaffold` writes a draft to the user library (`maleficium-runtimes/<name>@1`), either caption-overlay-shaped (`runtime.json`, a classic `index.html`, a sample for the required role, `LICENSE`) or with `from: model@1` a fork of the built-in model viewer: `viewer.js` is the viewer as a readable classic script you edit in place (no build step), over three.js vendored at `vendor/three/` (declared in `vendored`, so the scan holds it only to `vendored-url`) and `bridge.js`. Untouched, a fork validates with no errors or warnings. Refused when the draft folder exists and is not empty.
 2. Validate: `runtime_validate` without `root_id` reads the library copy and reports the manifest, scan errors and warnings; with `root_id` it reads the project's installed copy instead. Read-only either way: it never approves, installs, or changes anything, and approval-shaped fields are refused.
 3. Install: the user copies the library draft into a project as `runtimes/<ref>/` in the app. The agent cannot install.
 4. Approve: the user allows the exact package content in the app (View > Widgets). Export mounts the runtime live only then and shows its poster otherwise.

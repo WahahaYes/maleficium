@@ -5,7 +5,8 @@
 //! documented sample, embedded): `runtime.json`, a classic `index.html`
 //! that loads the built `bridge.js`, `samples/` for the required role,
 //! and `LICENSE`. `--from model@1` starts from the built-in model viewer
-//! instead: its built entry plus its sources as reference. Validation
+//! instead: the viewer as a readable classic `viewer.js` over a vendored
+//! three.js, so the draft passes the scan untouched. Validation
 //! runs the package check and the static scan over a folder. Neither
 //! approves anything: approval stays a user action in the app.
 
@@ -31,10 +32,17 @@ const DRAFT_LICENSE: &str =
     include_str!("../../../docs/runtimes/samples/caption-overlay@1/LICENSE");
 const BRIDGE_JS: &[u8] = include_bytes!("../../../src-tauri/widget-runtimes/bridge/bridge.js");
 
-const MODEL_ENTRY: &[u8] = include_bytes!("../../../src-tauri/widget-runtimes/model/index.html");
-const MODEL_MAIN: &str = include_str!("../../../src/widget-runtimes/model/main.ts");
-const MODEL_CORE: &str = include_str!("../../../src/widget-runtimes/model/core.ts");
-const MODEL_HTML: &str = include_str!("../../../src/widget-runtimes/model/index.html");
+// The fork (`npm run build:runtimes` writes model-fork/; fresh.test.ts
+// keeps it current).
+const FORK_ENTRY: &[u8] = include_bytes!("../../../src/widget-runtimes/model/fork.html");
+const FORK_VIEWER: &[u8] =
+    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/viewer.js");
+const FORK_THREE: &[u8] =
+    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/vendor/three/three.js");
+const FORK_THREE_LICENSE: &[u8] =
+    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/vendor/three/LICENSE");
+/// Where the vendored three.js version comes from: the app's own pin.
+const PACKAGE_JSON: &str = include_str!("../../../package.json");
 const MODEL_SAMPLE: &[u8] = include_bytes!("../../../e2e/fixtures/interactive/models/mesh.glb");
 
 /// The user library dir: every draft sits at `<it>/<name>@1/`.
@@ -124,23 +132,43 @@ fn model_manifest(name: &str) -> Vec<u8> {
             }
         },
         "capabilities": {"webgl": true, "wasm": false},
-        "vendored": []
+        "vendored": [{
+            "name": "three",
+            "version": three_version(),
+            "license": "MIT",
+            "source": "https://github.com/mrdoob/three.js",
+            "files": ["vendor/three/three.js"],
+            "licenseFile": "vendor/three/LICENSE"
+        }]
     });
     let mut text = serde_json::to_string_pretty(&v).expect("a literal manifest serializes");
     text.push('\n');
     text.into_bytes()
 }
 
-/// The `model@1` fork: the built viewer as the entry, its sources as
-/// reference, a glb sample for the required role.
+/// The three.js version the app pins (`"three": "X.Y.Z"` in package.json).
+fn three_version() -> String {
+    let v: serde_json::Value = serde_json::from_str(PACKAGE_JSON).expect("package.json parses");
+    v["devDependencies"]["three"]
+        .as_str()
+        .expect("package.json pins three")
+        .to_string()
+}
+
+/// The `model@1` fork: the viewer as a classic script the author edits in
+/// place, three.js vendored with its licence, a glb sample for the
+/// required role.
 fn model_files(name: &str) -> BTreeMap<String, Vec<u8>> {
     BTreeMap::from([
         ("runtime.json".to_string(), model_manifest(name)),
-        ("index.html".to_string(), MODEL_ENTRY.to_vec()),
+        ("index.html".to_string(), FORK_ENTRY.to_vec()),
         ("bridge.js".to_string(), BRIDGE_JS.to_vec()),
-        ("src/main.ts".to_string(), MODEL_MAIN.as_bytes().to_vec()),
-        ("src/core.ts".to_string(), MODEL_CORE.as_bytes().to_vec()),
-        ("src/index.html".to_string(), MODEL_HTML.as_bytes().to_vec()),
+        ("viewer.js".to_string(), FORK_VIEWER.to_vec()),
+        ("vendor/three/three.js".to_string(), FORK_THREE.to_vec()),
+        (
+            "vendor/three/LICENSE".to_string(),
+            FORK_THREE_LICENSE.to_vec(),
+        ),
         ("samples/mesh.glb".to_string(), MODEL_SAMPLE.to_vec()),
         ("LICENSE".to_string(), DRAFT_LICENSE.as_bytes().to_vec()),
     ])
@@ -407,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn a_model_fork_copies_the_built_entry_and_its_sources() {
+    fn a_model_fork_is_a_readable_viewer_over_vendored_three_and_validates() {
         let base = scratch("author-model");
         let dir = scaffold_into(&base, "spin-view", Some(MODEL_REF)).unwrap();
         let files = read_package(&dir).unwrap();
@@ -415,9 +443,9 @@ mod tests {
             "runtime.json",
             "index.html",
             "bridge.js",
-            "src/main.ts",
-            "src/core.ts",
-            "src/index.html",
+            "viewer.js",
+            "vendor/three/three.js",
+            "vendor/three/LICENSE",
             "samples/mesh.glb",
             "LICENSE",
         ] {
@@ -425,13 +453,16 @@ mod tests {
         }
         let entry = files["index.html"].clone();
         assert!(entry.starts_with(b"<!doctype html>"));
-        assert!(String::from_utf8(files["src/main.ts"].clone())
-            .unwrap()
-            .contains("startBridge"));
+        let viewer = String::from_utf8(files["viewer.js"].clone()).unwrap();
+        assert!(viewer.contains("mfwBridge") && viewer.contains("THREE"));
+        // Untouched, the fork is approvable: no scan errors.
+        let v = validate_dir("spin-view@1", &dir).unwrap();
+        assert!(v.valid(), "{:?}", v);
         let text = String::from_utf8(files["runtime.json"].clone()).unwrap();
         let m = runtimes::parse_manifest("spin-view@1", &text).unwrap();
         assert_eq!(m.name, "spin-view");
         assert!(m.capabilities.webgl);
+        assert_eq!(m.vendored[0].version, three_version());
         assert!(m.primary_role() == "model" && m.sources["model"].required);
         runtimes::check_package("spin-view@1", &files).unwrap();
     }
