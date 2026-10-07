@@ -4,7 +4,9 @@
 //! runtime; these checks catch honest mistakes early, so they stay simple
 //! regex scans, not parsers. Every known gap is noted on the rule that
 //! carries it. The interface is frozen by the custom-runtimes contract:
-//! lane A calls [`scan`] with the package files and the vendored paths.
+//! lane A calls [`scan`] with the package files, the vendored paths, and
+//! whether the manifest declared `capabilities.wasm` (undeclared
+//! WebAssembly use is a `wasm` error).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
@@ -417,6 +419,18 @@ fn js_rules() -> Vec<JsRule> {
             "keep state in memory instead",
         ),
         JsRule::new(
+            r"\bWebAssembly\b",
+            "wasm",
+            "uses WebAssembly; the runtime must declare capabilities.wasm",
+            "declare `\"wasm\": true` under `capabilities` in runtime.json",
+        ),
+        JsRule::new(
+            r"\.wasm\b",
+            "wasm",
+            "references a .wasm module; the runtime must declare capabilities.wasm",
+            "declare `\"wasm\": true` under `capabilities` in runtime.json",
+        ),
+        JsRule::new(
             r"window\s*\.\s*__[A-Za-z0-9_$]*",
             "global-hook",
             "assigns a window.__ hook; runtimes must not touch shared globals",
@@ -433,12 +447,14 @@ fn js_rules() -> Vec<JsRule> {
 
 /// Run the JS content rules over one script text. `base_line` is the
 /// 1-based line the text starts on. URL loads go to `urls`, references
-/// to `refs`, the rest to findings (errors, except `global-hook`).
+/// to `refs`, the rest to findings (errors, except `global-hook`; the
+/// `wasm` rule stays silent when the runtime declared `capabilities.wasm`).
 #[allow(clippy::too_many_arguments)]
 fn scan_script(
     file: &str,
     text: &str,
     base_line: u32,
+    wasm: bool,
     errors: &mut Vec<Finding>,
     warnings: &mut Vec<Finding>,
     urls: &mut Vec<(u32, String)>,
@@ -455,6 +471,9 @@ fn scan_script(
         refs.push((file.to_string(), line, href));
     }
     for rule in rules {
+        if wasm && rule.rule == "wasm" {
+            continue;
+        }
         let pattern = re(&rule.cell, rule.pattern);
         for m in pattern.find_iter(text) {
             let f = finding(
@@ -473,7 +492,14 @@ fn scan_script(
     }
 }
 
-pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>) -> Report {
+/// Whether a relative reference names a WebAssembly module: its path
+/// part (before any query or fragment) ends in `.wasm`.
+fn is_wasm_ref(href: &str) -> bool {
+    let path = href.split(['?', '#']).next().unwrap_or(href);
+    path.to_ascii_lowercase().ends_with(".wasm")
+}
+
+pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>, wasm: bool) -> Report {
     let mut errors: Vec<Finding> = Vec::new();
     let mut warnings: Vec<Finding> = Vec::new();
     // (referencing file, line, raw href) for `missing-ref`;
@@ -545,6 +571,7 @@ pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>) -> R
                             path,
                             &body,
                             base,
+                            wasm,
                             &mut errors,
                             &mut warnings,
                             &mut urls,
@@ -573,6 +600,7 @@ pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>) -> R
                         path,
                         &text,
                         1,
+                        wasm,
                         &mut errors,
                         &mut warnings,
                         &mut urls,
@@ -606,6 +634,18 @@ pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>) -> R
     }
 
     for (from, line, href) in &refs {
+        // A WebAssembly module reference without the declaration is
+        // refused even when the file exists; the dangling check below
+        // still applies on top.
+        if !wasm && is_wasm_ref(href) {
+            errors.push(finding(
+                "wasm",
+                from,
+                *line,
+                format!("references \"{href}\", a WebAssembly module the runtime did not declare"),
+                "declare `\"wasm\": true` under `capabilities` in runtime.json",
+            ));
+        }
         match resolve_ref(from, href) {
             Some(target) if files.contains_key(&target) => {
                 referenced.insert(target);
