@@ -1162,103 +1162,6 @@ def self_test_oracles():
     return bad
 
 
-# The fork's repaired entry for the self-test repair loop: a minimal
-# theme-responsive model page in the documented listener shape (init bytes,
-# a bundled entry, no network). It paints the theme plate with the model's
-# byte size, so light and dark snapshots differ, and it ignores any message
-# not from its parent, so a forged init never lands.
-FORK_REPAIRED_ENTRY = """<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Model fork</title>
-    <style>
-      html, body { margin: 0; padding: 0; }
-      body { background: var(--m-figure-bg); }
-      canvas { width: 100%; height: auto; display: block; }
-    </style>
-  </head>
-  <body>
-    <canvas id="view" width="64" height="48" role="img" aria-label="Model viewer"></canvas>
-    <script src="bridge.js"></script>
-    <script>
-      (function () {
-        'use strict';
-        var canvas = document.getElementById('view');
-        var ctx = canvas.getContext('2d');
-        var label = 'no model yet';
-        var seenInit = false;
-        function post(msg) {
-          msg.mfw = 1;
-          window.parent.postMessage(msg, '*');
-        }
-        function token(name, fallback) {
-          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-          return v || fallback;
-        }
-        function draw() {
-          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = token('--m-figure-accent', '#5B2A86');
-          ctx.fillRect(0, canvas.height - 12, canvas.width, 12);
-          ctx.fillStyle = token('--m-figure-ink', '#000000');
-          ctx.font = '8px ' + token('--m-font-body', 'serif');
-          ctx.textBaseline = 'middle';
-          ctx.fillText(label, 2, canvas.height - 6, canvas.width - 4);
-        }
-        function applyTheme(t) {
-          var root = document.documentElement;
-          var tokens = (t && t.tokens) || {};
-          for (var k in tokens) {
-            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
-              root.style.setProperty(k, tokens[k]);
-            }
-          }
-          draw();
-        }
-        function onInit(d) {
-          seenInit = true;
-          applyTheme(d.theme);
-          canvas.setAttribute('aria-label', d.alt || 'Model viewer');
-          var given = d.sources && d.sources.model;
-          if (!given || !given.bytes || !given.bytes.byteLength) {
-            post({ type: 'status', state: 'error', message: 'this widget has no model source' });
-            return;
-          }
-          label = 'model ' + given.bytes.byteLength + ' bytes';
-          draw();
-          post({ type: 'status', state: 'loaded' });
-        }
-        window.addEventListener('message', function (e) {
-          if (e.source !== window.parent) {
-            return;
-          }
-          var d = e.data;
-          if (!d || d.mfw !== 1) {
-            return;
-          }
-          if (d.type === 'init') {
-            onInit(d);
-          } else if (d.type === 'theme') {
-            applyTheme(d.theme);
-          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
-            if (!seenInit) {
-              return;
-            }
-            var png = canvas.toDataURL('image/png');
-            if (png.length < 8 * 1024 * 1024) {
-              post({ type: 'snapshot', requestId: d.requestId, png: png });
-            }
-          }
-        });
-        post({ type: 'ready' });
-      })();
-    </script>
-  </body>
-</html>
-"""
-
-
 def self_test_runtime_authoring(server):
     """A fresh agent authors a runtime through the MCP tools, no model: the
     scaffolded draft validates with a silent scan, bad-cdn@1 still fails on
@@ -1300,59 +1203,20 @@ def self_test_runtime_authoring(server):
                                 {"name": "self-test-fork", "from": "model@1"})
             check("fork-scaffold", ok, fork if not ok else fork["reference"])
             if ok:
-                want = {"runtime.json", "index.html", "bridge.js", "src/main.ts",
-                        "src/core.ts", "src/index.html", "samples/mesh.glb", "LICENSE"}
+                want = {"runtime.json", "index.html", "bridge.js", "viewer.js",
+                        "vendor/three/three.js", "vendor/three/LICENSE",
+                        "samples/mesh.glb", "LICENSE"}
                 have = {os.path.relpath(os.path.join(r, f), fork["path"])
                         for r, _, fs in os.walk(fork["path"]) for f in fs}
-                check("fork-shape", fork["reference"] == "self-test-fork@1" and want <= have,
+                check("fork-shape", fork["reference"] == "self-test-fork@1" and want == have,
                       sorted(have))
-                ok, red = mcp.call("runtime_validate", {"reference": fork["reference"]})
-                # The fork carries the built viewer, which fetches, and its
-                # src/index.html reference copy points at ./main.ts (package
-                # root, so missing): invalid, naming network-api and
-                # missing-ref plus unreferenced/global-hook warnings, so the
-                # author knows the rework (init bytes, a bundled entry).
-                check("fork-names-network-api",
-                      ok and not red["valid"]
-                      and any("network-api" in e for e in red["errors"])
-                      and all("network-api" in e or "missing-ref" in e
-                              for e in red["errors"])
-                      and all("[global-hook]" in w or "[unreferenced]" in w
-                              for w in red["warnings"]),
-                      red if ok else red)
-                # The repair loop: the documented rework (init bytes, a
-                # bundled entry). The fork's entry becomes the minimal
-                # theme-responsive model page above, and the dangling src
-                # reference is fixed to the path the scanner resolves.
-                # It then validates: errors gone, warnings advisory only.
-                entry = os.path.join(fork["path"], "index.html")
-                with open(entry, "w") as f:
-                    f.write(FORK_REPAIRED_ENTRY)
-                ref = os.path.join(fork["path"], "src", "index.html")
-                with open(ref) as f:
-                    text = f.read()
-                fixed = text.replace('"./main.ts"', '"main.ts"')
-                check("fork-repair-touches-the-dangling-ref", fixed != text, text[:120])
-                with open(ref, "w") as f:
-                    f.write(fixed)
+                # The fork is the built-in viewer as a readable classic
+                # script over vendored three.js: untouched, it validates
+                # with a silent scan, so it can go straight to install.
                 ok, green = mcp.call("runtime_validate", {"reference": fork["reference"]})
-                check("fork-repair-validates",
-                      ok and green["valid"] and not green["errors"]
-                      and all("[unreferenced]" in w for w in green["warnings"]),
+                check("fork-validates-untouched",
+                      ok and green["valid"] and not green["errors"] and not green["warnings"],
                       green if ok else green)
-                with open(entry) as f:
-                    repaired = f.read()
-                # Shape pins on the repair: the theme message repaints from
-                # the tokens (light and dark snapshots differ), and only
-                # the parent's init is answered (a forged one never lands).
-                check("fork-entry-answers-theme",
-                      "else if (d.type === 'theme')" in repaired
-                      and "applyTheme(d.theme)" in repaired
-                      and "token('--m-figure-bg'" in repaired, repaired[:120])
-                check("fork-entry-ignores-forged-init",
-                      "e.source !== window.parent" in repaired
-                      and "d.mfw !== 1" in repaired
-                      and "seenInit" in repaired, repaired[:120])
             with tempfile.TemporaryDirectory(dir="/var/tmp") as q:
                 shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
                                 os.path.join(q, "runtimes", "bad-cdn@1"))

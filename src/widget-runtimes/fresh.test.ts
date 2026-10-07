@@ -47,4 +47,31 @@ describe('committed widget runtimes', () => {
       'run npm run build:runtimes and commit the result',
     ).toBe(true);
   }, 60_000);
+
+  // The `model@1` fork the scaffold writes: vendored three.js with its
+  // licence, and the viewer as a classic script over it.
+  it.each([
+    ['fork-three', 'three.js', 'model-fork/vendor/three/three.js'],
+    ['fork-three', 'LICENSE', 'model-fork/vendor/three/LICENSE'],
+    ['fork-viewer', 'viewer.js', 'model-fork/viewer.js'],
+  ])(
+    '%s: %s matches a fresh build',
+    async (mode, file, path) => {
+      const out = (await build({
+        configFile: 'vite.runtimes.config.ts',
+        mode,
+        logLevel: 'silent',
+        build: { write: false },
+      })) as unknown as Output[] | Output;
+      const outputs = Array.isArray(out) ? out.flatMap((o) => o.output) : out.output;
+      const built = outputs.find((o) => o.fileName === file);
+      expect(built, `the build produced ${file}`).toBeDefined();
+      const committed = readFileSync(`src-tauri/widget-runtimes/${path}`, 'utf8');
+      expect(
+        committed === (built!.source ?? built!.code),
+        'run npm run build:runtimes and commit the result',
+      ).toBe(true);
+    },
+    60_000,
+  );
 });
