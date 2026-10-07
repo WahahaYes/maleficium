@@ -51,6 +51,9 @@ RUN npm ci
 # The engine builds from source here, on its own pinned nightly.
 COPY scripts/build-engine.sh scripts/dumps-key.sh scripts/
 COPY src-tauri/engine src-tauri/engine
+# dumps-key.sh reads the bundle pin out of core/src/engine.rs, which lives
+# outside the engine dir; copy just that file so the dump stamp check can hit.
+COPY src-tauri/core/src/engine.rs src-tauri/core/src/engine.rs
 RUN cd src-tauri/engine && rustup toolchain install
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/src-tauri/engine/target \
