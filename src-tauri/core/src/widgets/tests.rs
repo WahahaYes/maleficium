@@ -906,3 +906,21 @@ fn a_custom_widget_joins_its_placeholder_and_lists_without_its_runtime() {
     assert_eq!(serde_json::to_value(w).unwrap()["type"], "custom");
     let _ = std::fs::remove_dir_all(out);
 }
+
+/// `style|<path>` names the author's reader stylesheet: carried on the
+/// theme (house when the sidecar has no theme lines), one file per record.
+#[test]
+fn a_style_record_rides_on_the_theme() {
+    let s = parse_sidecar("mfw 1\nstyle|reader.css\n").unwrap();
+    let t = s.theme.expect("a style alone still yields a theme");
+    assert_eq!(t.style.as_deref(), Some("reader.css"));
+    assert_eq!(
+        t.css().unwrap(),
+        crate::theme::Theme::house().css().unwrap()
+    );
+    assert!(parse_sidecar("mfw 1\n").unwrap().theme.is_none());
+    for bad in ["style|", "style|a.css|b.css", "style| "] {
+        let e = parse_sidecar(&format!("mfw 1\n{bad}\n")).unwrap_err();
+        assert!(e.contains("names one file"), "{bad}: {e}");
+    }
+}

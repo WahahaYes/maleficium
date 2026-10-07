@@ -235,6 +235,10 @@ pub fn value_ok(kind: Kind, v: &str) -> bool {
 pub struct Theme {
     light: BTreeMap<String, String>,
     dark: BTreeMap<String, String>,
+    /// The author's reader stylesheet (`\maleficiumreaderstyle`), relative
+    /// to the main file's folder; read and checked by the exporter
+    /// ([`crate::reader_style`]), never trusted from here.
+    pub style: Option<String>,
 }
 
 /// The two colour modes.
@@ -255,7 +259,11 @@ impl Theme {
             .iter()
             .map(|t| (t.name.to_string(), t.dark.unwrap_or(t.light).to_string()))
             .collect();
-        Self { light, dark }
+        Self {
+            light,
+            dark,
+            style: None,
+        }
     }
 
     /// Every token's value in `mode`.
@@ -379,6 +387,7 @@ impl Lines {
         Ok(Some(Theme {
             light: self.light,
             dark,
+            style: None,
         }))
     }
 }
