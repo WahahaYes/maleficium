@@ -369,12 +369,13 @@ export default function App({
       clearMainFile: clearMain,
       handleSelect,
       warmCompile,
+      closeAll: handleCloseAll,
     });
   // An agent's ask the user accepted: the File > Open path (or the open
   // project already), then the named file.
   const openForAgent = useCallback(
     async (project: string, file: string | null) => {
-      if (rootRef.current !== project) await openRoot(project, { warm: true });
+      if (rootRef.current !== project) await openRoot(project);
       if (file) await handleSelectRef.current(joinPath(project, file));
     },
     [openRoot],
@@ -668,7 +669,7 @@ export default function App({
       setSearchFocus((k) => k + 1);
     },
     openRecent: (r) => {
-      void openRoot(r, { warm: true });
+      void openRoot(r);
     },
     clearRecents: () => {
       pruneRecentProjects(() => false);
@@ -1084,7 +1085,7 @@ export default function App({
         onClose={() => setTemplateMode(null)}
         project={root && projectId ? { rootId: projectId, path: root } : null}
         mainRel={mainFile ? relInProject(mainFile) : null}
-        openRoot={(r, main) => openRoot(r, { warm: true, cold: true, main })}
+        openRoot={(r, main) => openRoot(r, { main })}
       />
       <WidgetsPanel
         open={widgetApproval.panelOpen}
