@@ -227,7 +227,7 @@ pub fn poster_key(
         doc,
         &key_options(w),
         &sources,
-        &key_tokens(theme),
+        &key_tokens(&w.theme_for(theme)),
     ))
 }
 
@@ -245,7 +245,7 @@ pub fn html_key(w: &Widget, folder: &str, approval_digest: &str, theme: &Theme) 
         &fold::widget_policy(None),
         &key_options(w),
         &sources,
-        &key_tokens(theme),
+        &key_tokens(&w.theme_for(theme)),
     )
 }
 
@@ -294,7 +294,7 @@ fn custom_material(
             &fold::widget_policy_for(None, manifest.capabilities.wasm),
             &options,
             &sources,
-            &key_tokens(theme),
+            &key_tokens(&w.theme_for(theme)),
         ),
         snap.digest.clone(),
     ))

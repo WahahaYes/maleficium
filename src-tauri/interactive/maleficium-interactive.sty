@@ -142,6 +142,9 @@
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
 \define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
 \define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
+% plate=<hex>: this widget's own backdrop (its poster and its live frame, in
+% both modes) instead of the page colour. Six hex digits.
+\define@key{mfw}{plate}{\def\mfw@wplate{#1}}
 % \interactiveruntime takes its own key family: the keys it shares with the
 % others fill the same macros, and every other key is an author option for the
 % runtime (see \mfw@rt@option).
@@ -152,12 +155,13 @@
 \define@key{mfwrt}{width}{\def\mfw@width{#1}}
 \define@key{mfwrt}{id}{\def\mfw@id{#1}}
 \define@key{mfwrt}{sources}{\def\mfw@rt@sources{#1}}
+\define@key{mfwrt}{plate}{\def\mfw@wplate{#1}}
 \newcommand{\mfw@resetkeys}{%
   \def\mfw@poster{}\def\mfw@height{6cm}\def\mfw@width{}%
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
   \def\mfw@remote{}\def\mfw@sha{}\def\mfw@data{}\def\mfw@alt{}%
   \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
-  \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}%
+  \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}\def\mfw@wplate{}%
 }
 % The text alternative is required: it becomes the HTML img alt.
 \newcommand{\mfw@needalt}{%
@@ -359,7 +363,13 @@
 \cs_new_protected:Npn \mfw@valid@id { \exp_args:NV \mfw_valid:n \mfw@id }
 \cs_new_protected:Npn \mfw@valid@slug { \exp_args:NV \mfw_valid:n \g_mfw_slug_str }
 \cs_new_protected:Npn \mfw@valid@theme #1 { \mfw_valid_theme:n {#1} }
-% Reader styling: a stylesheet is a plain .css path.
+% A widget's plate is six hex digits; a reader stylesheet a plain .css path.
+\cs_new_protected:Npn \mfw@valid@hex #1 {
+  \regex_match:nnTF { \A[0-9A-Fa-f]{6}\Z } {#1}
+    { \bool_set_true:N \l_mfw_ok_bool }
+    { \bool_set_false:N \l_mfw_ok_bool }
+  \mfw_syncok:
+}
 \cs_new_protected:Npn \mfw@valid@css #1 {
   \regex_match:nnTF { \A[A-Za-z0-9._/-]+\.[cC][sS][sS]\Z } {#1}
     { \bool_set_true:N \l_mfw_ok_bool }
@@ -486,6 +496,15 @@
   \mfw@safe{\mfw@alt}{mfw@s@alt}%
   \immediate\write\mfw@sidecar{widget|\mfw@s@id|\mfw@s@type|\mfw@s@rt|%
     \mfw@s@label|\mfw@s@fig|\mfw@s@theme|\mfw@s@poster|\mfw@s@src|\mfw@s@opt|\mfw@s@alt}%
+  \ifx\mfw@wplate\empty\else
+    \expandafter\mfw@valid@hex\expandafter{\mfw@wplate}%
+    \ifmfw@ok\else
+      \PackageError{maleficium-interactive}%
+        {plate=\mfw@wplate\space is not a colour}%
+        {Give six hex digits, like plate=FFFFFF.}%
+    \fi
+    \immediate\write\mfw@sidecar{plate|\mfw@s@id|\mfw@hash\mfw@wplate}%
+  \fi
 }
 
 % -- theme -------------------------------------------------------------------

@@ -52,7 +52,11 @@
     body.setAttribute('data-theme', mode());
   }
   paint();
-  function theme() {
+  // A widget with its own plate (`plate=`) keeps its theme in both modes.
+  var plates = themes.plates || {};
+  function theme(id) {
+    var own = plates[id];
+    if (own) return { mode: own.mode, tokens: own[own.mode] || {} };
     var m = mode();
     return { mode: m, tokens: themes[m] || {} };
   }
@@ -121,7 +125,7 @@
             runtime: w.runtime || '',
             alt: w.alt || '',
             options: w.options || {},
-            theme: theme(),
+            theme: theme(rec.id),
             sources: sources,
           },
           '*',
@@ -157,10 +161,10 @@
   });
   function applyMode() {
     paint();
-    var t = theme();
     frames.forEach(function (f) {
-      if (f.started)
-        f.win.postMessage({ mfw: 1, type: 'theme', mode: t.mode, tokens: t.tokens }, '*');
+      if (!f.started) return;
+      var t = theme(f.id);
+      f.win.postMessage({ mfw: 1, type: 'theme', mode: t.mode, tokens: t.tokens }, '*');
     });
   }
   dark.addEventListener('change', function () {

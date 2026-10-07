@@ -271,3 +271,28 @@ fn malformed_theme_lines_are_errors_naming_the_line() {
     assert!(e.contains("lacks --m-figure-ink"), "{e}");
     assert_eq!(parse_sidecar("mfw 1\n").unwrap().theme, None);
 }
+
+#[test]
+fn a_widget_plate_is_its_backdrop_in_both_modes_with_ink_that_reads_on_it() {
+    let house = Theme::house();
+    let light = house.with_plate("#faf3e8").unwrap();
+    for mode in [Mode::Light, Mode::Dark] {
+        let t = light.tokens(mode);
+        assert_eq!(t["--m-figure-bg"], "#FAF3E8");
+        assert_eq!(
+            t["--m-figure-ink"],
+            house.tokens(Mode::Light)["--m-figure-ink"]
+        );
+    }
+    assert_eq!(light.tokens(Mode::Light)["--m-figure-surface"], "#EBE4DA");
+    let dark = house.with_plate("#101820").unwrap();
+    assert_eq!(
+        dark.tokens(Mode::Light)["--m-figure-ink"],
+        house.tokens(Mode::Dark)["--m-figure-ink"]
+    );
+    assert_eq!(dark.tokens(Mode::Dark)["--m-figure-bg"], "#101820");
+    assert!(dark.css().is_ok(), "every value still passes the checks");
+    for bad in ["faf3e8", "#fff", "#gggggg", "red"] {
+        assert!(house.with_plate(bad).is_err(), "{bad}");
+    }
+}

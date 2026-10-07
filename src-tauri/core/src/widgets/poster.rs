@@ -358,6 +358,8 @@ fn init(
     theme: &Theme,
     mode: Mode,
 ) -> Value {
+    // The widget's own plate, when it names one.
+    let theme = &w.theme_for(theme);
     let tokens: Map<String, Value> = theme
         .tokens(mode)
         .iter()
@@ -547,7 +549,20 @@ fn custom_job(
                     theme,
                     Mode::Light,
                 ),
-                dark_init: Some(init(w, &reference, bound.options, meta, theme, Mode::Dark)),
+                // The theme probe: the paper's dark set, never the widget's
+                // plate (a plate is the same in both modes, so the pair
+                // would match and the proposal would be refused).
+                dark_init: Some(init(
+                    &Widget {
+                        plate: None,
+                        ..w.clone()
+                    },
+                    &reference,
+                    bound.options,
+                    meta,
+                    theme,
+                    Mode::Dark,
+                )),
                 sources,
                 frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
                 expect: None,
