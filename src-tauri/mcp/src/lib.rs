@@ -959,7 +959,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Validate a custom widget runtime package: the manifest, entry, vendored files and samples, plus the static scan (remote loads, eval, module imports, network APIs, workers, storage, dangling references). With root_id it reads the project's installed runtimes/<ref>/ copy; without it the user library's copy. Read-only: it reports errors and warnings and never approves, installs or changes anything.",
+        description = "Validate a custom widget runtime package: the manifest, entry, vendored files and samples, plus the static scan (remote loads, eval, module imports, network APIs, workers, storage, undeclared WebAssembly, dangling references). With root_id it reads the project's installed runtimes/<ref>/ copy; without it the user library's copy. Read-only: it reports errors and warnings and never approves, installs or changes anything.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

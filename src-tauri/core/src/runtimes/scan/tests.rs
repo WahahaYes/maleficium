@@ -522,6 +522,27 @@ fn include_sample(name: &str) -> BTreeMap<String, Vec<u8>> {
                     .to_vec(),
             ),
         ]),
+        "wasm-sum@1" => BTreeMap::from([
+            (
+                "runtime.json".to_string(),
+                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/runtime.json")
+                    .to_vec(),
+            ),
+            (
+                "index.html".to_string(),
+                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/index.html")
+                    .to_vec(),
+            ),
+            (
+                "samples/data.csv".to_string(),
+                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/samples/data.csv")
+                    .to_vec(),
+            ),
+            (
+                "LICENSE".to_string(),
+                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/LICENSE").to_vec(),
+            ),
+        ]),
         _ => BTreeMap::from([
             (
                 "runtime.json".to_string(),
@@ -553,6 +574,17 @@ fn good_samples_scan_clean() {
         assert!(r.errors.is_empty(), "{name}: {:?}", rules(&r.errors));
         assert!(r.warnings.is_empty(), "{name}: {:?}", rules(&r.warnings));
     }
+}
+
+#[test]
+fn the_wasm_sample_scans_clean_only_when_declared() {
+    // The fixture really uses WebAssembly: without the declaration the
+    // scanner refuses it, with it the scan is silent.
+    let r = scan(&include_sample("wasm-sum@1"), &none(), false);
+    assert_eq!(rules(&r.errors), ["wasm", "wasm", "wasm"]);
+    let r = scan(&include_sample("wasm-sum@1"), &none(), true);
+    assert!(r.errors.is_empty(), "{:?}", rules(&r.errors));
+    assert!(r.warnings.is_empty(), "{:?}", rules(&r.warnings));
 }
 
 #[test]
