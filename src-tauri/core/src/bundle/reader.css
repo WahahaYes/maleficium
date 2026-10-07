@@ -677,6 +677,27 @@ body.m-reader {
 .m-reader .ltx_bib_title {
   font-style: italic;
 }
+/* A citation's preview card: its bibliography entry, beside the link. */
+.m-reader .m-cite-card {
+  position: fixed;
+  z-index: 20;
+  max-width: min(28rem, calc(100vw - 16px));
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-tooltip-bg);
+  color: var(--m-tooltip-fg);
+  border: 1px solid var(--m-tooltip-border);
+  border-radius: var(--m-radius);
+  box-shadow: var(--m-shadow);
+  font-size: var(--m-size-small);
+  line-height: 1.45;
+}
+.m-reader .m-cite-card[hidden] {
+  display: none;
+}
+.m-reader .m-cite-card .ltx_tag_bibitem {
+  margin-right: 0.4em;
+  color: var(--m-color-muted);
+}
 .m-reader .ltx_note_outer {
   display: contents;
 }
@@ -962,6 +983,7 @@ body.m-reader {
     background: none;
     box-shadow: none;
   }
+  .m-reader .m-cite-card,
   .m-reader details.ltx_proof > summary::before {
     display: none;
   }
