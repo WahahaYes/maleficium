@@ -139,7 +139,12 @@ page: number, rect: WidgetRect,
 /**
  * Declared extra origins; absent when the widget declares none.
  */
-csp?: WidgetCsp, };
+csp?: WidgetCsp, 
+/**
+ * The widget's own plate (`plate=`, `#RRGGBB`): its backdrop in both
+ * modes instead of the paper's. Absent: the paper's plate.
+ */
+plate?: string, };
 
 export type WidgetList = { widgets: Array<Widget>, };
 

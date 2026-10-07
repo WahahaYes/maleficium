@@ -266,6 +266,28 @@ impl Theme {
         }
     }
 
+    /// The theme one widget gets with its own plate (`plate=` on the widget):
+    /// `plate` behind it in both modes, a surface stepped from it, and the
+    /// ink, accent and data colours of whichever mode reads on it (dark when
+    /// its gray is under 0.45, the package's own threshold). `plate` is
+    /// `#rrggbb`.
+    pub fn with_plate(&self, plate: &str) -> Result<Theme, String> {
+        let rgb = hex_rgb(plate).ok_or_else(|| format!("plate `{plate}` is not #rrggbb"))?;
+        let dark = plate_mode(plate) == Some(Mode::Dark);
+        let mut tokens = self
+            .tokens(if dark { Mode::Dark } else { Mode::Light })
+            .clone();
+        let toward = if dark { 255.0 } else { 0.0 };
+        let surface: Vec<f64> = rgb.iter().map(|c| c * 0.94 + toward * 0.06).collect();
+        tokens.insert("--m-figure-bg".into(), plate.to_ascii_uppercase());
+        tokens.insert("--m-figure-surface".into(), rgb_hex(&surface));
+        Ok(Theme {
+            light: tokens.clone(),
+            dark: tokens,
+            style: None,
+        })
+    }
+
     /// Every token's value in `mode`.
     pub fn tokens(&self, mode: Mode) -> &BTreeMap<String, String> {
         match mode {
@@ -390,6 +412,33 @@ impl Lines {
             style: None,
         }))
     }
+}
+
+/// The mode whose ink reads on `plate` (`#rrggbb`): dark when its gray is
+/// under 0.45, the package's own threshold.
+pub fn plate_mode(plate: &str) -> Option<Mode> {
+    let c = hex_rgb(plate)?;
+    let gray = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    Some(if gray < 0.45 * 255.0 {
+        Mode::Dark
+    } else {
+        Mode::Light
+    })
+}
+
+/// `#rrggbb` as three channels, 0 to 255.
+fn hex_rgb(v: &str) -> Option<[f64; 3]> {
+    let h = v.strip_prefix('#')?;
+    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let ch = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok().map(f64::from);
+    Some([ch(0)?, ch(2)?, ch(4)?])
+}
+
+fn rgb_hex(c: &[f64]) -> String {
+    let b = |v: f64| v.round().clamp(0.0, 255.0) as u8;
+    format!("#{:02X}{:02X}{:02X}", b(c[0]), b(c[1]), b(c[2]))
 }
 
 #[cfg(test)]

@@ -40,6 +40,9 @@ pub(super) struct Reader<'a> {
     /// widget, so chrome and widgets agree.
     pub theme: &'a crate::theme::Theme,
     pub theme_css: &'a str,
+    /// Widgets with their own plate (`plate=`): id to the theme they get
+    /// (`{light, dark}` tokens), handed to them instead of the paper's.
+    pub plates: &'a serde_json::Map<String, serde_json::Value>,
     /// The author's checked reader stylesheet ([`crate::reader_style`]),
     /// written after the reader's own so it wins at equal specificity.
     pub author_css: &'a str,
@@ -107,7 +110,11 @@ pub(super) fn render(r: &Reader) -> String {
     page.push_str(r.article);
     page.push_str("</main>");
     page.push_str(r.islands);
-    page.push_str(&super::island("mfw-theme", &r.theme.json()));
+    let mut theme = r.theme.json();
+    if !r.plates.is_empty() {
+        theme["plates"] = serde_json::Value::Object(r.plates.clone());
+    }
+    page.push_str(&super::island("mfw-theme", &theme));
     let js = JS.replace("__FOLDER__", if r.folder { "true" } else { "false" });
     page.push_str(&format!("<script>{js}</script></body></html>\n"));
     fold::with_policy(&page, &policy)
@@ -137,6 +144,7 @@ mod tests {
             theme: &theme,
             theme_css: &theme.css().unwrap(),
             author_css: "",
+            plates: &serde_json::Map::new(),
         })
     }
 
@@ -154,6 +162,7 @@ mod tests {
             theme: &theme,
             theme_css: &theme.css().unwrap(),
             author_css: "",
+            plates: &serde_json::Map::new(),
         })
     }
 
@@ -173,6 +182,7 @@ mod tests {
             theme: &theme,
             theme_css: &theme_css,
             author_css: ".m-reader .ltx_title_document{border-bottom:2px solid red}",
+            plates: &serde_json::Map::new(),
         });
         let author = page.find("border-bottom:2px solid red").unwrap();
         let reader = page.find(CSS.trim()).unwrap();

@@ -924,3 +924,26 @@ fn a_style_record_rides_on_the_theme() {
         assert!(e.contains("names one file"), "{bad}: {e}");
     }
 }
+
+/// `plate|<id>|#RRGGBB` gives the named widget its own plate; it must follow
+/// that widget's line and be a colour.
+#[test]
+fn a_plate_record_names_its_widget_and_a_colour() {
+    let s = custom(&format!("{CUSTOM_LINE}\nplate|fig-part|#faf3e8")).unwrap();
+    assert_eq!(s.records[0].plate.as_deref(), Some("#FAF3E8"));
+    assert!(custom(CUSTOM_LINE).unwrap().records[0].plate.is_none());
+    for (bad, says) in [
+        ("plate|fig-other|#FFFFFF", "unknown widget"),
+        ("plate|fig-part|FFFFFF", "not #RRGGBB"),
+        ("plate|fig-part|#FFF", "not #RRGGBB"),
+        ("plate|fig-part", "names a widget and a colour"),
+    ] {
+        let e = custom(&format!("{CUSTOM_LINE}\n{bad}")).unwrap_err();
+        assert!(e.contains(says), "{bad}: {e}");
+    }
+    let e = custom(&format!("plate|fig-part|#FFFFFF\n{CUSTOM_LINE}")).unwrap_err();
+    assert!(
+        e.contains("unknown widget"),
+        "a plate before its widget: {e}"
+    );
+}

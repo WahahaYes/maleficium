@@ -2079,6 +2079,19 @@ fn export_inner(
     // The author's reader stylesheet comes after the theme's tokens and the
     // reader's own rules, so it can restyle both; refused, the page keeps
     // the theme alone.
+    // A widget with its own plate gets its own theme on the page too.
+    let plates: Map<String, Value> = list
+        .widgets
+        .iter()
+        .filter(|w| w.plate.is_some())
+        .map(|w| {
+            let mut t = w.theme_for(&theme).json();
+            let dark = w.plate.as_deref().and_then(crate::theme::plate_mode)
+                == Some(crate::theme::Mode::Dark);
+            t["mode"] = Value::from(if dark { "dark" } else { "light" });
+            (w.id.clone(), t)
+        })
+        .collect();
     let mut author_css = String::new();
     if let Some(style) = &theme.style {
         match crate::reader_style::load(cx, root_id, &plan.main_dir_rel, style) {
@@ -2290,6 +2303,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                plates: &plates,
             });
             std::fs::write(&stage, html.as_bytes())
                 .map_err(|e| format!("cannot write {}: {e}", stage.display()))?;
@@ -2377,6 +2391,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                plates: &plates,
             });
             put(&stage, "index.html", html.as_bytes(), &mut total)?;
         }

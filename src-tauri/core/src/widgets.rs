@@ -143,6 +143,22 @@ pub struct Widget {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub csp: Option<WidgetCsp>,
+    /// The widget's own plate (`plate=`, `#RRGGBB`): its backdrop in both
+    /// modes instead of the paper's. Absent: the paper's plate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub plate: Option<String>,
+}
+
+impl Widget {
+    /// The theme this widget renders with: the paper's, or with its own
+    /// plate ([`crate::theme::Theme::with_plate`]).
+    pub fn theme_for(&self, paper: &crate::theme::Theme) -> crate::theme::Theme {
+        self.plate
+            .as_deref()
+            .and_then(|p| paper.with_plate(p).ok())
+            .unwrap_or_else(|| paper.clone())
+    }
 }
 
 /// Every widget of one compiled main file, in document order (page, then
@@ -167,6 +183,8 @@ pub struct Record {
     pub sources: Vec<WidgetSource>,
     pub options: Vec<WidgetOption>,
     pub alt: String,
+    /// From the widget's `plate|` line, `#RRGGBB`.
+    pub plate: Option<String>,
 }
 
 fn opt(s: &str) -> Option<String> {
@@ -276,6 +294,28 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             theme.add(n, &f[1..])?;
             continue;
         }
+        if f[0] == "plate" {
+            // `plate|<id>|#RRGGBB`: a widget's own plate, after its widget line.
+            let (Some(id), Some(hex)) = (f.get(1), f.get(2)) else {
+                return Err(format!(
+                    "widget sidecar line {n}: a plate record names a widget and a colour"
+                ));
+            };
+            let ok = f.len() == 3
+                && hex.len() == 7
+                && hex.starts_with('#')
+                && hex[1..].chars().all(|c| c.is_ascii_hexdigit());
+            if !ok {
+                return Err(format!(
+                    "widget sidecar line {n}: plate `{hex}` is not #RRGGBB"
+                ));
+            }
+            let r = out.iter_mut().find(|r| r.id == *id).ok_or_else(|| {
+                format!("widget sidecar line {n}: plate for unknown widget `{id}`")
+            })?;
+            r.plate = Some(hex.to_ascii_uppercase());
+            continue;
+        }
         if f[0] == "style" {
             // `style|<path>`: the author's reader stylesheet. The path is
             // only recorded here; the exporter confines and checks it.
@@ -333,6 +373,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
                 })
                 .collect::<Result<_, _>>()?,
             alt: f[10].to_string(),
+            plate: None,
         };
         if kind == WidgetType::Custom {
             check_custom(&record)?;
@@ -742,6 +783,7 @@ pub fn read(
             page: m.page,
             rect: m.rect,
             csp,
+            plate: r.plate,
         });
     }
     out.sort_by(|a, b| {
