@@ -265,6 +265,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
     }
     let mut out: Vec<Record> = Vec::new();
     let mut theme = crate::theme::Lines::default();
+    let mut style: Option<String> = None;
     for (n, line) in lines.enumerate() {
         let n = n + 2;
         if line.trim().is_empty() {
@@ -273,6 +274,18 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         let f: Vec<&str> = line.split('|').collect();
         if f[0] == "theme" {
             theme.add(n, &f[1..])?;
+            continue;
+        }
+        if f[0] == "style" {
+            // `style|<path>`: the author's reader stylesheet. The path is
+            // only recorded here; the exporter confines and checks it.
+            let path = f.get(1).copied().unwrap_or("").trim();
+            if f.len() != 2 || path.is_empty() {
+                return Err(format!(
+                    "widget sidecar line {n}: a style record names one file"
+                ));
+            }
+            style = Some(path.to_string());
             continue;
         }
         if f[0] != "widget" {
@@ -326,9 +339,21 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         }
         out.push(record);
     }
+    let theme = match (theme.finish()?, style) {
+        (Some(mut t), style) => {
+            t.style = style;
+            Some(t)
+        }
+        (None, Some(style)) => {
+            let mut t = crate::theme::Theme::house();
+            t.style = Some(style);
+            Some(t)
+        }
+        (None, None) => None,
+    };
     Ok(Sidecar {
         records: out,
-        theme: theme.finish()?,
+        theme,
     })
 }
 

@@ -22,7 +22,7 @@ const WIDGET_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'{wasm
 
 /// The reader page of a folder or hosted bundle. Its `frame-src 'self'` is
 /// what stops a widget navigating its own frame off-site.
-pub const FOLDER_READER_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; form-action 'none'; base-uri 'none'";
+pub const FOLDER_READER_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; form-action 'none'; base-uri 'none'";
 
 /// The reader page of a single-file bundle. No `frame-src`: it falls back
 /// to `'none'`, which admits srcdoc frames and blocks `data:` ones and any

@@ -104,6 +104,9 @@ pub enum BundleWarningKind {
     /// its runtime: the export shows a placeholder until the next compile
     /// renders it. Never refused.
     RuntimeDigestChanged,
+    /// The author's reader stylesheet was refused (a remote or escaping
+    /// url(), @import, or script); the page keeps the theme alone.
+    ReaderStyle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -2017,7 +2020,7 @@ fn export_inner(
     let (list, theme) = crate::widgets::read(cx, root_id, main_rel)?;
     // The page's CSS and the widgets' tokens come from this one theme;
     // its values are checked again as the CSS is written.
-    let theme_css = theme.css()?;
+    let mut theme_css = theme.css()?;
     let o = crate::outputs::outputs_of(cx, root_id, main_rel)?;
     let pdf_bytes = std::fs::read(o.outdir.join(&o.pdf_name))
         .map_err(|_| format!("{main_rel} has no compiled pdf: compile it first"))?;
@@ -2071,6 +2074,17 @@ fn export_inner(
     for w in list.widgets.iter().filter(|w| w.kind == WidgetType::Custom) {
         if let Some(r) = &w.runtime {
             plan.users.entry(r.clone()).or_default().push(w.id.clone());
+        }
+    }
+    // The author's reader stylesheet follows the theme's tokens, so it can
+    // restyle with them; refused, the page keeps the theme alone.
+    if let Some(style) = &theme.style {
+        match crate::reader_style::load(cx, root_id, &plan.main_dir_rel, style) {
+            Ok(css) => {
+                theme_css.push('\n');
+                theme_css.push_str(&css);
+            }
+            Err(e) => plan.warn(BundleWarningKind::ReaderStyle, e),
         }
     }
 

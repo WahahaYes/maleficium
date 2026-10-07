@@ -17,6 +17,7 @@ pub mod index;
 pub mod mainfile;
 pub mod outputs;
 pub mod presence;
+pub mod reader_style;
 pub mod readiness;
 pub mod reflow;
 pub mod replace;
