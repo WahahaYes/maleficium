@@ -227,7 +227,8 @@ struct WidgetCheckParams {
 struct RuntimeScaffoldParams {
     /// The new runtime's name (`<name>` of `<name>@1`).
     name: String,
-    /// Fork a built-in: only `model@1` (its built entry plus sources).
+    /// Fork a built-in: only `model@1` (its viewer as an editable
+    /// `viewer.js` over vendored three.js).
     from: Option<String>,
 }
 
@@ -254,6 +255,38 @@ struct RuntimeValidateParams {
     reference: String,
     /// With it, the project's installed copy; without it, the library's.
     root_id: Option<String>,
+}
+
+/// Unknown fields are refused: the install copies one validated draft,
+/// and nothing it takes could approve, allow or decide.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeInstallParams {
+    /// The project to install into.
+    root_id: String,
+    /// The library draft's ref (`<name>@<major>`).
+    reference: String,
+    /// Swap out a different copy already at `runtimes/<ref>/`.
+    replace: Option<bool>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeInstallOut {
+    reference: String,
+    /// The project-relative folder: `runtimes/<ref>`.
+    path: String,
+    files: usize,
+    /// `installed`, `replaced`, or `unchanged` (already exactly these files).
+    outcome: String,
+    /// Whether this copy may run now: the user allowed this exact content
+    /// before, or auto-approval covers it.
+    approved: bool,
+    /// The user's auto-approval setting for this project.
+    auto_approve: bool,
+    /// True when the user has to allow it in the app: ask them to.
+    ask_user: bool,
+    /// What happens next, written for the agent to act on or relay.
+    hint: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -942,7 +975,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Scaffold a custom widget runtime draft in the user library (maleficium-runtimes/<name>@1): a caption-overlay-shaped package (runtime.json, a classic index.html loading the built bridge.js, a sample for the required role, LICENSE), or with from model@1 a fork of the built-in model viewer (its built entry plus its sources as reference). Refused when the draft folder exists and is not empty. Writes only to the library, never to a project, and never approves anything: the user reviews and allows the draft in the app.",
+        description = "Scaffold a custom widget runtime draft in the user library (maleficium-runtimes/<name>@1): a caption-overlay-shaped package (runtime.json, a classic index.html loading the built bridge.js, a sample for the required role, LICENSE), or with from model@1 a fork of the built-in model viewer (viewer.js, the viewer as a readable classic script to edit in place, over three.js vendored under vendor/). Refused when the draft folder exists and is not empty. Writes only to the library, never to a project, and never approves anything: the user reviews and allows the draft in the app.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -963,6 +996,46 @@ impl Maleficium {
             Ok(Json(RuntimeScaffoldOut {
                 reference,
                 path: path_string(dir),
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Install a custom widget runtime from the user library into a project: copies maleficium-runtimes/<ref>/ to the project's runtimes/<ref>/, which \\interactiveruntime[runtime=<ref>] uses. Only a draft that validates installs (run runtime_validate first). A different copy already in the project is kept unless replace is true; the same files report unchanged. Installing never approves. When the result has ask_user true, ask the user to allow the runtime in the app (View > Widgets) as its hint says: auto-approval covers only an update to a runtime the user already allowed, never a first install.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_install(
+        &self,
+        Parameters(p): Parameters<RuntimeInstallParams>,
+    ) -> Result<Json<RuntimeInstallOut>, String> {
+        self.tool("runtime_install", || {
+            let done = core::runtime_author::install(
+                &self.cx,
+                &p.root_id,
+                &p.reference,
+                p.replace.unwrap_or(false),
+            )?;
+            let status =
+                core::widget_approval::check_runtime(&self.cx, &p.root_id, &p.reference, &[])?
+                    .status
+                    .ok_or_else(|| {
+                        format!("{} installed but does not read as a runtime", p.reference)
+                    })?;
+            let next = core::runtime_author::after_install(&p.reference, &status);
+            Ok(Json(RuntimeInstallOut {
+                reference: done.reference,
+                path: done.rel,
+                files: done.files,
+                outcome: done.outcome.as_str().to_string(),
+                approved: next.approved,
+                auto_approve: next.auto_approve,
+                ask_user: next.ask_user,
+                hint: next.hint,
             }))
         })
     }
@@ -1901,9 +1974,10 @@ mod tests {
     }
 
     /// The runtime authoring tools stay on their side of the approval
-    /// boundary: the scaffold writes only to the user library (never to a
-    /// project), the validator only reads, and neither takes a parameter
-    /// that approves, installs or allows.
+    /// boundary: the scaffold writes only to the user library, the
+    /// validator only reads, the install only copies a validated draft into
+    /// a granted project, and none takes a parameter that approves or
+    /// allows.
     #[test]
     fn runtime_tools_are_library_scoped_and_cannot_approve() {
         let tools = Maleficium::tool_router().list_all();
@@ -1947,6 +2021,26 @@ mod tests {
         assert_eq!(props, ["reference", "root_id"]);
         assert_eq!(schema["additionalProperties"], false);
 
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_install")
+            .expect("runtime_install");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true), "replace swaps a copy out");
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["reference", "replace", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
         assert!(serde_json::from_value::<RuntimeScaffoldParams>(
             serde_json::json!({"name": "orbit-view", "from": "model@1"})
         )
@@ -1968,11 +2062,26 @@ mod tests {
                 serde_json::from_value::<RuntimeValidateParams>(v).is_err(),
                 "{extra}"
             );
+            let mut v = serde_json::json!({"root_id": "r", "reference": "orbit-view@1"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeInstallParams>(v).is_err(),
+                "{extra}"
+            );
         }
         let m = Maleficium::default();
         assert!(m
             .runtime_scaffold(Parameters(
                 serde_json::from_value(serde_json::json!({"name": "nope!"})).unwrap()
+            ))
+            .is_err());
+        // An ungranted project: nothing to install into.
+        assert!(m
+            .runtime_install(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
+                )
+                .unwrap()
             ))
             .is_err());
     }
@@ -2709,6 +2818,7 @@ mod tests {
             "preview_bundle",
             "runtime_scaffold",
             "runtime_validate",
+            "runtime_install",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(
