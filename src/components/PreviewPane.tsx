@@ -41,6 +41,10 @@ export interface PreviewPaneProps extends Omit<ComponentProps<typeof Preview>, '
   onArticleSync: (anchorId: string) => void;
   /** Fires when the bytes' Approve button asks for a widget. */
   onApproveArticle: (widgetId: string) => void;
+  /** Pending-approval sentence naming the held items, or null when none. */
+  approvalText: string | null;
+  /** Opens View > Widgets to review the held items. */
+  onReviewApprovals: () => void;
 }
 
 export default function PreviewPane({
@@ -53,6 +57,8 @@ export default function PreviewPane({
   articleAnchor,
   onArticleSync,
   onApproveArticle,
+  approvalText,
+  onReviewApprovals,
   ...pdf
 }: PreviewPaneProps) {
   const [tab, setTab] = useState<PreviewTab>('pdf');
@@ -155,6 +161,8 @@ export default function PreviewPane({
           anchorId={articleAnchor}
           onSync={onArticleSync}
           onApproveRequest={onApproveArticle}
+          approvalText={approvalText}
+          onReviewApprovals={onReviewApprovals}
         />
       )}
     </Box>

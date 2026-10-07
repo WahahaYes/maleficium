@@ -117,6 +117,12 @@ export function buildRows(status: WidgetsStatus): WidgetRow[] {
   return status.widgets.map(buildRow);
 }
 
+/** Held html widgets: every listing the store has not approved. */
+export function pendingWidgets(status: WidgetsStatus | null): WidgetRow[] {
+  if (!status) return [];
+  return status.widgets.filter((s) => s.status === 'approval_required').map(buildRow);
+}
+
 /** Short digest for display; the full one is the title. */
 export function shortDigest(d: string): string {
   return d.length > 12 ? d.slice(0, 12) : d;
@@ -350,6 +356,36 @@ export function buildRuntimeRows(status: WidgetsStatus): RuntimeRow[] {
     if (row) out.push(row);
   }
   return out;
+}
+
+/** Held custom runtimes: every package the store has not allowed. */
+export function pendingRuntimes(status: WidgetsStatus | null): RuntimeRow[] {
+  if (!status) return [];
+  const out: RuntimeRow[] = [];
+  for (const s of status.runtimes) {
+    if (s.status !== 'approval_required') continue;
+    const row = buildRuntimeRow(s);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+/** One sentence naming the held widgets and runtimes, or null when none. */
+export function approvalBannerText(
+  widgets: readonly Pick<WidgetRow, 'id'>[],
+  runtimes: readonly Pick<RuntimeRow, 'ref'>[],
+): string | null {
+  const names = [...widgets.map((w) => w.id), ...runtimes.map((r) => r.ref)];
+  if (names.length === 0) return null;
+  const who =
+    names.length === 1
+      ? names[0]
+      : names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const verb = names.length === 1 ? 'is' : 'are';
+  const poster = names.length === 1 ? 'its poster' : 'their posters';
+  return `${who} ${verb} waiting for approval. The article shows ${poster} instead.`;
 }
 
 export interface RuntimeUnavailable {

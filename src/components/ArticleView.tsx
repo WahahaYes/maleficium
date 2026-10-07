@@ -14,6 +14,7 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { useEffect, useRef } from 'react';
 import { articleSandbox, articleScrollMessage, isArticleMessage } from '../lib/article';
+import ArticleApprovalBanner from './ArticleApprovalBanner';
 
 export interface ArticleViewProps {
   /** The bundle bytes, or null before the first load. */
@@ -32,6 +33,10 @@ export interface ArticleViewProps {
   onSync?: (anchorId: string) => void;
   /** Fires when the bytes' Approve button asks for a widget. */
   onApproveRequest?: (widgetId: string) => void;
+  /** Pending-approval sentence naming the held items, or null when none. */
+  approvalText: string | null;
+  /** Opens View > Widgets to review the held items. */
+  onReviewApprovals: () => void;
 }
 
 export default function ArticleView({
@@ -45,6 +50,8 @@ export default function ArticleView({
   anchorId,
   onSync,
   onApproveRequest,
+  approvalText,
+  onReviewApprovals,
 }: ArticleViewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const syncRef = useRef(onSync);
@@ -81,10 +88,12 @@ export default function ArticleView({
     };
   }, [html, anchorId]);
 
-  if (loading) return <Typography variant="body1">Loading article…</Typography>;
-
-  if (error)
-    return (
+  // The pending-approval banner wraps every article state, so the held
+  // items are named even before the first load or beside a load error.
+  let body: React.ReactNode = null;
+  if (loading) body = <Typography variant="body1">Loading article…</Typography>;
+  if (!body && error)
+    body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 2 }}>
         <Typography variant="body1" color="error">
           {error}
@@ -97,40 +106,56 @@ export default function ArticleView({
       </Box>
     );
 
-  if (!html) {
-    if (compiling) return <Typography variant="body1">Compiling…</Typography>;
-    if (!canLoad)
-      return <Typography variant="body1">No article yet — compile the paper first</Typography>;
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 2 }}>
-        <Typography variant="body1">The article is not loaded</Typography>
-        <Box>
-          <Button size="small" onClick={onLoad}>
-            Load article
-          </Button>
+  if (!body && !html) {
+    if (compiling) body = <Typography variant="body1">Compiling…</Typography>;
+    else if (!canLoad)
+      body = <Typography variant="body1">No article yet — compile the paper first</Typography>;
+    else
+      body = (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 2 }}>
+          <Typography variant="body1">The article is not loaded</Typography>
+          <Box>
+            <Button size="small" onClick={onLoad}>
+              Load article
+            </Button>
+          </Box>
         </Box>
+      );
+  }
+
+  if (!body && html) {
+    body = (
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <iframe
+          ref={frameRef}
+          title="Article"
+          sandbox={articleSandbox()}
+          referrerPolicy="no-referrer"
+          srcDoc={html}
+          style={
+            {
+              width: '100%',
+              height: '100%',
+              border: 0,
+              backgroundColor: 'transparent',
+              zoom: zoomPercent / 100,
+            } as React.CSSProperties
+          }
+        />
       </Box>
     );
   }
 
+  // The banner sits above every article state: it names the held items
+  // wherever the article would show posters.
   return (
-    <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      <iframe
-        ref={frameRef}
-        title="Article"
-        sandbox={articleSandbox()}
-        referrerPolicy="no-referrer"
-        srcDoc={html}
-        style={
-          {
-            width: '100%',
-            height: '100%',
-            border: 0,
-            backgroundColor: 'transparent',
-            zoom: zoomPercent / 100,
-          } as React.CSSProperties
-        }
-      />
+    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {approvalText ? (
+        <Box sx={{ px: 2, pt: 1 }}>
+          <ArticleApprovalBanner text={approvalText} onReview={onReviewApprovals} />
+        </Box>
+      ) : null}
+      {body}
     </Box>
   );
 }
