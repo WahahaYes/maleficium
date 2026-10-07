@@ -94,7 +94,7 @@ check "origin" "$OUT/origin.html" 27 34 26 0 11 || FAILED=1
 
 cp -r "$DEVROOT/e2e/fixtures/playground" "$SCRATCH/playground"
 convert "$SCRATCH/playground/main.tex" "$OUT/playground.html" "$OUT/playground.log"
-check "playground" "$OUT/playground.html" 17 6 4 7 0 || FAILED=1
+check "playground" "$OUT/playground.html" 21 12 19 9 0 || FAILED=1
 
 cp -r "$DEVROOT/e2e/fixtures/simple" "$SCRATCH/simple"
 convert "$SCRATCH/simple/main.tex" "$OUT/simple.html" "$OUT/simple.log"

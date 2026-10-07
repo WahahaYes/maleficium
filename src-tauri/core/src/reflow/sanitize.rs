@@ -214,6 +214,7 @@ pub const ELEMENT_ATTRS: &[(&str, &[&str])] = &[
     ("a", &["href"]),
     ("col", &["span"]),
     ("colgroup", &["span"]),
+    ("details", &["open"]),
     (
         "figure",
         &["data-widget", "data-type", "data-approval", "style"],

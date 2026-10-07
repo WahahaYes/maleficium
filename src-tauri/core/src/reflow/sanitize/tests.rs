@@ -436,3 +436,14 @@ fn data_approval_passes_only_as_required_on_a_mount_figure() {
         "{out}"
     );
 }
+
+#[test]
+fn a_details_keeps_open_and_nothing_that_runs() {
+    let out = assert_inert(
+        "<details class=\"ltx_proof\" open=\"\" ontoggle=\"alert(1)\" name=\"g\"><summary class=\"m-proof-summary\" onclick=\"alert(2)\">Proof.</summary><p>x</p></details>",
+    );
+    assert!(
+        out.contains("<details class=\"ltx_proof\" open=\"\"><summary class=\"m-proof-summary\">Proof.</summary><p>x</p></details>"),
+        "{out}"
+    );
+}
