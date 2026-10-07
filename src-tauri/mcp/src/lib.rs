@@ -273,8 +273,39 @@ struct AppWindow {
     active_rel: Option<String>,
     /// The root id this server already granted for the project, if any.
     root_id: Option<String>,
+    /// The open request this window holds, if any: waiting (no outcome),
+    /// opened or dismissed.
+    request: Option<serde_json::Value>,
     /// Unix ms of the window's last update (a heartbeat every 30 s).
     updated_ms: u64,
+}
+
+/// An ask that a window open a project; nothing opens until the user
+/// clicks Open in that window.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AppRequestOpenParams {
+    /// The project folder, absolute.
+    project: String,
+    /// A file in it to show, relative to the project.
+    file: Option<String>,
+    /// The window to ask (from app_windows); needed when several are open.
+    pid: Option<u32>,
+    /// How long to wait for the user's answer, in ms (default 30000, at
+    /// most 120000). 0 returns at once.
+    wait_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppRequestOpenOut {
+    request_id: String,
+    pid: u32,
+    project: String,
+    file: Option<String>,
+    /// `opened`, `dismissed`, or `waiting` (the user has not answered yet).
+    outcome: String,
+    /// What to do next.
+    hint: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -1029,7 +1060,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "List the Maleficium app windows the user has open: each one's project folder, the document's main file and the file in front, most recently active first, and the root_id if you already granted that folder. Use it at the start of a session to work in the project the user already has open: grant its folder (grant with root = project), and your edits and compiles show in their window. Read-only: it never opens, focuses or changes anything in the app.",
+        description = "List the Maleficium app windows the user has open: each one's project folder, the document's main file and the file in front, most recently active first, and the root_id if you already granted that folder. Use it at the start of a session to work in the project the user already has open: grant its folder (grant with root = project), and your edits and compiles show in their window. Read-only; to have the window open a project, use app_request_open, which asks the user first.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1042,9 +1073,14 @@ impl Maleficium {
         Parameters(_): Parameters<AppWindowsParams>,
     ) -> Result<Json<AppWindowsOut>, String> {
         self.tool("app_windows", || {
+            let requests = core::presence::requests();
             let windows: Vec<AppWindow> = core::presence::list()
                 .into_iter()
                 .map(|p| AppWindow {
+                    request: requests
+                        .iter()
+                        .find(|r| r.pid == p.pid)
+                        .and_then(|r| serde_json::to_value(r).ok()),
                     root_id: p
                         .project
                         .as_deref()
@@ -1064,6 +1100,59 @@ impl Maleficium {
                 _ => "Several projects are open: ask the user which one to work in before granting it; the first is the most recently active.".to_string(),
             };
             Ok(Json(AppWindowsOut { windows, hint }))
+        })
+    }
+
+    #[tool(
+        description = "Ask the user's Maleficium window to open a project folder (and optionally show a file in it). The window shows the user a prompt naming the folder; nothing opens until they click Open, and they may dismiss it. Use it when the user asks to see a project in the app, or after creating one for them. Waits up to wait_ms (default 30 s) for their answer: outcome opened, dismissed, or waiting (the prompt stays up; tell the user it is there, and read the answer later from app_windows). One ask per window at a time; never resend one the user dismissed.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    fn app_request_open(
+        &self,
+        Parameters(p): Parameters<AppRequestOpenParams>,
+    ) -> Result<Json<AppRequestOpenOut>, String> {
+        self.tool("app_request_open", || {
+            let r = core::presence::request_open(p.pid, &p.project, p.file.as_deref())?;
+            let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(30_000).min(120_000));
+            let start = std::time::Instant::now();
+            let mut now = r.clone();
+            while now.outcome.is_none() && start.elapsed() < wait {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                match core::presence::request_state(r.pid, &r.id) {
+                    Some(s) => now = s,
+                    None => break,
+                }
+            }
+            let (outcome, hint) = match now.outcome {
+                Some(core::presence::OpenOutcome::Opened) => (
+                    "opened",
+                    match core::presence::granted_as(&self.cx, &now.project) {
+                        Some(id) => format!("The user opened it. Work in it as root_id {id}; they see your edits and compiles."),
+                        None => "The user opened it. Grant the folder (grant with root = project) to work in it; they see your edits and compiles.".to_string(),
+                    },
+                ),
+                Some(core::presence::OpenOutcome::Dismissed) => (
+                    "dismissed",
+                    "The user dismissed it. Do not ask again unless they say so.".to_string(),
+                ),
+                None => (
+                    "waiting",
+                    "The user has not answered: the prompt stays in their window. Tell them it is there; app_windows shows their answer later. Do not send it again.".to_string(),
+                ),
+            };
+            Ok(Json(AppRequestOpenOut {
+                request_id: r.id,
+                pid: r.pid,
+                project: r.project,
+                file: r.file,
+                outcome: outcome.to_string(),
+                hint,
+            }))
         })
     }
 
@@ -2182,6 +2271,40 @@ mod tests {
         assert!(!out.0.hint.is_empty());
     }
 
+    /// The open request only asks: its arguments name a folder, a file, a
+    /// window and a wait, nothing that could open without the user. (Not
+    /// called here: a live app on this machine would show the prompt.)
+    #[test]
+    fn app_request_open_takes_only_what_the_prompt_shows() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "app_request_open")
+            .expect("app_request_open");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["file", "pid", "project", "wait_ms"]);
+        assert_eq!(schema["additionalProperties"], false);
+        for extra in ["force", "focus", "skip_prompt", "open"] {
+            let mut v = serde_json::json!({"project": "/p"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<AppRequestOpenParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+    }
+
     /// The approval boundary: no tool approves, revokes or switches
     /// auto-approval. No tool is named for it, no tool takes a parameter
     /// for it (and the approval tools refuse unknown fields), and this
@@ -2916,6 +3039,7 @@ mod tests {
             "runtime_validate",
             "runtime_install",
             "app_windows",
+            "app_request_open",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(

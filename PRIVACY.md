@@ -16,7 +16,7 @@ The only network traffic the app makes is the bundled Tectonic engine downloadin
 ## The MCP server
 
 - It speaks over stdio on your machine and does nothing until your agent starts it. It needs no network beyond the engine download above.
-- It reads only the project roots you grant it, and only their text files, plus which project and files your open app windows hold (the file above). It never opens, focuses, or changes anything in the app.
+- It reads only the project roots you grant it, and only their text files, plus which project and files your open app windows hold (the file above). It can ask a window to open a project folder: the window shows you the folder, and nothing opens unless you click Open.
 - It writes only through its own tools — replace (previewed, one-step undo), trash with restore, new projects from templates, installing a validated widget runtime draft as `runtimes/<name>@<major>/` — or to export destinations you choose outside the project. It never puts build files, history, or logs inside your projects, and it cannot approve a widget for you. A compile it runs writes the same `.maleficium/` poster cache the app does.
 - Every tool call is appended to the same event log with actor agent, so the log shows what the agent did.
 
