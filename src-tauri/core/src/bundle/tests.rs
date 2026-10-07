@@ -2406,3 +2406,54 @@ fn a_proposal_for_an_older_state_warns_and_holds_the_placeholder() {
         stale[0]
     );
 }
+
+/// A scan-failed runtime is never approvable: the export is poster-only
+/// with red warnings, and (when asked) the single-file proof bundle the
+/// reader harness drives for its bad-cdn cells.
+#[test]
+fn a_scan_failed_runtime_is_poster_only_with_red_warnings() {
+    const BAD_LINE: &str = "widget|fig-chart|custom|bad-cdn@1|||house|figures/chart.png|primary=data/grid.csv|height=142.26378pt|Ablation chart";
+    let sidecar = REAL_SIDECAR
+        .replace(CHART_LINE, BAD_LINE)
+        .replace(DEMO_LINE, STL_LINE);
+    let p = project("rt-badcdn", &sidecar);
+    std::fs::write(p.root.join("data/grid.csv"), GRID).unwrap();
+    copy_sample("bad-cdn@1", &p.root.join("runtimes/bad-cdn@1"));
+    converts_to(
+        &p,
+        Ok(clean_conversion()
+            .replace("m-widget m-widget-chart", "m-widget m-widget-custom")
+            .replace("m-widget m-widget-html", "m-widget m-widget-custom")),
+        &[],
+    );
+    let base = crate::test_scratch::dir("bundle-rt-badcdn-appdata");
+    let _ = std::fs::remove_dir_all(&base);
+    let c = Custom { p, base };
+    let d = dest(&c.p, "paper");
+    let r = c.export(&d, BundleProfile::Folder).unwrap();
+    let m = manifest_of(Path::new(&d));
+    validate_manifest(&m).unwrap();
+    assert!(
+        m.get("runtimes").is_none(),
+        "no live widget, no runtimes map"
+    );
+    assert_eq!(widget_json(&m, "fig-chart")["fallback"], "runtime-invalid");
+    let warns: Vec<&str> = r.warnings.iter().map(|w| w.message.as_str()).collect();
+    assert!(
+        warns
+            .iter()
+            .any(|w| w.contains("runtime bad-cdn@1 is invalid (")
+                && w.contains("loads a remote URL")
+                && w.ends_with("): fig-chart export as posters only.")),
+        "{warns:?}"
+    );
+    let index = reader_html(&d, BundleProfile::Folder);
+    assert!(index.contains("runtime bad-cdn@1 did not pass validation."));
+    // The pdf still shows the widget's own poster.
+    assert!(m["assets"].get("fig-chart-poster").is_some());
+    if let Some(to) = std::env::var_os("MALEFICIUM_RUNTIME_PROOF_BAD") {
+        let proof = dest(&c.p, "proof-bad.html");
+        c.export(&proof, BundleProfile::SingleFile).unwrap();
+        std::fs::copy(&proof, to).unwrap();
+    }
+}
