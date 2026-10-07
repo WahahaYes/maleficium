@@ -163,7 +163,7 @@ claude mcp add maleficium -- /usr/bin/maleficium --mcp
 
 ### What the agent can do
 
-The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. It can also see which project your open app window holds, so an agent joins the folder you are already in. Every tool call is appended to the same event log with actor agent, so the app's log shows what the agent did. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
+The MCP server gives an agent the same core the editor uses: scoped access to a project folder, compile with structured diagnostics, reading (outline, search, references, SyncTeX jumps), cross-file replace with preview and undo, plus export and file operations. It can also see which project your open app window holds, so an agent joins the folder you are already in, and it can ask your window to open a project, which happens only when you click Open. Every tool call is appended to the same event log with actor agent, so the app's log shows what the agent did. Agents write text with their own file tools; the server never puts build files, history, or logs inside the project.
 
 **Keep the app open while the agent works.** When the agent compiles, the PDF preview in an open Maleficium window reloads by itself, so you watch the document change as the agent writes it.
 

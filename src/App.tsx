@@ -18,6 +18,7 @@ import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
 import { projectIndex, type ProjectMacro } from './lib/project-index';
 import { publishPresence } from './lib/presence';
+import OpenRequestPrompt from './components/OpenRequestPrompt';
 import type { Hit } from './lib/generated/index';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -369,6 +370,15 @@ export default function App({
       handleSelect,
       warmCompile,
     });
+  // An agent's ask the user accepted: the File > Open path (or the open
+  // project already), then the named file.
+  const openForAgent = useCallback(
+    async (project: string, file: string | null) => {
+      if (rootRef.current !== project) await openRoot(project, { warm: true });
+      if (file) await handleSelectRef.current(joinPath(project, file));
+    },
+    [openRoot],
+  );
   const { handleCreate, handleRename, handleDelete, handleClean, handleUndo } = useFileOps({
     root,
     projectId,
@@ -1024,6 +1034,7 @@ export default function App({
         onJump={handleProblemJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <OpenRequestPrompt onOpen={openForAgent} />
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

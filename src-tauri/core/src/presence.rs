@@ -186,6 +186,217 @@ pub fn granted_as(cx: &Core, project: &str) -> Option<String> {
     crate::fs::granted_as(cx, project)
 }
 
+// -- open requests ----------------------------------------------------------
+// An agent may ask a window to open a project (and a file in it). The ask is
+// a file beside the presence files, `requests/<pid>.json`; the window shows
+// it to the user, who opens it or dismisses it, and the answer is written
+// back into the same file. Nothing opens without the user's click, and a
+// window holds one ask at a time.
+
+/// How long an unanswered ask waits in the window, and how long an answer
+/// stays readable, before readers drop it.
+pub const REQUEST_STALE_MS: u64 = 10 * 60 * 1000;
+
+/// The user's answer to an open request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenOutcome {
+    Opened,
+    Dismissed,
+}
+
+/// An agent's ask that a window open a project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenRequest {
+    pub id: String,
+    /// The window asked.
+    pub pid: u32,
+    /// The project folder (absolute, canonical).
+    pub project: String,
+    /// A file to bring to the front, relative to the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub file: Option<String>,
+    pub created_ms: u64,
+    /// The user's answer; absent while it waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub outcome: Option<OpenOutcome>,
+}
+
+fn requests_dir(base: &Path) -> PathBuf {
+    base.join("requests")
+}
+
+fn request_file(base: &Path, pid: u32) -> PathBuf {
+    requests_dir(base).join(format!("{pid}.json"))
+}
+
+fn read_request(base: &Path, pid: u32, now: u64) -> Option<OpenRequest> {
+    let path = request_file(base, pid);
+    let r: OpenRequest = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
+    if now.saturating_sub(r.created_ms) > REQUEST_STALE_MS {
+        let _ = std::fs::remove_file(&path);
+        return None;
+    }
+    Some(r)
+}
+
+fn write_request(base: &Path, r: &OpenRequest) -> Result<(), String> {
+    let dir = requests_dir(base);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("request dir: {e}"))?;
+    let tmp = dir.join(format!(".{}.json.tmp", r.pid));
+    std::fs::write(&tmp, serde_json::to_vec(r).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("request write: {e}"))?;
+    std::fs::rename(&tmp, request_file(base, r.pid)).map_err(|e| format!("request write: {e}"))
+}
+
+/// Ask a window to open `project` (an absolute folder) and optionally
+/// `file` in it. `pid` picks the window; without it there must be exactly
+/// one. Refused when the window already holds an unanswered ask.
+pub fn request_open(
+    pid: Option<u32>,
+    project: &str,
+    file: Option<&str>,
+) -> Result<OpenRequest, String> {
+    request_open_at(
+        &dir(),
+        &crate::data_base_dir(),
+        now_ms(),
+        pid,
+        project,
+        file,
+    )
+}
+
+pub(crate) fn request_open_at(
+    base: &Path,
+    app_data: &Path,
+    now: u64,
+    pid: Option<u32>,
+    project: &str,
+    file: Option<&str>,
+) -> Result<OpenRequest, String> {
+    let windows = list_at(base, now);
+    let target = match pid {
+        Some(p) => windows
+            .iter()
+            .find(|w| w.pid == p)
+            .ok_or_else(|| format!("no open Maleficium window has pid {p}; app_windows lists them"))?,
+        None => match windows.as_slice() {
+            [] => return Err("no Maleficium window is open: ask the user to start the app".into()),
+            [one] => one,
+            _ => {
+                return Err(
+                    "several Maleficium windows are open: pass the pid of the one to ask (app_windows lists them)".into(),
+                )
+            }
+        },
+    };
+    if !Path::new(project).is_absolute() {
+        return Err(format!("`{project}` is not an absolute folder path"));
+    }
+    let canon = dunce::canonicalize(project).map_err(|_| format!("`{project}` does not exist"))?;
+    if !canon.is_dir() {
+        return Err(format!("`{project}` is not a folder"));
+    }
+    if let Ok(data) = dunce::canonicalize(app_data) {
+        if canon.starts_with(&data) || data.starts_with(&canon) {
+            return Err(format!(
+                "`{project}` holds Maleficium's own data, not a project"
+            ));
+        }
+    }
+    let file = match file.map(str::trim).filter(|f| !f.is_empty()) {
+        None => None,
+        Some(f) => {
+            let p = Path::new(f);
+            if p.is_absolute() {
+                return Err(format!("file `{f}` must be relative to the project"));
+            }
+            let abs = dunce::canonicalize(canon.join(p))
+                .map_err(|_| format!("file `{f}` does not exist in the project"))?;
+            if !abs.starts_with(&canon) || !abs.is_file() {
+                return Err(format!("file `{f}` is not a file in the project"));
+            }
+            Some(
+                abs.strip_prefix(&canon)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            )
+        }
+    };
+    if read_request(base, target.pid, now).is_some_and(|r| r.outcome.is_none()) {
+        return Err(
+            "that window already shows an open request the user has not answered; wait for their answer".into(),
+        );
+    }
+    let r = OpenRequest {
+        id: format!("{:x}{:04x}", now, std::process::id() & 0xffff),
+        pid: target.pid,
+        project: canon.to_string_lossy().to_string(),
+        file,
+        created_ms: now,
+        outcome: None,
+    };
+    write_request(base, &r)?;
+    Ok(r)
+}
+
+/// The ask `id` sent to window `pid`, as it stands now.
+pub fn request_state(pid: u32, id: &str) -> Option<OpenRequest> {
+    read_request(&dir(), pid, now_ms()).filter(|r| r.id == id)
+}
+
+/// The ask this window holds, for the app to show (answered ones excluded).
+pub fn pending() -> Option<OpenRequest> {
+    pending_at(&dir(), now_ms())
+}
+
+pub(crate) fn pending_at(base: &Path, now: u64) -> Option<OpenRequest> {
+    read_request(base, std::process::id(), now).filter(|r| r.outcome.is_none())
+}
+
+/// The user's answer to this window's ask `id`.
+pub fn answer(id: &str, outcome: OpenOutcome) -> Result<(), String> {
+    answer_at(&dir(), now_ms(), id, outcome)
+}
+
+pub(crate) fn answer_at(
+    base: &Path,
+    now: u64,
+    id: &str,
+    outcome: OpenOutcome,
+) -> Result<(), String> {
+    let mut r = pending_at(base, now)
+        .filter(|r| r.id == id)
+        .ok_or_else(|| format!("no open request {id} waits in this window"))?;
+    r.outcome = Some(outcome);
+    write_request(base, &r)
+}
+
+/// Every window's current ask, by pid (for the agent's view).
+pub fn requests() -> Vec<OpenRequest> {
+    requests_at(&dir(), now_ms())
+}
+
+pub(crate) fn requests_at(base: &Path, now: u64) -> Vec<OpenRequest> {
+    let Ok(entries) = std::fs::read_dir(requests_dir(base)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<OpenRequest> = entries
+        .flatten()
+        .filter_map(|e| {
+            let pid = e.path().file_stem()?.to_str()?.parse::<u32>().ok()?;
+            read_request(base, pid, now)
+        })
+        .collect();
+    out.sort_by_key(|r| r.pid);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +489,84 @@ mod tests {
         assert!(
             !file_of(&base, std::process::id()).exists(),
             "no heartbeat after exit"
+        );
+    }
+
+    #[test]
+    fn an_open_request_waits_for_the_user_and_carries_the_answer() {
+        let base = scratch("presence-req-base");
+        let data = scratch("presence-req-data");
+        let proj = scratch("presence-req-project");
+        std::fs::create_dir_all(proj.join("ch")).unwrap();
+        std::fs::write(proj.join("ch/intro.tex"), "x").unwrap();
+        let now = now_ms();
+
+        assert!(
+            request_open_at(&base, &data, now, None, &proj.to_string_lossy(), None)
+                .unwrap_err()
+                .contains("no Maleficium window")
+        );
+        // This process plays the window.
+        let me = Presence {
+            pid: std::process::id(),
+            project: None,
+            main_rel: None,
+            active_rel: None,
+            started_ms: now,
+            updated_ms: now,
+        };
+        write(&base, &me).unwrap();
+        let p = proj.to_string_lossy().to_string();
+        for (pid, project, file, says) in [
+            (
+                Some(1u32),
+                p.as_str(),
+                None,
+                "no open Maleficium window has pid 1",
+            ),
+            (None, "relative/dir", None, "not an absolute folder"),
+            (None, "/no/such/dir/anywhere", None, "does not exist"),
+            (
+                None,
+                p.as_str(),
+                Some("/etc/passwd"),
+                "relative to the project",
+            ),
+            (None, p.as_str(), Some("../x.tex"), "does not exist"),
+            (None, p.as_str(), Some("ch"), "not a file in the project"),
+        ] {
+            let e = request_open_at(&base, &data, now, pid, project, file).unwrap_err();
+            assert!(e.contains(says), "{project} {file:?}: {e}");
+        }
+        let inside = data.join("x");
+        std::fs::create_dir_all(&inside).unwrap();
+        assert!(
+            request_open_at(&base, &data, now, None, &inside.to_string_lossy(), None)
+                .unwrap_err()
+                .contains("Maleficium's own data")
+        );
+
+        let r = request_open_at(&base, &data, now, None, &p, Some("./ch/intro.tex")).unwrap();
+        assert_eq!(r.file.as_deref(), Some("ch/intro.tex"));
+        assert_eq!(pending_at(&base, now).as_ref(), Some(&r));
+        assert!(request_open_at(&base, &data, now, None, &p, None)
+            .unwrap_err()
+            .contains("not answered"));
+        assert!(answer_at(&base, now, "other", OpenOutcome::Opened).is_err());
+        answer_at(&base, now, &r.id, OpenOutcome::Dismissed).unwrap();
+        assert!(
+            pending_at(&base, now).is_none(),
+            "answered: no longer shown"
+        );
+        let seen = requests_at(&base, now);
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].outcome, Some(OpenOutcome::Dismissed));
+        // Answered, a new ask may follow; a stale one is dropped.
+        request_open_at(&base, &data, now, None, &p, None).unwrap();
+        assert!(requests_at(&base, now + REQUEST_STALE_MS + 1).is_empty());
+        assert!(
+            pending_at(&base, now).is_none(),
+            "the stale ask was removed"
         );
     }
 }

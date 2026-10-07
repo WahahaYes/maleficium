@@ -29,6 +29,7 @@ use crate::export::Exported;
 use crate::fs::FileStat;
 use crate::mainfile::{MainResolution, MainSource};
 use crate::outputs::OutputStamp;
+use crate::presence::{OpenOutcome, OpenRequest};
 use crate::structure::Precheck;
 use crate::synctex::{ForwardHit, InverseHit};
 use crate::templates::{Created, TemplateInfo, TemplateList};
@@ -100,6 +101,8 @@ params! {
     IndexDefinitionAtParams { root_id: String, line: String, col: u32, main_rel: Option<String> },
     IndexMacrosParams { root_id: String },
     PresenceSetParams { root_id: Option<String>, main_rel: Option<String>, active_rel: Option<String> },
+    PresencePendingParams {},
+    PresenceAnswerParams { id: String, outcome: OpenOutcome },
     MainResolveParams { root_id: String, opened_abs: Option<String> },
     MainSetAssociationParams { root_id: String, rel: String },
     FileReadParams { root_id: String, rel: String },
@@ -189,6 +192,8 @@ operations! {
     IndexDefinitionAt via index_definition_at(IndexDefinitionAtParams) -> Option<Lookup>,
     IndexMacros via index_macros(IndexMacrosParams) -> Vec<ProjectMacro>,
     PresenceSet via presence_set(PresenceSetParams) -> (),
+    PresencePending via presence_pending(PresencePendingParams) -> Option<OpenRequest>,
+    PresenceAnswer via presence_answer(PresenceAnswerParams) -> (),
     MainResolve via main_resolve(MainResolveParams) -> MainResolution,
     MainSetAssociation via main_set_association(MainSetAssociationParams) -> (),
     FileRead via file_read(FileReadParams) -> String,
@@ -437,6 +442,17 @@ fn presence_set(cx: &Core, p: PresenceSetParams) -> Result<(), String> {
     crate::presence::set(cx, p.root_id.as_deref(), p.main_rel, p.active_rel)
 }
 
+/// An agent's ask that this window open a project, while the user has not
+/// answered it.
+fn presence_pending(_cx: &Core, _p: PresencePendingParams) -> Result<Option<OpenRequest>, String> {
+    Ok(crate::presence::pending())
+}
+
+/// The user's answer to this window's open request.
+fn presence_answer(_cx: &Core, p: PresenceAnswerParams) -> Result<(), String> {
+    crate::presence::answer(&p.id, p.outcome)
+}
+
 fn main_resolve(cx: &Core, p: MainResolveParams) -> Result<MainResolution, String> {
     crate::mainfile::resolve(cx, &p.root_id, p.opened_abs.as_deref())
 }
@@ -601,6 +617,10 @@ pub fn typescript() -> String {
         IndexDefinitionAtParams::decl(&cfg),
         IndexMacrosParams::decl(&cfg),
         PresenceSetParams::decl(&cfg),
+        PresencePendingParams::decl(&cfg),
+        PresenceAnswerParams::decl(&cfg),
+        OpenOutcome::decl(&cfg),
+        OpenRequest::decl(&cfg),
         MainResolveParams::decl(&cfg),
         MainSetAssociationParams::decl(&cfg),
         FileReadParams::decl(&cfg),
