@@ -561,6 +561,37 @@ body.m-reader {
 .m-reader .ltx_runin + .ltx_para > .ltx_p:first-child {
   display: inline;
 }
+/* A proof folds: its title is the summary, with a drawn disclosure mark. */
+.m-reader details.ltx_proof > summary {
+  display: block;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.m-reader details.ltx_proof > summary::-webkit-details-marker {
+  display: none;
+}
+.m-reader details.ltx_proof > summary::before {
+  content: '';
+  display: inline-block;
+  margin-right: 0.45em;
+  border-style: solid;
+  border-width: 0.3em 0 0.3em 0.45em;
+  border-color: transparent transparent transparent var(--m-color-muted);
+  vertical-align: 0.05em;
+  transition: transform 0.15s;
+}
+.m-reader details.ltx_proof[open] > summary::before {
+  transform: rotate(90deg);
+}
+.m-reader details.ltx_proof > summary:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader details.ltx_proof > summary .ltx_runin {
+  margin: 0;
+}
 /* A proof's closing mark, drawn instead of the qed glyph (U+220E renders
    as a solid box in fonts without it). */
 .m-reader .m-qed {
@@ -930,5 +961,8 @@ body.m-reader {
   .m-reader .m-flash {
     background: none;
     box-shadow: none;
+  }
+  .m-reader details.ltx_proof > summary::before {
+    display: none;
   }
 }
