@@ -238,6 +238,13 @@ struct RuntimeScaffoldOut {
     path: String,
 }
 
+// Flatten keeps the wire shape (`status` at top level) as an object schema.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WidgetCheckOut {
+    #[serde(flatten)]
+    pub status: core::widget_approval::WidgetApprovalStatus,
+}
+
 /// Unknown fields are refused: the validator reads one package, nothing
 /// that could approve, install or allow.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -904,7 +911,7 @@ impl Maleficium {
     fn widget_check(
         &self,
         Parameters(p): Parameters<WidgetCheckParams>,
-    ) -> Result<Json<core::widget_approval::WidgetApprovalStatus>, String> {
+    ) -> Result<Json<WidgetCheckOut>, String> {
         self.tool("widget_check", || {
             let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
             let w = list
@@ -928,7 +935,9 @@ impl Maleficium {
             ) {
                 let _ = core::eventlog::append(std::slice::from_ref(&e));
             }
-            Ok(Json(checked.status))
+            Ok(Json(WidgetCheckOut {
+                status: checked.status,
+            }))
         })
     }
 
@@ -1999,6 +2008,13 @@ mod tests {
             assert_eq!(a.open_world_hint, Some(false), "{name}");
             let schema = serde_json::to_value(&*t.input_schema).unwrap();
             assert_eq!(schema["additionalProperties"], false, "{name}");
+        }
+        // Every output schema is an object, so `opencode mcp list` accepts the server.
+        for t in &tools {
+            if let Some(out) = t.output_schema.as_ref() {
+                let schema = serde_json::to_value(&**out).unwrap();
+                assert_eq!(schema["type"], "object", "tool {}", t.name);
+            }
         }
         let base = serde_json::json!({"root_id": "r", "main_rel": "main.tex", "widget": "w"});
         assert!(serde_json::from_value::<WidgetCheckParams>(base.clone()).is_ok());
