@@ -63,8 +63,10 @@ pub const CACHE_DIR: &str = ".maleficium";
 /// The posters and maps, inside [`CACHE_DIR`].
 pub const POSTERS_DIR: &str = "posters";
 /// Bump whenever the renderer changes what a poster looks like for the
-/// same widget: every cached poster then renders again.
-pub const RENDERER_VERSION: u32 = 1;
+/// same widget: every cached poster then renders again. Version 2 folds a
+/// declaring runtime's document with 'wasm-unsafe-eval', so every custom
+/// poster key moves.
+pub const RENDERER_VERSION: u32 = 2;
 /// The cache's byte cap when [`CAP_ENV`] does not set one.
 pub const DEFAULT_CAP_BYTES: u64 = 100 * 1024 * 1024;
 /// Overrides the byte cap, in MiB.
@@ -249,8 +251,10 @@ pub fn html_key(w: &Widget, folder: &str, approval_digest: &str, theme: &Theme) 
 
 /// The cache key material of a custom widget judged approved on `snap`:
 /// the runtime's digest and ref, the bound sources and options, the poster
-/// theme and the renderer version. Any change names a poster that does not
-/// exist yet.
+/// theme and the renderer version. The policy stands in for the runtime
+/// document: a WASM declaration widens it, so declaring or dropping WASM
+/// names a poster that does not exist yet. Any change names a poster that
+/// does not exist yet.
 fn custom_material(
     cx: &Core,
     root_id: &str,
@@ -287,7 +291,7 @@ fn custom_material(
         digest(
             "custom",
             &reference,
-            &fold::widget_policy(None),
+            &fold::widget_policy_for(None, manifest.capabilities.wasm),
             &options,
             &sources,
             &key_tokens(theme),

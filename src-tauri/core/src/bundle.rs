@@ -969,15 +969,20 @@ fn plan_custom(
         crate::runtimes::check_size(w, m, role, bytes)?;
         sources.insert(role.clone(), key.into());
     }
-    // The judged snapshot's files, never a second read of the folder.
+    // The judged snapshot's files, never a second read of the folder,
+    // folded with the runtime's own policy: only a runtime that declared
+    // capabilities.wasm carries 'wasm-unsafe-eval'.
     let fold_input: BTreeMap<String, Vec<u8>> = snap
         .files
         .iter()
         .filter(|(path, _)| !m.is_metadata(path))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let folded = fold::fold_bundle(&fold_input, &fold::widget_policy(None))
-        .map_err(|e| format!("widget {id}: runtime {r}: {e}"))?;
+    let folded = fold::fold_bundle(
+        &fold_input,
+        &fold::widget_policy_for(None, m.capabilities.wasm),
+    )
+    .map_err(|e| format!("widget {id}: runtime {r}: {e}"))?;
     if !folded.unfolded.is_empty() {
         let shown: Vec<_> = folded.unfolded.iter().take(8).cloned().collect();
         let more = folded.unfolded.len() - shown.len();
@@ -1010,7 +1015,7 @@ fn plan_custom(
             "version": m.version,
             "digest": snap.digest,
             "license": m.license,
-            "capabilities": { "webgl": m.capabilities.webgl },
+            "capabilities": { "webgl": m.capabilities.webgl, "wasm": m.capabilities.wasm },
             "vendored": m.vendored.iter().map(|v| json!({
                 "name": v.name, "version": v.version, "license": v.license
             })).collect::<Vec<_>>(),

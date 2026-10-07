@@ -123,7 +123,7 @@ fn model_manifest(name: &str) -> Vec<u8> {
                 "description": "The model to show."
             }
         },
-        "capabilities": {"webgl": true},
+        "capabilities": {"webgl": true, "wasm": false},
         "vendored": []
     });
     let mut text = serde_json::to_string_pretty(&v).expect("a literal manifest serializes");
