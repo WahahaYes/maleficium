@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import type { ApprovalRequired, ReviewFile, WidgetApprovalStatus } from './generated/api';
+import type {
+  ApprovalRequired,
+  ReviewFile,
+  RuntimeInfo,
+  WidgetApprovalStatus,
+  WidgetsStatus,
+} from './generated/api';
 import {
+  approvalBannerText,
   AUTO_APPROVE_WARNING,
   buildRow,
   diffLines,
   originLines,
+  pendingRuntimes,
+  pendingWidgets,
   promptFrom,
   reviewFiles,
   WIDGETS_PANEL_PATH,
@@ -143,5 +152,107 @@ describe('promptFrom', () => {
     const r = required() as ApprovalRequired & { status: string };
     expect(promptFrom(r).key).toBe(`figs/sim@${'d'.repeat(64)}`);
     expect(promptFrom(r).cause).toBe('never_approved');
+  });
+});
+
+function runtimeInfo(over: Partial<RuntimeInfo> = {}): RuntimeInfo {
+  return {
+    reference: 'coffee-mug@1',
+    version: '1.0.0',
+    title: 'Coffee mug',
+    description: 'Renders the mug',
+    authors: ['Example'],
+    license: 'MIT',
+    vendored: [],
+    webgl: false,
+    widgets: ['fig-mug'],
+    warnings: [],
+    ...over,
+  };
+}
+
+function heldWidget(over: Partial<ApprovalRequired> = {}): WidgetApprovalStatus {
+  return required({ widget: 'fig-mug', path: 'scratch/coffee', ...over });
+}
+
+function heldRuntime(over: Partial<ApprovalRequired> = {}): WidgetApprovalStatus {
+  return {
+    status: 'approval_required',
+    kind: 'custom_runtime',
+    widget: 'fig-mug',
+    path: 'runtimes/coffee-mug@1',
+    digest: 'e'.repeat(64),
+    cause: 'never_approved',
+    declaredOrigins: NO_ORIGINS,
+    autoApprove: false,
+    panel: WIDGETS_PANEL_PATH,
+    whatHappens: '',
+    userAction: '',
+    agentMustNot: [],
+    message: '',
+    runtime: runtimeInfo(),
+    ...over,
+  } as WidgetApprovalStatus;
+}
+
+function listing(
+  widgets: WidgetApprovalStatus[] = [],
+  runtimes: WidgetApprovalStatus[] = [],
+): WidgetsStatus {
+  return {
+    autoApprove: false,
+    pending: widgets.length + runtimes.length,
+    widgets,
+    runtimes,
+    unavailable: [],
+    exempt: [],
+  };
+}
+
+describe('article approval banner', () => {
+  it('lists held widgets and runtimes, skipping approved ones', () => {
+    const ok: WidgetApprovalStatus = {
+      status: 'approved',
+      kind: 'html_widget',
+      widget: 'fig-ok',
+      path: 'figs/ok',
+      digest: 'x',
+      via: 'user',
+      declaredOrigins: NO_ORIGINS,
+      autoApprove: false,
+    };
+    const s = listing([heldWidget(), ok], [heldRuntime()]);
+    expect(pendingWidgets(s).map((w) => w.id)).toEqual(['fig-mug']);
+    expect(pendingRuntimes(s).map((r) => r.ref)).toEqual(['coffee-mug@1']);
+  });
+
+  it('is empty without a listing or when nothing is held', () => {
+    expect(pendingWidgets(null)).toEqual([]);
+    expect(pendingRuntimes(null)).toEqual([]);
+    expect(pendingWidgets(listing())).toEqual([]);
+    expect(pendingRuntimes(listing())).toEqual([]);
+    expect(approvalBannerText([], [])).toBeNull();
+  });
+
+  it('names the held widget and runtime in one sentence', () => {
+    const s = listing([heldWidget()], [heldRuntime()]);
+    expect(approvalBannerText(pendingWidgets(s), pendingRuntimes(s))).toBe(
+      'fig-mug and coffee-mug@1 are waiting for approval. The article shows their posters instead.',
+    );
+  });
+
+  it('uses the singular form for one held item', () => {
+    expect(approvalBannerText([{ id: 'fig-mug' }], [])).toBe(
+      'fig-mug is waiting for approval. The article shows its poster instead.',
+    );
+    expect(approvalBannerText([], [{ ref: 'coffee-mug@1' }])).toBe(
+      'coffee-mug@1 is waiting for approval. The article shows its poster instead.',
+    );
+  });
+
+  it('joins three held items with commas and and', () => {
+    expect(approvalBannerText([{ id: 'a' }, { id: 'b' }], [{ ref: 'c@1' }])).toBe(
+      'a, b and c@1 are waiting for approval. The article shows their posters instead.',
+    );
   });
 });

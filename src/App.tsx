@@ -41,6 +41,7 @@ import ExportReportDialog from './components/ExportReportDialog';
 import ExportProgress from './components/ExportProgress';
 import { useExport } from './hooks/useExport';
 import { useWidgetApproval } from './hooks/useWidgetApproval';
+import { approvalBannerText, pendingRuntimes, pendingWidgets } from './lib/widgets.view';
 import WidgetsPanel from './components/WidgetsPanel';
 import WidgetApprovalPrompt, { RuntimeApprovalPrompt } from './components/WidgetApprovalPrompt';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
@@ -817,6 +818,16 @@ export default function App({
       ),
     [currentLine, outline, articleAnchors],
   );
+  // The article banner names the held widgets and runtimes from the same
+  // listing the Widgets panel shows; approving there clears it.
+  const approvalText = useMemo(
+    () =>
+      approvalBannerText(
+        pendingWidgets(widgetApproval.state?.status ?? null),
+        pendingRuntimes(widgetApproval.runtimeState?.status ?? null),
+      ),
+    [widgetApproval.state, widgetApproval.runtimeState],
+  );
   const handleArticleSync = useCallback((anchor: string) => {
     emit({
       scope: 'preview',
@@ -982,6 +993,8 @@ export default function App({
             articleAnchor={articleAnchor}
             onArticleSync={handleArticleSync}
             onApproveArticle={handleArticleApproveRequest}
+            approvalText={approvalText}
+            onReviewApprovals={widgetApproval.openPanel}
           />
         }
       />
