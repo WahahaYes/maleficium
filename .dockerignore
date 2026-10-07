@@ -2,6 +2,7 @@
 node_modules
 dist
 src-tauri/target
+src-tauri/engine/target
 src-tauri/binaries
 src-tauri/gen/schemas
 *.log
