@@ -163,4 +163,4 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 
 Contributions are welcome; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
-Licensed under AGPL-3.0 ([LICENSE](LICENSE)): you may use, modify and share it, and if you run a modified version as a network service you must offer its source to that service's users. The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).
+Copyright (C) 2026 Ethan Wilson. Licensed under AGPL-3.0 ([LICENSE](LICENSE)): you may use, modify and share it, and if you run a modified version as a network service you must offer its source to that service's users. The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).
