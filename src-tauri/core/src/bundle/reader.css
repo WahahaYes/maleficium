@@ -930,7 +930,31 @@ body.m-reader {
   }
 }
 
+.m-reader .m-mode {
+  position: fixed;
+  top: var(--m-space-2);
+  right: var(--m-space-2);
+  z-index: 10;
+  font: var(--m-size-small) var(--m-font-heading);
+  color: var(--m-color-muted);
+  background: var(--m-color-surface);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  padding: 0.15em 0.6em;
+  cursor: pointer;
+}
+.m-reader .m-mode:hover,
+.m-reader .m-mode:focus-visible {
+  color: var(--m-color-text);
+}
+.m-reader .m-mode[hidden] {
+  display: none;
+}
+
 @media print {
+  .m-reader .m-mode {
+    display: none;
+  }
   .m-reader,
   .m-reader[data-theme='dark'] {
     --m-color-bg: #fff;

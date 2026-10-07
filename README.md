@@ -98,15 +98,15 @@ A paper can stay a normal LaTeX document that compiles to the PDF a venue wants,
 
 The bundle's `index.html` is the paper itself, reflowed for the screen: Maleficium converts your LaTeX to HTML (title, authors, abstract, a contents list, sections, math, figures, tables and references) and mounts each widget in place, where it sits in the text. The page has its own look and does not copy your venue's class. `paper.pdf` stays in the bundle as the version of record and a download link; the page does not embed it. Math and macros the converter cannot read show as the raw source on the page and are listed in the export's warnings, and a figure that is missing shows a placeholder. Preview and export never write into your project.
 
-**Styling the page.** The page follows the app's light or dark mode, and your source can tint it without touching the PDF:
+**Styling the page.** The page has a light and a dark mode. A reader picks Auto (their system's), Light or Dark with the button at its top right, and the browser remembers the choice; in the app, the Article tab has the same three choices, where Auto follows the app's theme. Your source can tint the page without touching the PDF:
 
 ```latex
 \maleficiumreader{page=FAF3E8, accent=7A4A1E}  % six hex digits each
-\maleficiumreader{page=follow}                 % take the PDF's \pagecolor
+\maleficiumreader{page=follow}                 % the PDF's \pagecolor, in both modes
 \maleficiumreaderstyle{reader.css}             % your own stylesheet
 ```
 
-You give the light-mode colours; the dark ones are derived (a page tinted into the dark background, an accent lightened to read on it), or set them with `page dark=` and `accent dark=`. A stylesheet in the project is applied after the theme in the preview and every export. Style `.m-reader`, and `.m-reader[data-theme='dark']` for dark mode, and use the `--m-*` variables (`--m-color-bg`, `--m-color-accent`, `--m-font-body`) to stay theme-aware. Its `url()`s may name fonts and images in the project (relative to the stylesheet), which are inlined so the page still works offline. `@import`, remote or out-of-project `url()`s, and anything that runs script are refused with a warning, and the page keeps the theme alone.
+With a colour you give the light mode; the dark one is derived (a page tinted into the dark background, an accent lightened to read on it), or set with `page dark=` and `accent dark=`. `page=follow` is the paper itself: its page colour and the ink that reads on it in both modes, so the article looks like the PDF either way. A stylesheet in the project is applied after the theme in the preview and every export. Style `.m-reader`, and `.m-reader[data-theme='dark']` for dark mode, and use the `--m-*` variables (`--m-color-bg`, `--m-color-accent`, `--m-font-body`) to stay theme-aware. Its `url()`s may name fonts and images in the project (relative to the stylesheet), which are inlined so the page still works offline. `@import`, remote or out-of-project `url()`s, and anything that runs script are refused with a warning, and the page keeps the theme alone.
 
 ## Use with an AI agent
 

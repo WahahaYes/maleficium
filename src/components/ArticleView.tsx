@@ -13,7 +13,12 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { useEffect, useRef } from 'react';
-import { articleSandbox, articleScrollMessage, isArticleMessage } from '../lib/article';
+import {
+  articleModeMessage,
+  articleSandbox,
+  articleScrollMessage,
+  isArticleMessage,
+} from '../lib/article';
 import ArticleApprovalBanner from './ArticleApprovalBanner';
 
 export interface ArticleViewProps {
@@ -37,6 +42,8 @@ export interface ArticleViewProps {
   approvalText: string | null;
   /** Opens View > Widgets to review the held items. */
   onReviewApprovals: () => void;
+  /** The colour mode the article shows (the frame's own toggle hides). */
+  mode: 'light' | 'dark';
 }
 
 export default function ArticleView({
@@ -52,6 +59,7 @@ export default function ArticleView({
   onApproveRequest,
   approvalText,
   onReviewApprovals,
+  mode,
 }: ArticleViewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const syncRef = useRef(onSync);
@@ -87,6 +95,21 @@ export default function ArticleView({
       clearTimeout(stop);
     };
   }, [html, anchorId]);
+
+  // The app sets the article's colour mode; like the scroll, the post
+  // repeats briefly so a fresh srcDoc frame hears it.
+  useEffect(() => {
+    if (!html) return;
+    const msg = articleModeMessage(mode);
+    const post = () => frameRef.current?.contentWindow?.postMessage(msg, '*');
+    post();
+    const t = setInterval(post, 250);
+    const stop = setTimeout(() => clearInterval(t), 1000);
+    return () => {
+      clearInterval(t);
+      clearTimeout(stop);
+    };
+  }, [html, mode]);
 
   // The pending-approval banner wraps every article state, so the held
   // items are named even before the first load or beside a load error.
