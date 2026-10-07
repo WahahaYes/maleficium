@@ -207,7 +207,6 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-runtime-ref.tex", "runtime= `Stl_Viewer' must be <name>@<major>: a lowercase letter, 1 to 39 letters, digits or dashes, then @ and a major version 1 to 9999"),
                       ("bad-runtime-reserved.tex", "runtime name `model' is reserved"),
                       ("bad-runtime-reserved-prefix.tex", "runtime name `maleficium-x' is reserved"),
-                      ("bad-runtime-noposter.tex", "poster= is required for \\interactiveruntime: the PDF shows it"),
                       ("bad-runtime-noalt.tex", "alt= is required"),
                       ("bad-runtime-missing-file.tex", "File `figures/no-such.png' not found"),
                       ("bad-runtime-source.tex", "sources= entry `figures/runtime-texture.png' must be role=path"),
@@ -249,6 +248,20 @@ check("custom runtime sidecar line is exact",
           "|primary=models/mesh.glb,texture=figures/runtime-texture.png,labels=data/results.csv"
           "|height=170.71652pt,color=accent,autorotate=true,expr=a=b,ratio=0.5|Orbitable flange"],
       str(rlines)[:400])
+
+# poster= is optional for a custom runtime: without one the document still
+# compiles, records an empty poster field, and the pdf shows a placeholder
+# until the runtime is allowed and proposes one.
+nr = compile("runtime-noposter.tex", rounds=20)
+check("custom runtime without poster= compiles",
+      nr.get("status") == "success", str(nr)[:200])
+nmfw = os.path.join(os.path.dirname(nr.get("pdf_url") or ""), "runtime-noposter.mfw")
+nlines = open(nmfw).read().splitlines() if os.path.isfile(nmfw) else []
+check("custom runtime without poster= records an empty poster field",
+      [l for l in nlines if l.startswith("widget|")] == [
+          "widget|fig-noposter|custom|stl-viewer@1|||house||primary=models/mesh.glb"
+          "|height=170.71652pt|Orbitable flange"],
+      str(nlines)[:400])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)

@@ -843,6 +843,14 @@ fn a_custom_record_reads_with_its_runtime_sources_and_options_verbatim() {
 }
 
 #[test]
+fn a_custom_record_without_a_poster_reads_for_a_proposed_one() {
+    // poster= is optional: an approved runtime may propose the poster, else
+    // the pdf shows the mapped auto-poster or a placeholder.
+    let s = custom(&CUSTOM_LINE.replace("|figures/runtime-poster.png|", "||")).unwrap();
+    assert!(s.records[0].poster.is_none());
+}
+
+#[test]
 fn a_bad_custom_record_fails_the_list_with_its_message() {
     let cases = [
         (CUSTOM_LINE.replace("|stl-viewer@1|", "||"), "widget fig-part: a custom widget records no runtime"),
@@ -850,7 +858,6 @@ fn a_bad_custom_record_fails_the_list_with_its_message() {
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|model@1|"), "runtime `model@1` is not <name>@<major>"),
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|m-viewer@1|"), "runtime `m-viewer@1` is not"),
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer@0|"), "runtime `stl-viewer@0` is not"),
-        (CUSTOM_LINE.replace("|figures/runtime-poster.png|", "||"), "widget fig-part: a custom widget records no poster"),
         (CUSTOM_LINE.replace("primary=models/mesh.glb,", ""), "widget fig-part: a custom widget records no primary source"),
         (CUSTOM_LINE.replace("texture=", "primary="), "widget fig-part: source role `primary` is given twice"),
         (CUSTOM_LINE.replace("labels=", "texture="), "widget fig-part: source role `texture` is given twice"),

@@ -438,6 +438,12 @@ MALEFICIUM_RUNTIME_PROOF="$PROOF" cargo test -q --manifest-path "$DEVROOT/src-ta
   || fail "cannot regenerate the custom-runtime proof bundle"
 [ -s "$PROOF" ] || fail "proof bundle missing after the test: $PROOF"
 
+# The red proof: bad-cdn@1 scan-failed and poster-only, no runtimes map.
+BAD_PROOF="$SCRATCH/out/custom-proof-bad.html"
+MALEFICIUM_RUNTIME_PROOF_BAD="$BAD_PROOF" cargo test -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" -p maleficium-core --lib a_scan_failed_runtime_is_poster_only_with_red_warnings \
+  || fail "cannot regenerate the bad-cdn proof bundle"
+[ -s "$BAD_PROOF" ] || fail "bad-cdn proof bundle missing after the test: $BAD_PROOF"
+
 # The reader page, in each headless browser, over the bundles just
 # exported, then the declared-origin cells over the two-widget variant.
 for browser in chromium firefox webkit; do
@@ -446,7 +452,7 @@ for browser in chromium firefox webkit; do
     --embed-single "$SCRATCH/out/embed-single.html" --embed-folder "$SCRATCH/out/embed-folder" \
     --embed-ports "$(cat "$SCRATCH/embed/ports")" \
     --cert "$SCRATCH/embed/cert.pem" --key "$SCRATCH/embed/key.pem" \
-    --custom-proof "$PROOF" || fail "reader run failed in $browser"
+    --custom-proof "$PROOF" --custom-proof-bad "$BAD_PROOF" || fail "reader run failed in $browser"
 done
 
 echo ""
