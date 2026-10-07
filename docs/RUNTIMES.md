@@ -73,7 +73,7 @@ A declaring runtime's folded document alone carries `'wasm-unsafe-eval'` in `scr
 
 Posters of declaring runtimes render under the widened policy (renderer version 2), so the proposed-poster cache key moves for every custom widget: the next compile rerenders them. `docs/runtimes/samples/wasm-sum@1/` is the declaring fixture (a CSV summed by an embedded add module); the non-declaring samples are the control.
 
-Engine gating (reader cells, October 2026): expected — the token is what lets the module compile; Chromium and Firefox block `WebAssembly.instantiate` without it (the widget posts `status: error`), while WebKitGTK 2.52 does not gate WASM (the widget runs with or without the token). The cells below verify this per engine; the table is filled from the run.
+Engine gating (reader cells, October 2026, `e2e/wasm-cells.mjs` over the proof below): the token is what lets the module compile. With it the fixture reaches live in Chromium, Firefox and WebKit; with the token stripped from both layers the widget posts `status: error` in all three — each engine gates `WebAssembly.instantiate` on the token. (The "WebKitGTK 2.52 does not gate" note predates upstream gating; the measured WebKit build 2359 gates.) The non-declaring control reaches live with a token-free policy in all three engines.
 
 ## Proposed posters
 
