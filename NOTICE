@@ -32,6 +32,40 @@ binary. It contains:
   src-tauri/engine/synctex under its MIT licence (Copyright Jerome Laurens
   2008-2024).
 
+On Linux the installed engine binary also combines the following. Dynamic
+entries link the host's shared libraries (they ship with the OS, pulled in
+by the .deb Depends list, not copied into the binary); static entries are
+compiled into the binary. Debian package names are as on Ubuntu 24.04, the
+documented .deb build host:
+
+- Tectonic 0.17.0's bridge crates (MIT) link dynamically: ICU
+  (Unicode-DFS-2016 licence, Debian libicu74), freetype (FTL,
+  libfreetype6), graphite2 (LGPL-2.1-or-later, also offered under
+  MPL-1.1/GPL-2+, libgraphite2-3), fontconfig (MIT-style,
+  libfontconfig1) and libpng (libpng licence, libpng16-16t64).
+- HarfBuzz 8.3.0, compiled from the sources vendored in
+  tectonic_bridge_harfbuzz (crate MIT) under HarfBuzz's Old MIT licence
+  (Copyright 2010-2023 Google and others; full text in its COPYING),
+  statically linked.
+- libmarpa 8.6.2, compiled from the tarball vendored in libmarpa-asf-sys
+  (crate MIT OR Apache-2.0) through the marpa-asf crate
+  (MIT OR Apache-2.0), statically linked: marpa.c, marpa_ami.c and
+  marpa_codes.c under the MIT licence (Copyright 2018 Jeffrey Kegler);
+  marpa_obs.c and marpa_obs.h under LGPL-2.1-or-later (Copyright FSF, via
+  the GNU C library); marpa_avl.c, marpa_tavl.c and their headers under
+  LGPL-3-or-later. The vendored sources carry the full texts (COPYING for
+  MIT, COPYING.LESSER for LGPL-3).
+- libxml2 (MIT) and libxslt with libexslt (MIT), linked dynamically
+  (libxml2, libxslt1.1) through the libxml and libxslt crates (MIT).
+- zlib (zlib licence), compiled statically through libz-sys 1.1.29
+  (crate MIT OR Apache-2.0) for the vendored SyncTeX parser above.
+
+kpathsea is NOT in the Linux binary: with KPATHSEA_SKIP_TOOLCHAIN_CHECK=1
+the kpathsea-sys build links nothing and latexml resolves files through
+the engine's own kpsewhich stand-in (subprocess backend), so the LGPL-2.1
+TeX Live C library is absent. The kpathsea and kpathsea-sys Rust crates
+themselves are MIT OR Apache-2.0.
+
 This product bundles, inlined into the built-in widget runtimes under
 src-tauri/widget-runtimes/ (built by `npm run build:runtimes`, no network at
 build or run time), the Vega visualization stack and its dependencies, all
