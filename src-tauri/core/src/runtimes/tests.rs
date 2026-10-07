@@ -151,6 +151,7 @@ fn a_good_manifest_parses_with_its_defaults() {
     assert_eq!(m.sources["data"].max_bytes, DEFAULT_MAX_BYTES);
     assert_eq!(m.sources["labels"].max_bytes, 10);
     assert!(!m.capabilities.webgl);
+    assert!(!m.capabilities.wasm, "contract 1 packages omit wasm");
     assert!(m.is_metadata("runtime.json") && m.is_metadata("samples/a.csv"));
     assert!(m.is_metadata("vendor/tiny/LICENSE") && m.is_metadata("README.md"));
     assert!(!m.is_metadata("vendor/tiny/tiny.js") && !m.is_metadata("index.html"));
@@ -159,6 +160,26 @@ fn a_good_manifest_parses_with_its_defaults() {
         .unwrap()
         .options
         .is_none());
+}
+
+#[test]
+fn wasm_capability_parses_true_false_and_defaults_off() {
+    assert!(
+        parse(&with(good(), &["capabilities", "wasm"], json!(true)))
+            .unwrap()
+            .capabilities
+            .wasm
+    );
+    assert!(
+        !parse(&with(good(), &["capabilities", "wasm"], json!(false)))
+            .unwrap()
+            .capabilities
+            .wasm
+    );
+    // Contract 1 packages omit the flag: they parse with WASM off.
+    assert!(!parse(&good()).unwrap().capabilities.wasm);
+    let e = err(with(good(), &["capabilities", "wasm"], json!("yes")));
+    assert!(e.contains("invalid type"), "{e}");
 }
 
 #[test]
@@ -184,7 +205,7 @@ fn every_manifest_rule_has_its_message() {
             with(good(), &["license"], json!("GPL-3.0")),
             "license `GPL-3.0` is not on the allowlist (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense)",
         ),
-        (with(good(), &["capabilities", "wasm"], json!(true)), "unknown field `wasm`"),
+        (with(good(), &["capabilities", "webgl"], json!("yes")), "runtime.json: invalid type"),
         (with(good(), &["sources"], json!({})), "sources: a runtime takes 1 to 8 roles"),
         (with(good(), &["sources", "Bad"], json!({"required": false, "extensions": ["a"]})), "sources: `Bad` is not a role name"),
         (with(good(), &["sources", "primary"], json!({"required": false, "extensions": ["a"]})), "sources: `primary` is not a role name"),
