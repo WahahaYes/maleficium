@@ -455,6 +455,18 @@ for browser in chromium firefox webkit; do
     --custom-proof "$PROOF" --custom-proof-bad "$BAD_PROOF" || fail "reader run failed in $browser"
 done
 
+# Contract 2 WASM cells: wasm-sum@1 declaring and live, heatmap@1 as the
+# plain control (bundle/tests.rs regenerates the proof when
+# MALEFICIUM_WASM_PROOF is set).
+WASM_PROOF="$SCRATCH/out/wasm-proof.html"
+MALEFICIUM_WASM_PROOF="$WASM_PROOF" cargo test -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" -p maleficium-core --lib a_wasm_proof_bundle_with_a_live_wasm_runtime_and_a_plain_control \
+  || fail "cannot regenerate the wasm proof bundle"
+[ -s "$WASM_PROOF" ] || fail "wasm proof bundle missing after the test: $WASM_PROOF"
+for browser in chromium firefox webkit; do
+  timeout 400 node "$DEVROOT/e2e/wasm-cells.mjs" --proof "$WASM_PROOF" --browser "$browser" \
+    || fail "wasm cells failed in $browser"
+done
+
 echo ""
 echo "EXPORT PROOFS COMPLETE: live MCP run green."
 echo "  root: $ROOT"
