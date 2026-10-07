@@ -2,7 +2,7 @@
 
 > **maleficium** _(n.)_: an act of evil sorcery. Also known as debugging LaTeX. This makes the ritual easier.
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/wahahayes-maleficium-11vtyi)](https://m8ven.ai/mcp/wahahayes-maleficium-11vtyi?s=readme) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![M8ven Score](https://m8ven.ai/badge/mcp/wahahayes-maleficium-11vtyi)](https://m8ven.ai/mcp/wahahayes-maleficium-11vtyi?s=readme) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 
 Maleficium is a LaTeX editor that runs entirely on your machine. Write on one side, read the PDF on the other, and click between them. It ships its own TeX engine, so there is nothing else to install.
 
@@ -12,7 +12,7 @@ Maleficium is a LaTeX editor that runs entirely on your machine. Write on one si
 
 **It runs locally.** There's no account, server, or cloud copy. Your projects stay in your own folders, and the app never writes its build files, history, or logs into them. The bundled Tectonic engine downloads its support files on the first compile; after that, everything works offline. That download is the only network traffic the app makes: no telemetry, no auto-updater.
 
-**It's open source, so you can make it yours.** Maleficium is Apache 2.0 and built to be changed at the source: fork it and shape it to the way you work. Menus and the command palette are built from one command registry, so a new action shows up in both from a single entry. A template is just a folder, a color theme is a standard VS Code theme file, and the Rust core behind the editor is the same one its automation tools use. [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) gets you from clone to running app. No fork needed for the everyday cases: save any project as a template, or import a folder as one, and it joins the gallery beside the CC0 built-ins.
+**It's open source, so you can make it yours.** Maleficium is AGPL-3.0 and built to be changed at the source: fork it and shape it to the way you work. Menus and the command palette are built from one command registry, so a new action shows up in both from a single entry. A template is just a folder, a color theme is a standard VS Code theme file, and the Rust core behind the editor is the same one its automation tools use. [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) gets you from clone to running app. No fork needed for the everyday cases: save any project as a template, or import a folder as one, and it joins the gallery beside the CC0 built-ins.
 
 **It's built for working alongside AI agents.** Every action the app and its agents take is written to one shared structured JSONL event log that an agent can read — each line names its actor, and the log keeps the newest 2000 lines. When another process recompiles your document, the preview reloads on its own. The app ships an MCP server, so an agent such as Claude Code can compile, search, replace, and jump through SyncTeX with the same core the editor uses ([Use with an AI agent](#use-with-an-ai-agent)).
 
@@ -163,4 +163,4 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 
 Contributions are welcome; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
-Licensed under Apache 2.0 ([LICENSE](LICENSE)). The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).
+Licensed under AGPL-3.0 ([LICENSE](LICENSE)): you may use, modify and share it, and if you run a modified version as a network service you must offer its source to that service's users. The built-in templates are CC0, so documents you make from them carry no obligations ([details](src-tauri/templates/README.md)). Bundled third-party themes and engine binaries are credited in [NOTICE](NOTICE).
