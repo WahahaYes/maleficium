@@ -16,8 +16,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The widget document's policy before any declared origins: inline only.
 /// Sources reach a runtime as bytes over `postMessage`, so nothing here
-/// needs a host.
-const WIDGET_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'{res}; style-src 'unsafe-inline'{res}; img-src data: blob:{res}; media-src data: blob:{res}; font-src data:{res}; connect-src {connect}; {frame}form-action 'none'; base-uri 'none'";
+/// needs a host. WebAssembly compiles only for a runtime that declared
+/// `capabilities.wasm`: its document alone carries `'wasm-unsafe-eval'`.
+const WIDGET_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'{wasm}{res}; style-src 'unsafe-inline'{res}; img-src data: blob:{res}; media-src data: blob:{res}; font-src data:{res}; connect-src {connect}; {frame}form-action 'none'; base-uri 'none'";
 
 /// The reader page of a folder or hosted bundle. Its `frame-src 'self'` is
 /// what stops a widget navigating its own frame off-site.
@@ -30,8 +31,16 @@ pub const SINGLE_FILE_READER_POLICY: &str = "default-src 'none'; script-src 'uns
 
 /// The policy a widget document carries: strict, plus the origins its
 /// `widget.json` declared (an origin is already checked as `https` by the
-/// widget list).
+/// widget list). Contract 1 has no WASM: this form never carries
+/// `'wasm-unsafe-eval'`; see [`widget_policy_for`].
 pub fn widget_policy(csp: Option<&WidgetCsp>) -> String {
+    widget_policy_for(csp, false)
+}
+
+/// The policy of one custom runtime's folded document: `wasm` is its
+/// manifest's `capabilities.wasm`. Built-ins and html widgets never pass
+/// true: they have no declaration.
+pub fn widget_policy_for(csp: Option<&WidgetCsp>, wasm: bool) -> String {
     let empty = WidgetCsp::default();
     let c = csp.unwrap_or(&empty);
     let res = if c.resource_domains.is_empty() {
@@ -49,7 +58,9 @@ pub fn widget_policy(csp: Option<&WidgetCsp>) -> String {
     } else {
         format!("frame-src {}; ", c.frame_domains.join(" "))
     };
+    let wasm = if wasm { " 'wasm-unsafe-eval'" } else { "" };
     WIDGET_POLICY
+        .replace("{wasm}", wasm)
         .replace("{res}", &res)
         .replace("{connect}", &connect)
         .replace("{frame}", &frame)

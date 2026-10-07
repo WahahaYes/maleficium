@@ -110,6 +110,45 @@ fn declared_origins_widen_only_the_directives_they_name() {
 }
 
 #[test]
+fn wasm_unsafe_eval_is_scoped_to_declaring_runtimes() {
+    let none = widget_policy(None);
+    assert!(!none.contains("wasm-unsafe-eval"));
+    assert!(!none.contains("unsafe-eval"));
+    let declared = widget_policy_for(None, true);
+    assert!(
+        declared.contains("script-src 'unsafe-inline' 'wasm-unsafe-eval';"),
+        "{declared}"
+    );
+    // Only the script directive widens: every other directive is intact.
+    for directive in [
+        "style-src 'unsafe-inline';",
+        "img-src data: blob:;",
+        "connect-src 'none';",
+        "form-action 'none';",
+        "base-uri 'none'",
+    ] {
+        assert!(declared.contains(directive), "{directive} in {declared}");
+    }
+    // Origins and the flag compose.
+    let csp = WidgetCsp {
+        connect_domains: vec!["https://api.example.org".into()],
+        resource_domains: vec!["https://cdn.example.org".into()],
+        frame_domains: vec![],
+    };
+    let p = widget_policy_for(Some(&csp), true);
+    assert!(
+        p.contains("script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.example.org;"),
+        "{p}"
+    );
+    let q = widget_policy_for(Some(&csp), false);
+    assert!(!q.contains("wasm-unsafe-eval"), "{q}");
+    assert!(
+        q.contains("script-src 'unsafe-inline' https://cdn.example.org;"),
+        "{q}"
+    );
+}
+
+#[test]
 fn nothing_outside_the_given_files_is_read() {
     let f = fold(&files(&[(
         "index.html",

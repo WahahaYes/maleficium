@@ -1275,7 +1275,7 @@ pub fn snapshot_runtime(
         };
     if let Some(m) = &manifest {
         let vendored: std::collections::BTreeSet<String> = m.vendored_files();
-        let report = crate::runtimes::scan::scan(&files, &vendored);
+        let report = crate::runtimes::scan::scan(&files, &vendored, m.capabilities.wasm);
         let line =
             |f: &crate::runtimes::scan::Finding| format!("{}:{}: {}", f.file, f.line, f.message);
         if let Some(first) = report.errors.first() {

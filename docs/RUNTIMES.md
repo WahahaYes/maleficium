@@ -20,7 +20,7 @@ Limits: no symlinks, regular files only, <= 4096 files, <= 64 MiB walked. `runti
 
 ## runtime.json
 
-`contract` is exactly `1`. `name` matches the folder before `@` (`^[a-z][a-z0-9-]{1,39}$`, not a built-in or `m-*` name); `version` is `MAJOR.MINOR.PATCH` whose major matches the folder. `title` (1-80 chars), `description` (0-500), `authors` (1-16), `license` from the allowlist (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense). `sources` has 1-8 roles `{primary?: bool, required: bool, extensions: [...], maxBytes?: int, description?}` with exactly one `primary: true` that is also required. `options` is an optional closed object schema (<= 32 string/number/integer/ boolean properties with defaults, enums, minimum/maximum, maxLength). `capabilities` is `{webgl: bool}`. `vendored` lists third-party libraries (name, version, allowlist licence, a `source` claim that is never fetched, their `files` under `vendor/`, and a `licenseFile`). Unknown fields refuse.
+`contract` is exactly `1`. `name` matches the folder before `@` (`^[a-z][a-z0-9-]{1,39}$`, not a built-in or `m-*` name); `version` is `MAJOR.MINOR.PATCH` whose major matches the folder. `title` (1-80 chars), `description` (0-500), `authors` (1-16), `license` from the allowlist (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense). `sources` has 1-8 roles `{primary?: bool, required: bool, extensions: [...], maxBytes?: int, description?}` with exactly one `primary: true` that is also required. `options` is an optional closed object schema (<= 32 string/number/integer/ boolean properties with defaults, enums, minimum/maximum, maxLength). `capabilities` is `{webgl: bool, wasm?: bool}`: contract 1 packages omit `wasm` and parse with it off; see [Contract 2: WebAssembly](#contract-2-webassembly). `vendored` lists third-party libraries (name, version, allowlist licence, a `source` claim that is never fetched, their `files` under `vendor/`, and a `licenseFile`). Unknown fields refuse.
 
 ## Bridge messages
 
@@ -41,6 +41,7 @@ Every message carries `mfw: 1`. The runtime ignores anything not from `window.pa
 - `network-api`: `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`.
 - `worker`: `new Worker`, `importScripts`, shared/service workers.
 - `storage`: `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`.
+- `wasm`: `WebAssembly` use, a `.wasm` string, or a `.wasm` file reference without `capabilities.wasm` (see below).
 - `missing-ref`: references "...", which is no file in the package.
 
 Warnings (export proceeds; approval shows them):
@@ -63,6 +64,16 @@ Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, 
 ```
 
 Copy the folder to `runtimes/caption-overlay@1/` in a project to try it. `bad-cdn@1` next to it is the negative: one CDN `<script src>`, which the scanner fails with exactly `url-load`.
+
+## Contract 2: WebAssembly
+
+Contract 1 deliberately has no WASM. A runtime that compiles WebAssembly declares `"wasm": true` under `capabilities` (omitted means false, so every contract 1 package parses unchanged). The scanner refuses undeclared use as a `wasm` error — the `WebAssembly` identifier, a `.wasm` string in script, or a `.wasm` file reference from markup, style or script — so an undeclared package is invalid: poster-only, never approvable, like `bad-cdn@1`. Vendored files are exempt from the content rules (as with `eval` and the rest); the sandbox catches what the scan misses.
+
+A declaring runtime's folded document alone carries `'wasm-unsafe-eval'` in `script-src` (`script-src 'unsafe-inline' 'wasm-unsafe-eval'`); every other directive is the contract-1 policy, and non-declaring runtimes keep it byte for byte. Built-ins and html widgets never declare, so they never carry the token. The manifest's `runtimes` entry records the declaration (`"capabilities": {"webgl": ..., "wasm": ...}`), and the approval verdict and store are unchanged: allowing a runtime vouches for its WASM module as for the rest of its code.
+
+Posters of declaring runtimes render under the widened policy (renderer version 2), so the proposed-poster cache key moves for every custom widget: the next compile rerenders them. `docs/runtimes/samples/wasm-sum@1/` is the declaring fixture (a CSV summed by an embedded add module); the non-declaring samples are the control.
+
+Engine gating (reader cells, October 2026, `e2e/wasm-cells.mjs` over the proof below): the token is what lets the module compile. With it the fixture reaches live in Chromium, Firefox and WebKit; with the token stripped from both layers the widget posts `status: error` in all three — each engine gates `WebAssembly.instantiate` on the token. (The "WebKitGTK 2.52 does not gate" note predates upstream gating; the measured WebKit build 2359 gates.) The non-declaring control reaches live with a token-free policy in all three engines.
 
 ## Proposed posters
 

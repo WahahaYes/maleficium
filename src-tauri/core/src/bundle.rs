@@ -483,6 +483,11 @@ struct Plan<'a> {
     /// Custom widgets that fall back to their posters, by runtime: why, and
     /// which widgets.
     fallbacks: BTreeMap<String, (Fallback, Vec<String>)>,
+    /// Whether a live custom widget declares `capabilities.wasm`: a
+    /// single-file bundle srcdocs its widgets, so the reader page inherits
+    /// down and must carry the token too (its own frame-src union's
+    /// companion).
+    wasm_live: bool,
     /// The note a fallback widget's figure carries, by widget id.
     notes: BTreeMap<String, String>,
     /// Html widgets the in-app article holds back for approval, by widget
@@ -962,6 +967,12 @@ fn plan_custom(
         p.fall_back(&r, &id, why.clone());
         return Ok((None, None));
     }
+    // A live declaring widget runs srcdoc'd under the single-file reader
+    // page: the page's own policy must carry the token, or the inherited
+    // one blocks the compile. Folder widgets are documents of their own.
+    if m.capabilities.wasm {
+        p.wasm_live = true;
+    }
     for (role, s) in &bound.sources {
         let key = format!("{id}-{role}");
         p.add_local(key.clone(), &id, &s.path, false)?;
@@ -969,15 +980,20 @@ fn plan_custom(
         crate::runtimes::check_size(w, m, role, bytes)?;
         sources.insert(role.clone(), key.into());
     }
-    // The judged snapshot's files, never a second read of the folder.
+    // The judged snapshot's files, never a second read of the folder,
+    // folded with the runtime's own policy: only a runtime that declared
+    // capabilities.wasm carries 'wasm-unsafe-eval'.
     let fold_input: BTreeMap<String, Vec<u8>> = snap
         .files
         .iter()
         .filter(|(path, _)| !m.is_metadata(path))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let folded = fold::fold_bundle(&fold_input, &fold::widget_policy(None))
-        .map_err(|e| format!("widget {id}: runtime {r}: {e}"))?;
+    let folded = fold::fold_bundle(
+        &fold_input,
+        &fold::widget_policy_for(None, m.capabilities.wasm),
+    )
+    .map_err(|e| format!("widget {id}: runtime {r}: {e}"))?;
     if !folded.unfolded.is_empty() {
         let shown: Vec<_> = folded.unfolded.iter().take(8).cloned().collect();
         let more = folded.unfolded.len() - shown.len();
@@ -1010,7 +1026,7 @@ fn plan_custom(
             "version": m.version,
             "digest": snap.digest,
             "license": m.license,
-            "capabilities": { "webgl": m.capabilities.webgl },
+            "capabilities": { "webgl": m.capabilities.webgl, "wasm": m.capabilities.wasm },
             "vendored": m.vendored.iter().map(|v| json!({
                 "name": v.name, "version": v.version, "license": v.license
             })).collect::<Vec<_>>(),
@@ -2048,6 +2064,7 @@ fn export_inner(
         runtimes: BTreeMap::new(),
         runtime_entries: Map::new(),
         fallbacks: BTreeMap::new(),
+        wasm_live: false,
         notes: BTreeMap::new(),
         gated: BTreeSet::new(),
     };
@@ -2256,6 +2273,7 @@ fn export_inner(
                 pdf: Some(&pdf_bytes),
                 islands: &islands,
                 frames: &frames,
+                wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
             });
@@ -2341,6 +2359,7 @@ fn export_inner(
                 pdf: None,
                 islands: &islands,
                 frames: &frames,
+                wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
             });
