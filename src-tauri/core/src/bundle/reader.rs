@@ -40,6 +40,9 @@ pub(super) struct Reader<'a> {
     /// widget, so chrome and widgets agree.
     pub theme: &'a crate::theme::Theme,
     pub theme_css: &'a str,
+    /// The author's checked reader stylesheet ([`crate::reader_style`]),
+    /// written after the reader's own so it wins at equal specificity.
+    pub author_css: &'a str,
 }
 
 /// The reader page's policy. A single-file widget is a `srcdoc` document,
@@ -89,6 +92,7 @@ pub(super) fn render(r: &Reader) -> String {
     );
     page.push_str(r.theme_css);
     page.push_str(CSS);
+    page.push_str(r.author_css);
     page.push_str("</style></head><body class=\"m-reader\"");
     // Only a non-default measure rides along, as its closed token (the
     // widths live in reader.css): `default` is the theme's 68ch.
@@ -132,6 +136,7 @@ mod tests {
             wasm,
             theme: &theme,
             theme_css: &theme.css().unwrap(),
+            author_css: "",
         })
     }
 
@@ -148,7 +153,30 @@ mod tests {
             wasm: false,
             theme: &theme,
             theme_css: &theme.css().unwrap(),
+            author_css: "",
         })
+    }
+
+    #[test]
+    fn the_author_stylesheet_comes_after_the_reader_rules() {
+        let theme = crate::theme::Theme::house();
+        let theme_css = theme.css().unwrap();
+        let page = render(&Reader {
+            title: "T",
+            folder: false,
+            article: ARTICLE,
+            measure: Measure::Default,
+            pdf: Some(b"%PDF-1.4 x"),
+            islands: "",
+            frames: &[],
+            wasm: false,
+            theme: &theme,
+            theme_css: &theme_css,
+            author_css: ".m-reader .ltx_title_document{border-bottom:2px solid red}",
+        });
+        let author = page.find("border-bottom:2px solid red").unwrap();
+        let reader = page.find(CSS.trim()).unwrap();
+        assert!(page.find(&theme_css).unwrap() < reader && reader < author);
     }
 
     #[test]
