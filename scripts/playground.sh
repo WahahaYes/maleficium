@@ -42,7 +42,15 @@ add interactive-paper "$ROOT/e2e/fixtures/playground"
 for p in "$ROOT"/e2e/fixtures/vendored/*/; do
     add "$(basename "$p")" "$p"
 done
+# Templates as the app instantiates them: the folder plus the shared styles
+# templates/shared/overlay.txt names for it.
 for t in "$ROOT"/src-tauri/templates/*/; do
     [ -f "$t/template.json" ] || continue
-    add "$(basename "$t")" "$t"
+    name=$(basename "$t")
+    if [ -e "$DEST/$name" ]; then
+        echo "playground: kept $DEST/$name (exists)"
+        continue
+    fi
+    python3 "$ROOT/e2e/templates.py" "$name" "$DEST/$name"
+    echo "playground: made $DEST/$name"
 done

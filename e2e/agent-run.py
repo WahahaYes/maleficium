@@ -30,10 +30,10 @@ Manual only: it spends model credits. See e2e/README.md.
 import argparse, base64, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 
 from mcp_client import McpClient
+import templates
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-TEMPLATES = os.path.join(ROOT, "src-tauri", "templates")
 SCENARIOS = os.path.join(HERE, "agent-scenarios")
 IDENT = "io.github.wahahayes.maleficium"
 CACHE_ROOT = "/var/tmp/maleficium-agent-cache"
@@ -169,8 +169,7 @@ def apply_edits(project, edits):
 
 def make_fixture(scenario, project, solved=False):
     """The template plus the scenario's edits and files (plus its solution)."""
-    shutil.copytree(os.path.join(TEMPLATES, scenario["template"]), project)
-    os.remove(os.path.join(project, "template.json"))
+    templates.materialize(scenario["template"], project)
     for rel, text in scenario.get("files", {}).items():
         with open(os.path.join(project, rel), "w") as f:
             f.write(text)
