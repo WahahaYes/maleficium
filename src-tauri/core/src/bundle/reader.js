@@ -345,12 +345,147 @@
     document.body.classList.add('m-notes-on');
   }
 
+  // Proofs fold. The page carries each as an open <details>, so it reads
+  // open with scripts off; here they start folded, open for print, and
+  // open when a link or the app's sync lands inside one.
+  var proofs = article.querySelectorAll('details.ltx_proof');
+  function reveal(to) {
+    for (var n = to; n && n !== article; n = n.parentNode) {
+      if (n.tagName === 'DETAILS' && !n.open) n.open = true;
+    }
+  }
+  Array.prototype.forEach.call(proofs, function (d) {
+    d.open = false;
+  });
+  var landed = null;
+  try {
+    landed = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  } catch (_) {
+    landed = null;
+  }
+  if (landed && article.contains(landed)) {
+    reveal(landed);
+    if (landed.scrollIntoView) landed.scrollIntoView();
+  }
+  var foldedForPrint = [];
+  window.addEventListener('beforeprint', function () {
+    Array.prototype.forEach.call(proofs, function (d) {
+      if (!d.open) {
+        foldedForPrint.push(d);
+        d.open = true;
+      }
+    });
+  });
+  window.addEventListener('afterprint', function () {
+    foldedForPrint.forEach(function (d) {
+      d.open = false;
+    });
+    foldedForPrint = [];
+  });
+
+  // Citations preview their entry: hovering or focusing a citation link
+  // shows its bibliography entry in a card beside it. The link still jumps
+  // to the entry (a click, or a tap on touch), so the card is only a
+  // shortcut.
+  var card = el('div', 'm-cite-card');
+  card.id = 'm-cite-card';
+  card.setAttribute('role', 'tooltip');
+  card.hidden = true;
+  document.body.appendChild(card);
+  var cardFor = null;
+  var hideTimer = 0;
+  function entryOf(a) {
+    var id;
+    try {
+      id = decodeURIComponent((a.getAttribute('href') || '').slice(1));
+    } catch (_) {
+      return null;
+    }
+    var li = id && document.getElementById(id);
+    return li && li.classList.contains('ltx_bibitem') ? li : null;
+  }
+  function citeLink(t) {
+    var a = t && t.closest ? t.closest('cite a[href^="#"]') : null;
+    return a && article.contains(a) && entryOf(a) ? a : null;
+  }
+  function placeCard() {
+    if (!cardFor) return;
+    var r = cardFor.getBoundingClientRect();
+    var vw = document.documentElement.clientWidth;
+    var vh = window.innerHeight;
+    var gap = 6;
+    var w = card.offsetWidth;
+    var h = card.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, vw - w - 8));
+    var top = r.bottom + gap;
+    if (top + h > vh - 8 && r.top - gap - h >= 8) top = r.top - gap - h;
+    card.style.left = left + 'px';
+    card.style.top = top + 'px';
+  }
+  function showCard(a) {
+    clearTimeout(hideTimer);
+    if (cardFor === a) return;
+    var copy = entryOf(a).cloneNode(true);
+    // The card is a preview, not a second entry: no ids to shadow the
+    // real one, and no back-links to where the entry is cited.
+    Array.prototype.forEach.call(copy.querySelectorAll('.ltx_bib_cited'), function (x) {
+      x.parentNode.removeChild(x);
+    });
+    Array.prototype.forEach.call(copy.querySelectorAll('[id]'), function (x) {
+      x.removeAttribute('id');
+    });
+    card.textContent = '';
+    while (copy.firstChild) card.appendChild(copy.firstChild);
+    if (cardFor) cardFor.removeAttribute('aria-describedby');
+    cardFor = a;
+    a.setAttribute('aria-describedby', card.id);
+    card.hidden = false;
+    placeCard();
+  }
+  function hideCard() {
+    clearTimeout(hideTimer);
+    if (!cardFor) return;
+    cardFor.removeAttribute('aria-describedby');
+    cardFor = null;
+    card.hidden = true;
+  }
+  function hideSoon() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideCard, 200);
+  }
+  article.addEventListener('mouseover', function (ev) {
+    var a = citeLink(ev.target);
+    if (a) showCard(a);
+  });
+  article.addEventListener('mouseout', function (ev) {
+    if (!cardFor || citeLink(ev.target) !== cardFor) return;
+    if (ev.relatedTarget && cardFor.contains(ev.relatedTarget)) return;
+    hideSoon();
+  });
+  card.addEventListener('mouseenter', function () {
+    clearTimeout(hideTimer);
+  });
+  card.addEventListener('mouseleave', hideSoon);
+  article.addEventListener('focusin', function (ev) {
+    var a = citeLink(ev.target);
+    if (a) showCard(a);
+  });
+  article.addEventListener('focusout', function (ev) {
+    if (ev.target === cardFor) hideCard();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') hideCard();
+  });
+  window.addEventListener('scroll', placeCard, { passive: true });
+  window.addEventListener('resize', hideCard);
+
   // Following an in-page link flashes where it landed, so a citation, a
   // footnote mark or a figure reference shows what it pointed at.
   var flashed = null;
   article.addEventListener('click', function (ev) {
     var a = ev.target && ev.target.closest ? ev.target.closest('a[href^="#"]') : null;
     if (!a) return;
+    hideCard();
     var id;
     try {
       id = decodeURIComponent(a.getAttribute('href').slice(1));
@@ -359,6 +494,7 @@
     }
     var to = id && document.getElementById(id);
     if (!to) return;
+    reveal(to);
     if (flashed) flashed.classList.remove('m-flash');
     flashed = to;
     // :target already marks the first visit; the class covers a repeat click.
@@ -382,6 +518,7 @@
     if (d.type !== 'article-scroll' || typeof d.id !== 'string' || !d.id) return;
     var to = document.getElementById(d.id);
     if (!to) return;
+    reveal(to);
     if (to.scrollIntoView) {
       try {
         to.scrollIntoView({ block: 'start' });

@@ -328,6 +328,13 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, Vec<Un
         qed_box(proof);
     }
 
+    // A proof folds: an open `<details>` whose summary is its run-in title,
+    // so with scripts off and in print it reads open and can still be
+    // folded by hand. The reader script folds proofs on load.
+    for proof in doc.select("article.ltx_document div.ltx_proof").nodes() {
+        fold_proof(proof);
+    }
+
     // In-page links: a citation or reference to `page.html#x` becomes `#x`
     // when `x` is in the article; a fragment with no target is unlinked.
     let ids: HashSet<String> = article
@@ -430,6 +437,30 @@ fn qed_box(proof: &dom_query::NodeRef) {
         t.set_text(head);
     }
 }
+
+/// Turn latexml's `div.ltx_proof` into `<details class="ltx_proof" open>`
+/// with its title (`Proof.`, or the author's `Proof of ...`) as the
+/// `<summary>`. A proof latexml gave no title gets the plain one.
+fn fold_proof(proof: &dom_query::NodeRef) {
+    let title = proof
+        .first_element_child()
+        .filter(|c| c.has_class("ltx_title"))
+        .map(|t| {
+            let html = t.html().to_string();
+            t.remove_from_parent();
+            html
+        })
+        .unwrap_or_else(|| PROOF_TITLE.to_string());
+    proof.rename("details");
+    proof.set_attr("open", "");
+    proof.prepend_html(format!(
+        "<summary class=\"m-proof-summary\">{title}</summary>"
+    ));
+}
+
+/// The title latexml gives a plain `proof`, for one that arrives without.
+const PROOF_TITLE: &str =
+    "<h6 class=\"ltx_title ltx_runin ltx_font_italic ltx_title_proof\">Proof.</h6>";
 
 /// The proof-final mark latexml emits, drawn in CSS instead (`U+220E`
 /// renders as a solid box in fonts without the glyph).

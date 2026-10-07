@@ -561,6 +561,37 @@ body.m-reader {
 .m-reader .ltx_runin + .ltx_para > .ltx_p:first-child {
   display: inline;
 }
+/* A proof folds: its title is the summary, with a drawn disclosure mark. */
+.m-reader details.ltx_proof > summary {
+  display: block;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.m-reader details.ltx_proof > summary::-webkit-details-marker {
+  display: none;
+}
+.m-reader details.ltx_proof > summary::before {
+  content: '';
+  display: inline-block;
+  margin-right: 0.45em;
+  border-style: solid;
+  border-width: 0.3em 0 0.3em 0.45em;
+  border-color: transparent transparent transparent var(--m-color-muted);
+  vertical-align: 0.05em;
+  transition: transform 0.15s;
+}
+.m-reader details.ltx_proof[open] > summary::before {
+  transform: rotate(90deg);
+}
+.m-reader details.ltx_proof > summary:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader details.ltx_proof > summary .ltx_runin {
+  margin: 0;
+}
 /* A proof's closing mark, drawn instead of the qed glyph (U+220E renders
    as a solid box in fonts without it). */
 .m-reader .m-qed {
@@ -645,6 +676,27 @@ body.m-reader {
 }
 .m-reader .ltx_bib_title {
   font-style: italic;
+}
+/* A citation's preview card: its bibliography entry, beside the link. */
+.m-reader .m-cite-card {
+  position: fixed;
+  z-index: 20;
+  max-width: min(28rem, calc(100vw - 16px));
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-tooltip-bg);
+  color: var(--m-tooltip-fg);
+  border: 1px solid var(--m-tooltip-border);
+  border-radius: var(--m-radius);
+  box-shadow: var(--m-shadow);
+  font-size: var(--m-size-small);
+  line-height: 1.45;
+}
+.m-reader .m-cite-card[hidden] {
+  display: none;
+}
+.m-reader .m-cite-card .ltx_tag_bibitem {
+  margin-right: 0.4em;
+  color: var(--m-color-muted);
 }
 .m-reader .ltx_note_outer {
   display: contents;
@@ -930,5 +982,9 @@ body.m-reader {
   .m-reader .m-flash {
     background: none;
     box-shadow: none;
+  }
+  .m-reader .m-cite-card,
+  .m-reader details.ltx_proof > summary::before {
+    display: none;
   }
 }
