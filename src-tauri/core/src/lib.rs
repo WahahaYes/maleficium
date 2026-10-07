@@ -16,6 +16,7 @@ pub mod history;
 pub mod index;
 pub mod mainfile;
 pub mod outputs;
+pub mod presence;
 pub mod readiness;
 pub mod reflow;
 pub mod replace;

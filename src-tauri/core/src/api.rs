@@ -99,6 +99,7 @@ params! {
     FuzzyRankParams { query: String, items: Vec<String>, max: Option<usize> },
     IndexDefinitionAtParams { root_id: String, line: String, col: u32, main_rel: Option<String> },
     IndexMacrosParams { root_id: String },
+    PresenceSetParams { root_id: Option<String>, main_rel: Option<String>, active_rel: Option<String> },
     MainResolveParams { root_id: String, opened_abs: Option<String> },
     MainSetAssociationParams { root_id: String, rel: String },
     FileReadParams { root_id: String, rel: String },
@@ -187,6 +188,7 @@ operations! {
     FuzzyRank via fuzzy_rank(FuzzyRankParams) -> Vec<Ranked>,
     IndexDefinitionAt via index_definition_at(IndexDefinitionAtParams) -> Option<Lookup>,
     IndexMacros via index_macros(IndexMacrosParams) -> Vec<ProjectMacro>,
+    PresenceSet via presence_set(PresenceSetParams) -> (),
     MainResolve via main_resolve(MainResolveParams) -> MainResolution,
     MainSetAssociation via main_set_association(MainSetAssociationParams) -> (),
     FileRead via file_read(FileReadParams) -> String,
@@ -430,6 +432,11 @@ fn index_macros(cx: &Core, p: IndexMacrosParams) -> Result<Vec<ProjectMacro>, St
     crate::search::macros(cx, &p.root_id)
 }
 
+/// What this app has open, for the MCP server's read view.
+fn presence_set(cx: &Core, p: PresenceSetParams) -> Result<(), String> {
+    crate::presence::set(cx, p.root_id.as_deref(), p.main_rel, p.active_rel)
+}
+
 fn main_resolve(cx: &Core, p: MainResolveParams) -> Result<MainResolution, String> {
     crate::mainfile::resolve(cx, &p.root_id, p.opened_abs.as_deref())
 }
@@ -593,6 +600,7 @@ pub fn typescript() -> String {
         FuzzyRankParams::decl(&cfg),
         IndexDefinitionAtParams::decl(&cfg),
         IndexMacrosParams::decl(&cfg),
+        PresenceSetParams::decl(&cfg),
         MainResolveParams::decl(&cfg),
         MainSetAssociationParams::decl(&cfg),
         FileReadParams::decl(&cfg),

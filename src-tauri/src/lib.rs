@@ -27,6 +27,14 @@ pub fn run() {
             let renderer = commands::poster::AppRenderer(app.handle().clone());
             app.state::<maleficium_core::Core>()
                 .set_poster_renderer(std::sync::Arc::new(renderer));
+            // What this window has open, kept fresh for the MCP server's
+            // read view (the frontend publishes it; this keeps it alive).
+            std::thread::spawn(|| loop {
+                std::thread::sleep(std::time::Duration::from_millis(
+                    maleficium_core::presence::HEARTBEAT_MS,
+                ));
+                maleficium_core::presence::heartbeat();
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +57,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                maleficium_core::presence::withdraw();
                 if let Some(cx) = app.try_state::<maleficium_core::Core>() {
                     maleficium_core::compile::shutdown(&cx);
                     maleficium_core::reflow::convert::shutdown(&cx);

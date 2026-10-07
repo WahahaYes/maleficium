@@ -257,6 +257,34 @@ struct RuntimeValidateParams {
     root_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AppWindowsParams {}
+
+/// One running Maleficium window and what it holds.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppWindow {
+    pid: u32,
+    /// The open project folder (absolute); absent when none is open.
+    project: Option<String>,
+    /// The document's main file, relative to the project.
+    main_rel: Option<String>,
+    /// The file in the user's editor, relative to the project.
+    active_rel: Option<String>,
+    /// The root id this server already granted for the project, if any.
+    root_id: Option<String>,
+    /// Unix ms of the window's last update (a heartbeat every 30 s).
+    updated_ms: u64,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppWindowsOut {
+    /// Running windows, most recently active first.
+    windows: Vec<AppWindow>,
+    /// What to do with them.
+    hint: String,
+}
+
 /// Unknown fields are refused: the install copies one validated draft,
 /// and nothing it takes could approve, allow or decide.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -997,6 +1025,45 @@ impl Maleficium {
                 reference,
                 path: path_string(dir),
             }))
+        })
+    }
+
+    #[tool(
+        description = "List the Maleficium app windows the user has open: each one's project folder, the document's main file and the file in front, most recently active first, and the root_id if you already granted that folder. Use it at the start of a session to work in the project the user already has open: grant its folder (grant with root = project), and your edits and compiles show in their window. Read-only: it never opens, focuses or changes anything in the app.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn app_windows(
+        &self,
+        Parameters(_): Parameters<AppWindowsParams>,
+    ) -> Result<Json<AppWindowsOut>, String> {
+        self.tool("app_windows", || {
+            let windows: Vec<AppWindow> = core::presence::list()
+                .into_iter()
+                .map(|p| AppWindow {
+                    root_id: p
+                        .project
+                        .as_deref()
+                        .and_then(|d| core::presence::granted_as(&self.cx, d)),
+                    pid: p.pid,
+                    project: p.project,
+                    main_rel: p.main_rel,
+                    active_rel: p.active_rel,
+                    updated_ms: p.updated_ms,
+                })
+                .collect();
+            let with_project = windows.iter().filter(|w| w.project.is_some()).count();
+            let hint = match (windows.len(), with_project) {
+                (0, _) => "No Maleficium window is open. Ask the user to open the app and their project, or grant a folder they name.".to_string(),
+                (_, 0) => "Maleficium is open but holds no project folder. Ask the user which folder to work in, or to open it in the app.".to_string(),
+                (_, 1) => "Grant the open project's folder (grant with root = project) unless it has a root_id already; work there so the user sees your edits and compiles.".to_string(),
+                _ => "Several projects are open: ask the user which one to work in before granting it; the first is the most recently active.".to_string(),
+            };
+            Ok(Json(AppWindowsOut { windows, hint }))
         })
     }
 
@@ -2086,6 +2153,35 @@ mod tests {
             .is_err());
     }
 
+    /// The app-windows view is read-only and takes no arguments: it lists
+    /// what the user's open windows hold and can open or change nothing.
+    #[test]
+    fn app_windows_is_a_read_only_view_with_no_arguments() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "app_windows")
+            .expect("app_windows");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        assert!(schema["properties"]
+            .as_object()
+            .is_none_or(|p| p.is_empty()));
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(
+            serde_json::from_value::<AppWindowsParams>(serde_json::json!({"open": true})).is_err()
+        );
+        let out = Maleficium::default()
+            .app_windows(Parameters(
+                serde_json::from_value(serde_json::json!({})).unwrap(),
+            ))
+            .unwrap();
+        assert!(!out.0.hint.is_empty());
+    }
+
     /// The approval boundary: no tool approves, revokes or switches
     /// auto-approval. No tool is named for it, no tool takes a parameter
     /// for it (and the approval tools refuse unknown fields), and this
@@ -2819,6 +2915,7 @@ mod tests {
             "runtime_scaffold",
             "runtime_validate",
             "runtime_install",
+            "app_windows",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(

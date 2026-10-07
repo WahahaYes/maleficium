@@ -17,6 +17,7 @@ import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
 import { projectIndex, type ProjectMacro } from './lib/project-index';
+import { publishPresence } from './lib/presence';
 import type { Hit } from './lib/generated/index';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -189,6 +190,14 @@ export default function App({
     setMainToPath,
     pickMain,
   } = useMainFile({ root, projectId, rootRef, setLog });
+  // What this window has open, for the MCP server's read view of the app.
+  useEffect(() => {
+    publishPresence(
+      projectId,
+      mainFile ? relInProject(mainFile) : null,
+      projectId ? relInProject(fileName) : null,
+    );
+  }, [projectId, root, mainFile, fileName, relInProject]);
   const handleSelect = useFileSelection({
     fileName,
     fileNameRef,
