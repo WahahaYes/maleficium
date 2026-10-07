@@ -1826,6 +1826,88 @@ fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
     ));
 }
 
+/// fig-demo runs the WASM-declaring sample (installed).
+const WASM_LINE: &str = "widget|fig-demo|custom|wasm-sum@1|||house|figures/demo.png|primary=data/grid.csv|height=227.62204pt|A WASM sum";
+
+/// Approve one runtime in an isolated store, as the user would.
+fn allow_runtime(base: &Path, p: &Project, runtime: &str, users: &[&str]) {
+    let checked = crate::widget_approval::check_runtime_at(
+        base,
+        &p.cx,
+        &p.id,
+        runtime,
+        &users.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+    )
+    .unwrap();
+    crate::widget_approval::decide_runtime_at(
+        base,
+        &p.cx,
+        &crate::widget_approval::RuntimeDecisionParams {
+            root_id: p.id.clone(),
+            main_rel: "main.tex".into(),
+            runtime: runtime.into(),
+            digest: checked.snapshot.digest,
+            decision: crate::widget_approval::RuntimeDecision::Allowed,
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_wasm_runtime_folds_with_wasm_unsafe_eval_and_a_plain_one_without() {
+    let sidecar = REAL_SIDECAR
+        .replace(CHART_LINE, HEAT_LINE)
+        .replace(DEMO_LINE, WASM_LINE);
+    let p = project("rt-wasm", &sidecar);
+    std::fs::write(p.root.join("data/grid.csv"), GRID).unwrap();
+    copy_sample("heatmap@1", &p.root.join("runtimes/heatmap@1"));
+    copy_sample("wasm-sum@1", &p.root.join("runtimes/wasm-sum@1"));
+    converts_to(
+        &p,
+        Ok(clean_conversion()
+            .replace("m-widget m-widget-chart", "m-widget m-widget-custom")
+            .replace("m-widget m-widget-html", "m-widget m-widget-custom")),
+        &[],
+    );
+    let base = crate::test_scratch::dir("bundle-rt-wasm-appdata");
+    let _ = std::fs::remove_dir_all(&base);
+    allow_runtime(&base, &p, "heatmap@1", &["fig-chart"]);
+    allow_runtime(&base, &p, "wasm-sum@1", &["fig-demo"]);
+    let d = dest(&p, "paper");
+    export_bundle_at(&base, &p.cx, &p.id, "main.tex", &d, BundleProfile::Folder).unwrap();
+    let folder = PathBuf::from(&d);
+    let m = manifest_of(&folder);
+    validate_manifest(&m).unwrap();
+
+    // The manifest records each runtime's declaration.
+    assert_eq!(
+        m["runtimes"]["heatmap@1"]["capabilities"],
+        json!({"webgl": false, "wasm": false})
+    );
+    assert_eq!(
+        m["runtimes"]["wasm-sum@1"]["capabilities"],
+        json!({"webgl": false, "wasm": true})
+    );
+
+    // Only the declaring runtime's document carries the token: the plain
+    // runtime keeps the contract-1 policy, the WASM one widens script-src
+    // and nothing else.
+    let plain = std::fs::read_to_string(folder.join("widgets/fig-chart/index.html")).unwrap();
+    assert!(!plain.contains("wasm-unsafe-eval"), "no token leaked");
+    assert_eq!(fold::policy_of(&plain), fold::widget_policy(None));
+    let wasm = std::fs::read_to_string(folder.join("widgets/fig-demo/index.html")).unwrap();
+    let policy = fold::policy_of(&wasm).to_string();
+    assert!(
+        policy.contains("script-src 'unsafe-inline' 'wasm-unsafe-eval';"),
+        "{policy}"
+    );
+    assert_eq!(
+        policy,
+        fold::widget_policy_for(None, true),
+        "only script-src widens"
+    );
+}
+
 #[test]
 fn the_licence_block_cannot_close_its_comment() {
     let c = custom_project("rt-licence", HEAT_LINE);

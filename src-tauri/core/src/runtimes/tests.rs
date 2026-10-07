@@ -420,6 +420,7 @@ fn every_documented_sample_passes_the_package_check() {
         "heatmap@1",
         "stl-viewer@1",
         "caption-overlay@1",
+        "wasm-sum@1",
         "bad-cdn@1",
     ] {
         let m = check_package(r, &sample(r)).unwrap_or_else(|e| panic!("{e}"));
