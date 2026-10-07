@@ -3,7 +3,9 @@
 # copies the interactive package into a scratch copy of
 # e2e/fixtures/playground/, compiles main.tex, and asserts both that the PDF
 # builds cleanly (bibliography resolved, no undefined references) and that
-# the MCP `widgets` tool lists every widget the paper declares.
+# the MCP `widgets` tool lists every widget the paper declares. Then exports
+# the single-file bundle and drives its article (folding proofs, citation
+# cards) in Chromium, Firefox and WebKit with e2e/article-run.mjs.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -190,11 +192,27 @@ if shutil.which("mutool"):
 else:
     print("skip: pdf text checks need mutool (absent)")
 
+# The single-file export, outside the project, for the article checks below.
+out = os.path.join(os.path.dirname(ROOT), "out", "single.html")
+os.makedirs(os.path.dirname(out), exist_ok=True)
+ex = call("export_bundle", {"root_id": "pg", "main_rel": "main.tex", "dest": out, "profile": "single-file"})
+check("single-file export of the playground", ex["ok"] and os.path.isfile(out), str(ex)[:300])
+
 mcp.p.kill()
 sys.exit(1 if fails else 0)
 PYEOF
 driver_status=$?
 [ "$driver_status" -eq 0 ] || fail "playground run failed"
+
+# The article's proofs and citation cards, in each headless browser. The
+# compile above points XDG_CACHE_HOME at the engine cache; playwright's
+# browsers stay where npx playwright-core install put them.
+for browser in chromium firefox webkit; do
+  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" \
+    timeout 300 node "$DEVROOT/e2e/article-run.mjs" --single "$SCRATCH/out/single.html" \
+    --browser "$browser" || fail "article run failed in $browser"
+done
+pass "article proofs and citation cards in chromium, firefox and webkit"
 
 cd "$ROOT"
 # .maleficium/ is the poster cache: with a display the compile renders the
