@@ -345,6 +345,44 @@
     document.body.classList.add('m-notes-on');
   }
 
+  // Proofs fold. The page carries each as an open <details>, so it reads
+  // open with scripts off; here they start folded, open for print, and
+  // open when a link or the app's sync lands inside one.
+  var proofs = article.querySelectorAll('details.ltx_proof');
+  function reveal(to) {
+    for (var n = to; n && n !== article; n = n.parentNode) {
+      if (n.tagName === 'DETAILS' && !n.open) n.open = true;
+    }
+  }
+  Array.prototype.forEach.call(proofs, function (d) {
+    d.open = false;
+  });
+  var landed = null;
+  try {
+    landed = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  } catch (_) {
+    landed = null;
+  }
+  if (landed && article.contains(landed)) {
+    reveal(landed);
+    if (landed.scrollIntoView) landed.scrollIntoView();
+  }
+  var foldedForPrint = [];
+  window.addEventListener('beforeprint', function () {
+    Array.prototype.forEach.call(proofs, function (d) {
+      if (!d.open) {
+        foldedForPrint.push(d);
+        d.open = true;
+      }
+    });
+  });
+  window.addEventListener('afterprint', function () {
+    foldedForPrint.forEach(function (d) {
+      d.open = false;
+    });
+    foldedForPrint = [];
+  });
+
   // Following an in-page link flashes where it landed, so a citation, a
   // footnote mark or a figure reference shows what it pointed at.
   var flashed = null;
@@ -359,6 +397,7 @@
     }
     var to = id && document.getElementById(id);
     if (!to) return;
+    reveal(to);
     if (flashed) flashed.classList.remove('m-flash');
     flashed = to;
     // :target already marks the first visit; the class covers a repeat click.
@@ -382,6 +421,7 @@
     if (d.type !== 'article-scroll' || typeof d.id !== 'string' || !d.id) return;
     var to = document.getElementById(d.id);
     if (!to) return;
+    reveal(to);
     if (to.scrollIntoView) {
       try {
         to.scrollIntoView({ block: 'start' });
