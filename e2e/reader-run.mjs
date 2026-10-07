@@ -38,6 +38,7 @@ const arg = (name) => {
   return i < 0 ? null : process.argv[i + 1];
 };
 const singleFile = arg('--single');
+const customProof = arg('--custom-proof');
 const customProofBad = arg('--custom-proof-bad');
 const embedSingle = arg('--embed-single');
 const embedFolder = arg('--embed-folder');
