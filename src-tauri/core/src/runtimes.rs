@@ -237,6 +237,10 @@ pub struct OptionsSchema {
 #[serde(deny_unknown_fields)]
 pub struct Capabilities {
     pub webgl: bool,
+    /// Whether the runtime may compile WebAssembly: contract 1 packages
+    /// omit it (they never use WASM), so it defaults to false.
+    #[serde(default)]
+    pub wasm: bool,
 }
 
 /// A library a package carries a copy of under `vendor/`.
