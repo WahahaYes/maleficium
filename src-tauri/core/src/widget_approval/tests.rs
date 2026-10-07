@@ -1474,3 +1474,62 @@ fn the_runtime_judged_is_the_snapshot_handed_back() {
     assert_eq!(a.digest, digest(&c.snapshot.files, &WidgetCsp::default()));
     assert_eq!(a.digest, c.snapshot.digest);
 }
+
+/// After an install the agent asks the user unless auto-approval covers it:
+/// it never covers a first install, and covers an update only once the
+/// user allowed the runtime.
+#[test]
+fn after_install_asks_the_user_unless_auto_approval_covers_the_update() {
+    use crate::runtime_author::after_install;
+    let p = rt_project("rt-after-install");
+    let first = after_install(RT, &p.rt_status());
+    assert!(!first.approved && first.ask_user && !first.auto_approve);
+    assert!(
+        first
+            .hint
+            .starts_with("Ask the user to allow heatmap@1. heatmap@1 is new"),
+        "{}",
+        first.hint
+    );
+    assert!(first.hint.contains(PANEL), "{}", first.hint);
+
+    p.auto(true);
+    let first_auto = after_install(RT, &p.rt_status());
+    assert!(!first_auto.approved && first_auto.ask_user && first_auto.auto_approve);
+    assert!(
+        first_auto.hint.contains("only covers updates"),
+        "{}",
+        first_auto.hint
+    );
+
+    p.allow();
+    let allowed = after_install(RT, &p.rt_status());
+    assert!(allowed.approved && !allowed.ask_user);
+    assert!(
+        allowed.hint.contains("already allowed exactly these files"),
+        "{}",
+        allowed.hint
+    );
+
+    p.rt_write("index.html", b"<!doctype html><p>an update</p>");
+    let update_auto = after_install(RT, &p.rt_status());
+    assert!(
+        update_auto.approved && !update_auto.ask_user,
+        "{}",
+        update_auto.hint
+    );
+    assert!(
+        update_auto.hint.contains("auto-approval is on"),
+        "{}",
+        update_auto.hint
+    );
+
+    p.auto(false);
+    let update = after_install(RT, &p.rt_status());
+    assert!(!update.approved && update.ask_user);
+    assert!(
+        update.hint.contains("auto-approval is off"),
+        "{}",
+        update.hint
+    );
+}

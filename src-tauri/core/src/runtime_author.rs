@@ -354,6 +354,210 @@ pub fn validate_project(cx: &Core, root_id: &str, reference: &str) -> Result<Val
     validate_dir(reference, &dir)
 }
 
+/// What an install did to the project's `runtimes/<ref>/`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallOutcome {
+    /// Copied into an empty place.
+    Installed,
+    /// A different copy was there, and `replace` swapped it out.
+    Replaced,
+    /// The project already held exactly these files: nothing written.
+    Unchanged,
+}
+
+impl InstallOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Installed => "installed",
+            Self::Replaced => "replaced",
+            Self::Unchanged => "unchanged",
+        }
+    }
+}
+
+/// An install's result: the project-relative folder and its file count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Installed {
+    pub reference: String,
+    pub rel: String,
+    pub files: usize,
+    pub outcome: InstallOutcome,
+}
+
+/// Copy the user library's draft of `reference` into the project as
+/// `runtimes/<ref>/`. Only a draft that validates (no errors) installs,
+/// and a different copy already in the project is replaced only with
+/// `replace`. Installing is copying reviewed files, not approving them:
+/// the runtime runs only once the user allows its digest in the app.
+pub fn install(
+    cx: &Core,
+    root_id: &str,
+    reference: &str,
+    replace: bool,
+) -> Result<Installed, String> {
+    install_from(cx, root_id, &library_dir(), reference, replace)
+}
+
+pub(crate) fn install_from(
+    cx: &Core,
+    root_id: &str,
+    library: &Path,
+    reference: &str,
+    replace: bool,
+) -> Result<Installed, String> {
+    crate::fs::session_root(cx, root_id)?;
+    if !runtimes::valid_ref(reference) {
+        return Err(format!(
+            "`{reference}` is not a runtime reference (<name>@<major>)"
+        ));
+    }
+    let draft = library.join(reference);
+    if !draft.is_dir() {
+        return Err(format!(
+            "runtime {reference}: not in the library (no {LIBRARY_DIR}/{reference}/); scaffold it first"
+        ));
+    }
+    let files = read_package(&draft)?;
+    let v = validate_files(reference, &files);
+    if !v.valid() {
+        return Err(format!(
+            "runtime {reference} does not validate, so it is not installed: {}",
+            v.errors.join("; ")
+        ));
+    }
+    let rel = format!("{}/{reference}", runtimes::RUNTIMES_DIR);
+    let root = crate::fs::session_root(cx, root_id)?;
+    let existing = root.join(&rel);
+    let mut outcome = InstallOutcome::Installed;
+    if existing.exists() {
+        if read_package(&existing).is_ok_and(|have| have == files) {
+            return Ok(Installed {
+                reference: reference.to_string(),
+                rel,
+                files: files.len(),
+                outcome: InstallOutcome::Unchanged,
+            });
+        }
+        if !replace {
+            return Err(format!(
+                "{rel}/ already holds a different copy of {reference}; pass replace to swap it for the library's"
+            ));
+        }
+        outcome = InstallOutcome::Replaced;
+    }
+    // Written beside the target, then swapped in, so the project never
+    // holds a half-copied runtime.
+    let staging = format!("{}/.{reference}.installing", runtimes::RUNTIMES_DIR);
+    let write = || -> Result<(), String> {
+        crate::fs::make_dir(cx, root_id, runtimes::RUNTIMES_DIR)?;
+        if root.join(&staging).exists() {
+            crate::fs::remove_path(cx, root_id, &staging, true)?;
+        }
+        crate::fs::make_dir(cx, root_id, &staging)?;
+        let mut made: BTreeSet<String> = BTreeSet::new();
+        for (path, bytes) in &files {
+            // Each folder level in turn: a confined mkdir needs its parent.
+            let mut dir = staging.clone();
+            for part in path
+                .split('/')
+                .rev()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
+                dir = format!("{dir}/{part}");
+                if made.insert(dir.clone()) {
+                    crate::fs::make_dir(cx, root_id, &dir)?;
+                }
+            }
+            crate::fs::write_bytes(cx, root_id, &format!("{staging}/{path}"), bytes)?;
+        }
+        if outcome == InstallOutcome::Replaced {
+            crate::fs::remove_path(cx, root_id, &rel, true)?;
+        }
+        crate::fs::rename_path(cx, root_id, &staging, &rel)
+    };
+    if let Err(e) = write() {
+        let _ = crate::fs::remove_path(cx, root_id, &staging, true);
+        return Err(format!("installing {reference} failed: {e}"));
+    }
+    Ok(Installed {
+        reference: reference.to_string(),
+        rel,
+        files: files.len(),
+        outcome,
+    })
+}
+
+/// What an agent does after an install, from the runtime's approval state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AfterInstall {
+    /// It runs on the next compile.
+    pub approved: bool,
+    /// The project's auto-approval setting.
+    pub auto_approve: bool,
+    /// The user has to allow it: the agent asks them to.
+    pub ask_user: bool,
+    /// What to do or relay next.
+    pub hint: String,
+}
+
+/// The agent's next step once `reference` is installed: nothing when the
+/// user allowed these exact files or auto-approval covers the change, else
+/// ask the user. Auto-approval covers only an update to a runtime the user
+/// already allowed (same licence and vendored libraries), never a first
+/// install or a denied runtime, so the setting alone does not decide.
+pub fn after_install(
+    reference: &str,
+    status: &crate::widget_approval::WidgetApprovalStatus,
+) -> AfterInstall {
+    use crate::widget_approval::{ApprovedVia, WidgetApprovalStatus};
+    use maleficium_events::WidgetApprovalCause as Cause;
+    let r = reference;
+    match status {
+        WidgetApprovalStatus::Approved(a) => AfterInstall {
+            approved: true,
+            auto_approve: a.auto_approve,
+            ask_user: false,
+            hint: match a.via {
+                ApprovedVia::Auto => format!(
+                    "The user allowed {r} before and auto-approval is on, so this update runs on the next compile. Nothing to ask the user."
+                ),
+                ApprovedVia::User => format!(
+                    "The user already allowed exactly these files of {r}: it runs on the next compile. Nothing to ask the user."
+                ),
+            },
+        },
+        WidgetApprovalStatus::ApprovalRequired(q) => {
+            let why = match q.cause {
+                Cause::NeverApproved if q.auto_approve => format!(
+                    "{r} is new to this project; auto-approval is on but only covers updates to a runtime the user already allowed."
+                ),
+                Cause::NeverApproved => format!("{r} is new to this project."),
+                Cause::Revoked => format!(
+                    "The user denied {r} in this project; tell them it is installed, and leave it to them."
+                ),
+                Cause::LicenseOrVendoredChanged => format!(
+                    "{r} changed its licence or vendored libraries since the user allowed it, which always needs the user, even with auto-approval on."
+                ),
+                Cause::ChangedSinceApproval | Cause::DeclaredOriginsChanged => format!(
+                    "{r} changed since the user allowed it, and auto-approval is off for this project."
+                ),
+            };
+            AfterInstall {
+                approved: false,
+                auto_approve: q.auto_approve,
+                ask_user: true,
+                hint: format!(
+                    "Ask the user to allow {r}. {why} After the next compile, the banner above the article links to {}, where they review and allow it. Do not retry, poll, or rework the runtime to get around this.",
+                    q.panel
+                ),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +685,72 @@ mod tests {
         assert!(missing.contains("not installed"), "{missing}");
         let bad = validate_project(cx, "author", "Model@1").unwrap();
         assert!(!bad.valid() && bad.manifest.is_none());
+    }
+
+    #[test]
+    fn install_copies_a_valid_draft_and_replaces_only_when_asked() {
+        let cx = &Core::default();
+        let library = scratch("install-library");
+        let dir = scratch("install-project");
+        let root = dunce::canonicalize(&dir).unwrap();
+        crate::grant_root(cx, "inst", &root.to_string_lossy()).unwrap();
+        scaffold_into(&library, "spin-view", Some(MODEL_REF)).unwrap();
+
+        let first = install_from(cx, "inst", &library, "spin-view@1", false).unwrap();
+        assert_eq!(first.outcome, InstallOutcome::Installed);
+        assert_eq!(first.rel, "runtimes/spin-view@1");
+        let installed = read_package(&root.join("runtimes/spin-view@1")).unwrap();
+        assert_eq!(
+            installed,
+            read_package(&library.join("spin-view@1")).unwrap()
+        );
+        assert_eq!(first.files, installed.len());
+        assert!(validate_project(cx, "inst", "spin-view@1").unwrap().valid());
+        assert!(!root.join("runtimes/.spin-view@1.installing").exists());
+
+        let again = install_from(cx, "inst", &library, "spin-view@1", false).unwrap();
+        assert_eq!(again.outcome, InstallOutcome::Unchanged);
+
+        // The author edits the draft: a different copy is in the project.
+        let viewer = library.join("spin-view@1/viewer.js");
+        let mut text = std::fs::read_to_string(&viewer).unwrap();
+        text.push_str("\n// edited\n");
+        std::fs::write(&viewer, &text).unwrap();
+        let refused = install_from(cx, "inst", &library, "spin-view@1", false).unwrap_err();
+        assert!(refused.contains("pass replace"), "{refused}");
+        let swapped = install_from(cx, "inst", &library, "spin-view@1", true).unwrap();
+        assert_eq!(swapped.outcome, InstallOutcome::Replaced);
+        assert_eq!(
+            std::fs::read_to_string(root.join("runtimes/spin-view@1/viewer.js")).unwrap(),
+            text
+        );
+    }
+
+    #[test]
+    fn install_refuses_an_invalid_draft_a_missing_one_and_a_bad_ref() {
+        let cx = &Core::default();
+        let library = scratch("install-refuse-library");
+        let dir = scratch("install-refuse-project");
+        let root = dunce::canonicalize(&dir).unwrap();
+        crate::grant_root(cx, "refuse", &root.to_string_lossy()).unwrap();
+        let bad = library.join("bad-cdn@1");
+        std::fs::create_dir_all(&bad).unwrap();
+        for (rel, bytes) in read_package(&sample_dir("bad-cdn@1")).unwrap() {
+            let p = bad.join(&rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, bytes).unwrap();
+        }
+        let e = install_from(cx, "refuse", &library, "bad-cdn@1", false).unwrap_err();
+        assert!(
+            e.contains("does not validate") && e.contains("url-load"),
+            "{e}"
+        );
+        assert!(!root.join("runtimes/bad-cdn@1").exists());
+        let e = install_from(cx, "refuse", &library, "nope@1", false).unwrap_err();
+        assert!(e.contains("not in the library"), "{e}");
+        let e = install_from(cx, "refuse", &library, "../x@1", false).unwrap_err();
+        assert!(e.contains("not a runtime reference"), "{e}");
+        assert!(install_from(cx, "ungranted", &library, "nope@1", false).is_err());
     }
 
     #[test]

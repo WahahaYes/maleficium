@@ -1217,6 +1217,31 @@ def self_test_runtime_authoring(server):
                 check("fork-validates-untouched",
                       ok and green["valid"] and not green["errors"] and not green["warnings"],
                       green if ok else green)
+                # Install: the validated fork goes into a granted project as
+                # runtimes/<ref>/, never approved; the same files again are
+                # unchanged, and an edited draft replaces only on request.
+                with tempfile.TemporaryDirectory(dir="/var/tmp") as proj:
+                    ok, _ = mcp.call("grant", {"root_id": "rt-inst", "root": proj})
+                    check("grant-install", ok)
+                    args = {"root_id": "rt-inst", "reference": fork["reference"]}
+                    ok, inst = mcp.call("runtime_install", args)
+                    check("install-copies-unapproved",
+                          ok and inst["outcome"] == "installed" and not inst["approved"]
+                          and inst["ask_user"] and inst["hint"].startswith("Ask the user to allow")
+                          and inst["path"] == "runtimes/self-test-fork@1"
+                          and os.path.isfile(os.path.join(proj, "runtimes", "self-test-fork@1", "viewer.js")),
+                          inst)
+                    ok, there = mcp.call("runtime_validate", args)
+                    check("install-validates-in-project", ok and there["valid"], there)
+                    ok, again = mcp.call("runtime_install", args)
+                    check("install-again-unchanged", ok and again["outcome"] == "unchanged", again)
+                    with open(os.path.join(fork["path"], "viewer.js"), "a") as f:
+                        f.write("\n// edited\n")
+                    ok, refused = mcp.call("runtime_install", args)
+                    check("install-keeps-a-different-copy", not ok and "replace" in refused, refused)
+                    ok, swapped = mcp.call("runtime_install", dict(args, replace=True))
+                    check("install-replaces-on-request",
+                          ok and swapped["outcome"] == "replaced" and not swapped["approved"], swapped)
             with tempfile.TemporaryDirectory(dir="/var/tmp") as q:
                 shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
                                 os.path.join(q, "runtimes", "bad-cdn@1"))
@@ -1242,6 +1267,9 @@ def self_test_runtime_authoring(server):
             check("scaffold-refuses-approval", not ok)
             ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
             check("validate-refuses-approval", not ok)
+            ok, _ = mcp.call("runtime_install",
+                             {"root_id": "rt-inst", "reference": "nope@1", "approve": True})
+            check("install-refuses-approval", not ok)
         finally:
             mcp.close()
     return bad
