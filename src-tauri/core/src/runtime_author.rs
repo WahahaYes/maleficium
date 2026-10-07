@@ -217,7 +217,7 @@ pub fn validate_files(reference: &str, files: &BTreeMap<String, Vec<u8>>) -> Val
     match runtimes::check_package(reference, files) {
         Ok(m) => {
             let vendored: BTreeSet<String> = m.vendored_files();
-            let report = runtimes::scan::scan(files, &vendored);
+            let report = runtimes::scan::scan(files, &vendored, m.capabilities.wasm);
             let line = |f: &runtimes::scan::Finding| {
                 format!("{}:{}: [{}] {}", f.file, f.line, f.rule, f.message)
             };
@@ -362,7 +362,7 @@ mod tests {
         let m = runtimes::check_package("orbit-view@1", &files).unwrap();
         assert_eq!(m.name, "orbit-view");
         assert_eq!(m.title, "orbit-view");
-        let report = runtimes::scan::scan(&files, &m.vendored_files());
+        let report = runtimes::scan::scan(&files, &m.vendored_files(), m.capabilities.wasm);
         let shown = |fs: &[runtimes::scan::Finding]| {
             fs.iter()
                 .map(|f| format!("{}:{}: {}", f.file, f.line, f.message))
