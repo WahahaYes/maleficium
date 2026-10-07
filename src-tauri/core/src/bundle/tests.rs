@@ -2253,3 +2253,207 @@ fn an_article_for_an_unknown_root_fails_without_naming_a_path() {
     let e = article_bundle(&cx, "no-such-root", "main.tex").unwrap_err();
     assert!(!e.is_empty() && !e.contains('/'), "{e}");
 }
+
+// ---- custom runtimes: proposed posters in the export ------------------------
+
+/// A 4x3 PNG split across two colours: never blank.
+fn pair_png(top: [u8; 3], bottom: [u8; 3]) -> Vec<u8> {
+    use png::{BitDepth, ColorType, Encoder};
+    let mut buf = Vec::new();
+    {
+        let mut enc = Encoder::new(&mut buf, 4, 3);
+        enc.set_color(ColorType::Rgb);
+        enc.set_depth(BitDepth::Eight);
+        let mut w = enc.write_header().unwrap();
+        let mut px = Vec::with_capacity(36);
+        for y in 0..3 {
+            for _ in 0..4 {
+                px.extend_from_slice(if y < 2 { &top } else { &bottom });
+            }
+        }
+        w.write_image_data(&px).unwrap();
+    }
+    buf
+}
+
+/// A poster renderer that lands an approved custom runtime's proposal: the
+/// light snapshot on the first run, the dark one on the second.
+struct Proposer {
+    base: PathBuf,
+    light: Vec<u8>,
+    dark: Vec<u8>,
+}
+
+impl crate::widgets::poster::cache::PosterRenderer for Proposer {
+    fn render(
+        &self,
+        cx: &Core,
+        reqs: &[crate::widgets::poster::PosterRequest],
+    ) -> Vec<Result<crate::widgets::poster::PosterOutcome, String>> {
+        reqs.iter()
+            .map(|r| {
+                crate::widgets::poster::run_at(&self.base, cx, r, |job| {
+                    use base64::Engine;
+                    let bytes = if job.dark_init.is_some() {
+                        &self.light
+                    } else {
+                        &self.dark
+                    };
+                    Ok(format!(
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    ))
+                })
+            })
+            .collect()
+    }
+}
+
+/// The compile's poster pass over a custom project with the proposer
+/// installed. Returns the lines it said.
+fn propose(c: &Custom, light: &[u8], dark: &[u8]) -> Vec<String> {
+    c.p.cx.set_poster_renderer(std::sync::Arc::new(Proposer {
+        base: c.base.clone(),
+        light: light.to_vec(),
+        dark: dark.to_vec(),
+    }));
+    let mut lines = Vec::new();
+    crate::widgets::poster::cache::before_compile_at(
+        &c.base,
+        &c.p.cx,
+        &c.p.id,
+        "main.tex",
+        &mut |l| lines.push(l),
+    );
+    lines
+}
+
+#[test]
+fn an_approved_custom_widget_exports_its_proposed_poster_from_the_map() {
+    let heat = HEAT_LINE.replace("|figures/chart.png|", "||");
+    let c = custom_project("rt-propose", &heat);
+    c.allow();
+    let light = pair_png([200, 10, 10], [10, 10, 200]);
+    let dark = pair_png([10, 10, 200], [200, 10, 10]);
+    let lines = propose(&c, &light, &dark);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("poster fig-chart: rendered")),
+        "{lines:?}"
+    );
+    // The map names the widget's current key (map-match).
+    let key = crate::widgets::poster::cache::map_key_for(&c.p.cx, &c.p.id, "main.tex", "fig-chart")
+        .expect("the proposal is mapped");
+    let d = dest(&c.p, "paper");
+    c.export(&d, BundleProfile::Folder).unwrap();
+    let folder = PathBuf::from(&d);
+    let m = manifest_of(&folder);
+    validate_manifest(&m).unwrap();
+    // Shapes: the pdf's picture is the mapped file, with the light bytes.
+    let a = &m["assets"]["fig-chart-poster"];
+    assert_eq!(a["mime"], "image/png");
+    assert_eq!(a["source"], format!(".maleficium/posters/{key}.png"));
+    let bytes = std::fs::read(folder.join(a["path"].as_str().unwrap())).unwrap();
+    assert_eq!(bytes, light, "the light snapshot is the poster");
+    // The proposal only pictures the pdf: the widget itself stays live.
+    assert_eq!(widget_json(&m, "fig-chart")["runtime"], "heatmap@1");
+    assert!(widget_json(&m, "fig-chart").get("fallback").is_none());
+}
+
+#[test]
+fn a_proposal_for_an_older_state_warns_and_holds_the_placeholder() {
+    let heat = HEAT_LINE.replace("|figures/chart.png|", "||");
+    let c = custom_project("rt-stale", &heat);
+    c.allow();
+    let light = pair_png([200, 10, 10], [10, 10, 200]);
+    let dark = pair_png([10, 10, 200], [200, 10, 10]);
+    propose(&c, &light, &dark);
+    assert!(
+        crate::widgets::poster::cache::map_key_for(&c.p.cx, &c.p.id, "main.tex", "fig-chart")
+            .is_some()
+    );
+    // New options (the runtime untouched, so still approved): the mapped
+    // key no longer matches, and no new poster was rendered.
+    let o = crate::outputs::outputs_of(&c.p.cx, &c.p.id, "main.tex").unwrap();
+    let side = o.outdir.join("main.mfw");
+    std::fs::write(
+        &side,
+        std::fs::read_to_string(&side)
+            .unwrap()
+            .replace("scheme=div", "scheme=seq"),
+    )
+    .unwrap();
+    let d = dest(&c.p, "paper");
+    let r = c.export(&d, BundleProfile::Folder).unwrap();
+    let m = manifest_of(Path::new(&d));
+    validate_manifest(&m).unwrap();
+    // The pdf falls back to the crop (no source), the widget stays live,
+    // and the export says the poster is stale instead of refusing.
+    let a = &m["assets"]["fig-chart-poster"];
+    assert!(a.get("source").is_none(), "{a}");
+    assert!(widget_json(&m, "fig-chart").get("fallback").is_none());
+    let stale: Vec<&str> = r
+        .warnings
+        .iter()
+        .filter(|w| w.kind == BundleWarningKind::RuntimeDigestChanged)
+        .map(|w| w.message.as_str())
+        .collect();
+    assert_eq!(stale.len(), 1, "{:?}", r.warnings);
+    assert!(
+        stale[0].contains("older state of runtime heatmap@1"),
+        "{}",
+        stale[0]
+    );
+}
+
+/// A scan-failed runtime is never approvable: the export is poster-only
+/// with red warnings, and (when asked) the single-file proof bundle the
+/// reader harness drives for its bad-cdn cells.
+#[test]
+fn a_scan_failed_runtime_is_poster_only_with_red_warnings() {
+    const BAD_LINE: &str = "widget|fig-chart|custom|bad-cdn@1|||house|figures/chart.png|primary=data/grid.csv|height=142.26378pt|Ablation chart";
+    let sidecar = REAL_SIDECAR
+        .replace(CHART_LINE, BAD_LINE)
+        .replace(DEMO_LINE, STL_LINE);
+    let p = project("rt-badcdn", &sidecar);
+    std::fs::write(p.root.join("data/grid.csv"), GRID).unwrap();
+    copy_sample("bad-cdn@1", &p.root.join("runtimes/bad-cdn@1"));
+    converts_to(
+        &p,
+        Ok(clean_conversion()
+            .replace("m-widget m-widget-chart", "m-widget m-widget-custom")
+            .replace("m-widget m-widget-html", "m-widget m-widget-custom")),
+        &[],
+    );
+    let base = crate::test_scratch::dir("bundle-rt-badcdn-appdata");
+    let _ = std::fs::remove_dir_all(&base);
+    let c = Custom { p, base };
+    let d = dest(&c.p, "paper");
+    let r = c.export(&d, BundleProfile::Folder).unwrap();
+    let m = manifest_of(Path::new(&d));
+    validate_manifest(&m).unwrap();
+    assert!(
+        m.get("runtimes").is_none(),
+        "no live widget, no runtimes map"
+    );
+    assert_eq!(widget_json(&m, "fig-chart")["fallback"], "runtime-invalid");
+    let warns: Vec<&str> = r.warnings.iter().map(|w| w.message.as_str()).collect();
+    assert!(
+        warns
+            .iter()
+            .any(|w| w.contains("runtime bad-cdn@1 is invalid (")
+                && w.contains("loads a remote URL")
+                && w.ends_with("): fig-chart export as posters only.")),
+        "{warns:?}"
+    );
+    let index = reader_html(&d, BundleProfile::Folder);
+    assert!(index.contains("runtime bad-cdn@1 did not pass validation."));
+    // The pdf still shows the widget's own poster.
+    assert!(m["assets"].get("fig-chart-poster").is_some());
+    if let Some(to) = std::env::var_os("MALEFICIUM_RUNTIME_PROOF_BAD") {
+        let proof = dest(&c.p, "proof-bad.html");
+        c.export(&proof, BundleProfile::SingleFile).unwrap();
+        std::fs::copy(&proof, to).unwrap();
+    }
+}

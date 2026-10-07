@@ -7,14 +7,16 @@
 % the outdir. Needs the XeTeX engine (xdvipdfmx specials).
 %
 % Posters: poster= is the document's own and always wins, so it stands in
-% for the widget: leave it out for a model, chart or html widget, whose real
-% render the pdf then shows, and keep it for a video (not rendered yet) or a
-% figure you drew by hand. Model, chart and html widgets may leave it out: Maleficium then renders one (an html
-% widget's only once the user approved its folder) into the project's
-% .maleficium/posters/ folder and lists it in .maleficium/posters/
-% \jobname.map, which this package reads. A widget uses its listed poster
-% only while its recorded runtime, sources and options match the list;
-% otherwise, or with no list (another LaTeX setup), it
+% for the widget: leave it out for a model, chart, html or custom-runtime
+% widget, whose real render the pdf then shows, and keep it for a video
+% (not rendered yet) or a figure you drew by hand. Model, chart and html
+% widgets may leave it out: Maleficium then renders one (an html
+% widget's only once the user approved its folder, a custom-runtime widget's
+% only once the user allowed its runtime, from the runtime's own proposal)
+% into the project's .maleficium/posters/ folder and lists it in
+% .maleficium/posters/ \jobname.map, which this package reads. A widget uses
+% its listed poster only while its recorded runtime, sources and options
+% match the list; otherwise, or with no list (another LaTeX setup), it
 % shows a placeholder box of the same size. A box without width= is 4:3,
 % or a model's size= aspect, so the poster replacing it keeps the layout.
 %
@@ -35,6 +37,8 @@
 %     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
 %   \interactiveruntime[runtime=stl-viewer@1, poster=figures/part.png,
 %     alt={...}, sources={texture=img/steel.png}, color=accent]{models/part.stl}
+%   \interactiveruntime[runtime=stl-viewer@1,  % no poster=: the runtime proposes one
+%     alt={...}]{models/part.stl}
 %
 % Sidecar line (pipe-separated, one per widget):
 %   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
@@ -960,12 +964,11 @@
     \fi
   \fi
 }
+% poster= is optional for \interactiveruntime: with none, the pdf shows
+% the runtime's proposed poster (once allowed and rendered) or a
+% placeholder. A given poster must exist.
 \newcommand{\mfw@rt@needposter}{%
-  \ifx\mfw@poster\empty
-    \PackageError{maleficium-interactive}%
-      {poster= is required for \string\interactiveruntime: the PDF shows it}%
-      {Pass poster=figures/preview.png, the image the PDF shows in place of the runtime.}%
-  \else
+  \ifx\mfw@poster\empty\else
     \mfw@needfile{\mfw@poster}%
   \fi
 }
@@ -1040,7 +1043,7 @@
   \mfw@rt@map\mfw@rt@source\mfw@rt@sources
   \def\mfw@opts{\mfw@dims@opt}%
   \mfw@rt@map\mfw@rt@option\XKV@rm
-  \mfw@sbox@graphic{\mfw@poster}%
+  \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{\mfw@srcs}{\mfw@opts}%
   \mfw@emit

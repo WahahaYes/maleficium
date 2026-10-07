@@ -206,8 +206,10 @@ fn pairs(field: &str, what: &str, id: &str) -> Result<Vec<(String, String)>, Str
 }
 
 /// A custom widget's record checked without its runtime (the widget list
-/// never reads `runtime.json`): a valid runtime ref, a poster, exactly one
-/// `primary` source, plain distinct roles and plain option keys.
+/// never reads `runtime.json`): a valid runtime ref, exactly one `primary`
+/// source, plain distinct roles and plain option keys. Its poster is
+/// optional: an approved runtime may propose one, else the pdf shows the
+/// mapped auto-poster or a placeholder.
 fn check_custom(r: &Record) -> Result<(), String> {
     let id = &r.id;
     let fail = |e: String| Err(format!("widget {id}: {e}"));
@@ -218,9 +220,6 @@ fn check_custom(r: &Record) -> Result<(), String> {
         return fail(format!(
             "runtime `{runtime}` is not <name>@<major> (or names a reserved runtime)"
         ));
-    }
-    if r.poster.is_none() {
-        return fail("a custom widget records no poster".to_string());
     }
     let mut seen: Vec<&str> = Vec::new();
     for s in &r.sources {
