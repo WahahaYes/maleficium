@@ -38,7 +38,7 @@ const arg = (name) => {
   return i < 0 ? null : process.argv[i + 1];
 };
 const singleFile = arg('--single');
-const customProof = arg('--custom-proof');
+const customProofBad = arg('--custom-proof-bad');
 const embedSingle = arg('--embed-single');
 const embedFolder = arg('--embed-folder');
 const embedPorts = arg('--embed-ports');
@@ -404,9 +404,7 @@ await fF.close();
 // ---- custom runtimes: one live widget, one fallback poster ----
 // --custom-proof points at a proof bundle (bundle/tests.rs regenerates it
 // with MALEFICIUM_RUNTIME_PROOF set): heatmap@1 approved and live,
-// stl-viewer@1 missing and poster-only. bad-cdn@1 has no cell on purpose:
-// a scan error makes the snapshot invalid, so it can never be approved
-// and always exports poster-only (covered at the unit level).
+// stl-viewer@1 missing and poster-only.
 if (customProof) {
   const proofHtml = readFileSync(customProof, 'utf8');
   const proofManifest = JSON.parse(
@@ -482,6 +480,70 @@ if (customProof) {
     JSON.stringify([c?.csp?.slice(0, 60), await page.evaluate(() => window.__csp)]),
   );
   await ctx.close();
+}
+
+// ---- custom runtimes, red: a scan-failed runtime is poster-only ----
+// --custom-proof-bad points at a proof bundle (bundle/tests.rs regenerates
+// it with MALEFICIUM_RUNTIME_PROOF_BAD set): bad-cdn@1 invalid and
+// poster-only, stl-viewer@1 missing and poster-only, no runtimes map at
+// all. The scan error can never be approved: the page mounts no frame for
+// it, shows the note, and reports no CSP violation.
+if (customProofBad) {
+  const badHtml = readFileSync(customProofBad, 'utf8');
+  const badManifest = JSON.parse(
+    /<script type="application\/json" id="mfw-manifest">(.*?)<\/script>/s.exec(badHtml)[1],
+  );
+  const badW = badManifest.widgets.find((w) => w.runtime === 'bad-cdn@1') ?? {};
+  check(
+    'bad-cdn proof: no runtimes map, the scan-failed widget falls back to runtime-invalid',
+    badManifest.runtimes == null && badW.fallback === 'runtime-invalid',
+    badManifest.widgets
+      .map((w) => `${w.id}:${w.runtime ?? w.type}=${w.fallback ?? 'live'}`)
+      .join(','),
+  );
+  const bad = await host(join(customProofBad, '..'), customProofBad);
+  const bctx = await browser.newContext();
+  await bctx.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (e) => {
+      if (e.blockedURI.endsWith('/favicon.ico')) return;
+      window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
+    });
+  });
+  const bpage = await bctx.newPage();
+  await bpage.goto(`${bad.origin}/`);
+  const bs = await until(async () => {
+    const s = await inspect(bpage);
+    return s.frames.length > 0 && s.frames.every((f) => f.live || f.state === 'poster-only')
+      ? s
+      : null;
+  });
+  check('bad-cdn proof: the page settles with every widget live or poster-only', !!bs);
+  const bst = await bpage.evaluate((id) => {
+    const fig = document.querySelector(`figure[data-widget="${id}"]`);
+    return {
+      state: fig?.dataset.state ?? null,
+      frames: fig?.querySelectorAll(':scope iframe').length ?? null,
+      posterShown:
+        fig == null ? null : getComputedStyle(fig.querySelector('.poster')).display !== 'none',
+      note: fig?.querySelector('.m-widget-note')?.textContent?.trim() ?? null,
+    };
+  }, badW.id);
+  check(
+    'bad-cdn proof: the invalid runtime mounts no frame, keeps its poster, and says validation failed',
+    bst.state === 'poster-only' &&
+      bst.frames === 0 &&
+      bst.posterShown === true &&
+      bst.note?.includes('bad-cdn@1') &&
+      bst.note?.includes('did not pass validation'),
+    JSON.stringify(bst),
+  );
+  check(
+    'bad-cdn proof: the reader CSP is the single-file policy with no violations',
+    bs?.csp === SINGLE_CSP && (await bpage.evaluate(() => window.__csp)).length === 0,
+    JSON.stringify([bs?.csp?.slice(0, 60), await bpage.evaluate(() => window.__csp)]),
+  );
+  await bctx.close();
 }
 
 // ---- scripts off: the posters and captions stay ----
