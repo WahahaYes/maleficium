@@ -39,6 +39,7 @@ const fold = readFileSync(join(dev, 'src-tauri/core/src/bundle/fold.rs'), 'utf8'
 const policy = /const WIDGET_POLICY: &str = "([^"]*)";/
   .exec(fold)[1]
   .replaceAll('{res}', '')
+  .replace('{wasm}', '')
   .replace('{connect}', "'none'")
   .replace('{frame}', '');
 const withPolicy = (html) =>
