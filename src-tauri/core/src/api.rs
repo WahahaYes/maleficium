@@ -18,6 +18,7 @@ use maleficium_events::{
 use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
+use maleficium_index::ProjectMacro;
 use maleficium_structure::{Diagnostic, Outline};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -97,6 +98,7 @@ params! {
     IndexReplaceApplyParams { root_id: String, token: String, keep_open: Vec<String> },
     FuzzyRankParams { query: String, items: Vec<String>, max: Option<usize> },
     IndexDefinitionAtParams { root_id: String, line: String, col: u32, main_rel: Option<String> },
+    IndexMacrosParams { root_id: String },
     MainResolveParams { root_id: String, opened_abs: Option<String> },
     MainSetAssociationParams { root_id: String, rel: String },
     FileReadParams { root_id: String, rel: String },
@@ -184,6 +186,7 @@ operations! {
     IndexReplaceApply via index_replace_apply(IndexReplaceApplyParams) -> ReplaceApplied,
     FuzzyRank via fuzzy_rank(FuzzyRankParams) -> Vec<Ranked>,
     IndexDefinitionAt via index_definition_at(IndexDefinitionAtParams) -> Option<Lookup>,
+    IndexMacros via index_macros(IndexMacrosParams) -> Vec<ProjectMacro>,
     MainResolve via main_resolve(MainResolveParams) -> MainResolution,
     MainSetAssociation via main_set_association(MainSetAssociationParams) -> (),
     FileRead via file_read(FileReadParams) -> String,
@@ -423,6 +426,10 @@ fn index_definition_at(cx: &Core, p: IndexDefinitionAtParams) -> Result<Option<L
     crate::search::definition_at(cx, &p.root_id, &p.line, p.col, p.main_rel.as_deref())
 }
 
+fn index_macros(cx: &Core, p: IndexMacrosParams) -> Result<Vec<ProjectMacro>, String> {
+    crate::search::macros(cx, &p.root_id)
+}
+
 fn main_resolve(cx: &Core, p: MainResolveParams) -> Result<MainResolution, String> {
     crate::mainfile::resolve(cx, &p.root_id, p.opened_abs.as_deref())
 }
@@ -585,6 +592,7 @@ pub fn typescript() -> String {
         IndexReplaceApplyParams::decl(&cfg),
         FuzzyRankParams::decl(&cfg),
         IndexDefinitionAtParams::decl(&cfg),
+        IndexMacrosParams::decl(&cfg),
         MainResolveParams::decl(&cfg),
         MainSetAssociationParams::decl(&cfg),
         FileReadParams::decl(&cfg),
@@ -609,7 +617,7 @@ pub fn typescript() -> String {
          // change the Rust types, then run\n\
          //   MALEFICIUM_WRITE_TS=1 cargo test --manifest-path src-tauri/Cargo.toml --workspace\n\n\
          import type { BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision, RuntimeDecision, WatchChange, WidgetApprovalCause } from './events';\n\
-         import type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
+         import type { FileMatch, Lookup, ProjectMacro, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult } from './index';\n\
          import type { Diagnostic, Finding, Outline } from './structure';\n",
     );
     for d in decls {

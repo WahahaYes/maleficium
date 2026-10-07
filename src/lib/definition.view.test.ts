@@ -19,4 +19,8 @@ describe('definition hover', () => {
       hoverText({ ref: { kind: 'input', key: 'ch/x', command: 'input' }, definitions: [] }),
     ).toBe('No definition for file ch/x');
   });
+
+  it('says nothing of a macro the project leaves to TeX or a package', () => {
+    expect(hoverText({ ref: { kind: 'macro', key: '\\rightarrow' }, definitions: [] })).toBeNull();
+  });
 });
