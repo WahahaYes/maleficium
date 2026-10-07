@@ -67,6 +67,20 @@ pub fn session_root(cx: &Core, id: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("unknown project root: {}", id))
 }
 
+/// The root id this process granted for `project`, if any (lowest id when
+/// several name the same folder).
+pub fn granted_as(cx: &Core, project: &str) -> Option<String> {
+    let want = dunce::canonicalize(project).ok()?;
+    let roots = cx.sessions().0.lock().ok()?;
+    let mut ids: Vec<&String> = roots
+        .iter()
+        .filter(|(_, root)| **root == want)
+        .map(|(id, _)| id)
+        .collect();
+    ids.sort();
+    ids.first().map(|id| id.to_string())
+}
+
 /// Resolve `candidate` inside the session root: rejects NUL, requires the
 /// canonicalized path to sit under the granted root.
 pub fn resolve_in(cx: &Core, id: &str, candidate: &str) -> Result<PathBuf, String> {
