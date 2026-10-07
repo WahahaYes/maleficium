@@ -1,0 +1,15 @@
+# Which shared files each template embeds. The single source for both
+# core/build.rs (the app's embedded templates) and e2e/templates.py (scripts
+# that build a template project outside the app).
+#
+# <path relative to this folder>: <template ids> | *
+# A file lands at the project root under its own name.
+maleficium-footer.sty: *
+maleficium-mark.pdf: *
+maleficium-doc.sty: article assignment book letter report welcome
+maleficium-cv.sty: cv resume
+maleficium-slides.sty: beamer
+maleficium-links.sty: journal
+# The interactive-widget package: one canonical file outside the template
+# tree, so a new project already holds it.
+../../interactive/maleficium-interactive.sty: *

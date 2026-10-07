@@ -32,6 +32,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import harness  # noqa: E402
 from harness import AppLog, Procs, now_ms, xdo  # noqa: E402
+import templates  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -745,12 +746,10 @@ def state7():
     shot("07-portrait")
     stop_app()
     portrait = APPLOG.events()
-    os.makedirs(FIX + "/beamer", exist_ok=True)
-    # The app instantiates template projects with the build-time shared
-    # overlays (core/build.rs); the bare main.tex alone cannot compile.
-    shutil.copy(ROOT + "/src-tauri/templates/beamer/main.tex", FIX + "/beamer/main.tex")
-    for shared in ("maleficium-slides.sty", "maleficium-footer.sty", "maleficium-mark.pdf"):
-        shutil.copy(ROOT + "/src-tauri/templates/shared/" + shared, FIX + "/beamer/" + shared)
+    # The beamer template as the app instantiates it (shared overlays and
+    # all); the bare folder alone cannot compile.
+    shutil.rmtree(FIX + "/beamer", ignore_errors=True)
+    templates.materialize("beamer", FIX + "/beamer")
     open_compiled(FIX + "/beamer", "beamer")
     shot("07-beamer-open")
     mark("beamer-scroll")
