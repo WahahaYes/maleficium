@@ -477,3 +477,44 @@ fn a_mount_unit_held_back_for_approval_carries_the_marker_and_its_note() {
     let plain = mount_unit(&mounts()[4]);
     assert!(!plain.contains("data-approval"), "{plain}");
 }
+
+#[test]
+fn a_proof_folds_into_open_details_with_its_title_as_the_summary() {
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><h6 class=\"ltx_title ltx_runin ltx_font_italic ltx_title_proof\">Proof of Theorem 3.</h6><div class=\"ltx_para\"><p class=\"ltx_p\">Jensen gives it.\n∎</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(
+        html.contains("<details class=\"ltx_proof\" open=\"\"><summary class=\"m-proof-summary\"><h6 class=\"ltx_title ltx_runin ltx_font_italic ltx_title_proof\">Proof of Theorem 3.</h6></summary><div class=\"ltx_para\">"),
+        "{html}"
+    );
+    assert!(!html.contains("<div class=\"ltx_proof\""));
+    // The drawn end mark stays inside the folded body.
+    let body = &html[html.find("</summary>").unwrap()..html.find("</details>").unwrap()];
+    assert!(body.contains("m-qed"), "{body}");
+}
+
+#[test]
+fn a_proof_without_a_title_gets_the_plain_one() {
+    let (html, _) = post_process(
+        "<article class=\"ltx_document\"><div class=\"ltx_proof\"><div class=\"ltx_para\"><p class=\"ltx_p\">Obvious.</p></div></div></article>",
+        "T",
+        &[],
+    );
+    assert!(
+        html.contains("<summary class=\"m-proof-summary\"><h6 class=\"ltx_title ltx_runin ltx_font_italic ltx_title_proof\">Proof.</h6></summary><div class=\"ltx_para\">"),
+        "{html}"
+    );
+}
+
+#[test]
+fn a_folded_proof_survives_the_sanitizer_open() {
+    let html = "<html><body><article class=\"ltx_document\"><section id=\"S1\" class=\"ltx_section\"><h2>1 One</h2><div class=\"ltx_proof\"><h6 class=\"ltx_title ltx_runin ltx_title_proof\">Proof.</h6><div class=\"ltx_para\"><p class=\"ltx_p\">Done.</p></div></div></section></article></body></html>";
+    let a = build_with(html, Some("mfw 1\n"), figures::Mode::SingleFile);
+    assert!(
+        a.html.contains("<details class=\"ltx_proof\" open=\"\"><summary class=\"m-proof-summary\"><h6 class=\"ltx_title ltx_runin ltx_title_proof\">Proof.</h6></summary>"),
+        "{}",
+        a.html
+    );
+}
