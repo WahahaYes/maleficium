@@ -147,7 +147,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["webgl"],
-          "properties": { "webgl": { "type": "boolean" } }
+          "properties": { "webgl": { "type": "boolean" }, "wasm": { "type": "boolean" } }
         },
         "vendored": {
           "type": "array",

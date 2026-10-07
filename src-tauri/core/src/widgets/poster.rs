@@ -522,15 +522,19 @@ fn custom_job(
                 });
             }
             // The judged snapshot's files, never a second read of the
-            // folder, folded exactly as the export folds them.
+            // folder, folded exactly as the export folds them (with the
+            // runtime's own policy, so a WASM runtime's proposal can run).
             let fold_input: BTreeMap<String, Vec<u8>> = snap
                 .files
                 .iter()
                 .filter(|(path, _)| !manifest.is_metadata(path))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
-            let folded = fold::fold_bundle(&fold_input, &fold::widget_policy(None))
-                .map_err(|e| format!("widget {id}: runtime {reference}: {e}"))?;
+            let folded = fold::fold_bundle(
+                &fold_input,
+                &fold::widget_policy_for(None, manifest.capabilities.wasm),
+            )
+            .map_err(|e| format!("widget {id}: runtime {reference}: {e}"))?;
             let rect_css = rect_css(w);
             Ok(Prepared::Job(PosterJob {
                 widget_id: id.clone(),
