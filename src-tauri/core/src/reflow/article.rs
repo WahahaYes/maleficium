@@ -301,6 +301,9 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, Vec<Un
         ));
     }
 
+    // The page colour is the reader theme's (`--m-paper`), not latexml's.
+    page_background(&article);
+
     // A widget inside a captioned float: the float's caption is its caption.
     for fig in doc.select("figure[data-widget]").nodes() {
         let float = fig
@@ -391,6 +394,49 @@ fn post_process(html: &str, title: &str, unplaced: &[&Mount]) -> (String, Vec<Un
         article.append_html(s);
     }
     (article.html().to_string(), undefined)
+}
+
+/// Drop latexml's copies of the page colour from the math. `\pagecolor`
+/// is a font background to latexml: text carries it once, as
+/// `--ltx-bg-color` on the article root (a style the sanitizer drops), but
+/// the MathML writer resolves the inherited background and restates it as
+/// `mathbackground` on every token, which would paint the page's light
+/// colour behind each formula on a dark reader. The reader takes the page
+/// colour from the theme record instead, so a math background inherited from
+/// the root goes; one set by a box inside the article (`\colorbox`) stays.
+fn page_background(article: &dom_query::NodeRef) {
+    let Some(page) = article.attr("style").as_deref().and_then(ltx_background) else {
+        return;
+    };
+    for n in article.descendants() {
+        let Some(bg) = n.attr("mathbackground") else {
+            continue;
+        };
+        if !bg.eq_ignore_ascii_case(&page) {
+            continue;
+        }
+        let boxed = n
+            .ancestors(None)
+            .into_iter()
+            .take_while(|a| a.id != article.id)
+            .any(|a| {
+                a.attr("style")
+                    .as_deref()
+                    .and_then(ltx_background)
+                    .is_some()
+            });
+        if !boxed {
+            n.remove_attr("mathbackground");
+        }
+    }
+}
+
+/// The value of `--ltx-bg-color` in an inline style, latexml's background.
+fn ltx_background(style: &str) -> Option<String> {
+    style.split(';').find_map(|d| {
+        let (k, v) = d.split_once(':')?;
+        (k.trim() == "--ltx-bg-color").then(|| v.trim().to_string())
+    })
 }
 
 /// Replace a proof-final U+220E with a CSS-drawn end mark (`m-qed` in the

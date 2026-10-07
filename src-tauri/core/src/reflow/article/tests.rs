@@ -518,3 +518,23 @@ fn a_folded_proof_survives_the_sanitizer_open() {
         a.html
     );
 }
+
+#[test]
+fn the_page_colour_leaves_the_math_but_a_boxed_highlight_stays() {
+    // latexml's shape for `\pagecolor{coffeepaper}` and one `\colorbox` of
+    // the same colour: the root carries the page colour, every math token
+    // restates it.
+    let html = "<html><body><article class=\"ltx_document\" style=\"--ltx-bg-color:#FAF3E8;\">\
+        <p><math class=\"ltx_Math\" display=\"inline\"><mi mathbackground=\"#FAF3E8\">x</mi>\
+        <mo mathbackground=\"#faf3e8\">=</mo><mn mathbackground=\"#FFFF00\">2</mn></math>\
+        <span class=\"ltx_text\" style=\"--ltx-bg-color:#FAF3E8;\"><math class=\"ltx_Math\">\
+        <mi mathbackground=\"#FAF3E8\">y</mi></math></span></p></article></body></html>";
+    let a = build_with(html, Some("mfw 1\n"), figures::Mode::SingleFile);
+    assert_eq!(
+        a.html.matches("mathbackground").count(),
+        2,
+        "only the other colour and the boxed one stay: {}",
+        a.html
+    );
+    assert!(a.html.contains("mathbackground=\"#FFFF00\""));
+}
