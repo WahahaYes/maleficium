@@ -483,6 +483,11 @@ struct Plan<'a> {
     /// Custom widgets that fall back to their posters, by runtime: why, and
     /// which widgets.
     fallbacks: BTreeMap<String, (Fallback, Vec<String>)>,
+    /// Whether a live custom widget declares `capabilities.wasm`: a
+    /// single-file bundle srcdocs its widgets, so the reader page inherits
+    /// down and must carry the token too (its own frame-src union's
+    /// companion).
+    wasm_live: bool,
     /// The note a fallback widget's figure carries, by widget id.
     notes: BTreeMap<String, String>,
     /// Html widgets the in-app article holds back for approval, by widget
@@ -961,6 +966,12 @@ fn plan_custom(
     if let Some(why) = verdict {
         p.fall_back(&r, &id, why.clone());
         return Ok((None, None));
+    }
+    // A live declaring widget runs srcdoc'd under the single-file reader
+    // page: the page's own policy must carry the token, or the inherited
+    // one blocks the compile. Folder widgets are documents of their own.
+    if m.capabilities.wasm {
+        p.wasm_live = true;
     }
     for (role, s) in &bound.sources {
         let key = format!("{id}-{role}");
@@ -2053,6 +2064,7 @@ fn export_inner(
         runtimes: BTreeMap::new(),
         runtime_entries: Map::new(),
         fallbacks: BTreeMap::new(),
+        wasm_live: false,
         notes: BTreeMap::new(),
         gated: BTreeSet::new(),
     };
@@ -2261,6 +2273,7 @@ fn export_inner(
                 pdf: Some(&pdf_bytes),
                 islands: &islands,
                 frames: &frames,
+                wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
             });
@@ -2346,6 +2359,7 @@ fn export_inner(
                 pdf: None,
                 islands: &islands,
                 frames: &frames,
+                wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
             });

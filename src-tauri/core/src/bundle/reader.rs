@@ -33,6 +33,8 @@ pub(super) struct Reader<'a> {
     pub islands: &'a str,
     /// Every frame origin a widget declared, sorted and deduplicated.
     pub frames: &'a [String],
+    /// Whether a live custom widget declares `capabilities.wasm`.
+    pub wasm: bool,
     /// The paper's theme, and its CSS ([`crate::theme::Theme::css`]): the
     /// page is styled by the one and hands the other's values to every
     /// widget, so chrome and widgets agree.
@@ -44,27 +46,34 @@ pub(super) struct Reader<'a> {
 /// which inherits this policy, so a frame it embeds must pass the reader's
 /// `frame-src` as well as its own: that directive is exactly the union of
 /// the declared frame origins, and absent (`default-src 'none'`) when none
-/// is declared. Each widget's own policy still names only its origins, and
-/// `reader.js` mounts each widget inside a wrapper document whose
-/// `frame-src` names only that widget's, so a widget cannot navigate its own
-/// frame to another widget's origin. A folder widget is a document of its own and does not inherit, so the
-/// folder reader stays `frame-src 'self'`.
-pub(super) fn policy(folder: bool, frames: &[String]) -> String {
+/// is declared. WebAssembly inherits the same way: when a live widget
+/// declares `capabilities.wasm`, the reader's `script-src` carries
+/// `'wasm-unsafe-eval'` too, or the inherited policy blocks the compile
+/// the widget's own policy allows. Each widget's own policy still names
+/// only its declaration, and `reader.js` mounts each widget inside a
+/// wrapper document whose `frame-src` names only that widget's, so a widget
+/// cannot navigate its own frame to another widget's origin. A folder
+/// widget is a document of its own and does not inherit, so the
+/// folder reader stays `frame-src 'self'` with no token.
+pub(super) fn policy(folder: bool, frames: &[String], wasm: bool) -> String {
     if folder {
         return fold::FOLDER_READER_POLICY.to_string();
     }
-    if frames.is_empty() {
-        return fold::SINGLE_FILE_READER_POLICY.to_string();
+    let mut policy = fold::SINGLE_FILE_READER_POLICY.to_string();
+    if wasm {
+        policy = policy.replace(
+            "script-src 'unsafe-inline'",
+            "script-src 'unsafe-inline' 'wasm-unsafe-eval'",
+        );
     }
-    format!(
-        "{}; frame-src {}",
-        fold::SINGLE_FILE_READER_POLICY,
-        frames.join(" ")
-    )
+    if frames.is_empty() {
+        return policy;
+    }
+    format!("{}; frame-src {}", policy, frames.join(" "))
 }
 
 pub(super) fn render(r: &Reader) -> String {
-    let policy = policy(r.folder, r.frames);
+    let policy = policy(r.folder, r.frames, r.wasm);
     let href = match r.pdf {
         Some(b) if !r.folder => format!(
             "data:application/pdf;base64,{}",
@@ -110,6 +119,22 @@ mod tests {
         page_with(folder, Measure::Default)
     }
 
+    fn page_wasm(folder: bool, wasm: bool) -> String {
+        let theme = crate::theme::Theme::house();
+        render(&Reader {
+            title: "T & <title>",
+            folder,
+            article: ARTICLE,
+            measure: Measure::Default,
+            pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
+            islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
+            frames: &[],
+            wasm,
+            theme: &theme,
+            theme_css: &theme.css().unwrap(),
+        })
+    }
+
     fn page_with(folder: bool, measure: Measure) -> String {
         let theme = crate::theme::Theme::house();
         render(&Reader {
@@ -120,6 +145,7 @@ mod tests {
             pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
             islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
             frames: &[],
+            wasm: false,
             theme: &theme,
             theme_css: &theme.css().unwrap(),
         })
@@ -209,13 +235,41 @@ mod tests {
             "https://a.org".to_string(),
             "https://b.org:8443".to_string(),
         ];
-        assert_eq!(policy(false, &[]), fold::SINGLE_FILE_READER_POLICY);
-        let p = policy(false, &frames);
+        assert_eq!(policy(false, &[], false), fold::SINGLE_FILE_READER_POLICY);
+        let p = policy(false, &frames, false);
         assert!(p.starts_with(fold::SINGLE_FILE_READER_POLICY));
         assert!(p.ends_with("; frame-src https://a.org https://b.org:8443"));
         assert_eq!(p.matches("frame-src").count(), 1);
         // A folder widget is its own document: the reader adds nothing.
-        assert_eq!(policy(true, &frames), fold::FOLDER_READER_POLICY);
+        assert_eq!(policy(true, &frames, false), fold::FOLDER_READER_POLICY);
+        assert_eq!(policy(true, &frames, true), fold::FOLDER_READER_POLICY);
+    }
+
+    #[test]
+    fn the_single_file_reader_carries_the_token_only_for_a_live_wasm_widget() {
+        // No declaring widget: the profile policy, byte for byte.
+        assert!(!policy(false, &[], false).contains("wasm-unsafe-eval"));
+        assert!(!fold::policy_of(&page_wasm(false, false)).contains("wasm-unsafe-eval"));
+        // A live declaring widget: script-src widens, nothing else moves.
+        let p = policy(false, &[], true);
+        assert!(
+            p.contains("script-src 'unsafe-inline' 'wasm-unsafe-eval';"),
+            "{p}"
+        );
+        assert_eq!(p.matches("wasm-unsafe-eval").count(), 1);
+        assert!(p.starts_with(&policy(false, &[], false).replace(
+            "script-src 'unsafe-inline';",
+            "script-src 'unsafe-inline' 'wasm-unsafe-eval';"
+        )));
+        let h = page_wasm(false, true);
+        assert_eq!(fold::policy_of(&h).matches("wasm-unsafe-eval").count(), 1);
+        // The token and the frame-src union compose.
+        let frames = ["https://a.org".to_string()];
+        let q = policy(false, &frames, true);
+        assert!(
+            q.contains("'wasm-unsafe-eval'") && q.ends_with("; frame-src https://a.org"),
+            "{q}"
+        );
     }
 
     #[test]
