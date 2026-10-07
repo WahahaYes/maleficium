@@ -2020,7 +2020,7 @@ fn export_inner(
     let (list, theme) = crate::widgets::read(cx, root_id, main_rel)?;
     // The page's CSS and the widgets' tokens come from this one theme;
     // its values are checked again as the CSS is written.
-    let mut theme_css = theme.css()?;
+    let theme_css = theme.css()?;
     let o = crate::outputs::outputs_of(cx, root_id, main_rel)?;
     let pdf_bytes = std::fs::read(o.outdir.join(&o.pdf_name))
         .map_err(|_| format!("{main_rel} has no compiled pdf: compile it first"))?;
@@ -2076,14 +2076,13 @@ fn export_inner(
             plan.users.entry(r.clone()).or_default().push(w.id.clone());
         }
     }
-    // The author's reader stylesheet follows the theme's tokens, so it can
-    // restyle with them; refused, the page keeps the theme alone.
+    // The author's reader stylesheet comes after the theme's tokens and the
+    // reader's own rules, so it can restyle both; refused, the page keeps
+    // the theme alone.
+    let mut author_css = String::new();
     if let Some(style) = &theme.style {
         match crate::reader_style::load(cx, root_id, &plan.main_dir_rel, style) {
-            Ok(css) => {
-                theme_css.push('\n');
-                theme_css.push_str(&css);
-            }
+            Ok(css) => author_css = css,
             Err(e) => plan.warn(BundleWarningKind::ReaderStyle, e),
         }
     }
@@ -2290,6 +2289,7 @@ fn export_inner(
                 wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
+                author_css: &author_css,
             });
             std::fs::write(&stage, html.as_bytes())
                 .map_err(|e| format!("cannot write {}: {e}", stage.display()))?;
@@ -2376,6 +2376,7 @@ fn export_inner(
                 wasm: plan.wasm_live,
                 theme: &theme,
                 theme_css: &theme_css,
+                author_css: &author_css,
             });
             put(&stage, "index.html", html.as_bytes(), &mut total)?;
         }
