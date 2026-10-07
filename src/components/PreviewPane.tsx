@@ -21,7 +21,20 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Preview from './Preview';
 import ArticleView from './ArticleView';
-import { articleZoomLabel, stepArticleZoom } from '../lib/article';
+import {
+  articleZoomLabel,
+  loadArticleMode,
+  resolveArticleMode,
+  saveArticleMode,
+  stepArticleZoom,
+  type ArticleMode,
+} from '../lib/article';
+import { useTheme } from '@mui/material/styles';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 import { emit } from '../lib/events';
 
 type PreviewTab = 'pdf' | 'article';
@@ -63,6 +76,8 @@ export default function PreviewPane({
 }: PreviewPaneProps) {
   const [tab, setTab] = useState<PreviewTab>('pdf');
   const [articleZoom, setArticleZoom] = useState(100);
+  const [articleMode, setArticleMode] = useState<ArticleMode>(loadArticleMode);
+  const appDark = useTheme().palette.mode === 'dark';
 
   const select = (next: PreviewTab) => {
     setTab(next);
@@ -116,6 +131,27 @@ export default function PreviewPane({
             >
               Reload
             </Button>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              aria-label="Article colour mode"
+              value={articleMode}
+              onChange={(_, v: ArticleMode | null) => {
+                if (!v) return;
+                setArticleMode(v);
+                saveArticleMode(v);
+              }}
+            >
+              <ToggleButton value="system" aria-label="Follow the app" title="Follow the app">
+                <BrightnessAutoIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="light" aria-label="Light" title="Light">
+                <LightModeIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="dark" aria-label="Dark" title="Dark">
+                <DarkModeIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
             <Button
               size="small"
               aria-label="Zoom article out"
@@ -163,6 +199,7 @@ export default function PreviewPane({
           onApproveRequest={onApproveArticle}
           approvalText={approvalText}
           onReviewApprovals={onReviewApprovals}
+          mode={resolveArticleMode(articleMode, appDark)}
         />
       )}
     </Box>

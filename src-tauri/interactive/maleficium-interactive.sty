@@ -653,14 +653,17 @@
 % accent dark=<hex>}: the reflowed reader's page and accent (the PDF never
 % changes). Colours are six hex digits, the light-mode values; the dark
 % ones are derived unless given: the page tinted into the house dark page,
-% the accent lightened to read on it. page=follow takes the PDF's page
-% colour (\pagecolor) as it stands at the end of the document. A page dark
+% the accent lightened to read on it. page=follow is the paper itself: the
+% PDF's page colour (\pagecolor, as it stands at the end of the document)
+% in both modes, with the ink, accent and widget plate that read on it, so
+% the article looks like the PDF whatever the reader's mode. A page dark
 % enough for light text keeps the house dark ink in both modes.
 % \maleficiumreaderstyle{reader.css}: a stylesheet in the project the reader
 % applies after the theme (see the README's Interactive papers for what it
 % may hold; the exporter checks it).
 \def\mfw@r@page{}\def\mfw@r@pagedark{}\def\mfw@r@accent{}\def\mfw@r@accentdark{}
 \def\mfw@r@style{}
+\def\mfw@r@follow{follow}
 \newcommand{\mfw@r@hex}[2]{%
   \mfw@valid@hex{#2}%
   \ifmfw@ok\else
@@ -722,7 +725,17 @@
     \else\definecolor{mfw@rad}{HTML}{\mfw@r@accentdark}\fi
     \mfw@r@set{l}{--m-color-accent}{mfw@ra}\mfw@r@set{l}{--m-color-link}{mfw@ra}%
     \mfw@r@set{d}{--m-color-accent}{mfw@rad}\mfw@r@set{d}{--m-color-link}{mfw@rad}%
+  \fi
+  % page=follow: the paper in both modes (every light value, already chosen
+  % to read on the page, becomes the dark one too).
+  \ifx\mfw@r@page\mfw@r@follow
+    \@for\mfw@n:=\mfw@names@moded\do{%
+      \expandafter\global\expandafter\let\csname mfw@d@\mfw@n\expandafter\endcsname
+        \csname mfw@l@\mfw@n\endcsname}%
+    \global\mfw@r@followtrue
   \fi}
+\newif\ifmfw@r@follow
+
 \newcommand{\mfw@write@theme}{%
   \mfw@open@sidecar
   \mfw@r@apply
@@ -742,6 +755,7 @@
   \@for\mfw@n:=\mfw@names@moded\do{%
     \mfw@line{dark}{\mfw@n}{\csname mfw@d@\mfw@n\endcsname}}%
   \mfw@isdark{mfwpage}%
+  \ifmfw@r@follow\mfw@darkplatetrue\fi
   \ifmfw@darkplate\mfw@plate{dark}{mfwpage}\else\mfw@plate{dark}{mfwdarkplate}\fi
 }
 \AtEndDocument{\mfw@write@theme}

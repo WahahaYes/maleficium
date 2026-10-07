@@ -191,3 +191,42 @@ export function stepArticleZoom(percent: number, dir: 'in' | 'out'): number {
 export function articleZoomLabel(percent: number): string {
   return `${clampArticleZoom(percent)}%`;
 }
+
+/** The Article tab's colour mode: the app's own (system), light or dark. */
+export type ArticleMode = 'system' | 'light' | 'dark';
+
+const ARTICLE_MODE_KEY = 'maleficium.articleMode';
+
+/** The light or dark the article shows: `system` follows the app's theme. */
+export function resolveArticleMode(choice: ArticleMode, appDark: boolean): 'light' | 'dark' {
+  if (choice === 'system') return appDark ? 'dark' : 'light';
+  return choice;
+}
+
+/** The message that sets the frame's mode (its own toggle then hides). */
+export function articleModeMessage(mode: 'light' | 'dark'): {
+  mfw: 1;
+  type: 'article-mode';
+  mode: 'light' | 'dark';
+} {
+  return { mfw: 1, type: 'article-mode', mode };
+}
+
+/** The remembered choice on this device (system when none or unreadable). */
+export function loadArticleMode(): ArticleMode {
+  try {
+    const v = window.localStorage.getItem(ARTICLE_MODE_KEY);
+    return v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+/** Remember the choice on this device (best effort). */
+export function saveArticleMode(mode: ArticleMode): void {
+  try {
+    window.localStorage.setItem(ARTICLE_MODE_KEY, mode);
+  } catch {
+    // Not kept; the choice holds for this run.
+  }
+}

@@ -10,12 +10,14 @@ import {
   anchorMatchesSection,
   articleAvailable,
   articleCspOf,
+  articleModeMessage,
   articleSandbox,
   articleScrollMessage,
   articleZoomLabel,
   clampArticleZoom,
   hasTauriInternals,
   isArticleMessage,
+  resolveArticleMode,
   shouldRefreshArticle,
   stepArticleZoom,
 } from './article';
@@ -206,5 +208,15 @@ describe('article transport', () => {
     await expect(fetchArticle('1a2b3c4d', 'main.tex')).rejects.toMatch(/compile it first/);
     vi.mocked(invoke).mockRejectedValueOnce('unknown project');
     await expect(fetchArticle('nope', 'main.tex')).rejects.toMatch(/unknown project/);
+  });
+});
+
+describe('article colour mode', () => {
+  it('follows the app on system and keeps an explicit choice', () => {
+    expect(resolveArticleMode('system', true)).toBe('dark');
+    expect(resolveArticleMode('system', false)).toBe('light');
+    expect(resolveArticleMode('light', true)).toBe('light');
+    expect(resolveArticleMode('dark', false)).toBe('dark');
+    expect(articleModeMessage('dark')).toEqual({ mfw: 1, type: 'article-mode', mode: 'dark' });
   });
 });

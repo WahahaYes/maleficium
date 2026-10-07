@@ -31,7 +31,21 @@
   // every widget gets the same values the chrome is styled with.
   var themes = island('mfw-theme');
   var dark = window.matchMedia('(prefers-color-scheme: dark)');
+  // The colour mode is the reader's choice, kept in this browser: system
+  // (prefers-color-scheme), light or dark. An embedding app drives it
+  // instead with an `article-mode` message, and the page's toggle steps
+  // aside (see below).
+  var MODES = ['system', 'light', 'dark'];
+  var MODE_KEY = 'mfw-reader-mode';
+  var choice = 'system';
+  try {
+    var saved = window.localStorage.getItem(MODE_KEY);
+    if (MODES.indexOf(saved) >= 0) choice = saved;
+  } catch (_) {
+    // No storage (a sandboxed frame, a file:// page in some browsers).
+  }
   function mode() {
+    if (choice !== 'system') return choice;
     return dark.matches ? 'dark' : 'light';
   }
   function paint() {
@@ -141,13 +155,49 @@
       return;
     }
   });
-  dark.addEventListener('change', function () {
+  function applyMode() {
     paint();
     var t = theme();
     frames.forEach(function (f) {
       if (f.started)
         f.win.postMessage({ mfw: 1, type: 'theme', mode: t.mode, tokens: t.tokens }, '*');
     });
+  }
+  dark.addEventListener('change', function () {
+    if (choice === 'system') applyMode();
+  });
+  // The page's own toggle: Auto -> Light -> Dark.
+  var NAMES = { system: 'Auto', light: 'Light', dark: 'Dark' };
+  var toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'm-mode';
+  function label() {
+    toggle.textContent = NAMES[choice];
+    toggle.title = 'Colour mode: ' + NAMES[choice] + ' (click to change)';
+    toggle.setAttribute('aria-label', toggle.title);
+  }
+  label();
+  toggle.addEventListener('click', function () {
+    choice = MODES[(MODES.indexOf(choice) + 1) % MODES.length];
+    try {
+      window.localStorage.setItem(MODE_KEY, choice);
+    } catch (_) {
+      // Not kept; the choice holds for this visit.
+    }
+    label();
+    applyMode();
+  });
+  body.appendChild(toggle);
+  // An embedding app (the in-app Article tab) sets the mode itself; only
+  // the parent is heard, and its choice is not stored here.
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (parent === window || e.source !== parent || !d || d.mfw !== 1) return;
+    if (d.type !== 'article-mode' || MODES.indexOf(d.mode) < 0) return;
+    toggle.hidden = true;
+    if (d.mode === choice) return;
+    choice = d.mode;
+    applyMode();
   });
   // A single-file widget is mounted inside a wrapper document of its own.
   // Navigating a frame is checked against its parent's frame-src, and the
