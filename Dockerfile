@@ -49,7 +49,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # The engine builds from source here, on its own pinned nightly.
-COPY scripts/build-engine.sh scripts/
+COPY scripts/build-engine.sh scripts/dumps-key.sh scripts/
 COPY src-tauri/engine src-tauri/engine
 RUN cd src-tauri/engine && rustup toolchain install
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
