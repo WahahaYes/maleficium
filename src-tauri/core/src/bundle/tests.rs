@@ -1784,7 +1784,7 @@ fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
     assert_eq!(
         m["runtimes"],
         json!({"heatmap@1": {"name": "heatmap", "version": "1.0.0", "digest": judged,
-            "license": "MIT", "capabilities": {"webgl": false}, "vendored": []}})
+            "license": "MIT", "capabilities": {"webgl": false, "wasm": false}, "vendored": []}})
     );
 
     // The folded document: policy first, the package's own page inlined,

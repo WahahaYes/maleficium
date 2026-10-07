@@ -948,8 +948,9 @@ fn a_custom_key_names_runtime_digest_ref_sources_options_theme_and_renderer() {
     // The golden vector: runtime digest, ref, sources+options, theme and
     // renderer version, in that composition. A changed key orphans cached
     // posters, so update this only when the material intentionally changes.
+    // (Renderer 2 folds a declaring runtime with 'wasm-unsafe-eval'.)
     assert_eq!(
-        k0, "b89b6a4d56993a4be1cdacb550adc1903ea534574cd24cd45b0c4c5ca1a2bfba",
+        k0, "b61b1702a6442f9c4c432e50f690a503725905b45cd6298187200acd3ee958be",
         "the key composition changed"
     );
     // A new page colour renders a new poster.
