@@ -175,8 +175,9 @@ def one_take(s, server, warm_home, model, take_dir, procs, preset, bundle_url, t
         app.launch(project)
         app.place()
         app.open_project()
-        if not app.log.wait("compile.warm-skipped", app.launched - 1, 30):
-            say("no warm-skipped event; continuing")
+        # Opening the project compiles it; start once the first pdf shows.
+        if not app.log.wait("preview.page-render", app.launched - 1, 300):
+            say("no first preview within 300 s; continuing")
         director.send("command", id="view.toggle-log")  # hide the log pane (it shows full paths)
         session.start(project)
         director.start()

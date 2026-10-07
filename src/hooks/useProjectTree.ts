@@ -35,6 +35,8 @@ export interface UseProjectTreeDeps {
   clearMainFile: () => void;
   handleSelect: (path: string) => Promise<void>;
   warmCompile: (mainAbsPath: string, project: SessionRoot, cold?: boolean) => Promise<void>;
+  /** Close every open file (saving the dirty one); false when one stays open. */
+  closeAll: () => Promise<boolean>;
 }
 
 export function useProjectTree(deps: UseProjectTreeDeps) {
@@ -52,6 +54,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     clearMainFile,
     handleSelect,
     warmCompile,
+    closeAll,
   } = deps;
 
   const reloadTree = useCallback(
@@ -150,7 +153,9 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
   // Recents for File > Open Recent as state. Restored entries re-validate
   // via stat.
   const [recentProjects, setRecentProjects] = useState<string[]>(() => getRecentProjects());
-  async function openRoot(r: string, opts?: { warm?: boolean; cold?: boolean; main?: string }) {
+  /** Open project `r`: the previous project's files close, the main file
+   *  opens and compiles (with `compile: false`, only from a usable cache). */
+  async function openRoot(r: string, opts?: { compile?: boolean; main?: string }) {
     // The backend grant comes first: validation fails closed on invalid
     // roots (empty/NUL/relative/missing/non-dir), and the grant binds the
     // root for the core file service. A failed grant leaves the current
@@ -166,6 +171,20 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         actor: 'user',
         message: msg,
         event: { action: 'project.open-refused', root: r, error: reason },
+      });
+      return;
+    }
+    // The previous project's files close first (the dirty one is saved);
+    // one that cannot be saved stays open and the switch is called off.
+    if (!(await closeAll())) {
+      const msg = 'open cancelled: an open file could not be saved';
+      setLog(msg);
+      emit({
+        scope: 'fs',
+        kind: 'warn',
+        actor: 'user',
+        message: msg,
+        event: { action: 'project.open-cancelled' },
       });
       return;
     }
@@ -223,18 +242,17 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     // stale untitled content while the tree shows a project. No main →
     // keep the current editor as-is.
     if (m) await handleSelect(m);
-    // Cache-warm on open: a background compile starts after the editor is
-    // populated — but only when the engine cache is usable (previous output
-    // present). No cache → no surprise build; the preview waits for the
-    // user's explicit Ctrl+R; `cold` builds anyway. Open never fails because warm failed.
-    if (opts?.warm && m)
-      void warmCompile(m, { rootId: grant.rootId, path: canon }, opts.cold === true);
+    // Compile on open, once the editor is populated, so the preview and
+    // the article are current. `compile: false` (the first-launch tour)
+    // builds only from a usable cache, never starting a cold build. Open
+    // never fails because the compile did.
+    if (m) void warmCompile(m, { rootId: grant.rootId, path: canon }, opts?.compile !== false);
   }
 
   async function open() {
     const r = await openProject();
     if (r) {
-      await openRoot(r, { warm: true });
+      await openRoot(r);
     } else {
       setLog('open cancelled');
       emit({
@@ -247,8 +265,8 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
     }
   }
 
-  /** Open the welcome tour (written into app data the first time); `cold` builds it. */
-  async function openWelcome(cold = true) {
+  /** Open the welcome tour (written into app data the first time); `compile` builds it. */
+  async function openWelcome(compile = true) {
     try {
       const c = await welcomeProject();
       emit({
@@ -258,7 +276,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
         message: 'welcome project: ' + c.root,
         event: { action: 'template.welcome', root: c.root },
       });
-      await openRoot(c.root, { warm: true, cold, main: c.main });
+      await openRoot(c.root, { compile, main: c.main });
     } catch (e) {
       emit({
         scope: 'app',
@@ -292,6 +310,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
       }
       const recents = getRecentProjects();
       if (recents.length === 0) {
+        // First launch: show the tour without starting the engine download.
         await openWelcome(false);
         return;
       }
@@ -304,7 +323,7 @@ export function useProjectTree(deps: UseProjectTreeDeps) {
           const grant = await grantProjectAccess(r);
           if (!grant.ok || !grant.path) throw new Error(grant.error ?? 'grant failed');
           if ((await fs().stat(grant.path)) === null) throw new Error('root unreachable');
-          await openRoot(grant.path, { warm: true });
+          await openRoot(grant.path);
           return;
         } catch {
           // Moved, deleted, or no longer grantable: pruned below.
