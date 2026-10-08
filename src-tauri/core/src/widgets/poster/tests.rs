@@ -764,7 +764,7 @@ impl CustomRt {
 }
 
 fn copy_sample(to: &Path) {
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtimes/samples/heatmap@1");
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../embed-runtime/samples/heatmap@1");
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap().flatten() {
         let t = to.join(e.file_name());

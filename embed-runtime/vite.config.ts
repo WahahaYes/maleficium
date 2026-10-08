@@ -1,8 +1,8 @@
 // Builds one built-in widget runtime into a self-contained index.html under
-// src-tauri/widget-runtimes/<name>/, the generated runtime host a bundle's
+// embed-runtime/built/<name>/, the generated runtime host a bundle's
 // widgets/<id>/index.html is made from. Offline by construction: everything is
 // inlined from node_modules, nothing is fetched. The output is committed;
-// rerun `npm run build:runtimes` after editing one (src/widget-runtimes/
+// rerun `npm run build:runtimes` after editing one (embed-runtime/src/
 // fresh.test.ts fails on a stale build).
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import type { Plugin } from 'vite';
 
-/** Every runtime, by its directory under src/widget-runtimes/. */
+/** Every runtime, by its directory under embed-runtime/src/. */
 export const RUNTIMES = ['table', 'chart', 'model', 'video'];
 
 /** Runtimes shipped as one classic script: no module graph, nothing that needs CORS. */
@@ -62,11 +62,11 @@ export default defineConfig(({ mode }) => {
   if (mode === 'bridge') {
     return {
       build: {
-        outDir: 'src-tauri/widget-runtimes/bridge',
+        outDir: 'embed-runtime/built/bridge',
         emptyOutDir: true,
         target: 'es2020',
         lib: {
-          entry: 'src/widget-runtimes/bridge.ts',
+          entry: 'embed-runtime/src/bridge.ts',
           formats: ['iife'],
           name: 'mfwBridge',
           fileName: () => 'bridge.js',
@@ -81,12 +81,12 @@ export default defineConfig(({ mode }) => {
     return {
       plugins: [threeLicense()],
       build: {
-        outDir: 'src-tauri/widget-runtimes/model-fork/vendor/three',
+        outDir: 'embed-runtime/built/model-fork/vendor/three',
         emptyOutDir: true,
         target: 'es2020',
         chunkSizeWarningLimit: 4000,
         lib: {
-          entry: 'src/widget-runtimes/model/three-vendor.ts',
+          entry: 'embed-runtime/src/model/three-vendor.ts',
           formats: ['iife'],
           name: 'THREE',
           fileName: () => 'three.js',
@@ -97,12 +97,12 @@ export default defineConfig(({ mode }) => {
   if (mode === 'fork-viewer') {
     return {
       build: {
-        outDir: 'src-tauri/widget-runtimes/model-fork',
+        outDir: 'embed-runtime/built/model-fork',
         emptyOutDir: false,
         target: 'es2020',
         minify: false,
         lib: {
-          entry: 'src/widget-runtimes/model/main.ts',
+          entry: 'embed-runtime/src/model/main.ts',
           formats: ['iife'],
           name: 'mfwModelViewer',
           fileName: () => 'viewer.js',
@@ -116,16 +116,16 @@ export default defineConfig(({ mode }) => {
   }
   const runtime = process.env.RUNTIME ?? (RUNTIMES.includes(mode) ? mode : 'table');
   return {
-    root: `src/widget-runtimes/${runtime}`,
+    root: `embed-runtime/src/${runtime}`,
     plugins: [viteSingleFile(), ...(CLASSIC.includes(runtime) ? [classicScript()] : [])],
     build: {
-      outDir: `../../../src-tauri/widget-runtimes/${runtime}`,
+      outDir: `../../built/${runtime}`,
       emptyOutDir: true,
       target: 'es2020',
       // vega and three.js are large; they ship inline in the one file by design.
       chunkSizeWarningLimit: 4000,
       rollupOptions: {
-        input: `src/widget-runtimes/${runtime}/index.html`,
+        input: `embed-runtime/src/${runtime}/index.html`,
         ...(CLASSIC.includes(runtime) ? { output: { format: 'iife' as const } } : {}),
       },
     },

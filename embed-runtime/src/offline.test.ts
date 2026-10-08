@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { RUNTIMES } from '../../vite.runtimes.config';
+import { RUNTIMES } from '../vite.config';
 
 // URL-shaped strings that vendored libraries carry but never load: XML
 // namespaces, a default `$schema` value, and a comment. Adding to this list is
@@ -34,8 +34,7 @@ function loads(html: string): string[] {
   found.push(...(html.match(rest) ?? []));
   return found;
 }
-const built = (name: string) =>
-  readFileSync(`src-tauri/widget-runtimes/${name}/index.html`, 'utf8');
+const built = (name: string) => readFileSync(`embed-runtime/built/${name}/index.html`, 'utf8');
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -47,7 +46,7 @@ function sourceFiles(dir: string): string[] {
 
 describe('no external URLs', () => {
   it('first-party runtime source has none', () => {
-    for (const f of sourceFiles('src/widget-runtimes')) {
+    for (const f of sourceFiles('embed-runtime/src')) {
       expect(readFileSync(f, 'utf8').match(URL_RE) ?? [], f).toEqual([]);
     }
   });

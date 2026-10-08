@@ -16,10 +16,10 @@ use super::flags::Measure;
 use super::fold;
 use base64::Engine;
 
-const CSS: &str = include_str!("reader.css");
-const JS: &str = include_str!("reader.js");
+const CSS: &str = include_str!("../../../../embed-runtime/reader/reader.css");
+const JS: &str = include_str!("../../../../embed-runtime/reader/reader.js");
 /// The Maleficium mark (re-authored as SVG from the CC0 `maleficium-mark.pdf`).
-const MARK: &str = include_str!("mark.svg");
+const MARK: &str = include_str!("../../../../embed-runtime/reader/mark.svg");
 /// Where the "Made with Maleficium" colophon links, like `\mlHome`.
 const HOME: &str = "https://github.com/WahahaYes/maleficium";
 

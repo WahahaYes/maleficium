@@ -38,7 +38,7 @@ add() { # <name> <source dir>
 add simple "$ROOT/e2e/fixtures/simple"
 add interactive-paper "$ROOT/e2e/fixtures/playground"
 [ -e "$DEST/interactive-paper/maleficium-interactive.sty" ] \
-    || cp "$ROOT/src-tauri/interactive/maleficium-interactive.sty" "$DEST/interactive-paper/"
+    || cp "$ROOT/embed-runtime/tex/maleficium-interactive.sty" "$DEST/interactive-paper/"
 for p in "$ROOT"/e2e/fixtures/vendored/*/; do
     add "$(basename "$p")" "$p"
 done

@@ -24,7 +24,7 @@ Limits: no symlinks, regular files only, <= 4096 files, <= 64 MiB walked. `runti
 
 ## Bridge messages
 
-Every message carries `mfw: 1`. The runtime ignores anything not from `window.parent`. Host to runtime: `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}` (source bytes arrive as `ArrayBuffer`s; `options` is typed and defaulted); `theme {mode, tokens}` on mode change; `snapshot-request {requestId}` (no reply before `init`). Runtime to host: `ready` once; `status {state: loading|loaded|error, message? <=200}`; `snapshot {requestId, png}` (< 8 MiB data URL); `size {height}` (CSS px). You never send `size` yourself: the exporter puts a reporter at the head of every widget document that posts the document's height whenever it changes. Posting any unlisted type is a violation the host drops. Copy the listener shape from `docs/runtimes/samples/`; authors cannot import the app's `bridge.ts`.
+Every message carries `mfw: 1`. The runtime ignores anything not from `window.parent`. Host to runtime: `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}` (source bytes arrive as `ArrayBuffer`s; `options` is typed and defaulted); `theme {mode, tokens}` on mode change; `snapshot-request {requestId}` (no reply before `init`). Runtime to host: `ready` once; `status {state: loading|loaded|error, message? <=200}`; `snapshot {requestId, png}` (< 8 MiB data URL); `size {height}` (CSS px). You never send `size` yourself: the exporter puts a reporter at the head of every widget document that posts the document's height whenever it changes. Posting any unlisted type is a violation the host drops. Copy the listener shape from `embed-runtime/samples/`; authors cannot import the app's `bridge.ts`.
 
 ## Layout: width from the host, height from your content
 
@@ -68,7 +68,7 @@ Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, 
 
 ## Worked example: caption-overlay@1
 
-`docs/runtimes/samples/caption-overlay@1/` shows an SVG with a text bar. `samples/photo.svg` exercises the required `image` role; `runtime.json` declares it primary with extensions `svg png jpg`, plus two options: `caption` (string, default `"An example overlay"`) and `position` (`top|bottom`, default `bottom`). `index.html` listens for `init`, turns `d.sources.image.bytes` into a blob URL, draws it on a canvas, paints the bar in `--m-figure-accent`, and answers `theme` and `snapshot-request`. Use it in a paper:
+`embed-runtime/samples/caption-overlay@1/` shows an SVG with a text bar. `samples/photo.svg` exercises the required `image` role; `runtime.json` declares it primary with extensions `svg png jpg`, plus two options: `caption` (string, default `"An example overlay"`) and `position` (`top|bottom`, default `bottom`). `index.html` listens for `init`, turns `d.sources.image.bytes` into a blob URL, draws it on a canvas, paints the bar in `--m-figure-accent`, and answers `theme` and `snapshot-request`. Use it in a paper:
 
 ```latex
 \interactiveruntime[runtime=caption-overlay@1, poster=figures/photo.png,
@@ -84,7 +84,7 @@ Contract 1 deliberately has no WASM. A runtime that compiles WebAssembly declare
 
 A declaring runtime's folded document alone carries `'wasm-unsafe-eval'` in `script-src` (`script-src 'unsafe-inline' 'wasm-unsafe-eval'`); every other directive is the contract-1 policy, and non-declaring runtimes keep it byte for byte. Built-ins and html widgets never declare, so they never carry the token. The manifest's `runtimes` entry records the declaration (`"capabilities": {"webgl": ..., "wasm": ...}`), and the approval verdict and store are unchanged: allowing a runtime vouches for its WASM module as for the rest of its code.
 
-Posters of declaring runtimes render under the widened policy (renderer version 2), so the proposed-poster cache key moves for every custom widget: the next compile rerenders them. `docs/runtimes/samples/wasm-sum@1/` is the declaring fixture (a CSV summed by an embedded add module); the non-declaring samples are the control.
+Posters of declaring runtimes render under the widened policy (renderer version 2), so the proposed-poster cache key moves for every custom widget: the next compile rerenders them. `embed-runtime/samples/wasm-sum@1/` is the declaring fixture (a CSV summed by an embedded add module); the non-declaring samples are the control.
 
 Engine gating (reader cells, October 2026, `e2e/wasm-cells.mjs` over the proof below): the token is what lets the module compile. With it the fixture reaches live in Chromium, Firefox and WebKit; with the token stripped from both layers the widget posts `status: error` in all three — each engine gates `WebAssembly.instantiate` on the token. (The "WebKitGTK 2.52 does not gate" note predates upstream gating; the measured WebKit build 2359 gates.) The non-declaring control reaches live with a token-free policy in all three engines.
 

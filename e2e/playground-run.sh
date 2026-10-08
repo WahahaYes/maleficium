@@ -25,7 +25,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 # and the package, as a project made from a template holds it.
 sh "$DEVROOT/scripts/playground.sh" "$SCRATCH/hand" >/dev/null || fail "playground.sh failed"
 HAND="$SCRATCH/hand/interactive-paper"
-[ -f "$HAND/main.tex" ] && cmp -s "$HAND/maleficium-interactive.sty" "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" \
+[ -f "$HAND/main.tex" ] && cmp -s "$HAND/maleficium-interactive.sty" "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" \
   || fail "by-hand copy must hold main.tex and the package"
 [ "$(head -c 4 "$HAND/models/mesh.glb")" = "glTF" ] || fail "model is not a binary glTF"
 [ "$(dd if="$HAND/media/clip.mp4" bs=1 skip=4 count=4 2>/dev/null)" = "ftyp" ] || fail "clip is not an mp4"
@@ -34,7 +34,7 @@ HAND="$SCRATCH/hand/interactive-paper"
 pass "playground.sh yields an interactive-paper with the package with real media and a NOTICE"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A

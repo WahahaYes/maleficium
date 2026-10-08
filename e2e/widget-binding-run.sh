@@ -34,7 +34,7 @@ pass() { echo "ok: $1"; }
 # 1. the sidecar, from the real package and a real compile
 mkdir -p "$SCRATCH/compile/pdf"
 cp -r "$FIXTURE/." "$SCRATCH/compile/"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/compile/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/compile/"
 (cd "$SCRATCH/compile" && TECTONIC_CACHE_DIR="$CACHE" "$ENGINE" compile main.tex \
   --outdir "$SCRATCH/compile/pdf" -C -b "$BUNDLE_URL" >"$SCRATCH/compile.log" 2>&1) \
   || { tail -20 "$SCRATCH/compile.log"; fail "playground does not compile from the cache"; }

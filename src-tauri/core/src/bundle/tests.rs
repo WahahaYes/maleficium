@@ -1575,7 +1575,8 @@ fn dry_run_exports_a_real_paper() {
     let root = dunce::canonicalize(&proj).unwrap();
     crate::fs::grant_root(&cx, "dry-run", &root.to_string_lossy()).unwrap();
     std::fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../interactive/maleficium-interactive.sty"),
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../embed-runtime/tex/maleficium-interactive.sty"),
         root.join("maleficium-interactive.sty"),
     )
     .unwrap();
@@ -1695,7 +1696,7 @@ struct Custom {
 fn copy_sample(r: &str, to: &Path) {
     copy_dir(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/runtimes/samples")
+            .join("../../embed-runtime/samples")
             .join(r),
         to,
     );

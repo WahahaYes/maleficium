@@ -120,7 +120,7 @@ fn refs_names_and_reserved_names() {
     }
     assert_eq!(split_ref("stl-viewer@12"), Some(("stl-viewer", 12)));
     // The package's own reserved list: the same one the .sty refuses.
-    let sty = include_str!("../../../interactive/maleficium-interactive.sty");
+    let sty = include_str!("../../../../embed-runtime/tex/maleficium-interactive.sty");
     assert!(sty.contains("(?:model|video|table|chart|html|custom)"));
     for k in RESERVED_OPTIONS {
         assert!(
@@ -407,7 +407,7 @@ fn read_dir(dir: &std::path::Path, prefix: &str, out: &mut BTreeMap<String, Vec<
 /// The documented samples, as lane C ships them.
 pub(crate) fn sample(reference: &str) -> BTreeMap<String, Vec<u8>> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/runtimes/samples")
+        .join("../../embed-runtime/samples")
         .join(reference);
     let mut out = BTreeMap::new();
     read_dir(&dir, "", &mut out);

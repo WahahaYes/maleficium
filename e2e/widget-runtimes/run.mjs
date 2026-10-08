@@ -45,16 +45,16 @@ const policy = /const WIDGET_POLICY: &str = "([^"]*)";/
 const withPolicy = (html) =>
   html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${policy}">`);
 const runtime = (name) =>
-  withPolicy(readFileSync(join(dev, `src-tauri/widget-runtimes/${name}/index.html`), 'utf8'));
+  withPolicy(readFileSync(join(dev, `embed-runtime/built/${name}/index.html`), 'utf8'));
 // A `model@1` fork as the scaffold writes it, folded the way the exporter
 // folds a custom runtime: each `<script src>` inlined in place.
 const forkRuntime = () => {
   const files = {
-    'vendor/three/three.js': 'src-tauri/widget-runtimes/model-fork/vendor/three/three.js',
-    'bridge.js': 'src-tauri/widget-runtimes/bridge/bridge.js',
-    'viewer.js': 'src-tauri/widget-runtimes/model-fork/viewer.js',
+    'vendor/three/three.js': 'embed-runtime/built/model-fork/vendor/three/three.js',
+    'bridge.js': 'embed-runtime/built/bridge/bridge.js',
+    'viewer.js': 'embed-runtime/built/model-fork/viewer.js',
   };
-  const html = readFileSync(join(dev, 'src/widget-runtimes/model/fork.html'), 'utf8').replace(
+  const html = readFileSync(join(dev, 'embed-runtime/src/model/fork.html'), 'utf8').replace(
     /<script src="([^"]+)"><\/script>/g,
     (_, src) =>
       `<script>${readFileSync(join(dev, files[src]), 'utf8').replaceAll('</script', '<\\/script')}</script>`,
@@ -516,7 +516,7 @@ const evil = (html) =>
     '<body>',
     `<body><script src="${origin}/evil.js"></script><script>fetch("${origin}/evil-fetch").catch(function(){});new Image().src="${origin}/evil-img"</script>`,
   );
-const raw = readFileSync(join(dev, 'src-tauri/widget-runtimes/video/index.html'), 'utf8');
+const raw = readFileSync(join(dev, 'embed-runtime/built/video/index.html'), 'utf8');
 await page.evaluate((h) => window.__mount('e1', h), withPolicy(evil(raw)));
 await page.waitForTimeout(1500);
 check(

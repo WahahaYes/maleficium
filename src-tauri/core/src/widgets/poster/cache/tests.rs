@@ -832,7 +832,7 @@ fn custom_setup(name: &str) -> (Core, String, PathBuf, PathBuf) {
     .unwrap();
     std::fs::create_dir_all(root.join("data")).unwrap();
     std::fs::write(root.join("data/grid.csv"), GRID_KEY).unwrap();
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtimes/samples/heatmap@1");
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../embed-runtime/samples/heatmap@1");
     let to = root.join("runtimes/heatmap@1");
     std::fs::create_dir_all(&to).unwrap();
     for e in std::fs::read_dir(&from).unwrap().flatten() {

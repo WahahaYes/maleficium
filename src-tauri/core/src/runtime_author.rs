@@ -23,27 +23,26 @@ pub const MODEL_REF: &str = "model@1";
 const DRAFT_VERSION: &str = "1.0.0";
 
 const DRAFT_MANIFEST: &str =
-    include_str!("../../../docs/runtimes/samples/caption-overlay@1/runtime.json");
+    include_str!("../../../embed-runtime/samples/caption-overlay@1/runtime.json");
 const DRAFT_ENTRY: &str =
-    include_str!("../../../docs/runtimes/samples/caption-overlay@1/index.html");
+    include_str!("../../../embed-runtime/samples/caption-overlay@1/index.html");
 const DRAFT_SAMPLE: &[u8] =
-    include_bytes!("../../../docs/runtimes/samples/caption-overlay@1/samples/photo.svg");
+    include_bytes!("../../../embed-runtime/samples/caption-overlay@1/samples/photo.svg");
 const DRAFT_LICENSE: &str =
-    include_str!("../../../docs/runtimes/samples/caption-overlay@1/LICENSE");
-const BRIDGE_JS: &[u8] = include_bytes!("../../../src-tauri/widget-runtimes/bridge/bridge.js");
+    include_str!("../../../embed-runtime/samples/caption-overlay@1/LICENSE");
+const BRIDGE_JS: &[u8] = include_bytes!("../../../embed-runtime/built/bridge/bridge.js");
 
 // The fork (`npm run build:runtimes` writes model-fork/; fresh.test.ts
 // keeps it current).
-const FORK_ENTRY: &[u8] = include_bytes!("../../../src/widget-runtimes/model/fork.html");
-const FORK_VIEWER: &[u8] =
-    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/viewer.js");
+const FORK_ENTRY: &[u8] = include_bytes!("../../../embed-runtime/src/model/fork.html");
+const FORK_VIEWER: &[u8] = include_bytes!("../../../embed-runtime/built/model-fork/viewer.js");
 const FORK_THREE: &[u8] =
-    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/vendor/three/three.js");
+    include_bytes!("../../../embed-runtime/built/model-fork/vendor/three/three.js");
 const FORK_THREE_LICENSE: &[u8] =
-    include_bytes!("../../../src-tauri/widget-runtimes/model-fork/vendor/three/LICENSE");
+    include_bytes!("../../../embed-runtime/built/model-fork/vendor/three/LICENSE");
 /// Where the vendored three.js version comes from: the app's own pin.
 const PACKAGE_JSON: &str = include_str!("../../../package.json");
-const MODEL_SAMPLE: &[u8] = include_bytes!("../../../e2e/fixtures/interactive/models/mesh.glb");
+const MODEL_SAMPLE: &[u8] = include_bytes!("../../../embed-runtime/src/model/fork-sample.glb");
 
 /// The user library dir: every draft sits at `<it>/<name>@1/`.
 pub fn library_dir() -> PathBuf {
@@ -571,7 +570,7 @@ mod tests {
 
     fn sample_dir(reference: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/runtimes/samples")
+            .join("../../embed-runtime/samples")
             .join(reference)
     }
 
