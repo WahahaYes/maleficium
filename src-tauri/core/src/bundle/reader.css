@@ -52,11 +52,9 @@ body.m-reader {
 }
 .m-reader .frame {
   position: relative;
-  /* The author's box caps the frame: with author dims the frame keeps the
-     author's width (at most the column) instead of filling it, so a tall
-     poster never stretches past what the author asked; without them the
-     frame fills the column as before. */
-  width: min(100%, var(--aw, 100%));
+  /* The frame fills the column at the author's aspect: a widget is used on
+     screen, and the column is the room it has there. */
+  width: 100%;
   margin-inline: auto;
   aspect-ratio: var(--ar, 4/3);
   background: var(--m-figure-bg);
