@@ -1,5 +1,8 @@
 Maleficium
-Copyright 2026 Ethan Wilson
+Copyright (C) 2026 Ethan Wilson
+
+Maleficium is licensed under the GNU Affero General Public License v3.0
+only (AGPL-3.0-only); see LICENSE.
 
 This product includes software developed by Ethan Wilson.
 
@@ -87,6 +90,19 @@ runtime uses only the browser's own <video> element.
 The model and video test fixtures under e2e/fixtures/ (a generated glb cube and
 an ffmpeg test pattern, e2e/fixtures/gen-media.py) are original to Maleficium
 and dedicated to the public domain under CC0 1.0.
+
+This product bundles pdf.js (pdfjs-dist), Copyright Mozilla Foundation and
+contributors, under the Apache License 2.0.
+
+Its other npm and Rust dependencies keep their own licenses (MIT, ISC,
+BSD-2/3-Clause, Apache-2.0, MPL-2.0, Zlib, Unicode-3.0, CC0 1.0 and similar),
+and none is covered by Maleficium's AGPL-3.0 license. They are listed with
+their versions in package-lock.json, src-tauri/Cargo.lock and
+src-tauri/engine/Cargo.lock; each package's own license text is in its
+published source. The Tectonic engine also builds in third-party C and C++
+libraries (such as HarfBuzz, FreeType, ICU, libpng and zlib) under their own
+licenses, documented in Tectonic's published source; the .deb links
+libgraphite2 dynamically.
 
 The built-in project templates under src-tauri/templates/ are original to
 Maleficium and dedicated to the public domain under CC0 1.0

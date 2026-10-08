@@ -1,7 +1,7 @@
 {
   "name": "maleficium",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "version": "0.3.0",
   "type": "module",
   "author": "Ethan Wilson",
