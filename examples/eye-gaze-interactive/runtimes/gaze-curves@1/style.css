@@ -1,0 +1,264 @@
+[hidden] {
+  display: none !important;
+}
+/* Mobile first. The host gives the width; the height is the content's (the
+   frame follows the document), so nothing sizes from the frame's height. */
+html,
+body {
+  margin: 0;
+  background: var(--m-figure-bg, #fff);
+  color: var(--m-figure-ink, #1e1b24);
+  font: 13px / 1.35 var(--m-font-body, Georgia, serif);
+}
+#root {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.muted {
+  color: color-mix(in srgb, var(--m-figure-ink) 62%, var(--m-figure-bg));
+}
+
+/* Controls: labelled groups of real buttons, above the plot. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+.group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-width: 100%;
+}
+.group > .label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.range input {
+  width: 110px;
+  min-height: 28px;
+}
+.range output {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5ch;
+}
+
+/* One column: plot, legend, readout. From 560 px the readout sits beside. */
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.plotcol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The plot's shape follows its width. A vertical swipe scrolls the page; a
+   horizontal drag picks. */
+#plot {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+#plot:focus-visible {
+  outline: 2px solid var(--m-figure-accent, #5b2a86);
+  outline-offset: 2px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 12px;
+}
+/* Legend chips are on/off toggles: on keeps the outline, off fades. */
+.legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  font-weight: 500;
+}
+.legend button[aria-pressed='true'] {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+  color: var(--m-figure-ink, #1e1b24);
+}
+.legend button[aria-pressed='false'] {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.legend svg {
+  width: 22px;
+  height: 8px;
+}
+.readout {
+  align-self: start;
+  padding: 8px 10px;
+  border-radius: var(--m-radius, 6px);
+  background: var(--m-figure-surface, #f0f0f0);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.readout h3 {
+  margin: 0 0 2px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.readout .big {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.readout p {
+  margin: 0 0 6px;
+}
+.readout table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 6px;
+}
+.readout td {
+  padding: 1px 0;
+}
+.readout td:last-child {
+  text-align: right;
+  font-weight: 700;
+}
+.sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.tip {
+  position: fixed;
+  z-index: 2;
+  pointer-events: none;
+  padding: 4px 8px;
+  border-radius: var(--m-radius, 6px);
+  background: var(--m-tooltip-bg, #fff);
+  color: var(--m-tooltip-fg, #1e1b24);
+  border: 1px solid var(--m-tooltip-border, #d9d5e0);
+  box-shadow: var(--m-shadow, 0 2px 8px rgba(0, 0, 0, 0.15));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tip b {
+  display: block;
+}
+.msg {
+  color: var(--m-color-error, #b3261e);
+}
+/* House controls: one look for every button, segmented group and toggle
+   (the reader chrome and the showcase use the same rules on their tokens). */
+button {
+  font: 600 12px/1.25 var(--m-font-heading, system-ui, sans-serif);
+  letter-spacing: 0.01em;
+  color: var(--m-figure-ink, #1e1b24);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+button:hover {
+  border-color: var(--m-figure-accent, #5b2a86);
+  background: color-mix(in srgb, var(--m-figure-accent, #5b2a86) 10%, transparent);
+}
+button[aria-pressed='true'],
+button[aria-checked='true'] {
+  background: var(--m-figure-accent, #5b2a86);
+  border-color: var(--m-figure-accent, #5b2a86);
+  color: var(--m-figure-bg, #fff);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--m-figure-accent, #5b2a86);
+  outline-offset: 2px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+}
+.seg button + button {
+  border-left: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+}
+input[type='range'],
+input[type='checkbox'] {
+  accent-color: var(--m-figure-accent, #5b2a86);
+}
+@media (max-width: 559px) {
+  .long {
+    display: none;
+  }
+  .range {
+    flex: 1 1 100%;
+  }
+  .range input {
+    flex: 1;
+    width: auto;
+  }
+}
+@media (min-width: 560px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr) 31%;
+  }
+  #plot {
+    aspect-ratio: 16 / 9;
+  }
+}
+/* Touch: every control a full 44 px target. */
+@media (pointer: coarse) {
+  button {
+    min-height: 44px;
+    padding: 8px 14px;
+  }
+  .check {
+    min-height: 44px;
+  }
+  .check input {
+    width: 22px;
+    height: 22px;
+  }
+  input[type='range'] {
+    min-height: 44px;
+  }
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gaze curves</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="root" aria-busy="true">
+      <div class="toolbar" id="toolbar"></div>
+      <div class="body">
+        <div class="plotcol">
+          <svg id="plot" role="slider" tabindex="0" aria-orientation="horizontal"></svg>
+          <div class="legend" id="legend" role="group" aria-label="Series"></div>
+        </div>
+        <aside class="readout" id="readout" aria-live="polite"></aside>
+      </div>
+      <div class="tip" id="tip" role="tooltip" hidden></div>
+      <p id="msg" class="msg" hidden></p>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
