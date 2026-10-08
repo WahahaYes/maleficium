@@ -68,7 +68,7 @@ Drives the sidecar through grant → compile → poll → SyncTeX → delete →
 
 ### interactive-run.sh
 
-Drives the sidecar through grant → compile → poll against a scratch copy that holds `maleficium-interactive.sty` (copied from `src-tauri/interactive/`) of `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the failing documents (bad ids, missing files, no alt, an unknown option, a poster parameter on the wrong widget type, a malformed size), and that nothing landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
+Drives the sidecar through grant → compile → poll against a scratch copy that holds `maleficium-interactive.sty` (copied from `embed-runtime/tex/`) of `fixtures/interactive/`, then checks the MCP `widgets` list (every widget, rects, sources, stale and missing sidecars as errors), the `.mfw` sidecar, the named PDF annotations, the table row cap, the failing documents (bad ids, missing files, no alt, an unknown option, a poster parameter on the wrong widget type, a malformed size), and that nothing landed in the project. Exits non-zero when a check misses. `POLL_ROUNDS` bounds polling; the table text checks need `mutool` and skip with a reason without it.
 
 ### export-run.sh
 

@@ -56,8 +56,9 @@ pub const RESERVED_OPTIONS: [&str; 19] = [
     "resourcedomains",
 ];
 /// Licences a runtime and every library it vendors may carry.
-pub const LICENSES: [&str; 9] = [
+pub const LICENSES: [&str; 10] = [
     "MIT",
+    "MIT-0",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "Apache-2.0",

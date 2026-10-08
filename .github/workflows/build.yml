@@ -42,6 +42,7 @@ jobs:
             src:
               - 'src/**'
               - 'src-tauri/**'
+              - 'embed-runtime/**'
               - 'scripts/**'
               - 'e2e/**/*.py'
               - '.github/workflows/**'

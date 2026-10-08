@@ -63,9 +63,7 @@ pub(crate) const CUSTOM_TIMEOUT_MS: u64 = 10_000;
 #[cfg(debug_assertions)]
 pub const TEST_HANG_RUNTIME: &str = "hang@test";
 #[cfg(debug_assertions)]
-const TEST_HANG_HOST: &str = "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><script>\
-addEventListener('message',function(e){if(e.source===parent&&e.data&&e.data.type==='init'){for(;;){}}});\
-parent.postMessage({mfw:1,type:'ready'},'*');</script></body></html>";
+const TEST_HANG_HOST: &str = include_str!("../../testdata/runtimes/hang-host.html");
 
 /// Render one widget's poster to `out_path`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema, TS)]

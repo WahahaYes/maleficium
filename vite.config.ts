@@ -134,7 +134,7 @@ export default defineConfig(() => ({
   // nothing here renders; components are proven by the stills harness.
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'embed-runtime/**/*.test.ts'],
     pool: 'forks',
     testTimeout: 5_000,
   },

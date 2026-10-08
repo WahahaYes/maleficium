@@ -23,7 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
 # A project holds its own package: copy the canonical file in, as a template does.
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -87,7 +87,7 @@ check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 sty = os.path.join(ROOT, "maleficium-interactive.sty")
 check("the project holds the package, identical to the canonical source",
-      open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
+      open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "embed-runtime/tex/maleficium-interactive.sty"), "rb").read())
 
 rec = compile("main.tex")
 check("fixture compiles", rec.get("status") == "success", str(rec)[:300])
@@ -156,7 +156,8 @@ check("widget sources and options are typed",
       wby["fig-mesh"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
       and {"key": "pdfrows", "value": "2"} in wby["tab-results"]["options"]
       and wby["fig-demo"]["sources"][0]["role"] == "bundle", str(wby)[:300])
-check("pre-caption widget lists no label", "label" not in wby["fig-clip"], str(wby["fig-clip"]))
+check("pre-caption widget takes its float's label and figure number",
+      wby["fig-clip"].get("label") == "fig:clip" and wby["fig-clip"].get("figure") == "2", str(wby["fig-clip"]))
 check("widgets outside a float list no label or figure",
       all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-demo")),
       str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-demo")})[:300])

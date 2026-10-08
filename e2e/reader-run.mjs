@@ -414,7 +414,7 @@ if (customProof) {
   check(
     'custom proof: the manifest carries the approved runtime entry',
     !!proofManifest.runtimes?.['heatmap@1']?.digest &&
-      proofManifest.runtimes['heatmap@1'].license === 'MIT',
+      proofManifest.runtimes['heatmap@1'].license === 'MIT-0',
     Object.keys(proofManifest.runtimes ?? {}).join(','),
   );
   const proof = await host(join(customProof, '..'), customProof);

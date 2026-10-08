@@ -8,7 +8,7 @@ use crate::widgets::parse_sidecar;
 const HOUSE: &str = include_str!("../../testdata/theme/house.mfw");
 const DARK_PAGE: &str = include_str!("../../testdata/theme/dark-page.mfw");
 const CREAM: &str = include_str!("../../testdata/theme/cream-times.mfw");
-const STY: &str = include_str!("../../../interactive/maleficium-interactive.sty");
+const STY: &str = include_str!("../../../../embed-runtime/tex/maleficium-interactive.sty");
 
 fn theme_of(sidecar: &str) -> Theme {
     parse_sidecar(sidecar).unwrap().theme.unwrap()
