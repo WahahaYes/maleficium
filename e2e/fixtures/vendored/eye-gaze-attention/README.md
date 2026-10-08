@@ -12,7 +12,7 @@ Ethan Wilson, Naveen Sendhilnathan, Charlie S. Burlingham, Yusuf Mansour, Robert
 
 - acmart (`sigconf,nonacm,authorversion`) from a class file shipped beside the paper, overriding the bundle's copy
 - Eight `\author` blocks with affiliations, a CC copyright block, and ACM conference metadata
-- Seven `\input` sections, `ACM-Reference-Format` BibTeX, and large PNG figures
+- Seven `\input` sections, ACM-Reference-Format BibTeX, and large PNG figures
 
 ## Builds today
 
