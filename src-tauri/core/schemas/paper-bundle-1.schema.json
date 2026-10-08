@@ -63,9 +63,9 @@
               "description": "whether the article shows its contents list; false omits the nav"
             },
             "measure": {
-              "enum": ["narrow", "default", "wide"],
+              "enum": ["narrow", "default", "wide", "full"],
               "default": "default",
-              "description": "the article column width: narrow 56ch, default 68ch (the theme's --m-measure), wide 80ch"
+              "description": "the article column width: narrow 56ch, default 68ch (the theme's --m-measure), wide 80ch, full the whole window less the page gutters"
             }
           }
         },

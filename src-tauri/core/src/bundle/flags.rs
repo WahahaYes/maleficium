@@ -27,7 +27,7 @@
 const FLAG_CLASS: &str = "m-flag";
 /// The value token of a contents marker: `m-flag-contents-on|off`.
 const CONTENTS_PREFIX: &str = "m-flag-contents-";
-/// The value token of a measure marker: `m-flag-measure-narrow|default|wide`.
+/// The value token of a measure marker: `m-flag-measure-narrow|default|wide|full`.
 const MEASURE_PREFIX: &str = "m-flag-measure-";
 
 /// The article column width (`paper.reader.measure`): closed tokens only,
@@ -38,6 +38,8 @@ pub enum Measure {
     Narrow,
     Default,
     Wide,
+    /// The whole window, less the page gutters.
+    Full,
 }
 
 impl Measure {
@@ -47,6 +49,7 @@ impl Measure {
             Measure::Narrow => "narrow",
             Measure::Default => "default",
             Measure::Wide => "wide",
+            Measure::Full => "full",
         }
     }
 
@@ -55,6 +58,7 @@ impl Measure {
             "narrow" => Some(Measure::Narrow),
             "default" => Some(Measure::Default),
             "wide" => Some(Measure::Wide),
+            "full" => Some(Measure::Full),
             _ => None,
         }
     }
@@ -66,6 +70,7 @@ impl Measure {
             Measure::Narrow => Some("56ch"),
             Measure::Default => None,
             Measure::Wide => Some("80ch"),
+            Measure::Full => Some("100%"),
         }
     }
 }
