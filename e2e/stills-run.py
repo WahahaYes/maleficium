@@ -1049,7 +1049,7 @@ def state10():
     sty = proj + "/maleficium-interactive.sty"
     if os.path.exists(sty):
         os.remove(sty)
-    shipped = ROOT + "/src-tauri/interactive/maleficium-interactive.sty"
+    shipped = ROOT + "/embed-runtime/tex/maleficium-interactive.sty"
     start_app(proj)
     wait_window(300)
     window_size(1600, 900)
@@ -1170,7 +1170,7 @@ def state11():
     for f in os.listdir(proj):
         if f.endswith(".tex") and f != "main.tex":
             os.remove(os.path.join(proj, f))
-    shutil.copy(ROOT + "/src-tauri/interactive/maleficium-interactive.sty", proj)
+    shutil.copy(ROOT + "/embed-runtime/tex/maleficium-interactive.sty", proj)
     page = proj + "/widgets/demo/index.html"
     start_app(proj)
     wait_window(300)

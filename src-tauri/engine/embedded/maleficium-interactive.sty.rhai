@@ -1,5 +1,5 @@
 // maleficium-interactive.sty.rhai -- latexml-oxide runtime binding for the
-// Maleficium interactive-paper package (src-tauri/interactive/
+// Maleficium interactive-paper package (embed-runtime/tex/
 // maleficium-interactive.sty). It replaces raw loading of the .sty, which
 // needs expl3 and writes PDF specials and a sidecar that mean nothing in HTML.
 //

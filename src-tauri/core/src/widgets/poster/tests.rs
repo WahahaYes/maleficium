@@ -187,7 +187,7 @@ fn only_shipped_runtimes_render_and_the_hang_runtime_is_debug_only() {
     )
     .unwrap();
     let job = job_of(cx, &req(&id, "fig-mesh", &out));
-    assert!(job.document.contains("for(;;){}"));
+    assert!(job.document.contains("for (;;) {}"));
 }
 
 fn png(w: u32, h: u32) -> Vec<u8> {
@@ -764,7 +764,7 @@ impl CustomRt {
 }
 
 fn copy_sample(to: &Path) {
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtimes/samples/heatmap@1");
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../embed-runtime/samples/heatmap@1");
     std::fs::create_dir_all(to).unwrap();
     for e in std::fs::read_dir(from).unwrap().flatten() {
         let t = to.join(e.file_name());
@@ -852,7 +852,7 @@ fn a_missing_runtime_is_an_error_not_a_proposal() {
 #[test]
 fn an_invalid_runtime_is_an_error() {
     let c = CustomRt::new("custom-invalid", HEAT_CUSTOM);
-    c.set_licence("\"MIT\"", "\"GPL-3.0\"");
+    c.set_licence("\"MIT-0\"", "\"GPL-3.0\"");
     let e = run_at(&c.base, &c.cx, &c.req(), |_job| Ok(String::new())).unwrap_err();
     assert!(e.contains("is invalid"), "{e}");
     assert!(!c.out.join("fig-chart.png").exists());
@@ -864,7 +864,7 @@ fn a_licence_change_after_approval_asks_again() {
     c.decide(widget_approval::RuntimeDecision::Allowed);
     // MIT and Apache-2.0 are both allowlisted: the package stays valid,
     // but the verdict lapses until the user allows the new licence.
-    c.set_licence("\"MIT\"", "\"Apache-2.0\"");
+    c.set_licence("\"MIT-0\"", "\"Apache-2.0\"");
     let mut ran = false;
     let res = run_at(&c.base, &c.cx, &c.req(), |_job| {
         ran = true;

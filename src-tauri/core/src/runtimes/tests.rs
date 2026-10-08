@@ -120,7 +120,7 @@ fn refs_names_and_reserved_names() {
     }
     assert_eq!(split_ref("stl-viewer@12"), Some(("stl-viewer", 12)));
     // The package's own reserved list: the same one the .sty refuses.
-    let sty = include_str!("../../../interactive/maleficium-interactive.sty");
+    let sty = include_str!("../../../../embed-runtime/tex/maleficium-interactive.sty");
     assert!(sty.contains("(?:model|video|table|chart|html|custom)"));
     for k in RESERVED_OPTIONS {
         assert!(
@@ -203,7 +203,7 @@ fn every_manifest_rule_has_its_message() {
         (with(good(), &["authors"], json!(["x".repeat(101)])), "each name must be 1 to 100"),
         (
             with(good(), &["license"], json!("GPL-3.0")),
-            "license `GPL-3.0` is not on the allowlist (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense)",
+            "license `GPL-3.0` is not on the allowlist (MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense)",
         ),
         (with(good(), &["capabilities", "webgl"], json!("yes")), "runtime.json: invalid type"),
         (with(good(), &["sources"], json!({})), "sources: a runtime takes 1 to 8 roles"),
@@ -407,7 +407,7 @@ fn read_dir(dir: &std::path::Path, prefix: &str, out: &mut BTreeMap<String, Vec<
 /// The documented samples, as lane C ships them.
 pub(crate) fn sample(reference: &str) -> BTreeMap<String, Vec<u8>> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/runtimes/samples")
+        .join("../../embed-runtime/samples")
         .join(reference);
     let mut out = BTreeMap::new();
     read_dir(&dir, "", &mut out);

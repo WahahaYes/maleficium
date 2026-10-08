@@ -23,7 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 python3 -c "import jsonschema" 2>/dev/null || fail "python3 jsonschema is required"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -226,8 +226,11 @@ model_doc, video_doc = widget_doc(fdir, "fig-mesh"), widget_doc(fdir, "fig-clip"
 check("model and video widgets export with their runtime, not as a poster",
       'id="view"' in model_doc and "WebGLRenderer" in model_doc and '<video id="v" controls' in video_doc
       and "<img" not in model_doc and "<img" not in video_doc, "")
+def runtime_scripts(d):
+    # Every widget document also carries the size reporter (one script, first).
+    return [x for x in re.findall(r'<script\b.*?</script>', d, re.S) if "type: 'size'" not in x]
 check("the exported model and video runtimes are one classic script with no external url",
-      all(d.count("<script") == 1 and 'type="module"' not in d and not re.search(r'<script[^>]*\bsrc=|@import|importScripts', d)
+      all(len(runtime_scripts(d)) == 1 and d.count("<script") == 2 and 'type="module"' not in d and not re.search(r'<script[^>]*\bsrc=|@import|importScripts', d)
           and not re.search(r'(?:src|href)=["\']?(?:https?:)?//', d) for d in (model_doc, video_doc)), "")
 check("no export warns about a missing runtime", not any("runtime" in w["message"] for w in exp["folder"]["warnings"]),
       str(exp["folder"]["warnings"])[:300])

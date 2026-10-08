@@ -4,6 +4,13 @@ Copyright (C) 2026 Ethan Wilson
 Maleficium is licensed under the GNU Affero General Public License v3.0
 only (AGPL-3.0-only); see LICENSE.
 
+The exception is embed-runtime/: the code Maleficium copies into exported
+papers and into projects (the reader, the widget bridge and built-in
+runtimes, the interactive LaTeX package, and the custom-runtime samples and
+scaffolds) is licensed under MIT No Attribution (MIT-0); see
+embed-runtime/LICENSE. Third-party code it inlines or vendors keeps its own
+licence, listed below.
+
 This product includes software developed by Ethan Wilson.
 
 This product bundles third-party VSCode color themes under src/assets/themes/
@@ -70,7 +77,7 @@ TeX Live C library is absent. The kpathsea and kpathsea-sys Rust crates
 themselves are MIT OR Apache-2.0.
 
 This product bundles, inlined into the built-in widget runtimes under
-src-tauri/widget-runtimes/ (built by `npm run build:runtimes`, no network at
+embed-runtime/built/ (built by `npm run build:runtimes`, no network at
 build or run time), the Vega visualization stack and its dependencies, all
 permissively licensed (checked against package-lock.json, 2026-10-01):
 
@@ -80,7 +87,7 @@ permissively licensed (checked against package-lock.json, 2026-10-01):
   BSD-3-Clause; fast-deep-equal, json-stringify-pretty-compact and similar
   under MIT; tslib under 0BSD; robust-predicates under Unlicense).
 
-The model runtime under src-tauri/widget-runtimes/model/ also inlines three.js
+The model runtime under embed-runtime/built/model/ also inlines three.js
 0.186.1 (its GLTFLoader and OrbitControls included), Copyright (c) 2010-2026
 three.js authors, MIT, with no dependencies (checked against package-lock.json,
 2026-10-01). Its type declarations, @types/three 0.186.0 (MIT) and their

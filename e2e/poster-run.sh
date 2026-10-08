@@ -43,7 +43,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
   || fail "cannot build the app and sidecar"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 mkdir "$SCRATCH/out"
 # The probe: an html widget with no poster= whose script, when run, answers
 # the bridge with a magenta snapshot.
@@ -293,7 +293,7 @@ def approve(digest, folder="widgets/probe", widget="html-probe"):
     os.makedirs(store_dir, exist_ok=True)
     approved[folder] = {"widget": widget, "digest": digest, "origins": {},
                         "files": {}, "approvedAt": 1, "revoked": False}
-    json.dump({"format": 1, "root": REAL, "autoApprove": False, "widgets": approved},
+    json.dump({"format": 2, "root": REAL, "autoApprove": False, "widgets": approved, "runtimes": {}},
               open(os.path.join(store_dir, "store.json"), "w"))
 def outcome(r):
     return (r.get("result") or {}).get("status") if r.get("ok") else None

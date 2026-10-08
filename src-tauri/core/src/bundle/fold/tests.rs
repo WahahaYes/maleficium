@@ -123,7 +123,7 @@ fn a_widget_document_reports_its_size_behind_the_policy_and_charset() {
             assert!(reporter < own, "{label}");
         }
     }
-    assert!(SIZE_REPORTER.contains("type:'size'") && !SIZE_REPORTER.contains('"'));
+    assert!(SIZE_REPORTER.contains("type: 'size'") && !SIZE_REPORTER.contains('"'));
 }
 
 #[test]
