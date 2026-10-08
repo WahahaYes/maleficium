@@ -347,6 +347,31 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             r.line_width = Some(pt);
             continue;
         }
+        if f[0] == "float" {
+            // `float|<id>|<label>|<figure>`: the float's \label came after the
+            // widget (image, then caption), so its widget line recorded them
+            // empty. Fills only what is still empty.
+            let (Some(id), Some(label), Some(figure)) = (f.get(1), f.get(2), f.get(3)) else {
+                return Err(format!(
+                    "widget sidecar line {n}: a float record names a widget, a label and a figure"
+                ));
+            };
+            if f.len() != 4 {
+                return Err(format!(
+                    "widget sidecar line {n}: a float record names a widget, a label and a figure"
+                ));
+            }
+            let r = out.iter_mut().find(|r| r.id == *id).ok_or_else(|| {
+                format!("widget sidecar line {n}: float for unknown widget `{id}`")
+            })?;
+            if r.label.is_none() {
+                r.label = opt(label);
+            }
+            if r.figure.is_none() {
+                r.figure = opt(figure);
+            }
+            continue;
+        }
         if f[0] == "style" {
             // `style|<path>`: the author's reader stylesheet. The path is
             // only recorded here; the exporter confines and checks it.

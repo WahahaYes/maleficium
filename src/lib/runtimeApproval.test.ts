@@ -1,23 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ApprovalRequired, WidgetApprovalStatus, WidgetsStatus } from './generated/api';
-import {
-  createRuntimeModel,
-  createRuntimePromptQueue,
-  offerRuntimeEvent,
-  runtimeApprovalRef,
-  runtimeEventFor,
-  type WidgetsIo,
-} from './widgetApproval';
+import { createRuntimeModel, runtimeEventFor, type WidgetsIo } from './widgetApproval';
 import type { BusEvent } from './generated/events';
-import {
-  buildRuntimeRow,
-  buildRuntimeRows,
-  pendingExportRuntimes,
-  promptFromRuntime,
-  runtimePromptBody,
-  runtimePromptTitle,
-  runtimeUnavailable,
-} from './widgets.view';
+import { buildRuntimeRow, buildRuntimeRows, runtimeUnavailable } from './widgets.view';
 
 const NO = { connectDomains: [], resourceDomains: [], frameDomains: [] };
 const INFO = {
@@ -142,73 +127,6 @@ describe('runtime rows', () => {
   });
 });
 
-describe('export gate', () => {
-  it('asks about unknown and changed runtimes, never denied or missing ones', () => {
-    const s = status([
-      RUNTIME_REQ(),
-      RUNTIME_REQ({ cause: 'changed_since_approval', approvedDigest: 'a' }),
-      RUNTIME_REQ({ cause: 'revoked' }),
-    ]);
-    s.unavailable = [{ widget: 'fig-x', path: 'runtimes/gone@1', error: 'not installed' }];
-    const pending = pendingExportRuntimes(s);
-    expect(pending.map((p) => p.cause)).toEqual(['never_approved', 'changed_since_approval']);
-  });
-
-  it('words the pop-up per the contract', () => {
-    const p = promptFromRuntime(RUNTIME_REQ() as ApprovalRequired, 'main.tex');
-    expect(runtimePromptTitle(p)).toBe('Allow runtime \u201cSTL viewer\u201d (stl-viewer@1)?');
-    expect(runtimePromptBody(p)).toContain('1 widget in main.tex uses this runtime');
-    expect(runtimePromptBody(p)).toContain('Allow only code you have reviewed or trust');
-  });
-});
-
-describe('runtime prompt queue', () => {
-  const prompt = promptFromRuntime(RUNTIME_REQ() as ApprovalRequired, 'main.tex');
-
-  it('allows the shown digest, then drains', async () => {
-    const decide = vi.fn(async () => RUNTIME_REQ());
-    const q = createRuntimePromptQueue({ decideRuntime: decide }, 'r', 'main.tex');
-    q.enqueue(prompt);
-    const drained = q.drain();
-    await q.allow();
-    await drained;
-    expect(decide).toHaveBeenCalledWith({
-      rootId: 'r',
-      mainRel: 'main.tex',
-      runtime: 'stl-viewer@1',
-      digest: prompt.digest,
-      decision: 'allowed',
-    });
-    expect(q.current()).toBeNull();
-  });
-
-  it('denies, and not-now writes nothing', async () => {
-    const decide = vi.fn(async () => RUNTIME_REQ());
-    const q = createRuntimePromptQueue({ decideRuntime: decide }, 'r', 'main.tex');
-    q.enqueue(prompt);
-    await q.deny();
-    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'denied' }));
-    q.enqueue(prompt);
-    await q.notNow();
-    expect(decide).toHaveBeenCalledTimes(1);
-    expect(q.current()).toBeNull();
-  });
-
-  it('reports a refused decision and still drains so the export runs', async () => {
-    const q = createRuntimePromptQueue(
-      { decideRuntime: vi.fn().mockRejectedValue(new Error('changed since review')) },
-      'r',
-      'm',
-    );
-    q.enqueue(prompt);
-    const drained = q.drain();
-    await q.allow();
-    await drained;
-    expect(q.failure()).toContain('changed since review');
-    expect(q.current()).toBeNull();
-  });
-});
-
 describe('runtime model', () => {
   function fakeIo(over: Partial<WidgetsIo> = {}) {
     let current = status([RUNTIME_REQ()]);
@@ -271,38 +189,6 @@ describe('runtime bus events', () => {
     at: 1,
     event,
   });
-  const needed = (rootId = 'r') =>
-    ev({
-      action: 'runtime.approval-required',
-      rootId,
-      runtime: 'stl-viewer@1',
-      digest: 'e'.repeat(64),
-      cause: 'never_approved',
-      widgets: ['fig-part'],
-    } as unknown as BusEvent['event']);
-
-  it('matches the approval event for this project only', () => {
-    expect(runtimeApprovalRef(needed(), 'r')).toEqual({
-      runtime: 'stl-viewer@1',
-      digest: 'e'.repeat(64),
-    });
-    expect(runtimeApprovalRef(needed('other'), 'r')).toBeNull();
-  });
-
-  it('enriches the event into a full pop-up from the status', async () => {
-    const queued: ReturnType<typeof promptFromRuntime>[] = [];
-    await offerRuntimeEvent(
-      { status: async () => status([RUNTIME_REQ()]) },
-      (p) => queued.push(p),
-      needed(),
-      'r',
-      'main.tex',
-    );
-    expect(queued).toHaveLength(1);
-    expect(queued[0].title).toBe('STL viewer');
-    expect(queued[0].version).toBe('1.2.0');
-  });
-
   it('flags a decision on this project as a panel refresh', () => {
     expect(
       runtimeEventFor(

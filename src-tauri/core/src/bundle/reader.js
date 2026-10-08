@@ -137,7 +137,9 @@
           '*',
           bufs,
         );
-        rec.fig.setAttribute('data-state', 'loading');
+        // An html widget that also speaks the bridge went live when its
+        // frame loaded: it stays live, never back to loading.
+        if (!rec.fig.classList.contains('live')) rec.fig.setAttribute('data-state', 'loading');
       })
       .catch(function () {
         fail(rec.fig);
@@ -157,11 +159,12 @@
         }
       } else if (d.type === 'status' && d.state === 'loaded') {
         var fig = frames[i].fig;
-        if (!fig.classList.contains('live') && fig.getAttribute('data-state') !== 'error') {
+        if (fig.getAttribute('data-state') === 'error') return;
+        if (!fig.classList.contains('live')) {
           fig.classList.add('live');
-          fig.setAttribute('data-state', 'ready');
           applySize(frames[i]);
         }
+        fig.setAttribute('data-state', 'ready');
       } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       else if (d.type === 'size') size(frames[i], d.height);
       return;

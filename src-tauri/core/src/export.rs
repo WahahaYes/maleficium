@@ -31,11 +31,16 @@ pub(crate) fn destination(root: &Path, dest: &str) -> Result<PathBuf, String> {
     let name = d
         .file_name()
         .ok_or_else(|| format!("export destination has no file name: {dest}"))?;
-    let parent = dunce::canonicalize(
-        d.parent()
-            .ok_or_else(|| format!("export destination has no directory: {dest}"))?,
-    )
-    .map_err(|e| format!("export directory unreachable: {e}"))?;
+    let dir = d
+        .parent()
+        .ok_or_else(|| format!("export destination has no directory: {dest}"))?;
+    let parent = dunce::canonicalize(dir).map_err(|e| {
+        format!(
+            "export destination's folder {} cannot be reached ({e}): the export writes {} inside a folder that already exists",
+            dir.display(),
+            name.to_string_lossy()
+        )
+    })?;
     let out = parent.join(name);
     if out.starts_with(root) {
         return Err(String::from(
