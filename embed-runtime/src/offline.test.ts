@@ -88,6 +88,7 @@ describe('vendored licenses', () => {
   // RULES section 5 allows permissive licenses; this is the runtime-contract allowlist.
   const ALLOWED = new Set([
     'MIT',
+    'MIT-0',
     'BSD-2-Clause',
     'BSD-3-Clause',
     'Apache-2.0',

@@ -1071,7 +1071,7 @@ fn judge_row_no_record_needs_the_user_even_with_auto_on() {
             (RT, "1.0.0")
         );
         assert_eq!(info.widgets, ["fig-chart"]);
-        assert_eq!((info.license.as_str(), info.webgl), ("MIT", false));
+        assert_eq!((info.license.as_str(), info.webgl), ("MIT-0", false));
     }
 }
 
@@ -1082,7 +1082,7 @@ fn judge_row_denied_stays_denied_at_any_digest_and_with_auto_on() {
         for auto in [false, true] {
             let s = verdict(&store_with(
                 auto,
-                Some(rec(RuntimeDecision::Denied, d, "MIT", vec![])),
+                Some(rec(RuntimeDecision::Denied, d, "MIT-0", vec![])),
             ));
             let r = required(&s);
             assert_eq!(r.cause, WidgetApprovalCause::Revoked);
@@ -1097,7 +1097,7 @@ fn judge_row_allowed_same_digest_is_approved_by_the_user() {
     let (snap, _) = pure_case();
     let s = verdict(&store_with(
         false,
-        Some(rec(RuntimeDecision::Allowed, &snap.digest, "MIT", vec![])),
+        Some(rec(RuntimeDecision::Allowed, &snap.digest, "MIT-0", vec![])),
     ));
     let a = approved(&s);
     assert_eq!(
@@ -1115,7 +1115,7 @@ fn judge_row_licence_or_vendored_change_always_needs_the_user() {
         version: "1".into(),
         license: "MIT".into(),
     };
-    for (license, vendored) in [("Apache-2.0", vec![]), ("MIT", vec![lib])] {
+    for (license, vendored) in [("Apache-2.0", vec![]), ("MIT-0", vec![lib])] {
         for auto in [false, true] {
             let s = verdict(&store_with(
                 auto,
@@ -1145,7 +1145,7 @@ fn judge_row_other_digest_with_auto_on_is_approved_by_auto() {
     let other = "1".repeat(64);
     let s = verdict(&store_with(
         true,
-        Some(rec(RuntimeDecision::Allowed, &other, "MIT", vec![])),
+        Some(rec(RuntimeDecision::Allowed, &other, "MIT-0", vec![])),
     ));
     let a = approved(&s);
     assert_eq!(a.via, ApprovedVia::Auto);
@@ -1157,7 +1157,7 @@ fn judge_row_other_digest_with_auto_off_needs_approval_again() {
     let other = "1".repeat(64);
     let s = verdict(&store_with(
         false,
-        Some(rec(RuntimeDecision::Allowed, &other, "MIT", vec![])),
+        Some(rec(RuntimeDecision::Allowed, &other, "MIT-0", vec![])),
     ));
     let r = required(&s);
     assert_eq!(r.cause, WidgetApprovalCause::ChangedSinceApproval);

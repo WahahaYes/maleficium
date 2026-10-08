@@ -5,7 +5,7 @@
   "title": "Bad CDN sample",
   "description": "Deliberately bad: loads a script from a CDN.",
   "authors": ["Maleficium contributors"],
-  "license": "MIT",
+  "license": "MIT-0",
   "sources": {
     "data": {
       "primary": true,

@@ -203,7 +203,7 @@ fn every_manifest_rule_has_its_message() {
         (with(good(), &["authors"], json!(["x".repeat(101)])), "each name must be 1 to 100"),
         (
             with(good(), &["license"], json!("GPL-3.0")),
-            "license `GPL-3.0` is not on the allowlist (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense)",
+            "license `GPL-3.0` is not on the allowlist (MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense)",
         ),
         (with(good(), &["capabilities", "webgl"], json!("yes")), "runtime.json: invalid type"),
         (with(good(), &["sources"], json!({})), "sources: a runtime takes 1 to 8 roles"),

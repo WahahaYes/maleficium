@@ -950,7 +950,7 @@ fn a_custom_key_names_runtime_digest_ref_sources_options_theme_and_renderer() {
     // posters, so update this only when the material intentionally changes.
     // (Renderer 2 folds a declaring runtime with 'wasm-unsafe-eval'.)
     assert_eq!(
-        k0, "b61b1702a6442f9c4c432e50f690a503725905b45cd6298187200acd3ee958be",
+        k0, "6e82d8d81e96daf1b832353d567ba9552ff5f53066c2754dd56ed8c381341ad9",
         "the key composition changed"
     );
     // A new page colour renders a new poster.
