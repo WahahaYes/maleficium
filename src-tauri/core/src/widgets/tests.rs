@@ -925,6 +925,35 @@ fn a_style_record_rides_on_the_theme() {
     }
 }
 
+/// `float|<id>|<label>|<figure>` gives a widget placed before its float's
+/// \caption\label the label and number it recorded empty; never overrides.
+#[test]
+fn a_float_record_fills_a_label_and_figure_recorded_empty() {
+    // The fixture's widget line records no label and no figure.
+    let s = custom(&format!("{CUSTOM_LINE}\nfloat|fig-part|fig:part|3")).unwrap();
+    assert_eq!(s.records[0].label.as_deref(), Some("fig:part"));
+    assert_eq!(s.records[0].figure.as_deref(), Some("3"));
+    // One the widget line did record stays.
+    let labelled = CUSTOM_LINE.replace("|stl-viewer@1|||", "|stl-viewer@1|fig:own|2|");
+    let s = custom(&format!("{labelled}\nfloat|fig-part|fig:part|3")).unwrap();
+    assert_eq!(s.records[0].label.as_deref(), Some("fig:own"));
+    assert_eq!(s.records[0].figure.as_deref(), Some("2"));
+    for (bad, says) in [
+        ("float|fig-other|fig:x|1", "unknown widget"),
+        (
+            "float|fig-part|fig:x",
+            "names a widget, a label and a figure",
+        ),
+        (
+            "float|fig-part|fig:x|1|2",
+            "names a widget, a label and a figure",
+        ),
+    ] {
+        let e = custom(&format!("{CUSTOM_LINE}\n{bad}")).unwrap_err();
+        assert!(e.contains(says), "{bad}: {e}");
+    }
+}
+
 /// `line|<id>|<N>pt` records the \linewidth where the widget sat; it must
 /// follow that widget's line and be a length in points.
 #[test]
