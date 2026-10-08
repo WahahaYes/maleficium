@@ -24,7 +24,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      src: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            src:
+              - 'src/**'
+              - 'src-tauri/**'
+              - 'scripts/**'
+              - 'e2e/**/*.py'
+              - '.github/workflows/**'
+
   package:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     name: ${{ matrix.artifact }}
     strategy:
       fail-fast: false
@@ -131,3 +150,19 @@ jobs:
       - name: Check (lint, format, types, tests)
         if: ${{ !cancelled() }}
         run: npm run check
+
+  ci:
+    runs-on: ubuntu-latest
+    needs: [changes, package]
+    if: always()
+    steps:
+      - name: Gate on source changes
+        run: |
+          if [ "${{ needs.changes.outputs.src }}" != "true" ]; then
+            echo "No source changes; CI passes by skip."
+            exit 0
+          fi
+          if [ "${{ needs.package.result }}" != "success" ]; then
+            echo "package result: ${{ needs.package.result }}"
+            exit 1
+          fi
