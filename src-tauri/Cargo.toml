@@ -47,8 +47,3 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
-
-[profile.release-fast]
-inherits = "release"
-lto = "thin"
-codegen-units = 16

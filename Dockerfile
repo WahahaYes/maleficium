@@ -20,10 +20,6 @@ FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffb
 ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
 ARG RUSTUP_VERSION=1.29.1
 ARG RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
-# Cargo profile for package.sh: release-fast (thin-LTO) by default, release
-# (full LTO) for tag builds via --build-arg PROFILE=release.
-ARG PROFILE=release-fast
-ENV MALEFICIUM_PROFILE=$PROFILE
 
 ENV DEBIAN_FRONTEND=noninteractive
 # The same package list CI's ubuntu-24.04 job installs.
