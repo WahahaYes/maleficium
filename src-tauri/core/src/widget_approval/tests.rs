@@ -909,7 +909,7 @@ fn copy_tree(from: &Path, to: &Path) {
 
 fn sample_dir(r: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/runtimes/samples")
+        .join("../../embed-runtime/samples")
         .join(r)
 }
 

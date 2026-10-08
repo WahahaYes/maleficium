@@ -23,7 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 python3 -c "import jsonschema" 2>/dev/null || fail "python3 jsonschema is required"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A

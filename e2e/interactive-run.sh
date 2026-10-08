@@ -23,7 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
 # A project holds its own package: copy the canonical file in, as a template does.
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
@@ -87,7 +87,7 @@ check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 sty = os.path.join(ROOT, "maleficium-interactive.sty")
 check("the project holds the package, identical to the canonical source",
-      open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "src-tauri/interactive/maleficium-interactive.sty"), "rb").read())
+      open(sty, "rb").read() == open(os.path.join(os.environ["DEVROOT"], "embed-runtime/tex/maleficium-interactive.sty"), "rb").read())
 
 rec = compile("main.tex")
 check("fixture compiles", rec.get("status") == "success", str(rec)[:300])

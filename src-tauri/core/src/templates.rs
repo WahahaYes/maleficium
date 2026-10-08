@@ -450,7 +450,7 @@ mod tests {
     fn every_bundled_template_creates_a_project_holding_the_interactive_package() {
         let canon = std::fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../interactive/maleficium-interactive.sty"),
+                .join("../../embed-runtime/tex/maleficium-interactive.sty"),
         )
         .unwrap();
         let text = String::from_utf8(canon.clone()).unwrap();

@@ -70,7 +70,7 @@ TeX Live C library is absent. The kpathsea and kpathsea-sys Rust crates
 themselves are MIT OR Apache-2.0.
 
 This product bundles, inlined into the built-in widget runtimes under
-src-tauri/widget-runtimes/ (built by `npm run build:runtimes`, no network at
+embed-runtime/built/ (built by `npm run build:runtimes`, no network at
 build or run time), the Vega visualization stack and its dependencies, all
 permissively licensed (checked against package-lock.json, 2026-10-01):
 
@@ -80,7 +80,7 @@ permissively licensed (checked against package-lock.json, 2026-10-01):
   BSD-3-Clause; fast-deep-equal, json-stringify-pretty-compact and similar
   under MIT; tslib under 0BSD; robust-predicates under Unlicense).
 
-The model runtime under src-tauri/widget-runtimes/model/ also inlines three.js
+The model runtime under embed-runtime/built/model/ also inlines three.js
 0.186.1 (its GLTFLoader and OrbitControls included), Copyright (c) 2010-2026
 three.js authors, MIT, with no dependencies (checked against package-lock.json,
 2026-10-01). Its type declarations, @types/three 0.186.0 (MIT) and their

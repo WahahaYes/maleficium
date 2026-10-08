@@ -123,15 +123,11 @@ pub fn with_policy(html: &str, policy: &str) -> String {
 /// jumping then. The root element's box is measured, not `scrollHeight`:
 /// a document that fills its frame (`height: 100%`) reports the frame's own
 /// height and never grows it.
-pub const SIZE_REPORTER: &str = "<script>(function(){if(parent===window)return;var last=0,queued=0;\
-function send(){queued=0;var h=Math.ceil(document.documentElement.getBoundingClientRect().height);\
-if(!(h>0)||Math.abs(h-last)<2)return;last=h;parent.postMessage({mfw:1,type:'size',height:h},'*')}\
-function later(){if(!queued)queued=setTimeout(send,30)}\
-function start(){new ResizeObserver(later).observe(document.documentElement);\
-new MutationObserver(later).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});\
-addEventListener('load',later);addEventListener('message',function(){setTimeout(later,0)});\
-document.fonts&&document.fonts.ready.then(later);later()}\
-if(document.readyState==='loading')addEventListener('DOMContentLoaded',start);else start()})()</script>";
+pub const SIZE_REPORTER: &str = concat!(
+    "<script>",
+    include_str!("../../../../embed-runtime/reader/size-reporter.js"),
+    "</script>"
+);
 
 /// [`with_policy`] for a widget document: the policy first, then the
 /// [`SIZE_REPORTER`] right behind it, so it runs before the widget's own

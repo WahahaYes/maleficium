@@ -12,4 +12,4 @@ maleficium-slides.sty: beamer
 maleficium-links.sty: journal
 # The interactive-widget package: one canonical file outside the template
 # tree, so a new project already holds it.
-../../interactive/maleficium-interactive.sty: *
+../../../embed-runtime/tex/maleficium-interactive.sty: *

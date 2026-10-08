@@ -38,7 +38,7 @@ if [ ! -x "$BIN" ]; then
     warn "freshness: no debug app binary yet ($BIN missing) — the first dev:desktop build creates it."
 else
     # shellcheck disable=SC2046
-    stale=$(newer_than "$BIN" "$ROOT/src" "$ROOT/src-tauri/src" "$ROOT/src-tauri/core" "$ROOT/src-tauri/mcp" "$ROOT/src-tauri/structure" "$ROOT/src-tauri/events" "$ROOT/src-tauri/index" "$ROOT/src-tauri/templates" "$ROOT/src-tauri/Cargo.toml" "$ROOT/src-tauri/Cargo.lock" "$ROOT/src-tauri/tauri.conf.json" "$ROOT/src-tauri/capabilities" "$ROOT/src-tauri/build.rs" "$ROOT/package.json" "$ROOT/vite.config.ts" "$ROOT/tsconfig.json" "$ROOT/index.html" | head -n 10)
+    stale=$(newer_than "$BIN" "$ROOT/src" "$ROOT/src-tauri/src" "$ROOT/src-tauri/core" "$ROOT/src-tauri/mcp" "$ROOT/src-tauri/structure" "$ROOT/src-tauri/events" "$ROOT/src-tauri/index" "$ROOT/src-tauri/templates" "$ROOT/embed-runtime" "$ROOT/src-tauri/Cargo.toml" "$ROOT/src-tauri/Cargo.lock" "$ROOT/src-tauri/tauri.conf.json" "$ROOT/src-tauri/capabilities" "$ROOT/src-tauri/build.rs" "$ROOT/package.json" "$ROOT/vite.config.ts" "$ROOT/tsconfig.json" "$ROOT/index.html" | head -n 10)
     if [ -n "$stale" ]; then
         warn "freshness WARN: sources newer than $BIN — tauri dev rebuilds, but if the app looks stale: stop, rebuild, restart, retest. Newest:"
         warn "$stale"

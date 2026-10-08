@@ -1,5 +1,5 @@
-(function(three, three_addons_loaders_GLTFLoader_js, three_addons_controls_OrbitControls_js, src_widget_runtimes_bridge) {
-	//#region src/widget-runtimes/model/core.ts
+(function(three, three_addons_loaders_GLTFLoader_js, three_addons_controls_OrbitControls_js, embed_runtime_src_bridge) {
+	//#region embed-runtime/src/model/core.ts
 	var GLB_MAGIC = 1179937895;
 	var JSON_CHUNK = 1313821514;
 	var UNSUPPORTED = [
@@ -80,7 +80,7 @@
 		};
 	}
 	//#endregion
-	//#region src/widget-runtimes/model/main.ts
+	//#region embed-runtime/src/model/main.ts
 	var FOV = 40;
 	var host = document.getElementById("view");
 	var note = document.getElementById("msg");
@@ -99,7 +99,7 @@
 	function fail(message) {
 		note.hidden = false;
 		note.textContent = message;
-		(0, src_widget_runtimes_bridge.status)("error", message);
+		(0, embed_runtime_src_bridge.status)("error", message);
 	}
 	function background() {
 		return view.background ?? getComputedStyle(document.body).backgroundColor;
@@ -189,10 +189,10 @@
 		if (view.camera) camera.up.fromArray(view.camera, 4).normalize();
 		if (view.background) document.body.style.background = view.background;
 		if (view.size) host.style.aspectRatio = `${view.size.width} / ${view.size.height}`;
-		(0, src_widget_runtimes_bridge.applyTheme)(msg.theme);
+		(0, embed_runtime_src_bridge.applyTheme)(msg.theme);
 		host.setAttribute("role", "img");
 		host.setAttribute("aria-label", msg.alt);
-		(0, src_widget_runtimes_bridge.status)("loading");
+		(0, embed_runtime_src_bridge.status)("loading");
 		try {
 			const src = msg.sources.model;
 			if (!src) return fail("the model widget has no \"model\" source");
@@ -211,7 +211,7 @@
 			fit(model);
 			render();
 			note.hidden = true;
-			(0, src_widget_runtimes_bridge.status)("loaded");
+			(0, embed_runtime_src_bridge.status)("loaded");
 		} catch (err) {
 			fail(err instanceof Error ? err.message : "the model failed to load");
 		}
@@ -247,10 +247,10 @@
 		}
 		return ctx ? c.toDataURL("image/png") : null;
 	}
-	(0, src_widget_runtimes_bridge.startBridge)({
+	(0, embed_runtime_src_bridge.startBridge)({
 		onInit: (m) => void init(m),
 		onTheme: (t) => {
-			(0, src_widget_runtimes_bridge.applyTheme)(t);
+			(0, embed_runtime_src_bridge.applyTheme)(t);
 		},
 		onSnapshot: snapshot
 	});

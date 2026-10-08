@@ -454,45 +454,45 @@ fn include_sample(name: &str) -> BTreeMap<String, Vec<u8>> {
         "heatmap@1" => BTreeMap::from([
             (
                 "runtime.json".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/heatmap@1/runtime.json")
+                include_bytes!("../../../../../embed-runtime/samples/heatmap@1/runtime.json")
                     .to_vec(),
             ),
             (
                 "index.html".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/heatmap@1/index.html")
+                include_bytes!("../../../../../embed-runtime/samples/heatmap@1/index.html")
                     .to_vec(),
             ),
             (
                 "samples/data.csv".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/heatmap@1/samples/data.csv")
+                include_bytes!("../../../../../embed-runtime/samples/heatmap@1/samples/data.csv")
                     .to_vec(),
             ),
             (
                 "LICENSE".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/heatmap@1/LICENSE").to_vec(),
+                include_bytes!("../../../../../embed-runtime/samples/heatmap@1/LICENSE").to_vec(),
             ),
         ]),
         "stl-viewer@1" => BTreeMap::from([
             (
                 "runtime.json".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/stl-viewer@1/runtime.json")
+                include_bytes!("../../../../../embed-runtime/samples/stl-viewer@1/runtime.json")
                     .to_vec(),
             ),
             (
                 "index.html".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/stl-viewer@1/index.html")
+                include_bytes!("../../../../../embed-runtime/samples/stl-viewer@1/index.html")
                     .to_vec(),
             ),
             (
                 "samples/model.stl".to_string(),
                 include_bytes!(
-                    "../../../../../docs/runtimes/samples/stl-viewer@1/samples/model.stl"
+                    "../../../../../embed-runtime/samples/stl-viewer@1/samples/model.stl"
                 )
                 .to_vec(),
             ),
             (
                 "LICENSE".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/stl-viewer@1/LICENSE")
+                include_bytes!("../../../../../embed-runtime/samples/stl-viewer@1/LICENSE")
                     .to_vec(),
             ),
         ]),
@@ -500,68 +500,68 @@ fn include_sample(name: &str) -> BTreeMap<String, Vec<u8>> {
             (
                 "runtime.json".to_string(),
                 include_bytes!(
-                    "../../../../../docs/runtimes/samples/caption-overlay@1/runtime.json"
+                    "../../../../../embed-runtime/samples/caption-overlay@1/runtime.json"
                 )
                 .to_vec(),
             ),
             (
                 "index.html".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/caption-overlay@1/index.html")
+                include_bytes!("../../../../../embed-runtime/samples/caption-overlay@1/index.html")
                     .to_vec(),
             ),
             (
                 "samples/photo.svg".to_string(),
                 include_bytes!(
-                    "../../../../../docs/runtimes/samples/caption-overlay@1/samples/photo.svg"
+                    "../../../../../embed-runtime/samples/caption-overlay@1/samples/photo.svg"
                 )
                 .to_vec(),
             ),
             (
                 "LICENSE".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/caption-overlay@1/LICENSE")
+                include_bytes!("../../../../../embed-runtime/samples/caption-overlay@1/LICENSE")
                     .to_vec(),
             ),
         ]),
         "wasm-sum@1" => BTreeMap::from([
             (
                 "runtime.json".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/runtime.json")
+                include_bytes!("../../../../../embed-runtime/samples/wasm-sum@1/runtime.json")
                     .to_vec(),
             ),
             (
                 "index.html".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/index.html")
+                include_bytes!("../../../../../embed-runtime/samples/wasm-sum@1/index.html")
                     .to_vec(),
             ),
             (
                 "samples/data.csv".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/samples/data.csv")
+                include_bytes!("../../../../../embed-runtime/samples/wasm-sum@1/samples/data.csv")
                     .to_vec(),
             ),
             (
                 "LICENSE".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/wasm-sum@1/LICENSE").to_vec(),
+                include_bytes!("../../../../../embed-runtime/samples/wasm-sum@1/LICENSE").to_vec(),
             ),
         ]),
         _ => BTreeMap::from([
             (
                 "runtime.json".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/bad-cdn@1/runtime.json")
+                include_bytes!("../../../../../embed-runtime/samples/bad-cdn@1/runtime.json")
                     .to_vec(),
             ),
             (
                 "index.html".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/bad-cdn@1/index.html")
+                include_bytes!("../../../../../embed-runtime/samples/bad-cdn@1/index.html")
                     .to_vec(),
             ),
             (
                 "samples/data.csv".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/bad-cdn@1/samples/data.csv")
+                include_bytes!("../../../../../embed-runtime/samples/bad-cdn@1/samples/data.csv")
                     .to_vec(),
             ),
             (
                 "LICENSE".to_string(),
-                include_bytes!("../../../../../docs/runtimes/samples/bad-cdn@1/LICENSE").to_vec(),
+                include_bytes!("../../../../../embed-runtime/samples/bad-cdn@1/LICENSE").to_vec(),
             ),
         ]),
     }
@@ -594,7 +594,7 @@ fn bad_cdn_fails_on_its_script_line() {
     assert_eq!(r.errors[0].rule, "url-load");
     assert_eq!(r.errors[0].file, "index.html");
     let text = str::from_utf8(include_bytes!(
-        "../../../../../docs/runtimes/samples/bad-cdn@1/index.html"
+        "../../../../../embed-runtime/samples/bad-cdn@1/index.html"
     ))
     .unwrap();
     let expected = text

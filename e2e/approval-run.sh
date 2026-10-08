@@ -23,7 +23,7 @@ cargo build -q --manifest-path "$DEVROOT/src-tauri/Cargo.toml" --bin maleficium-
 [ -x "$BIN" ] || fail "sidecar missing after build: $BIN"
 
 cp -r "$FIXTURE" "$SCRATCH/proj"
-cp "$DEVROOT/src-tauri/interactive/maleficium-interactive.sty" "$SCRATCH/proj/"
+cp "$DEVROOT/embed-runtime/tex/maleficium-interactive.sty" "$SCRATCH/proj/"
 cd "$SCRATCH/proj"
 git init -q
 git add -A
