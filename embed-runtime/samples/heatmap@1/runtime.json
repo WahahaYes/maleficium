@@ -5,7 +5,7 @@
   "title": "Heatmap",
   "description": "Draws a CSV grid of numbers as a canvas heatmap.",
   "authors": ["Maleficium contributors"],
-  "license": "MIT",
+  "license": "MIT-0",
   "sources": {
     "data": {
       "primary": true,

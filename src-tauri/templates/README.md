@@ -8,7 +8,7 @@ Templates users save or import are kept in the app's data folder, never here, an
 
 Every built-in template is dedicated to the public domain under [CC0 1.0](LICENSE). A project made from one belongs to its author, with no credit or notice required. Each template's main file carries a one-line CC0 header so this travels with the copy.
 
-This covers the template files only. The rest of Maleficium is AGPL-3.0.
+This covers the template files only. The rest of Maleficium is AGPL-3.0, except [embed-runtime/](../../embed-runtime/README.md) (the reader, widget runtimes and interactive package), which is MIT-0.
 
 ## Built-in templates
 

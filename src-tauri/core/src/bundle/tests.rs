@@ -1809,7 +1809,7 @@ fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
     assert_eq!(
         m["runtimes"],
         json!({"heatmap@1": {"name": "heatmap", "version": "1.0.0", "digest": judged,
-            "license": "MIT", "capabilities": {"webgl": false, "wasm": false}, "vendored": []}})
+            "license": "MIT-0", "capabilities": {"webgl": false, "wasm": false}, "vendored": []}})
     );
 
     // The folded document: policy first, the package's own page inlined,
@@ -1830,7 +1830,7 @@ fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
     let licence = std::fs::read_to_string(c.rt().join("LICENSE")).unwrap();
     assert!(doc.trim_end().ends_with(" -->"));
     let block = &doc[doc.find("<!-- Licences:").unwrap()..];
-    assert!(block.starts_with("<!-- Licences:\nheatmap 1.0.0 (MIT)\n"));
+    assert!(block.starts_with("<!-- Licences:\nheatmap 1.0.0 (MIT-0)\n"));
     assert!(block.contains(licence.lines().next().unwrap()));
     assert!(!block.contains("data.csv"), "samples are not folded");
 
@@ -2013,7 +2013,7 @@ fn a_denied_or_invalid_runtime_exports_as_its_poster_and_an_unapproved_one_runs(
     let m = c.rt().join("runtime.json");
     let text = std::fs::read_to_string(&m)
         .unwrap()
-        .replace("\"MIT\"", "\"GPL-3.0\"");
+        .replace("\"MIT-0\"", "\"GPL-3.0\"");
     std::fs::write(&m, text).unwrap();
     let (why, warns, index) = run("invalid");
     assert_eq!(why, "runtime-invalid");

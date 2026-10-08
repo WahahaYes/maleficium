@@ -5,7 +5,7 @@
   "title": "WASM sum",
   "description": "Adds a CSV grid with a tiny embedded WebAssembly module.",
   "authors": ["Maleficium contributors"],
-  "license": "MIT",
+  "license": "MIT-0",
   "sources": {
     "data": {
       "primary": true,

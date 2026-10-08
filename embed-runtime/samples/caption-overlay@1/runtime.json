@@ -5,7 +5,7 @@
   "title": "Caption overlay",
   "description": "Shows an image with a text overlay bar.",
   "authors": ["Maleficium contributors"],
-  "license": "MIT",
+  "license": "MIT-0",
   "sources": {
     "image": {
       "primary": true,

@@ -5,7 +5,7 @@
   "title": "STL viewer",
   "description": "Shows an ASCII STL model as a canvas wireframe. No libraries.",
   "authors": ["Maleficium contributors"],
-  "license": "MIT",
+  "license": "MIT-0",
   "sources": {
     "model": {
       "primary": true,

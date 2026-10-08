@@ -121,7 +121,7 @@ fn model_manifest(name: &str) -> Vec<u8> {
         "title": name,
         "description": "A viewer for glb models, forked from the built-in model runtime.",
         "authors": ["Author"],
-        "license": "MIT",
+        "license": "MIT-0",
         "sources": {
             "model": {
                 "primary": true,
