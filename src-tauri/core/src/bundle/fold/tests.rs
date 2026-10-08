@@ -93,6 +93,40 @@ fn the_policy_is_the_first_element_whatever_the_document_looks_like() {
 }
 
 #[test]
+fn a_widget_document_reports_its_size_behind_the_policy_and_charset() {
+    for (html, label) in [
+        (
+            "<!doctype html><html><head><title>t</title></head><body>x</body></html>",
+            "full",
+        ),
+        (
+            "<head><meta charset=\"utf-8\"><script>own()</script></head>",
+            "own charset",
+        ),
+        ("<p>fragment</p>", "fragment"),
+    ] {
+        let out = widget_document(html, "p");
+        assert_eq!(out.matches(SIZE_REPORTER).count(), 1, "{label}: {out}");
+        let reporter = out.find(SIZE_REPORTER).unwrap();
+        assert!(
+            out.find("Content-Security-Policy").unwrap() < reporter,
+            "{label}"
+        );
+        // Never between the policy and an added charset, and before the
+        // document's own scripts.
+        if let Some(c) = out.find(CHARSET_META) {
+            if label != "own charset" {
+                assert!(c < reporter, "{label}: {out}");
+            }
+        }
+        if let Some(own) = out.find("own()") {
+            assert!(reporter < own, "{label}");
+        }
+    }
+    assert!(SIZE_REPORTER.contains("type:'size'") && !SIZE_REPORTER.contains('"'));
+}
+
+#[test]
 fn declared_origins_widen_only_the_directives_they_name() {
     let none = widget_policy(None);
     assert!(none.contains("connect-src 'none'") && !none.contains("frame-src"));

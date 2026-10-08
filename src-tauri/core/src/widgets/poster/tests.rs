@@ -262,6 +262,7 @@ fn widget(poster: Option<&str>) -> Widget {
         },
         csp: None,
         plate: None,
+        line_width: None,
     }
 }
 

@@ -12,11 +12,11 @@
       /* Everything sits on the figure plate, in the plate's ink: the theme
         chose --m-figure-ink, --m-figure-surface and --m-figure-accent to
         read on --m-figure-bg in each mode. */
+      /* The host owns the width, the content the height: nothing here
+        sizes from the frame's height (the frame follows the document). */
       html,
       body {
         margin: 0;
-        height: 100%;
-        overflow: hidden;
         background: var(--m-figure-bg);
         color: var(--m-figure-ink);
         font: var(--m-size-small, 13px) / var(--m-leading, 1.4)
@@ -27,7 +27,6 @@
       #app {
         display: flex;
         flex-direction: column;
-        height: 100%;
       }
       .bar {
         display: flex;
@@ -36,15 +35,10 @@
         padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
         border-bottom: 1px solid var(--rule);
       }
-      /* a slot a few rows tall has room for the rows, not the filter box */
-      @media (max-height: 100px) {
-        .bar {
-          display: none;
-        }
-      }
       .bar input {
         flex: 1;
         min-width: 0;
+        min-height: 36px;
         font: inherit;
         color: inherit;
         background: var(--m-figure-surface);
@@ -61,8 +55,10 @@
         outline: 2px solid var(--m-figure-accent);
         outline-offset: -2px;
       }
+      /* Rows in flow up to about a dozen, then the rows scroll here and the
+        page scrolls past them. */
       .scroll {
-        flex: 1;
+        max-height: 480px;
         overflow: auto;
       }
       table {

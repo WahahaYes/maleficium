@@ -301,7 +301,11 @@ fn every_widget_is_one_inline_document_with_its_policy_first() {
             !html.contains("type=\"module\""),
             "{id}: one classic script"
         );
-        assert_eq!(html.matches("<script").count(), 1, "{id}");
+        // The runtime's script, and the size reporter right behind the policy.
+        assert_eq!(html.matches("<script").count(), 2, "{id}");
+        assert_eq!(html.matches(fold::SIZE_REPORTER).count(), 1, "{id}");
+        let policy = html.find("Content-Security-Policy").unwrap();
+        assert!(html.find(fold::SIZE_REPORTER).unwrap() > policy, "{id}");
     }
     // The table and chart hosts are the generated runtimes.
     let table =
@@ -2247,10 +2251,11 @@ fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
     let chart = &main[main.find("data-widget=\"fig-chart\"").unwrap()..];
     let chart = &chart[..chart.find("</figure>").unwrap()];
     assert!(!chart.contains("m-widget-note"));
-    // The author's height reaches the frame: the free width sizes from the
-    // content box, not the column.
+    // The author's height is the box on the page only: on screen the
+    // widget's content sets the height, and without a recorded line there
+    // is no width fraction.
     assert!(
-        chart.contains("--aw:") && chart.contains("--ah:142.26pt"),
+        chart.contains("style=\"--ar:") && !chart.contains("--ah:") && !chart.contains("--fw:"),
         "{chart}"
     );
     // The ref never reaches a sanitized attribute.

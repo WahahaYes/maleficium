@@ -148,6 +148,12 @@ pub struct Widget {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub plate: Option<String>,
+    /// The line the widget sat in, in points (`\linewidth` where it was
+    /// placed): the reader gives an author's `width=` as this fraction of
+    /// its column. Absent from older sidecars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub line_width: Option<f64>,
 }
 
 impl Widget {
@@ -185,6 +191,8 @@ pub struct Record {
     pub alt: String,
     /// From the widget's `plate|` line, `#RRGGBB`.
     pub plate: Option<String>,
+    /// From the widget's `line|` line, in points.
+    pub line_width: Option<f64>,
 }
 
 fn opt(s: &str) -> Option<String> {
@@ -316,6 +324,29 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             r.plate = Some(hex.to_ascii_uppercase());
             continue;
         }
+        if f[0] == "line" {
+            // `line|<id>|<N>pt`: the \linewidth where the widget sat, after
+            // its widget line.
+            let (Some(id), Some(len)) = (f.get(1), f.get(2)) else {
+                return Err(format!(
+                    "widget sidecar line {n}: a line record names a widget and a length"
+                ));
+            };
+            let pt = len
+                .strip_suffix("pt")
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v > 0.0);
+            let Some(pt) = pt.filter(|_| f.len() == 3) else {
+                return Err(format!(
+                    "widget sidecar line {n}: line width `{len}` is not a length in pt"
+                ));
+            };
+            let r = out.iter_mut().find(|r| r.id == *id).ok_or_else(|| {
+                format!("widget sidecar line {n}: line width for unknown widget `{id}`")
+            })?;
+            r.line_width = Some(pt);
+            continue;
+        }
         if f[0] == "style" {
             // `style|<path>`: the author's reader stylesheet. The path is
             // only recorded here; the exporter confines and checks it.
@@ -374,6 +405,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
                 .collect::<Result<_, _>>()?,
             alt: f[10].to_string(),
             plate: None,
+            line_width: None,
         };
         if kind == WidgetType::Custom {
             check_custom(&record)?;
@@ -784,6 +816,7 @@ pub fn read(
             rect: m.rect,
             csp,
             plate: r.plate,
+            line_width: r.line_width,
         });
     }
     out.sort_by(|a, b| {

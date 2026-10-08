@@ -52,9 +52,12 @@ body.m-reader {
 }
 .m-reader .frame {
   position: relative;
-  /* The frame fills the column at the author's aspect: a widget is used on
-     screen, and the column is the room it has there. */
-  width: 100%;
+  /* The host owns the width: the column, or the author's width= as a
+     fraction of it (--fw), never narrower than 20rem while the column
+     allows, so a half-width figure widens to the column on a phone. The
+     widget owns the height: the frame keeps the poster's aspect until the
+     live widget reports its content's height (.sized, set by the page). */
+  width: max(calc(var(--fw, 1) * 100%), min(100%, 20rem));
   margin-inline: auto;
   aspect-ratio: var(--ar, 4/3);
   background: var(--m-figure-bg);
@@ -72,6 +75,9 @@ body.m-reader {
 }
 .m-reader .frame img {
   object-fit: contain;
+}
+.m-reader .frame.sized {
+  aspect-ratio: auto;
 }
 /* Posters are pictures of the page, light in both modes, like graphics:
   they keep the paper's light plate. The live widget is on the mode's
@@ -1105,6 +1111,11 @@ body.m-reader {
   }
   .m-reader .frame iframe {
     display: none;
+  }
+  /* Print shows the poster: back to its own aspect. */
+  .m-reader .frame.sized {
+    height: auto !important;
+    aspect-ratio: var(--ar, 4/3);
   }
   .m-reader figure.live .poster {
     display: block;

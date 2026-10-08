@@ -144,7 +144,13 @@ csp?: WidgetCsp,
  * The widget's own plate (`plate=`, `#RRGGBB`): its backdrop in both
  * modes instead of the paper's. Absent: the paper's plate.
  */
-plate?: string, };
+plate?: string, 
+/**
+ * The line the widget sat in, in points (`\linewidth` where it was
+ * placed): the reader gives an author's `width=` as this fraction of
+ * its column. Absent from older sidecars.
+ */
+lineWidth?: number, };
 
 export type WidgetList = { widgets: Array<Widget>, };
 

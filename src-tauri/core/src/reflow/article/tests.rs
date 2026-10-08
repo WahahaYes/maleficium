@@ -29,8 +29,7 @@ fn mounts() -> Vec<Mount<'static>> {
         alt: "Alt & text",
         width: 200.0,
         height: 100.0,
-        author_width: None,
-        author_height: None,
+        fraction: None,
         poster: format!("assets/{id}.png"),
         note: None,
         approval_required: false,
@@ -70,54 +69,55 @@ fn the_mount_unit_is_the_markup_the_page_script_mounts() {
 }
 
 #[test]
-fn frames_honor_author_dims_and_size_the_free_side_from_content() {
-    // Both dims: the author's box.
+fn frames_keep_the_content_aspect_and_give_the_author_width_as_a_fraction() {
+    // The aspect is the poster as placed; the author's height never enters.
     assert_eq!(
-        frame("video", None, (Some(100.0), Some(50.0)), (9.0, 9.0)),
-        ((100.0, 50.0), Some((100.0, 50.0)))
+        frame("chart", None, Some(100.0), Some(200.0), (60.0, 30.0)),
+        ((60.0, 30.0), Some(0.5))
     );
-    // Height only: a model with size= sizes its width from it ...
+    // A model is its size=, else 4:3.
     assert_eq!(
-        frame("model", Some((800, 600)), (None, Some(150.0)), (9.0, 9.0)),
-        ((800.0, 600.0), Some((200.0, 150.0)))
-    );
-    // ... without size= it is 4:3, the box the package draws for it.
-    assert_eq!(
-        frame("model", None, (None, Some(150.0)), (9.0, 9.0)),
-        ((4.0, 3.0), Some((200.0, 150.0)))
-    );
-    // Other kinds keep the rect's aspect: a table's rows box already is
-    // its content, and a poster the author chose stands in for the rest.
-    assert_eq!(
-        frame("chart", None, (None, Some(100.0)), (60.0, 30.0)),
-        ((60.0, 30.0), Some((200.0, 100.0)))
-    );
-    // Width only is symmetric; neither keeps the rect.
-    assert_eq!(
-        frame("chart", None, (Some(200.0), None), (60.0, 30.0)),
-        ((60.0, 30.0), Some((200.0, 100.0)))
+        frame("model", Some((800, 600)), None, Some(200.0), (9.0, 9.0)),
+        ((800.0, 600.0), None)
     );
     assert_eq!(
-        frame("chart", None, (None, None), (60.0, 30.0)),
+        frame("model", None, None, None, (9.0, 9.0)),
+        ((4.0, 3.0), None)
+    );
+    // The full line, or wider, is the full column: no fraction.
+    assert_eq!(
+        frame("video", None, Some(200.0), Some(200.0), (9.0, 9.0)),
+        ((9.0, 9.0), None)
+    );
+    assert_eq!(
+        frame("video", None, Some(300.0), Some(200.0), (9.0, 9.0)),
+        ((9.0, 9.0), None)
+    );
+    // Without the line (an older sidecar) or a width, no fraction.
+    assert_eq!(
+        frame("chart", None, Some(100.0), None, (60.0, 30.0)),
+        ((60.0, 30.0), None)
+    );
+    assert_eq!(
+        frame("chart", None, None, Some(200.0), (60.0, 30.0)),
         ((60.0, 30.0), None)
     );
     // A degenerate rect falls back to 4:3, never a zero aspect.
     assert_eq!(
-        frame("chart", None, (None, None), (0.0, 0.0)),
+        frame("chart", None, None, None, (0.0, 0.0)),
         ((4.0, 3.0), None)
     );
 }
 
 #[test]
-fn a_mount_unit_with_author_dims_carries_the_author_box() {
+fn a_mount_unit_with_an_author_width_carries_the_fraction() {
     let mut m = mounts().remove(0);
     m.width = 4.0;
     m.height = 3.0;
-    m.author_width = Some(200.0);
-    m.author_height = Some(150.0);
+    m.fraction = Some(0.5);
     let html = mount_unit(&m);
     assert!(
-        html.contains("style=\"--ar:4.00 / 3.00; --aw:200.00pt; --ah:150.00pt\""),
+        html.contains("style=\"--ar:4.00 / 3.00; --fw:0.500\""),
         "{html}"
     );
 }
