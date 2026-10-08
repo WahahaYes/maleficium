@@ -12,8 +12,8 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=2048']
         # Fetched engine sidecars and full-resolution vendored fixture
-        # binaries stay out of the size check.
-        exclude: ^(src-tauri/binaries/|e2e/fixtures/vendored/)
+        # and example figures stay out of the size check.
+        exclude: ^(src-tauri/binaries/|e2e/fixtures/vendored/|examples/[^/]+/figures/)
       - id: mixed-line-ending
         args: ['--fix=lf']
         exclude: ^src-tauri/binaries/

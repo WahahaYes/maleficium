@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Eye-tracking error against object visual size</title>
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+      /* Mobile first. The host gives the width; the height is the content's
+         (the frame follows the document), so nothing sizes from the frame's
+         height. */
+      html,
+      body {
+        margin: 0;
+        background: var(--m-figure-bg, #fff);
+        color: var(--m-figure-ink, #1e1b24);
+        font: 13px / 1.35 var(--m-font-body, Georgia, serif);
+      }
+      main {
+        box-sizing: border-box;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 14px;
+      }
+      .slider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 220px;
+      }
+      .slider span {
+        white-space: nowrap;
+      }
+      .slider input {
+        flex: 1;
+        min-width: 6rem;
+      }
+      .presets {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+      }
+      .slider output {
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        min-width: 3.2ch;
+        text-align: right;
+      }
+      .presets {
+        font-size: 12px;
+      }
+      /* The drawing's shape follows its width (the viewBox's aspect). */
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 25.2 / 12.4;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        font-size: 12px;
+      }
+      @media (min-width: 420px) {
+        .cards {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .card {
+        padding: 4px 8px;
+        border-radius: var(--m-radius, 6px);
+        background: var(--m-figure-surface, #f0f0f0);
+        font-variant-numeric: tabular-nums;
+      }
+      .card b {
+        font-weight: 700;
+      }
+      .yes {
+        color: var(--m-cat-3, #1baf7a);
+        font-weight: 700;
+      }
+      .no {
+        color: var(--m-cat-8, #e34948);
+        font-weight: 700;
+      }
+      /* House controls: one look for every button, segmented group and toggle
+         (the reader chrome and the showcase use the same rules on their tokens). */
+      button {
+        font: 600 12px/1.25 var(--m-font-heading, system-ui, sans-serif);
+        letter-spacing: 0.01em;
+        color: var(--m-figure-ink, #1e1b24);
+        background: transparent;
+        border: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+        border-radius: 999px;
+        padding: 4px 11px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background-color 0.12s,
+          border-color 0.12s,
+          color 0.12s;
+      }
+      button:hover {
+        border-color: var(--m-figure-accent, #5b2a86);
+        background: color-mix(in srgb, var(--m-figure-accent, #5b2a86) 10%, transparent);
+      }
+      button[aria-pressed='true'],
+      button[aria-checked='true'] {
+        background: var(--m-figure-accent, #5b2a86);
+        border-color: var(--m-figure-accent, #5b2a86);
+        color: var(--m-figure-bg, #fff);
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--m-figure-accent, #5b2a86);
+        outline-offset: 2px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .seg button {
+        border: 0;
+        border-radius: 0;
+      }
+      .seg button + button {
+        border-left: 1px solid color-mix(in srgb, var(--m-figure-ink, #1e1b24) 28%, transparent);
+      }
+      input[type='range'],
+      input[type='checkbox'] {
+        accent-color: var(--m-figure-accent, #5b2a86);
+      }
+      @media (max-width: 559px) {
+        .long {
+          display: none;
+        }
+      }
+      /* Touch: every control a full 44 px target. */
+      @media (pointer: coarse) {
+        button {
+          min-height: 44px;
+          padding: 8px 14px;
+        }
+        .slider input {
+          min-height: 44px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="controls">
+        <label class="slider"
+          ><span>Eye-tracking error</span>
+          <input
+            id="err"
+            type="range"
+            min="0"
+            max="5"
+            step="0.1"
+            value="1.5"
+            aria-describedby="cards"
+          />
+          <output id="errout">1.5°</output></label
+        >
+        <div class="seg" role="group" aria-label="Accuracy bound">
+          <button type="button" data-bound="avg" aria-pressed="true" title="err ≤ √(A_seg / π)">
+            Average case<span class="long"> · √(A/π)</span>
+          </button>
+          <button type="button" data-bound="min" aria-pressed="false" title="err ≤ ½ L_min">
+            Conservative<span class="long"> · ½ L<sub>min</sub></span>
+          </button>
+        </div>
+        <span class="presets"
+          >Tracker
+          <span class="seg" role="group" aria-label="Tracker presets"
+            ><button type="button" data-err="1">1°</button
+            ><button type="button" data-err="1.5">Aria 1.5°</button
+            ><button type="button" data-err="3">daily wear 3°</button></span
+          ></span
+        >
+      </div>
+      <svg
+        id="view"
+        role="img"
+        aria-label="An apple and a pencil with their eye-tracking accuracy bounds and simulated gaze samples"
+      ></svg>
+      <div class="cards" id="cards" aria-live="polite"></div>
+    </main>
+    <script>
+      // Fig. "eye-tracking error and object visual size", live: the two
+      // objects at the median fixated object's scale, their average-case and
+      // conservative accuracy bounds, and gaze samples offset by the chosen
+      // error. Self-contained; it needs nothing from the host but works
+      // better with the host's theme.
+      (function () {
+        'use strict';
+        var svg = document.getElementById('view');
+        var errInput = document.getElementById('err');
+        var state = { err: 1.5, bound: 'avg' };
+
+        // ---- geometry (degrees of visual angle, y down) ------------------
+        function apple() {
+          var pts = [];
+          for (var i = 0; i < 120; i++) {
+            var t = (i / 120) * Math.PI * 2;
+            var up = -Math.sin(t);
+            var r =
+              1 -
+              0.2 *
+                Math.exp(
+                  -Math.pow(
+                    Math.atan2(Math.sin(t + Math.PI / 2), Math.cos(t + Math.PI / 2)) / 0.32,
+                    2,
+                  ),
+                );
+            var x = Math.cos(t) * r * (1 - 0.14 * Math.max(0, -up));
+            var y = Math.sin(t) * r * 1.02;
+            pts.push([x, y]);
+          }
+          return pts;
+        }
+        function pencil() {
+          var L = 4.2;
+          var W = 0.24;
+          var raw = [
+            [-L, -W],
+            [L - 0.9, -W],
+            [L, 0],
+            [L - 0.9, W],
+            [-L, W],
+          ];
+          var a = (-62 * Math.PI) / 180;
+          return raw.map(function (p) {
+            return [
+              p[0] * Math.cos(a) - p[1] * Math.sin(a),
+              p[0] * Math.sin(a) + p[1] * Math.cos(a),
+            ];
+          });
+        }
+        function area(p) {
+          var s = 0;
+          for (var i = 0; i < p.length; i++) {
+            var a = p[i];
+            var b = p[(i + 1) % p.length];
+            s += a[0] * b[1] - b[0] * a[1];
+          }
+          return Math.abs(s) / 2;
+        }
+        // The minor-axis span: the narrowest width over every direction.
+        function minorSpan(p) {
+          var best = Infinity;
+          var dir = 0;
+          for (var d = 0; d < 180; d += 0.5) {
+            var a = (d * Math.PI) / 180;
+            var lo = Infinity;
+            var hi = -Infinity;
+            for (var i = 0; i < p.length; i++) {
+              var v = p[i][0] * Math.cos(a) + p[i][1] * Math.sin(a);
+              if (v < lo) lo = v;
+              if (v > hi) hi = v;
+            }
+            if (hi - lo < best) {
+              best = hi - lo;
+              dir = a;
+            }
+          }
+          return { span: best, dir: dir };
+        }
+        function inside(p, x, y) {
+          var c = false;
+          for (var i = 0, j = p.length - 1; i < p.length; j = i++) {
+            var a = p[i];
+            var b = p[j];
+            if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0])
+              c = !c;
+          }
+          return c;
+        }
+        function scaled(p, s, cx, cy) {
+          return p.map(function (q) {
+            return [cx + q[0] * s, cy + q[1] * s];
+          });
+        }
+        // A fixed pseudo-random stream, so the picture holds still between renders.
+        function rng(seed) {
+          return function () {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+          };
+        }
+
+        // The apple is scaled so its average-case bound is 4.07 degrees, the
+        // paper's median for fixated objects; the pencil shares the scale.
+        var APPLE = apple();
+        var unitR = Math.sqrt(area(APPLE) / Math.PI);
+        var S = 4.07 / unitR;
+        var objects = [
+          { name: 'Apple', poly: scaled(APPLE, S, -6.2, 0) },
+          { name: 'Pencil', poly: scaled(pencil(), 1, 6.6, 0) },
+        ];
+        objects.forEach(function (o) {
+          o.cx =
+            o.poly.reduce(function (s, q) {
+              return s + q[0];
+            }, 0) / o.poly.length;
+          o.cy =
+            o.poly.reduce(function (s, q) {
+              return s + q[1];
+            }, 0) / o.poly.length;
+          o.avg = Math.sqrt(area(o.poly) / Math.PI);
+          var m = minorSpan(o.poly);
+          o.min = m.span / 2;
+          o.minDir = m.dir;
+          // Gaze targets: uniform over the object.
+          var r = rng(o.name === 'Apple' ? 7 : 11);
+          var xs = o.poly.map(function (q) {
+            return q[0];
+          });
+          var ys = o.poly.map(function (q) {
+            return q[1];
+          });
+          var x0 = Math.min.apply(null, xs),
+            x1 = Math.max.apply(null, xs);
+          var y0 = Math.min.apply(null, ys),
+            y1 = Math.max.apply(null, ys);
+          o.targets = [];
+          while (o.targets.length < 260) {
+            var x = x0 + r() * (x1 - x0);
+            var y = y0 + r() * (y1 - y0);
+            if (inside(o.poly, x, y)) o.targets.push([x, y, r() * Math.PI * 2]);
+          }
+        });
+
+        function tok(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function f2(v) {
+          return v.toFixed(2);
+        }
+        function render() {
+          var ink = tok('--m-figure-ink', '#1e1b24');
+          var bg = tok('--m-figure-bg', '#ffffff');
+          var fill = tok('--m-cat-1', '#2a78d6');
+          var good = tok('--m-cat-3', '#1baf7a');
+          var bad = tok('--m-cat-8', '#e34948');
+          var e = state.err;
+          var out = [];
+          // One degree, for scale.
+          out.push(
+            '<g opacity="0.7"><line x1="-12.4" x2="-11.4" y1="5.7" y2="5.7" stroke="' +
+              ink +
+              '" stroke-width="0.08"/>' +
+              '<text x="-11.2" y="5.85" font-size="0.55" fill="' +
+              ink +
+              '">1°</text></g>',
+          );
+          var cards = [];
+          objects.forEach(function (o) {
+            var bound = state.bound === 'avg' ? o.avg : o.min;
+            var ok = e <= bound + 1e-9;
+            var pts = o.poly
+              .map(function (q) {
+                return q[0].toFixed(3) + ',' + q[1].toFixed(3);
+              })
+              .join(' ');
+            out.push(
+              '<polygon points="' +
+                pts +
+                '" fill="' +
+                fill +
+                '" fill-opacity="0.22" stroke="' +
+                fill +
+                '" stroke-width="0.06"/>',
+            );
+            // The bound: the area-equivalent circle, or the half minor span as a bar.
+            if (state.bound === 'avg') {
+              out.push(
+                '<circle cx="' +
+                  o.cx +
+                  '" cy="' +
+                  o.cy +
+                  '" r="' +
+                  o.avg +
+                  '" fill="none" stroke="' +
+                  good +
+                  '" stroke-width="0.07" stroke-dasharray="0.25 0.18"/>',
+              );
+              out.push(
+                '<line x1="' +
+                  o.cx +
+                  '" y1="' +
+                  o.cy +
+                  '" x2="' +
+                  (o.cx + o.avg) +
+                  '" y2="' +
+                  o.cy +
+                  '" stroke="' +
+                  bad +
+                  '" stroke-width="0.07"/>',
+              );
+            } else {
+              var dx = Math.cos(o.minDir) * o.min;
+              var dy = Math.sin(o.minDir) * o.min;
+              out.push(
+                '<line x1="' +
+                  (o.cx - dx) +
+                  '" y1="' +
+                  (o.cy - dy) +
+                  '" x2="' +
+                  (o.cx + dx) +
+                  '" y2="' +
+                  (o.cy + dy) +
+                  '" stroke="' +
+                  bad +
+                  '" stroke-width="0.28"/>',
+              );
+            }
+            // Gaze samples: each true target shifted by the error, any direction.
+            var hit = 0;
+            o.targets.forEach(function (t) {
+              var gx = t[0] + Math.cos(t[2]) * e;
+              var gy = t[1] + Math.sin(t[2]) * e;
+              var h = inside(o.poly, gx, gy);
+              if (h) hit++;
+              out.push(
+                '<circle cx="' +
+                  gx.toFixed(3) +
+                  '" cy="' +
+                  gy.toFixed(3) +
+                  '" r="0.075" fill="' +
+                  (h ? good : bad) +
+                  '" fill-opacity="0.85"/>',
+              );
+            });
+            // The error ring, at the object's centre.
+            out.push(
+              '<circle cx="' +
+                o.cx +
+                '" cy="' +
+                o.cy +
+                '" r="' +
+                Math.max(e, 0.001) +
+                '" fill="none" stroke="' +
+                ink +
+                '" stroke-width="0.05" stroke-opacity="0.8"/>',
+            );
+            var rate = Math.round((100 * hit) / o.targets.length);
+            cards.push(
+              '<div class="card"><b>' +
+                o.name +
+                '</b>: bound ' +
+                f2(bound) +
+                '°<span class="long"> (' +
+                (state.bound === 'avg' ? '√(A/π)' : '½ L<sub>min</sub>') +
+                ')</span> · ' +
+                (ok ? '<span class="yes">placeable</span>' : '<span class="no">too small</span>') +
+                ' at ' +
+                e.toFixed(1) +
+                '°' +
+                '<br>gaze lands on it <b>' +
+                rate +
+                '%</b> of the time<span class="long" style="opacity:.7"> (average ' +
+                f2(o.avg) +
+                '°, conservative ' +
+                f2(o.min) +
+                '°)</span></div>',
+            );
+          });
+          svg.setAttribute('viewBox', '-12.6 -6.2 25.2 12.4');
+          svg.innerHTML = out.join('');
+          document.getElementById('cards').innerHTML = cards.join('');
+          document.getElementById('errout').textContent = e.toFixed(1) + '°';
+          errInput.value = String(e);
+          Array.prototype.forEach.call(document.querySelectorAll('[data-bound]'), function (b) {
+            b.setAttribute('aria-pressed', String(b.getAttribute('data-bound') === state.bound));
+          });
+          Array.prototype.forEach.call(document.querySelectorAll('[data-err]'), function (b) {
+            b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-err')) === e));
+          });
+          document.body.style.background = bg;
+        }
+
+        errInput.addEventListener('input', function () {
+          state.err = Number(errInput.value);
+          render();
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-bound]'), function (b) {
+          b.addEventListener('click', function () {
+            state.bound = b.getAttribute('data-bound');
+            render();
+          });
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-err]'), function (b) {
+          b.addEventListener('click', function () {
+            state.err = Number(b.getAttribute('data-err'));
+            render();
+          });
+        });
+
+        // Host bridge: the paper's theme when a host speaks it.
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function applyTheme(t) {
+          var tokens = (t && t.tokens) || {};
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k) && k.indexOf('--m-') === 0) {
+              document.documentElement.style.setProperty(k, tokens[k]);
+            }
+          }
+          render();
+        }
+        window.addEventListener('message', function (ev) {
+          if (ev.source !== window.parent) return;
+          var d = ev.data;
+          if (!d || d.mfw !== 1) return;
+          if (d.type === 'init') {
+            applyTheme(d.theme);
+            post({ type: 'status', state: 'loaded' });
+          } else if (d.type === 'theme') {
+            // A mode change carries {mode, tokens} at the top level.
+            applyTheme(d);
+          }
+        });
+        render();
+        if (window.parent !== window) post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

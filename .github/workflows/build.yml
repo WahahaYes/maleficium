@@ -48,6 +48,7 @@ jobs:
               - '.github/workflows/**'
             fixtures:
               - 'e2e/fixtures/**'
+              - 'examples/**'
               - 'e2e/papers-run.py'
               - 'e2e/mcp_client.py'
 
@@ -208,15 +209,18 @@ jobs:
         with:
           workspaces: src-tauri
           save-if: false
-      - name: Changed vendored papers
+      - name: Changed vendored papers and examples
         id: papers
         run: |
           FILES="${{ needs.changes.outputs.fixtures_files }}"
           ARGS=""
           for f in $(echo "$FILES" | tr ',' ' '); do
             case "$f" in
-              e2e/fixtures/vendored/*/*)
-                paper=$(echo "$f" | cut -d/ -f4)
+              e2e/fixtures/vendored/*/* | examples/*/*)
+                case "$f" in
+                  examples/*) paper=$(echo "$f" | cut -d/ -f2) ;;
+                  *) paper=$(echo "$f" | cut -d/ -f4) ;;
+                esac
                 case " $ARGS " in
                   *" --paper $paper "*) ;;
                   *) ARGS="$ARGS --paper $paper" ;;
