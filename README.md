@@ -193,7 +193,7 @@ The MCP server gives an agent the same core the editor uses: scoped access to a 
 - Interactive papers are checked on Linux. Poster rendering on macOS and Windows is untested, and video widgets have no automatic poster.
 - Exported paper bundles keep widgets offline, or limited to the origins a widget declares, through the browser's content security policy. Browsers are not egress-proof: some open connections the policy does not stop (preconnects, prerenders), so a bundle limits what loads, not every connection. The app turns WebKit's preconnect off in its own windows on Linux only; macOS and Windows are untested.
 - In a single-file bundle a widget can use its declared frame origins only. Declared resource and connect origins take effect in the folder profile ([details](docs/VIDEO-EMBEDS.md)).
-- Preview in Browser runs every widget in the paper, html widgets included, without asking for approval. Opening the preview is your explicit action. The approval in View > Widgets gates widget code inside the app, not in a browser.
+- Preview in Browser and exported bundles run every widget in the paper, html widgets and custom runtimes included, without asking for approval. Opening the preview or exporting is your explicit action. The approval in View > Widgets gates widget code inside the app, not in a browser; a runtime you deny there exports as its poster.
 
 ## Documentation
 
