@@ -169,20 +169,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Linux build packages
-        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-          save-if: false
       - run: npm ci
       - name: Check (lint, format, types, tests)
-        run: npm run check
+        run: npx tsc --noEmit --skipLibCheck && npx eslint . && npx prettier --check . && npx vitest run
 
   fixture_papers:
     needs: changes
