@@ -68,7 +68,7 @@ if [ "$PROFILE" != "release" ]; then
         *) EXE= ;;
     esac
     mkdir -p "$ROOT/src-tauri/target/release"
-    cp "$ROOT/src-tauri/target/$PROFILE/maleficium$EXE" "$ROOT/src-tauri/target/release/maleficium$EXE"
+    cp "$ROOT/src-tauri/target/$PROFILE/maleficium$EXE" "$ROOT/src-tauri/target/$PROFILE/maleficium-mcp$EXE" "$ROOT/src-tauri/target/release/"
 fi
 if (cd "$ROOT" && npm run tauri bundle -- --bundles "$BUNDLES"); then
     :
