@@ -462,6 +462,7 @@ fn widget(sources: &[(&str, &str)], options: &[(&str, &str)]) -> Widget {
         },
         csp: None,
         plate: None,
+        line_width: None,
     }
 }
 

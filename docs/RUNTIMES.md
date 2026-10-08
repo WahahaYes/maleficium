@@ -24,7 +24,20 @@ Limits: no symlinks, regular files only, <= 4096 files, <= 64 MiB walked. `runti
 
 ## Bridge messages
 
-Every message carries `mfw: 1`. The runtime ignores anything not from `window.parent`. Host to runtime: `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}` (source bytes arrive as `ArrayBuffer`s; `options` is typed and defaulted); `theme {mode, tokens}` on mode change; `snapshot-request {requestId}` (no reply before `init`). Runtime to host: `ready` once; `status {state: loading|loaded|error, message? <=200}`; `snapshot {requestId, png}` (< 8 MiB data URL). Posting `resize` or any unlisted type is a violation the host drops. Copy the listener shape from `docs/runtimes/samples/`; authors cannot import the app's `bridge.ts`.
+Every message carries `mfw: 1`. The runtime ignores anything not from `window.parent`. Host to runtime: `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}` (source bytes arrive as `ArrayBuffer`s; `options` is typed and defaulted); `theme {mode, tokens}` on mode change; `snapshot-request {requestId}` (no reply before `init`). Runtime to host: `ready` once; `status {state: loading|loaded|error, message? <=200}`; `snapshot {requestId, png}` (< 8 MiB data URL); `size {height}` (CSS px). You never send `size` yourself: the exporter puts a reporter at the head of every widget document that posts the document's height whenever it changes. Posting any unlisted type is a violation the host drops. Copy the listener shape from `docs/runtimes/samples/`; authors cannot import the app's `bridge.ts`.
+
+## Layout: width from the host, height from your content
+
+The reader gives a widget the width of its column (or the author's `width=` as a fraction of it, never narrower than 20rem while the column allows) and sizes the frame to the widget's content height. Until the first report the frame keeps the poster's shape; the host holds the height between 120 px and the larger of 960 px and twice the window, past which the frame scrolls. A poster render is the exception: there the frame is the poster box, and your document should fill it as it would at that width.
+
+- **Size from width, never from height.** No `height: 100%`, `100vh` or `innerHeight` on the document: the frame follows the document, so a height taken from the frame grows until the cap. Give media (plot, canvas, image, video) `width: 100%` and an `aspect-ratio`, with a `max-height` in px when a tall shape would get silly. `vh` inside the frame is the frame's own height; do not use it.
+- **Mobile first, one breakpoint.** The frame's viewport is your width, so `@media (min-width: 560px)` works. Below it: one column, in reading order controls, then the media, then the readout. Above it, side by side.
+- **Controls wrap, never clip.** `flex-wrap` button groups; drop long label suffixes below the breakpoint.
+- **Touch targets of 44 px** under `@media (pointer: coarse)`, sliders included.
+- **Nothing only on hover.** What a tooltip shows is also in a readout, and a pointer pick also works from the keyboard (a focusable plot that takes the arrow keys).
+- **Don't trap the page's scroll.** Plots take `touch-action: pan-y` (a vertical swipe scrolls the article, a horizontal drag picks); a stage that needs every gesture (3D orbit) takes `touch-action: none` and stays at most 480 px tall so the page can be scrolled past it.
+- **Keep your height steady under interaction.** When a control changes how much text shows, reserve the tallest state's height so the frame does not jump under a finger.
+- **Redraw on a width change only.** The window's `resize` event also fires when your own height changes the frame; compare the width before redrawing.
 
 ## Tokens a runtime may rely on
 
