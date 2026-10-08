@@ -23,7 +23,7 @@
 % Usage:
 %   \maleficiumtheme{house}                    % optional; house is default
 %   \maleficiumcontents{off}                   % optional; on is default
-%   \maleficiummeasure{wide}                   % optional; default is default
+%   \maleficiummeasure{wide}                   % optional: narrow, default, wide or full
 %   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
 %   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
 %   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
@@ -198,12 +198,12 @@
 }
 \newcommand{\maleficiummeasure}[1]{%
   \def\mfw@flag{#1}%
-  \mfw@ifin{\mfw@flag}{narrow,default,wide}{%
+  \mfw@ifin{\mfw@flag}{narrow,default,wide,full}{%
     \gdef\mfw@measure{#1}%
   }{%
     \PackageError{maleficium-interactive}%
-      {Measure flag `#1' must be narrow, default or wide}%
-      {Pass \protect\maleficiummeasure{narrow}, \protect\maleficiummeasure{default} or \protect\maleficiummeasure{wide}.}%
+      {Measure flag `#1' must be narrow, default, wide or full}%
+      {Pass \protect\maleficiummeasure{narrow}, \protect\maleficiummeasure{default}, \protect\maleficiummeasure{wide} or \protect\maleficiummeasure{full}.}%
   }%
 }
 
