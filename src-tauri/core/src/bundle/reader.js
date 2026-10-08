@@ -81,6 +81,12 @@
   function fail(fig) {
     fig.classList.remove('live');
     fig.setAttribute('data-state', 'error');
+    // The poster comes back at its own shape.
+    var frame = fig.querySelector('.frame');
+    if (frame) {
+      frame.classList.remove('sized');
+      frame.style.height = '';
+    }
   }
   function bytesOf(key) {
     var a = (manifest.assets || {})[key];
@@ -154,6 +160,7 @@
         if (!fig.classList.contains('live') && fig.getAttribute('data-state') !== 'error') {
           fig.classList.add('live');
           fig.setAttribute('data-state', 'ready');
+          applySize(frames[i]);
         }
       } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
       else if (d.type === 'size') size(frames[i], d.height);
@@ -170,10 +177,14 @@
   // animation frame.
   var SIZE_MIN = 120,
     SIZE_CAP = 960;
+  // Reports are held until the figure is live: until then the poster
+  // covers the frame at the poster's shape, and a widget reads that shape
+  // while it starts (its loading text would otherwise shrink the frame
+  // under it first).
   function size(rec, h) {
     if (typeof h !== 'number' || !isFinite(h) || h <= 0) return;
     rec.height = h;
-    if (rec.sizing) return;
+    if (rec.sizing || !rec.fig.classList.contains('live')) return;
     rec.sizing = true;
     requestAnimationFrame(function () {
       rec.sizing = false;
@@ -181,7 +192,7 @@
     });
   }
   function applySize(rec) {
-    if (!rec.height) return;
+    if (!rec.height || !rec.fig.classList.contains('live')) return;
     var frame = rec.fig.querySelector('.frame');
     var cap = Math.max(SIZE_CAP, window.innerHeight * 2);
     var h = Math.min(Math.max(Math.ceil(rec.height), SIZE_MIN), cap);
@@ -346,6 +357,7 @@
         if (fig.getAttribute('data-state') === 'error') return;
         fig.classList.add('live');
         fig.setAttribute('data-state', 'ready');
+        applySize(rec);
       });
     }
     if (FOLDER) f.src = w.entry;
