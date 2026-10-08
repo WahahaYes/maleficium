@@ -182,6 +182,39 @@ body.m-reader {
 }
 
 /* Headings and numbered tags */
+/* The house mark of the templates: two slanted bars, accent and light. */
+.m-reader {
+  --m-slash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10.6 8'%3E%3Cpath d='M0 8H3.4L6.4 0H3Z M4.6 8H7.6L10.6 0H7.6Z'/%3E%3C/svg%3E");
+}
+.m-reader .ltx_title_document::after,
+.m-reader .ltx_title_section::before,
+.m-reader .ltx_title_bibliography::before,
+.m-reader .ltx_title_appendix::before {
+  content: '';
+  display: inline-block;
+  height: 0.47em;
+  /* The split runs up the gap between the bars, at their slant, so each
+     bar takes one colour; the box keeps the mark's 10.6 : 8 aspect. */
+  aspect-ratio: 10.6 / 8;
+  background: linear-gradient(
+    110.56deg,
+    var(--m-color-accent) 0 51.5%,
+    color-mix(in srgb, var(--m-color-accent) 55%, var(--m-color-bg)) 51.5%
+  );
+  -webkit-mask: var(--m-slash) center / contain no-repeat;
+  mask: var(--m-slash) center / contain no-repeat;
+}
+.m-reader .ltx_title_section::before,
+.m-reader .ltx_title_bibliography::before,
+.m-reader .ltx_title_appendix::before {
+  margin-right: 0.45em;
+  vertical-align: 0.05em;
+}
+.m-reader .ltx_title_document::after {
+  display: block;
+  height: 0.6em;
+  margin-top: var(--m-space-3);
+}
 .m-reader .ltx_title {
   font-family: var(--m-font-heading);
   line-height: 1.25;
@@ -191,9 +224,12 @@ body.m-reader {
   padding: 0;
 }
 .m-reader .ltx_title_document {
-  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale) * var(--m-scale));
-  text-align: center;
-  margin: var(--m-space-4) 0 var(--m-space-2);
+  font-family: var(--m-font-body);
+  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale) * var(--m-scale) * 1.15);
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: left;
+  margin: var(--m-space-4) 0 var(--m-space-3);
 }
 .m-reader .ltx_title_section,
 .m-reader .ltx_title_bibliography,
@@ -224,8 +260,11 @@ body.m-reader {
   display: inline-block;
   min-width: 1.4em;
   margin-right: 0.5em;
-  color: var(--m-color-muted);
+  color: var(--m-color-accent);
   font-variant-numeric: tabular-nums;
+}
+.m-reader .ltx_title_subsubsection {
+  color: var(--m-color-accent);
 }
 .m-reader .ltx_subtitle {
   text-align: center;
@@ -236,15 +275,12 @@ body.m-reader {
 
 /* Authors and front matter */
 .m-reader .ltx_authors {
-  text-align: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: var(--m-space-3) var(--m-space-4);
   margin: 0 0 var(--m-space-3);
   color: var(--m-color-text);
-}
-.m-reader .ltx_authors {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--m-space-2) var(--m-space-4);
+  font-family: var(--m-font-heading);
 }
 .m-reader .ltx_author_before {
   display: none;
@@ -278,7 +314,32 @@ body.m-reader {
   display: block;
 }
 .m-reader .ltx_pubnotes {
-  text-align: center;
+  text-align: left;
+  font-family: var(--m-font-heading);
+}
+.m-reader .ltx_contact_name,
+.m-reader .ltx_pubnote .ltx_note_name {
+  display: none;
+}
+.m-reader .ltx_pubnote.ltx_role_conference {
+  color: var(--m-color-text);
+  font-weight: 600;
+}
+.m-reader .ltx_pubnote.ltx_role_doi::before,
+.m-reader .ltx_pubnote.ltx_role_isbn::before {
+  content: 'DOI ';
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.m-reader .ltx_pubnote.ltx_role_isbn::before {
+  content: 'ISBN ';
+}
+.m-reader .ltx_pubnote.ltx_role_ccs {
+  display: inline-block;
+  margin: var(--m-space-1) var(--m-space-1) 0 0;
+  padding: 0 var(--m-space-2);
+  border: 1px solid var(--m-color-rule);
+  border-radius: 999px;
 }
 .m-reader .ltx_pubnote {
   display: block;
@@ -291,16 +352,24 @@ body.m-reader {
   width: 1em;
   vertical-align: -0.1em;
 }
+.m-reader .ltx_keywords {
+  font-family: var(--m-font-heading);
+  margin: var(--m-space-2) 0 var(--m-space-4);
+}
 .m-reader .ltx_keywords .ltx_title {
   display: inline;
   font-size: inherit;
   margin: 0;
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--m-color-accent);
 }
 .m-reader .ltx_abstract {
   margin: var(--m-space-4) auto;
   padding: var(--m-space-2) var(--m-space-3);
   background: var(--m-color-surface);
+  border-left: 3px solid var(--m-color-accent);
   border-radius: var(--m-radius);
   font-size: var(--m-size-small);
   line-height: 1.55;
@@ -312,10 +381,11 @@ body.m-reader {
 }
 .m-reader .ltx_abstract .ltx_title {
   font-size: var(--m-size-small);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   margin: var(--m-space-1) 0;
-  color: var(--m-color-muted);
+  color: var(--m-color-accent);
 }
 
 /* Text, paragraphs, lists */
@@ -447,6 +517,7 @@ body.m-reader {
 .m-reader .ltx_caption .ltx_tag {
   font-weight: 700;
   font-family: var(--m-font-heading);
+  color: var(--m-color-accent);
 }
 .m-reader figure.ltx_table > figcaption {
   margin: 0 0 var(--m-space-2);
