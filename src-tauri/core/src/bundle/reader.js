@@ -334,6 +334,13 @@
     }
   }
   var manifest = island('mfw-manifest');
+  // Links out of the paper open in a new tab, so the reader keeps its place.
+  Array.prototype.forEach.call(document.querySelectorAll('a[href]'), function (a) {
+    if (/^(https?|mailto):/i.test(a.getAttribute('href'))) {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
   var main = document.querySelector('main');
   var article = document.querySelector('article') || main;
   if (!main || !article) return;
