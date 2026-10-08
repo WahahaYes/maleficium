@@ -925,6 +925,26 @@ fn a_style_record_rides_on_the_theme() {
     }
 }
 
+/// `line|<id>|<N>pt` records the \linewidth where the widget sat; it must
+/// follow that widget's line and be a length in points.
+#[test]
+fn a_line_record_names_its_widget_and_a_length() {
+    let s = custom(&format!("{CUSTOM_LINE}\nline|fig-part|241.14749pt")).unwrap();
+    assert_eq!(s.records[0].line_width, Some(241.14749));
+    assert!(custom(CUSTOM_LINE).unwrap().records[0].line_width.is_none());
+    for (bad, says) in [
+        ("line|fig-other|200pt", "unknown widget"),
+        ("line|fig-part|200", "not a length in pt"),
+        ("line|fig-part|0pt", "not a length in pt"),
+        ("line|fig-part|-3pt", "not a length in pt"),
+        ("line|fig-part|200pt|x", "not a length in pt"),
+        ("line|fig-part", "names a widget and a length"),
+    ] {
+        let e = custom(&format!("{CUSTOM_LINE}\n{bad}")).unwrap_err();
+        assert!(e.contains(says), "{bad}: {e}");
+    }
+}
+
 /// `plate|<id>|#RRGGBB` gives the named widget its own plate; it must follow
 /// that widget's line and be a colour.
 #[test]

@@ -156,8 +156,45 @@
           fig.setAttribute('data-state', 'ready');
         }
       } else if (d.type === 'status' && d.state === 'error') fail(frames[i].fig);
+      else if (d.type === 'size') size(frames[i], d.height);
       return;
     }
+  });
+  // The widget owns its height: it reports its content's (`size`, which
+  // every exported widget document sends), and the frame follows, held
+  // between SIZE_MIN and the larger of SIZE_CAP and twice the window's
+  // height. The cap only stops a runaway (a widget sized from its own
+  // frame's height grows until it): a phone-length widget is taller than
+  // the window and the page scrolls past it, never a scroll box inside the
+  // page. Changes under 2 px are dropped and at most one is applied per
+  // animation frame.
+  var SIZE_MIN = 120,
+    SIZE_CAP = 960;
+  function size(rec, h) {
+    if (typeof h !== 'number' || !isFinite(h) || h <= 0) return;
+    rec.height = h;
+    if (rec.sizing) return;
+    rec.sizing = true;
+    requestAnimationFrame(function () {
+      rec.sizing = false;
+      applySize(rec);
+    });
+  }
+  function applySize(rec) {
+    if (!rec.height) return;
+    var frame = rec.fig.querySelector('.frame');
+    var cap = Math.max(SIZE_CAP, window.innerHeight * 2);
+    var h = Math.min(Math.max(Math.ceil(rec.height), SIZE_MIN), cap);
+    // The frame is border-box: its borders sit outside the widget's height.
+    var edge = frame.offsetHeight - frame.clientHeight;
+    var want = h + edge;
+    if (rec.applied && Math.abs(rec.applied - want) < 2) return;
+    rec.applied = want;
+    frame.style.height = want + 'px';
+    frame.classList.add('sized');
+  }
+  window.addEventListener('resize', function () {
+    frames.forEach(applySize);
   });
   function applyMode() {
     paint();

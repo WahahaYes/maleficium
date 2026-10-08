@@ -14,6 +14,12 @@ let spec: Record<string, unknown> | null = null;
 let theme: Theme | null = null;
 let view: View | null = null;
 let scale = 1;
+// The plot keeps the shape the frame had when the widget started: the
+// poster's in the reader, the poster box itself when rendering a poster.
+// The bound inputs flow under it and the frame grows to hold them.
+let aspect = 0;
+let drawnWidth = 0;
+const MIN_PLOT = 160;
 
 function fail(message: string): void {
   host.textContent = '';
@@ -29,7 +35,9 @@ async function draw(): Promise<boolean> {
   tip.hide();
   view?.finalize();
   host.textContent = '';
-  const size = { width: host.clientWidth, height: host.clientHeight };
+  const width = host.clientWidth;
+  drawnWidth = width;
+  const size = { width, height: Math.max(MIN_PLOT, Math.round(width / aspect)) };
   view = createView(compileSpec(spec, theme.tokens, size), 'svg');
   view.tooltip(tip.handler);
   view.initialize(host);
@@ -38,6 +46,8 @@ async function draw(): Promise<boolean> {
 }
 
 async function init(msg: Init): Promise<void> {
+  const root = document.documentElement;
+  if (!aspect) aspect = root.clientWidth / Math.max(root.clientHeight, 1) || 4 / 3;
   theme = msg.theme;
   scale = parseScale(msg.options.scale);
   applyTheme(theme);
@@ -77,6 +87,8 @@ startBridge({
 });
 let resizeTimer = 0;
 window.addEventListener('resize', () => {
+  // Only a new width redraws: the height is ours, and follows from it.
+  if (!spec || host.clientWidth === drawnWidth) return;
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => void draw().then(capture), 100);
 });
