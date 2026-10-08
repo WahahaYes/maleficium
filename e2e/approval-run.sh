@@ -148,7 +148,7 @@ for fake in ["widget_approve", "widget_revoke", "widget_auto_approve", "approve"
 check("checking wrote nothing into the project", porcelain() == before, porcelain())
 
 # --- a cloned project's claims count for nothing -----------------------------
-claim = {"format": 1, "root": ROOT, "autoApprove": True,
+claim = {"format": 2, "root": ROOT, "autoApprove": True, "runtimes": {},
          "widgets": {"widgets/demo": {"widget": "fig-demo", "digest": DIGEST, "origins": {},
                                       "files": {}, "approvedAt": 1, "revoked": False}}}
 for rel in [".maleficium/approvals.json", ".maleficium/widgets/approvals.json", "store.json"]:
@@ -168,7 +168,7 @@ store = os.path.join(store_dir, "store.json")
 check("the approval store home is outside the project", not os.path.realpath(store_dir).startswith(ROOT + os.sep))
 def write_store(auto, digest, origins=None):
     os.makedirs(store_dir, exist_ok=True)
-    json.dump({"format": 1, "root": ROOT, "autoApprove": auto,
+    json.dump({"format": 2, "root": ROOT, "autoApprove": auto, "runtimes": {},
                "widgets": {"widgets/demo": {"widget": "fig-demo", "digest": digest, "origins": origins or {},
                                             "files": {}, "approvedAt": 1, "revoked": False}}}, open(store, "w"))
 def checked():

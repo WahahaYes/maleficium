@@ -293,7 +293,7 @@ def approve(digest, folder="widgets/probe", widget="html-probe"):
     os.makedirs(store_dir, exist_ok=True)
     approved[folder] = {"widget": widget, "digest": digest, "origins": {},
                         "files": {}, "approvedAt": 1, "revoked": False}
-    json.dump({"format": 1, "root": REAL, "autoApprove": False, "widgets": approved},
+    json.dump({"format": 2, "root": REAL, "autoApprove": False, "widgets": approved, "runtimes": {}},
               open(os.path.join(store_dir, "store.json"), "w"))
 def outcome(r):
     return (r.get("result") or {}).get("status") if r.get("ok") else None
