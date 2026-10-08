@@ -56,7 +56,12 @@ for s in "$@"; do
     say "$s: running (log $log)"
     start=$(date +%s)
     # The suite's status, past the tee that streams its output.
-    { timeout "$TIMEOUT" bash "e2e/$s-run.sh" 2>&1; echo $? >"$LOGS/$s.status"; } | tee "$log"
+    # (|| keeps set -e from ending the group before the status is written.)
+    {
+        st=0
+        timeout "$TIMEOUT" bash "e2e/$s-run.sh" 2>&1 || st=$?
+        echo "$st" >"$LOGS/$s.status"
+    } | tee "$log"
     status=$(cat "$LOGS/$s.status")
     oks=$(grep -c '^ok: ' "$log" || true)
     fails=$(grep -c '^FAIL: ' "$log" || true)
