@@ -59,9 +59,10 @@ RUN cd src-tauri/engine && rustup toolchain install
 
 FROM base AS build
 
-# Dependencies before sources, so a source edit reuses these layers.
+# Dependencies before sources, so a source edit reuses these layers. The npm
+# download cache persists between rebuilds.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # The engine builds from source here, on its own pinned nightly.
 COPY scripts/build-engine.sh scripts/
