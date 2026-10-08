@@ -971,6 +971,7 @@ fn rt_project(name: &str) -> Project {
     p
 }
 
+#[cfg(unix)]
 fn invalid_of(p: &Project) -> String {
     let c = p.rt_check();
     assert!(c.status.is_none(), "an invalid package is never judged");

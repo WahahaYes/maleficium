@@ -475,6 +475,7 @@ fn a_destination_inside_the_project_is_refused_and_nothing_is_written() {
         .contains("absolute"));
 }
 
+#[cfg(unix)]
 #[test]
 fn a_symlink_that_leaves_the_project_is_not_followed() {
     let p = project("symlink", REAL_SIDECAR);
