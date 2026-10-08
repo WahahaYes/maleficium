@@ -167,6 +167,14 @@ body.m-reader {
 .m-reader[data-measure='wide'] {
   --m-measure: 80ch;
 }
+/* Full: the text and the figures take the whole window, less the gutters. */
+.m-reader[data-measure='full'] {
+  --m-measure: 100%;
+  --m-figure-max: 100%;
+}
+.m-reader[data-measure='full'] main {
+  padding-inline: var(--m-space-5);
+}
 .m-reader .ltx_page_footer,
 .m-reader .ltx_page_logo {
   display: none;

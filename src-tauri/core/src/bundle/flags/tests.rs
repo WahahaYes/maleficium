@@ -139,4 +139,6 @@ fn measure_tokens_map_to_closed_widths() {
     assert_eq!(Measure::Narrow.width(), Some("56ch"));
     assert_eq!(Measure::Default.width(), None);
     assert_eq!(Measure::Wide.width(), Some("80ch"));
+    assert_eq!(Measure::Full.width(), Some("100%"));
+    assert_eq!(Measure::Full.token(), "full");
 }

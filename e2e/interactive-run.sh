@@ -222,7 +222,7 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-runtime-bar.tex", "character `|' is not allowed"),
                       # Reader flags: one document per .sty message.
                       ("bad-contents.tex", "Contents flag `sideways' must be on or off"),
-                      ("bad-measure.tex", "Measure flag `huge' must be narrow, default or wide")]:
+                      ("bad-measure.tex", "Measure flag `huge' must be narrow, default, wide or full")]:
     fr = compile(bad_doc, rounds=15)
     flog = (fr.get("log") or "") + "\n" + "\n".join(fr.get("lines") or [])
     check(f"{bad_doc} fails", fr.get("status") == "failed", str(fr)[:200])
