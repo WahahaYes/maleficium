@@ -153,6 +153,8 @@ async function init(msg: Init): Promise<void> {
   // Orbiting keeps the camera's own up, so a rolled camera stays rolled.
   if (view.camera) camera.up.fromArray(view.camera, 4).normalize();
   if (view.background) document.body.style.background = view.background;
+  // The stage keeps the size= aspect; its width is the frame's.
+  if (view.size) host.style.aspectRatio = `${view.size.width} / ${view.size.height}`;
   applyTheme(msg.theme);
   host.setAttribute('role', 'img');
   host.setAttribute('aria-label', msg.alt);
@@ -221,3 +223,4 @@ startBridge({
   onSnapshot: snapshot,
 });
 window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(host);

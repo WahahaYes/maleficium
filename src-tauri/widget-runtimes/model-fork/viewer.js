@@ -188,6 +188,7 @@
 		};
 		if (view.camera) camera.up.fromArray(view.camera, 4).normalize();
 		if (view.background) document.body.style.background = view.background;
+		if (view.size) host.style.aspectRatio = `${view.size.width} / ${view.size.height}`;
 		(0, src_widget_runtimes_bridge.applyTheme)(msg.theme);
 		host.setAttribute("role", "img");
 		host.setAttribute("aria-label", msg.alt);
@@ -254,5 +255,6 @@
 		onSnapshot: snapshot
 	});
 	window.addEventListener("resize", resize);
+	new ResizeObserver(resize).observe(host);
 	//#endregion
 })(THREE, THREE, THREE, mfwBridge);
