@@ -1,10 +1,10 @@
 //! The licence boundary: everything Maleficium copies into an exported paper
 //! or a user's project comes from `embed-runtime/` (MIT-0), never from the
 //! AGPL app. This pins the Rust side: what the exporter and the runtime
-//! scaffold embed, and that they write no script or style of their own.
+//! scaffold embed, and that no Rust code writes a script or style of its own.
 
 use regex::Regex;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Every module that writes a bundle or scaffolds files into a project.
 const OUTPUT_MODULES: &[&str] = &[
@@ -36,12 +36,32 @@ fn embed_runtime() -> PathBuf {
     repo().join("embed-runtime")
 }
 
-/// A module's source without its trailing test module.
-fn shipped_source(rel: &str) -> String {
-    let src = std::fs::read_to_string(core().join(rel)).unwrap();
+/// A file's source without its trailing test module.
+fn non_test_source(path: &Path) -> String {
+    let src = std::fs::read_to_string(path).unwrap();
     match src.find("#[cfg(test)]\nmod tests") {
         Some(at) => src[..at].to_string(),
         None => src,
+    }
+}
+
+/// A module's source without its trailing test module.
+fn shipped_source(rel: &str) -> String {
+    non_test_source(&core().join(rel))
+}
+
+/// Every non-test Rust file of the app, the workspace crates and the engine.
+fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        let name = p.file_name().unwrap().to_string_lossy();
+        if p.is_dir() {
+            if !matches!(name.as_ref(), "target" | "tests" | "testdata" | "gen") {
+                rust_sources(&p, out);
+            }
+        } else if name.ends_with(".rs") && name != "tests.rs" {
+            out.push(p);
+        }
     }
 }
 
@@ -88,20 +108,36 @@ fn what_the_exporter_and_scaffold_embed_comes_from_embed_runtime() {
 }
 
 #[test]
-fn the_exporter_writes_no_script_or_style_of_its_own() {
-    // A script or style body written as a Rust literal would ship AGPL code
-    // inside the paper; it belongs in embed-runtime/ and an include_str!.
-    // Allowed: an opening tag that ends the literal, takes a format
-    // argument, or carries attributes (json islands, src=).
-    let body = Regex::new(r#"<(script|style)>([^"{\\]|\\[^"])"#).unwrap();
-    for rel in OUTPUT_MODULES {
-        for (n, line) in shipped_source(rel).lines().enumerate() {
+fn no_rust_code_writes_a_script_or_style_of_its_own() {
+    // JavaScript or CSS in a Rust literal escapes tsc, eslint, prettier and
+    // vitest, and in an export it would ship AGPL code inside the paper. It
+    // belongs in a .js/.css/.html file (embed-runtime/ when it ships, testdata/
+    // for a fixture) and an include_str!. Allowed: an opening tag that ends
+    // the literal, takes a format argument, or carries attributes (json
+    // islands, src=).
+    let body = Regex::new(r#"<(script|style)>([^"{\\]|\\[^"]|\\$)"#).unwrap();
+    let mut files = Vec::new();
+    for dir in [
+        "src",
+        "core/src",
+        "mcp/src",
+        "structure/src",
+        "events/src",
+        "index/src",
+        "engine/src",
+    ] {
+        rust_sources(&core().join("..").join(dir), &mut files);
+    }
+    assert!(files.len() > 50, "found only {} Rust files", files.len());
+    for path in files {
+        for (n, line) in non_test_source(&path).lines().enumerate() {
             if line.trim_start().starts_with("//") {
                 continue;
             }
             if let Some(m) = body.find(line) {
                 panic!(
-                    "{rel}:{} writes a <script> or <style> body inline: {}",
+                    "{}:{} writes a <script> or <style> body inline: {}",
+                    path.display(),
                     n + 1,
                     m.as_str()
                 );

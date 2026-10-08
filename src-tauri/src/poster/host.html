@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>poster</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+      }
+      iframe {
+        border: 0;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      'use strict';
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.style.width = '__W__px';
+      frame.style.height = '__H__px';
+      let initSent = false,
+        finished = false,
+        asking = 0,
+        n = 0;
+      const post = (path, body) => fetch(path, { method: 'POST', body });
+      function finish(path, body) {
+        if (finished) return;
+        finished = true;
+        clearInterval(asking);
+        post(path, body);
+      }
+      function ask() {
+        const send = () =>
+          frame.contentWindow.postMessage(
+            { mfw: 1, type: 'snapshot-request', requestId: 'p' + ++n },
+            '*',
+          );
+        send();
+        asking = setInterval(send, 1000);
+      }
+      async function init() {
+        const msg = await (await fetch('init')).json();
+        const transfer = [];
+        for (const key of Object.keys(msg.sources)) {
+          const bytes = await (await fetch('source/' + encodeURIComponent(key))).arrayBuffer();
+          msg.sources[key].bytes = bytes;
+          transfer.push(bytes);
+        }
+        frame.contentWindow.postMessage(Object.assign({ mfw: 1 }, msg), '*', transfer);
+      }
+      addEventListener('message', (e) => {
+        if (e.source !== frame.contentWindow) return;
+        const d = e.data;
+        if (!d || typeof d !== 'object' || d.mfw !== 1) return;
+        if (d.type === 'ready' && !initSent) {
+          initSent = true;
+          init().catch((err) => finish('fail', 'the host could not send init: ' + err));
+        } else if (d.type === 'status' && d.state === 'loaded' && !asking) {
+          ask();
+        } else if (d.type === 'status' && d.state === 'error') {
+          finish('fail', 'the runtime failed: ' + String(d.message || 'no message').slice(0, 200));
+        } else if (d.type === 'snapshot' && typeof d.png === 'string') {
+          finish('done', d.png);
+        }
+      });
+      fetch('runtime')
+        .then((r) => r.text())
+        .then((doc) => {
+          frame.srcdoc = doc;
+          document.body.append(frame);
+        })
+        .catch((err) => finish('fail', 'the host could not load the runtime: ' + err));
+    </script>
+  </body>
+</html>
