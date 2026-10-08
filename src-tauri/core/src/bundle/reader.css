@@ -803,6 +803,26 @@ body.m-reader {
 .m-reader .m-version a {
   color: var(--m-color-link);
 }
+.m-reader .m-colophon {
+  margin: var(--m-space-5) auto var(--m-space-4);
+  text-align: center;
+}
+.m-reader .m-made-with {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--m-font-heading);
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+  text-decoration: none;
+}
+.m-reader .m-made-with:hover .m-made-with-text {
+  text-decoration: underline;
+}
+.m-reader .m-mark {
+  height: 1.4em;
+  width: auto;
+}
 .m-reader .m-contents {
   margin: 0 0 var(--m-space-4);
   font-family: var(--m-font-heading);
