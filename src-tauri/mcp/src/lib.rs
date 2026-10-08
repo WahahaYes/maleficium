@@ -620,37 +620,6 @@ fn mcp_event<T>(tool: &str, r: &Result<T, String>) -> maleficium_events::BusEven
     }
 }
 
-/// One `runtime.approval-required` event per custom runtime the export left
-/// poster-only for lack of approval, so the window pops its prompt up. A
-/// denied, missing or invalid runtime stays silent: the export warning names
-/// it, and only a pending decision asks.
-fn runtime_approval_events(
-    cx: &core::Core,
-    root_id: &str,
-    main_rel: &str,
-) -> Vec<maleficium_events::BusEvent> {
-    use maleficium_events::{Actor, WidgetApprovalCause};
-    let Ok(status) = core::widget_approval::widgets_status(cx, root_id, main_rel) else {
-        return Vec::new();
-    };
-    status
-        .runtimes
-        .iter()
-        .filter_map(|s| match s {
-            core::widget_approval::WidgetApprovalStatus::ApprovalRequired(r)
-                if r.cause != WidgetApprovalCause::Revoked =>
-            {
-                Some(core::widget_approval::approval_required_event(
-                    root_id,
-                    r,
-                    Actor::Agent,
-                ))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 impl Maleficium {
     fn tool<T>(&self, name: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
         let r = f();
@@ -1258,13 +1227,6 @@ impl Maleficium {
                 &r,
                 maleficium_events::Actor::Agent,
             )));
-            if r.is_ok() {
-                let _ = core::eventlog::append(&runtime_approval_events(
-                    &self.cx,
-                    &p.root_id,
-                    &p.main_rel,
-                ));
-            }
             Ok(Json(r?))
         })
     }

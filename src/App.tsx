@@ -45,7 +45,7 @@ import { useExport } from './hooks/useExport';
 import { useWidgetApproval } from './hooks/useWidgetApproval';
 import { approvalBannerText, pendingRuntimes, pendingWidgets } from './lib/widgets.view';
 import WidgetsPanel from './components/WidgetsPanel';
-import WidgetApprovalPrompt, { RuntimeApprovalPrompt } from './components/WidgetApprovalPrompt';
+import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
 import { FileHistory } from './lib/file-history';
@@ -620,7 +620,6 @@ export default function App({
   const exporter = useExport({
     pdf: previewDoc?.source ?? null,
     project: root && projectId ? { rootId: projectId, path: root } : null,
-    runtimeGate: widgetApproval.runtimeGate,
   });
   const menuCtx: MenuContext = {
     hasProject: root != null,
@@ -1101,15 +1100,6 @@ export default function App({
         onApprove={() => void widgetApproval.prompts?.approve()}
         onSkip={() => widgetApproval.prompts?.skip()}
         onDismissFailure={() => widgetApproval.prompts?.clearFailure()}
-      />
-      <RuntimeApprovalPrompt
-        prompt={widgetApproval.runtimePrompt}
-        failure={widgetApproval.runtimeFailure}
-        onAllow={() => void widgetApproval.runtimePrompts?.allow()}
-        onDeny={() => void widgetApproval.runtimePrompts?.deny()}
-        onNotNow={() => widgetApproval.runtimePrompts?.notNow()}
-        onReview={widgetApproval.openPanel}
-        onDismissFailure={() => widgetApproval.runtimePrompts?.clearFailure()}
       />
       <StatusBar
         mainFile={relOf(mainFile)}

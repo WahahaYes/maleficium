@@ -98,7 +98,8 @@ pub enum BundleWarningKind {
     /// main file's folder, EPS, too large).
     Figure,
     /// A custom runtime's widgets export as posters only (not installed,
-    /// invalid, not approved or denied); one warning per runtime.
+    /// invalid or denied; in the in-app article also not approved); one
+    /// warning per runtime.
     Runtime,
     /// A custom widget's cached poster was rendered for an older state of
     /// its runtime: the export shows a placeholder until the next compile
@@ -621,6 +622,11 @@ impl Plan<'_> {
                         {
                             Some(Fallback::Denied)
                         }
+                        // Approval gates running a runtime inside the app, not
+                        // what an export ships: the reader's sandbox holds a
+                        // live widget either way, as it does an html widget. A
+                        // denied runtime stays a poster, the author's own no.
+                        (Gate::Approvals(_), _) => None,
                         (_, _) => Some(Fallback::Unapproved),
                     };
                     RuntimeUse::Valid(Box::new(ValidRuntime {
@@ -1774,12 +1780,20 @@ fn check_destination(root: &Path, dest: &str, profile: BundleProfile) -> Result<
         Ok(m) => match profile {
             BundleProfile::SingleFile => {
                 if m.is_dir() {
-                    return Err(format!("export destination is a folder: {}", out.display()));
+                    return Err(format!(
+                        "export destination is a folder: {}. The single-file profile writes one html file: pass a file path, such as {}",
+                        out.display(),
+                        out.join("paper.html").display()
+                    ));
                 }
             }
             _ => {
                 if !m.is_dir() {
-                    return Err(format!("export destination is a file: {}", out.display()));
+                    return Err(format!(
+                        "export destination is a file: {}. The {} profile writes a folder: pass a path that does not exist yet (it is created) or an earlier bundle to replace",
+                        out.display(),
+                        profile_name(profile)
+                    ));
                 }
                 let empty = std::fs::read_dir(&out)
                     .map_err(|e| format!("cannot list {}: {e}", out.display()))?
@@ -1787,7 +1801,7 @@ fn check_destination(root: &Path, dest: &str, profile: BundleProfile) -> Result<
                     .is_none();
                 if !empty && !is_earlier_bundle(&out) {
                     return Err(format!(
-                        "export destination is not empty and is not an earlier bundle: {}",
+                        "export destination is not empty and is not an earlier bundle: {}. Pass a path that does not exist yet (it is created) or an earlier bundle to replace",
                         out.display()
                     ));
                 }

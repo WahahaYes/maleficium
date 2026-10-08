@@ -9,8 +9,6 @@ import type { BundleProfile, ExportKind } from '../lib/generated/events';
 import type { PreviewSource, SessionRoot } from '../lib/preview-bus';
 import { makeReport, type BundleReport } from '../lib/bundleReport';
 import { baseName, joinPath } from '../lib/paths';
-import { pendingExportRuntimes, promptFromRuntime } from '../lib/widgets.view';
-import type { RuntimeGate } from './useWidgetApproval';
 import { cancelRun, canCancel, isCancelled, startRun, type ExportRun } from '../lib/exportProgress';
 
 /** The last path segment without a `.tex` suffix, for default file names. */
@@ -19,12 +17,7 @@ function stem(path: string): string {
   return base.endsWith('.tex') ? base.slice(0, -4) : base;
 }
 
-export function useExport(deps: {
-  pdf: PreviewSource | null;
-  project: SessionRoot | null;
-  /** Pending runtimes pop up before the export runs; null exports ungated. */
-  runtimeGate?: RuntimeGate | null;
-}) {
+export function useExport(deps: { pdf: PreviewSource | null; project: SessionRoot | null }) {
   const [bundleReport, setBundleReport] = useState<BundleReport | null>(null);
   const [run, setRun] = useState<ExportRun | null>(null);
 
@@ -119,21 +112,9 @@ export function useExport(deps: {
       : await dialog().openDirectory({ title: 'Export Paper Bundle: choose a parent folder' });
     if (!picked) return;
     const dest = single ? picked : joinPath(picked, stem(src.mainRel) + '-bundle');
-    // The export gate: one pop-up per pending runtime, then the export runs
-    // whatever the answers were. Core judges and falls back on its own, so
-    // an unreadable status exports ungated rather than blocking.
-    const gate = deps.runtimeGate ?? null;
-    if (gate) {
-      try {
-        const found = await gate.status(src.rootId, src.mainRel);
-        gate.prompts.enqueueAll(
-          pendingExportRuntimes(found).map((s) => promptFromRuntime(s, src.mainRel)),
-        );
-      } catch {
-        // Status unreadable: the export still runs; its warnings say why.
-      }
-      await gate.prompts.drain();
-    }
+    // No approval gate: approval decides what runs inside the app, and an
+    // export ships every widget live under the reader's sandbox (a denied
+    // or invalid runtime as its poster, with a warning).
     setRun(startRun(`${profile} bundle`));
     try {
       const r = await exportBundle(src.rootId, src.mainRel, dest, profile);
@@ -165,7 +146,6 @@ export function useExport(deps: {
   }
 
   /** One command: export the single-file bundle to a scratch folder and open it. */
-  // Preview runs custom runtimes live, like html widgets: no approval gate.
   async function previewBundle() {
     const src = deps.pdf;
     const profile: BundleProfile = 'single-file';

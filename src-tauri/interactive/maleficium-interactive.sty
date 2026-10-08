@@ -69,9 +69,10 @@
 % recorded as spaces), as its folder's widget.json csp.frameDomains and
 % csp.resourceDomains do; the two are joined. They go into that widget's
 % policy only, and the user approves them with the widget. The camera's commas are recorded as spaces; the app checks
-% the numbers. Place the macro after the float's \caption\label for
-% label and figure capture; before it, or outside any float, they stay empty
-% rather than stale.
+% the numbers. The float's \caption\label may come before or after the
+% widget (image then caption is the usual order): a widget placed first gets
+% its label and figure number when the \label arrives. Outside any float they
+% stay empty rather than stale.
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{maleficium-interactive}[2026/10/01 Maleficium interactive widgets]
@@ -383,16 +384,28 @@
 % The float's own label, and only that: entering a float clears it, labels
 % record only while inside one, and leaving clears it again. Entering a
 % subfigure clears it too, so panels never read each other's labels. A widget outside
-% a float, or placed before its float's \caption\label, records empty label
-% and figure instead of a neighbour's.
+% a float records empty label and figure instead of a neighbour's. A widget
+% placed before its float's \caption\label records them empty and waits
+% (\mfw@pending): the \label then writes a `float' record naming it, with the
+% label and the figure number the caption just set.
 \newif\ifmfw@infloat
+\def\mfw@pending{}
 \AtBeginDocument{%
   \let\mfw@orig@label\label
   \renewcommand{\label}[1]{\mfw@orig@label{#1}%
-    \ifmfw@infloat\gdef\mfw@floatlabel{#1}\fi}%
+    \ifmfw@infloat\gdef\mfw@floatlabel{#1}\mfw@flush{#1}\fi}%
 }
-\newcommand{\mfw@enterfloat}{\gdef\mfw@floatlabel{}\global\mfw@infloattrue}
-\newcommand{\mfw@leavefloat}{\gdef\mfw@floatlabel{}\global\mfw@infloatfalse}
+\newcommand{\mfw@flush}[1]{%
+  \ifx\mfw@pending\empty\else
+    \def\mfw@lab{#1}\mfw@safe{\mfw@lab}{mfw@s@llab}%
+    \protected@edef\mfw@lateno{\@currentlabel}\mfw@safe{\mfw@lateno}{mfw@s@lfig}%
+    \@for\mfw@p:=\mfw@pending\do{\ifx\mfw@p\empty\else
+      \immediate\write\mfw@sidecar{float|\mfw@p|\mfw@s@llab|\mfw@s@lfig}\fi}%
+    \gdef\mfw@pending{}%
+  \fi
+}
+\newcommand{\mfw@enterfloat}{\gdef\mfw@floatlabel{}\gdef\mfw@pending{}\global\mfw@infloattrue}
+\newcommand{\mfw@leavefloat}{\gdef\mfw@floatlabel{}\gdef\mfw@pending{}\global\mfw@infloatfalse}
 \AtBeginEnvironment{figure}{\mfw@enterfloat}
 \AtBeginEnvironment{table}{\mfw@enterfloat}
 \AtBeginEnvironment{figure*}{\mfw@enterfloat}
@@ -406,7 +419,7 @@
 % \caption\label still records. Without it a widget before its panel's
 % \caption\label reads its neighbour's label and figure number (whose value
 % may also hold caption internals no expansion survives), instead of empty.
-\newcommand{\mfw@clearsub}{\gdef\mfw@floatlabel{}}
+\newcommand{\mfw@clearsub}{\gdef\mfw@floatlabel{}\gdef\mfw@pending{}}
 \AtBeginEnvironment{subfigure}{\mfw@clearsub}
 \AtEndEnvironment{subfigure}{\mfw@clearsub}
 % The figure number rides along only when a label anchors it; otherwise the
@@ -499,6 +512,10 @@
   % The line the widget sits in: the reader gives the author's width= as
   % this fraction of its column.
   \immediate\write\mfw@sidecar{line|\mfw@s@id|\the\linewidth}%
+  % In a float whose \label has not come yet: wait for it.
+  \ifmfw@infloat\ifx\mfw@floatlabel\empty
+    \xdef\mfw@pending{\mfw@pending,\mfw@s@id}%
+  \fi\fi
   \ifx\mfw@wplate\empty\else
     \expandafter\mfw@valid@hex\expandafter{\mfw@wplate}%
     \ifmfw@ok\else
