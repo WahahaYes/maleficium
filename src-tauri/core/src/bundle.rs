@@ -1209,7 +1209,7 @@ fn plan_widget(
         let runtime = w.runtime.as_deref().unwrap_or("");
         let host = runtime_host(runtime)
             .ok_or_else(|| format!("widget {id}: no {runtime} runtime in this build"))?;
-        Some(fold::with_policy(host, &fold::widget_policy(None)))
+        Some(fold::widget_document(host, &fold::widget_policy(None)))
     };
     let entry = (p.profile != BundleProfile::SingleFile && doc.is_some())
         .then(|| format!("widgets/{id}/index.html"));
@@ -1483,11 +1483,13 @@ fn mounts<'a>(
                 .transpose()
                 .map_err(|e| format!("widget {}: {e}", w.id))?;
             let rect = (w.rect.x1 - w.rect.x0, w.rect.y1 - w.rect.y0);
-            let author = (
+            let (frame, fraction) = reflow::article::frame(
+                kind,
+                size,
                 author_pt(&w.options, "width"),
-                author_pt(&w.options, "height"),
+                w.line_width,
+                rect,
             );
-            let (frame, author_box) = reflow::article::frame(kind, size, author, rect);
             Ok(reflow::article::Mount {
                 id: &w.id,
                 kind,
@@ -1496,8 +1498,7 @@ fn mounts<'a>(
                 alt: &w.alt,
                 width: frame.0,
                 height: frame.1,
-                author_width: author_box.map(|b| b.0),
-                author_height: author_box.map(|b| b.1),
+                fraction,
                 poster,
                 note: notes.get(&w.id).cloned(),
                 approval_required: gated.contains(&w.id),

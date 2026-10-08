@@ -32,7 +32,7 @@
 //! - `id`: never one the page itself owns ([`reserved_id`]), so the article
 //!   cannot shadow the reader's own elements;
 //! - the mount unit: `data-widget`, `data-type` and the one `style` the page
-//!   needs (`--ar:W / H`, then the author's box as `; --aw:Npt; --ah:Mpt`)
+//!   needs (`--ar:W / H`, then the author's width as `; --fw:0.NNN`)
 //!   are kept only on a `figure` whose `data-widget`
 //!   names a widget of this export, at most once per widget; the in-app
 //!   article's `data-approval="required"` marker passes on the same figures,
@@ -486,9 +486,9 @@ fn safe_src(raw: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// Exactly `--ar:W / H`, optionally followed by `; --aw:Npt` and `; --ah:Mpt`:
-/// the mount unit's aspect and the author's box. Nothing else passes: the
-/// numbers are formatter-made, never author text.
+/// Exactly `--ar:W / H`, optionally followed by `; --fw:0.NNN`: the mount
+/// unit's aspect and the author's width as a fraction of the line, below 1.
+/// Nothing else passes: the numbers are formatter-made, never author text.
 fn aspect_style(v: &str) -> bool {
     let num = |s: &str| {
         let mut parts = s.splitn(2, '.');
@@ -499,7 +499,14 @@ fn aspect_style(v: &str) -> bool {
             && frac
                 .is_none_or(|f| (1..=4).contains(&f.len()) && f.bytes().all(|b| b.is_ascii_digit()))
     };
-    let pt = |s: &str| s.strip_suffix("pt").is_some_and(num);
+    // A fraction of the line: `0.` and one to four digits, not zero.
+    let fraction = |s: &str| {
+        s.strip_prefix("0.").is_some_and(|f| {
+            (1..=4).contains(&f.len())
+                && f.bytes().all(|b| b.is_ascii_digit())
+                && f.bytes().any(|b| b != b'0')
+        })
+    };
     let mut parts = v.split("; ");
     let ar = parts.next().is_some_and(|a| {
         a.strip_prefix("--ar:")
@@ -509,14 +516,11 @@ fn aspect_style(v: &str) -> bool {
     if !ar {
         return false;
     }
-    // The author's box follows the aspect, `--aw` then `--ah`, each at
-    // most once; anything else (swapped, doubled, unknown) drops the style.
+    // The author's width follows the aspect, at most once; anything else
+    // (doubled, unknown) drops the style.
     match parts.collect::<Vec<_>>().as_slice() {
         [] => true,
-        [aw] => aw.strip_prefix("--aw:").is_some_and(pt),
-        [aw, ah] => {
-            aw.strip_prefix("--aw:").is_some_and(pt) && ah.strip_prefix("--ah:").is_some_and(pt)
-        }
+        [fw] => fw.strip_prefix("--fw:").is_some_and(fraction),
         _ => false,
     }
 }

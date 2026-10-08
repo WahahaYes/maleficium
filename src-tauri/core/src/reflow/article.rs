@@ -33,15 +33,13 @@ pub struct Mount<'a> {
     pub figure: Option<&'a str>,
     pub label: Option<&'a str>,
     pub alt: &'a str,
-    /// The frame's `--ar` pair: the author's box when the sidecar recorded
-    /// author dims (see [`frame`]), else the pdf rect.
+    /// The frame's `--ar` pair until the live widget reports its height
+    /// (see [`frame`]).
     pub width: f64,
     pub height: f64,
-    /// The author's own box in points, when the sidecar recorded author
-    /// dims: the frame keeps this width (at most the column) so a tall
-    /// poster never stretches the frame past what the author asked.
-    pub author_width: Option<f64>,
-    pub author_height: Option<f64>,
+    /// The author's `width=` as a fraction of the line (`--fw`), when it is
+    /// less than the full line.
+    pub fraction: Option<f64>,
     /// An `<img src>`: a bundled path or a `data:` url.
     pub poster: String,
     /// Why the widget shows only its poster (a custom runtime left out of
@@ -138,22 +136,24 @@ pub struct Article {
     pub issues: Vec<Issue>,
 }
 
-/// A widget frame's box: the `--ar` pair and the author's box in points,
-/// when the sidecar recorded author dims.
+/// A widget frame's sizing: the `--ar` pair the frame keeps until the
+/// live widget reports its height, and the author's width as a fraction of
+/// the line it sat in (`--fw`).
 ///
-/// The author's dims win. Both given is the author's box; one given keeps
-/// that side and sizes the other from the content; neither keeps the pdf
-/// rect. The content is the model's `size=` when it has one, else the rect
-/// (a table's rows box already is its content; a poster the author chose
-/// stands in for the rest). A model without `size=` is 4:3, the box the
-/// package draws for it.
+/// The aspect is the content's: the model's `size=` when it has one (4:3
+/// without, the box the package draws for it), else the pdf rect, which is
+/// the poster as placed. The height the author gave is the box on the page
+/// only: on screen a widget's height is its content's. The fraction is the
+/// author's `width=` over the `\linewidth` where the widget sat, at most 1;
+/// none (the full column) without both, or at the full line.
 pub fn frame(
     kind: &str,
     size: Option<(u32, u32)>,
-    author: (Option<f64>, Option<f64>),
+    author_width: Option<f64>,
+    line_width: Option<f64>,
     rect: (f64, f64),
-) -> ((f64, f64), Option<(f64, f64)>) {
-    let content = if kind == "model" {
+) -> ((f64, f64), Option<f64>) {
+    let ar = if kind == "model" {
         size.map(|(w, h)| (f64::from(w), f64::from(h)))
             .filter(|(w, h)| *w > 0.0 && *h > 0.0)
             .unwrap_or((4.0, 3.0))
@@ -162,23 +162,12 @@ pub fn frame(
     } else {
         (4.0, 3.0)
     };
-    match author {
-        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => ((w, h), Some((w, h))),
-        (Some(w), None) if w > 0.0 => {
-            ((content.0, content.1), Some((w, w * content.1 / content.0)))
-        }
-        (None, Some(h)) if h > 0.0 => {
-            ((content.0, content.1), Some((h * content.0 / content.1, h)))
-        }
-        _ => {
-            let ar = if rect.0 > 0.0 && rect.1 > 0.0 {
-                rect
-            } else {
-                (4.0, 3.0)
-            };
-            (ar, None)
-        }
+    let fraction = match (author_width, line_width) {
+        (Some(w), Some(l)) if w > 0.0 && l > 0.0 => Some((w / l).min(1.0)),
+        _ => None,
     }
+    .filter(|f| f.is_finite() && *f < 0.995);
+    (ar, fraction)
 }
 
 /// The mount unit markup `reader.js` mounts a widget into.
@@ -188,8 +177,8 @@ pub fn mount_unit(m: &Mount) -> String {
     } else {
         "4 / 3".to_string()
     };
-    let author = match (m.author_width, m.author_height) {
-        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => format!("; --aw:{w:.2}pt; --ah:{h:.2}pt"),
+    let author = match m.fraction {
+        Some(f) if f > 0.0 && f < 1.0 => format!("; --fw:{f:.3}"),
         _ => String::new(),
     };
     let name = m

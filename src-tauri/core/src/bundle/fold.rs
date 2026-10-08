@@ -66,6 +66,8 @@ pub fn widget_policy_for(csp: Option<&WidgetCsp>, wasm: bool) -> String {
         .replace("{frame}", &frame)
 }
 
+const CHARSET_META: &str = "<meta charset=\"utf-8\">";
+
 fn meta_csp(policy: &str) -> String {
     format!("<meta http-equiv=\"Content-Security-Policy\" content=\"{policy}\">")
 }
@@ -93,7 +95,7 @@ pub fn with_policy(html: &str, policy: &str) -> String {
     let ins = if has_charset {
         meta
     } else {
-        format!("{meta}<meta charset=\"utf-8\">")
+        format!("{meta}{CHARSET_META}")
     };
     let head = Regex::new(r"(?i)<head(\s[^>]*)?>").unwrap();
     if let Some(m) = head.find(html) {
@@ -108,6 +110,47 @@ pub fn with_policy(html: &str, policy: &str) -> String {
         return format!("{}{ins}{}", &html[..m.end()], &html[m.end()..]);
     }
     format!("{ins}{html}")
+}
+
+/// The height reporter every widget document carries: the host owns the
+/// frame's width, the widget's content owns its height. It posts the
+/// document's laid-out height as `size {height}` whenever it changes by 2 px
+/// or more, at most every 30 ms. It wakes on a resize, a DOM change, the
+/// load and every message (the host's `init` and `theme`), and on timers,
+/// not animation frames: Chromium holds animation frames and resize
+/// observations in an off-screen cross-origin frame, which left widgets
+/// below the fold at the poster's shape until scrolled to, and the page
+/// jumping then. The root element's box is measured, not `scrollHeight`:
+/// a document that fills its frame (`height: 100%`) reports the frame's own
+/// height and never grows it.
+pub const SIZE_REPORTER: &str = "<script>(function(){if(parent===window)return;var last=0,queued=0;\
+function send(){queued=0;var h=Math.ceil(document.documentElement.getBoundingClientRect().height);\
+if(!(h>0)||Math.abs(h-last)<2)return;last=h;parent.postMessage({mfw:1,type:'size',height:h},'*')}\
+function later(){if(!queued)queued=setTimeout(send,30)}\
+function start(){new ResizeObserver(later).observe(document.documentElement);\
+new MutationObserver(later).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});\
+addEventListener('load',later);addEventListener('message',function(){setTimeout(later,0)});\
+document.fonts&&document.fonts.ready.then(later);later()}\
+if(document.readyState==='loading')addEventListener('DOMContentLoaded',start);else start()})()</script>";
+
+/// [`with_policy`] for a widget document: the policy first, then the
+/// [`SIZE_REPORTER`] right behind it, so it runs before the widget's own
+/// scripts and needs nothing from them.
+pub fn widget_document(html: &str, policy: &str) -> String {
+    let with = with_policy(html, policy);
+    let meta = meta_csp(policy);
+    match with.find(&meta) {
+        Some(at) => {
+            // Behind the charset meta `with_policy` may have added: the
+            // charset must stay inside the document's first 1024 bytes.
+            let mut end = at + meta.len();
+            if with[end..].starts_with(CHARSET_META) {
+                end += CHARSET_META.len();
+            }
+            format!("{}{SIZE_REPORTER}{}", &with[..end], &with[end..])
+        }
+        None => format!("{SIZE_REPORTER}{with}"),
+    }
 }
 
 /// Escapes text for a double-quoted html attribute.
@@ -437,7 +480,7 @@ pub fn fold_bundle(files: &BTreeMap<String, Vec<u8>>, policy: &str) -> Result<Fo
         .collect();
 
     Ok(Folded {
-        html: with_policy(&html, policy),
+        html: widget_document(&html, policy),
         unfolded,
         external: f.external.into_iter().collect(),
         notes: f.notes,

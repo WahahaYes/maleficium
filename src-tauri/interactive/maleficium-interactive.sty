@@ -496,6 +496,9 @@
   \mfw@safe{\mfw@alt}{mfw@s@alt}%
   \immediate\write\mfw@sidecar{widget|\mfw@s@id|\mfw@s@type|\mfw@s@rt|%
     \mfw@s@label|\mfw@s@fig|\mfw@s@theme|\mfw@s@poster|\mfw@s@src|\mfw@s@opt|\mfw@s@alt}%
+  % The line the widget sits in: the reader gives the author's width= as
+  % this fraction of its column.
+  \immediate\write\mfw@sidecar{line|\mfw@s@id|\the\linewidth}%
   \ifx\mfw@wplate\empty\else
     \expandafter\mfw@valid@hex\expandafter{\mfw@wplate}%
     \ifmfw@ok\else
