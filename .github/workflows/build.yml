@@ -13,6 +13,8 @@
 name: build
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_call:
 
@@ -91,7 +93,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1
+          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
       - name: Windows vcpkg install
         if: runner.os == 'Windows'
         shell: pwsh
@@ -105,7 +107,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1
+          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -126,6 +128,8 @@ jobs:
           workspaces: |
             src-tauri
             src-tauri/engine
+          # Main seeds caches every PR reads; PR runs never write their own sets.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Engine
         run: sh scripts/build-engine.sh

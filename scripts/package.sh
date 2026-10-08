@@ -33,7 +33,13 @@ case "$(uname -s)" in
     *) die "unsupported host: $(uname -s)" ;;
 esac
 
-BUNDLE="$ROOT/src-tauri/target/release/bundle"
+# Release speed: thin-LTO release-fast for PRs and dev; full LTO only on v* tags.
+PROFILE=release-fast
+case "${GITHUB_REF:-} ${GITHUB_REF_TYPE:-}" in
+    *refs/tags/v*|*tag*) PROFILE=release ;;
+esac
+PROFILE="${MALEFICIUM_PROFILE:-$PROFILE}"
+BUNDLE="$ROOT/src-tauri/target/$PROFILE/bundle"
 # A reused target dir still holds packages from earlier versions.
 rm -rf "$BUNDLE"
 # linuxdeploy and appimagetool are AppImages; hosts and containers without
@@ -48,11 +54,11 @@ fi
 # bundle step verbose with output captured, so the log names the failing
 # call. The compile is cached; other hosts fail fast as before.
 BUILD_LOG="${TMPDIR:-/tmp}/maleficium-package-build.log"
-if (cd "$ROOT" && npm run tauri build -- --bundles "$BUNDLES"); then
+if (cd "$ROOT" && npm run tauri build -- --bundles "$BUNDLES" --profile "$PROFILE"); then
     :
 elif [ "$BUNDLES" = dmg ]; then
     echo "package: dmg bundle failed; re-running the bundle step verbose, log in $BUILD_LOG" >&2
-    if (cd "$ROOT" && npm run tauri build -- --verbose --bundles "$BUNDLES") >"$BUILD_LOG" 2>&1; then
+    if (cd "$ROOT" && npm run tauri build -- --verbose --bundles "$BUNDLES" --profile "$PROFILE") >"$BUILD_LOG" 2>&1; then
         echo "package: dmg bundle passed on re-run" >&2
     else
         echo "package: dmg bundle failed twice; last errors:" >&2
