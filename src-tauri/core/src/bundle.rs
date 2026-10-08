@@ -1314,9 +1314,9 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
         if !obj
             .get("measure")
             .and_then(Value::as_str)
-            .is_some_and(|s| matches!(s, "narrow" | "default" | "wide"))
+            .is_some_and(|s| matches!(s, "narrow" | "default" | "wide" | "full"))
         {
-            return Err("paper.reader.measure is not narrow, default or wide".to_string());
+            return Err("paper.reader.measure is not narrow, default, wide or full".to_string());
         }
     }
     let v = validator()?;

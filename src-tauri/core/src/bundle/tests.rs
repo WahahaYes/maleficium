@@ -799,7 +799,7 @@ fn the_committed_schema_is_the_one_the_note_describes() {
     );
     assert_eq!(
         s["properties"]["paper"]["properties"]["reader"]["properties"]["measure"]["enum"],
-        json!(["narrow", "default", "wide"])
+        json!(["narrow", "default", "wide", "full"])
     );
     assert_eq!(
         s["properties"]["paper"]["properties"]["reader"]["properties"]["contents"]["type"],
@@ -1251,7 +1251,7 @@ fn the_reader_block_enforces_its_closed_shapes() {
     );
     assert!(
         bad(&|m| m["paper"]["reader"]["measure"] = "huge".into())
-            .contains("not narrow, default or wide"),
+            .contains("not narrow, default, wide or full"),
         "no open width reaches CSS"
     );
     assert!(bad(&|m| m["paper"]["reader"]["extra"] = true.into()).contains("schema"));

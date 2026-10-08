@@ -18,6 +18,10 @@ use base64::Engine;
 
 const CSS: &str = include_str!("reader.css");
 const JS: &str = include_str!("reader.js");
+/// The Maleficium mark (re-authored as SVG from the CC0 `maleficium-mark.pdf`).
+const MARK: &str = include_str!("mark.svg");
+/// Where the "Made with Maleficium" colophon links, like `\mlHome`.
+const HOME: &str = "https://github.com/WahahaYes/maleficium";
 
 pub(super) struct Reader<'a> {
     pub title: &'a str,
@@ -109,6 +113,12 @@ pub(super) fn render(r: &Reader) -> String {
     ));
     page.push_str(r.article);
     page.push_str("</main>");
+    // The colophon mirrors the PDF footer mark; it is reader chrome, so it
+    // holds in every profile and prints.
+    let mark = base64::engine::general_purpose::STANDARD.encode(MARK);
+    page.push_str(&format!(
+        "<footer class=\"m-colophon\"><a class=\"m-made-with\" href=\"{HOME}\" target=\"_blank\" rel=\"noopener noreferrer\"><img class=\"m-mark\" alt=\"Maleficium\" src=\"data:image/svg+xml;base64,{mark}\"><span class=\"m-made-with-text\">Made with Maleficium</span></a></footer>"
+    ));
     page.push_str(r.islands);
     let mut theme = r.theme.json();
     if !r.plates.is_empty() {
@@ -329,7 +339,10 @@ mod tests {
             regex::Regex::new(r#"(?i)(?:src|href|data|action)\s*=\s*["']?(?:https?:)?//"#).unwrap();
         for folder in [false, true] {
             let h = page(folder);
-            assert!(!url.is_match(&h));
+            // A link out is navigation, not a load: the colophon's is the only one.
+            let colophon = format!("href=\"{HOME}\"");
+            assert_eq!(h.matches(&colophon).count(), 1);
+            assert!(!url.is_match(&h.replace(&colophon, "")));
             assert!(!h.contains("@import") && !h.contains("<link "));
         }
     }

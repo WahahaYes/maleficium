@@ -21,7 +21,7 @@
 //                       verbatim and dropped (custom: the runtime's own widget)
 //   \maleficiumcontents{on|off}             one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-contents-on|off"/>
-//   \maleficiummeasure{narrow|default|wide}  one empty flag marker per call:
+//   \maleficiummeasure{narrow|default|wide|full}  one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-measure-*"/>
 //   \maleficiumtheme, \maleficiumsetup,
 //   \maleficiumreaderstyle   no output (their keys are
@@ -74,11 +74,11 @@ DefConstructor("\\maleficiumcontents Semiverbatim", |document, v| {
 
 DefConstructor("\\maleficiummeasure Semiverbatim", |document, v| {
   let s = ToString(v);
-  if s == "narrow" || s == "default" || s == "wide" {
+  if s == "narrow" || s == "default" || s == "wide" || s == "full" {
     document.openElement("ltx:text");
     document.setAttribute("class", "m-flag m-flag-measure-" + s);
     document.closeElement("ltx:text");
   } else {
-    Error("maleficium", "maleficiummeasure", "measure flag `" + s + "' must be narrow, default or wide");
+    Error("maleficium", "maleficiummeasure", "measure flag `" + s + "' must be narrow, default, wide or full");
   }
 });
