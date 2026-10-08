@@ -1,0 +1,182 @@
+% Note to self, the descriptions of parameters are in sample-manuscript.tex
+
+%\documentclass[manuscript,nonacm,authorversion]{acmart}
+%\documentclass[manuscript,review,anonymous]{acmart}
+%\documentclass[manuscript]{acmart}
+\documentclass[sigconf,nonacm,authorversion]{acmart}
+
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    Bib\TeX}}}
+
+\setcopyright{acmlicensed}
+\copyrightyear{2025} 
+\acmYear{2025} 
+\setcopyright{cc}
+\setcctype{by}
+\acmConference[ETRA '25]{2025 Symposium on Eye Tracking Research and Applications}{May 26--29, 2025}{Tokyo, Japan}
+\acmBooktitle{2025 Symposium on Eye Tracking Research and Applications (ETRA '25), May 26--29, 2025, Tokyo, Japan}\acmDOI{10.1145/3715669.3727349}
+\acmISBN{979-8-4007-1487-0/2025/05}
+
+\citestyle{acmauthoryear}
+
+% PACKAGES ------------
+\usepackage{lipsum}
+\usepackage{outlines}
+\usepackage{soul}
+\usepackage{gensymb}
+\usepackage{multicol,caption}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{dblfloatfix}    % To enable figures at the bottom of page
+\usepackage{maleficium-interactive}
+% Reader settings (no effect on the PDF): the showcase sets the paper beside
+% its PDF, so no contents sidebar and the full window width.
+\maleficiumcontents{off}
+\maleficiummeasure{full}
+
+
+\newenvironment{colfigure}
+  {\par\medskip\noindent\minipage{\linewidth}}
+  {\endminipage\par\medskip}
+
+
+% COMMANDS ------------
+\newcommand{\TODO}[1]{\hl{\textbf{TODO: #1}}}
+\newcommand{\NOTE}[1]{\hl{\textit{NOTE: #1}}}
+\newcommand{\COMMENT}[2]{\hl{\textbf{#1}: #2}}
+
+
+% ------------------------
+
+\begin{document}
+
+\title{Eye Gaze as a Signal for Conveying User Attention in Contextual AI Systems}
+
+\author{Ethan Wilson}
+\email{ethanrwilson1998@gmail.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Naveen Sendhilnathan}
+\email{naveensn@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Charlie S. Burlingham}
+\email{cburlingham@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Yusuf Mansour}
+\email{ymans@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Robert Cavin}
+\email{robcavin@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Sai Deep Tetali}
+\email{saideept@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs}
+  \city{Burlingame}
+  \state{California}
+  \country{USA}
+}
+
+\author{Ajoy Savio Fernandes}
+\email{ajoyferns@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+\author{Michael J. Proulx}
+\email{michaelproulx@meta.com}
+\affiliation{%
+  \institution{Meta Reality Labs Research}
+  \city{Redmond}
+  \state{Washington}
+  \country{USA}
+}
+
+
+\renewcommand{\shortauthors}{Wilson et al.}
+
+\input{sections/abstract}
+
+% http://dl.acm.org/ccs.cfm.
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10003120.10003121.10003124.10010870</concept_id>
+       <concept_desc>Human-centered computing~Natural language interfaces</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+   <concept>
+       <concept_id>10003120.10003121.10003124.10010392</concept_id>
+       <concept_desc>Human-centered computing~Mixed / augmented reality</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+   <concept>
+       <concept_id>10010147.10010178.10010187.10010197</concept_id>
+       <concept_desc>Computing methodologies~Spatial and physical reasoning</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+ </ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Human-centered computing~Natural language interfaces}
+\ccsdesc[500]{Human-centered computing~Mixed / augmented reality}
+\ccsdesc[500]{Computing methodologies~Spatial and physical reasoning}
+
+\keywords{Eye tracking, user attention, scanpath, contextual AI, scene understanding}
+
+% \received{20 February 2007}
+% \received[revised]{12 March 2009}
+% \received[accepted]{5 June 2009}
+
+\maketitle
+
+% temporary, for organizing thoughts
+% \input{planning}
+
+\input{sections/introduction}
+\input{sections/related_literature}
+\input{sections/eval_object_size}
+\input{sections/eval_vlm}
+\input{sections/discussion}
+
+% \begin{acks}
+% Acknowledgements.
+% \end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{biblio_baggins}
+
+\end{document}

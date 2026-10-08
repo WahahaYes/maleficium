@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gaze timeline</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="root" aria-busy="true">
+      <section class="scene" aria-label="Scene frame with the scanpath">
+        <div class="stage" id="stage">
+          <img id="frame" alt="" />
+          <svg id="overlay" aria-hidden="true"></svg>
+        </div>
+        <p class="offframe" id="offframe"></p>
+      </section>
+      <section class="side">
+        <header class="bar">
+          <div class="seg" role="radiogroup" aria-label="Experiment">
+            <button type="button" role="radio" data-exp="E1" title="E1: what am I looking at?">
+              E1<span class="long"> · looking</span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              data-exp="E2"
+              title="E2: what am I going to interact with?"
+            >
+              E2<span class="long"> · interacting</span>
+            </button>
+          </div>
+          <button type="button" id="play" class="play" aria-label="Play the scanpath">
+            ▶ Play
+          </button>
+        </header>
+        <label class="slider">
+          <span class="long">Prior fixations as context</span><span class="short">Fixations</span>
+          <input
+            id="k"
+            type="range"
+            min="0"
+            max="10"
+            step="1"
+            value="8"
+            aria-label="Prior fixations as context"
+          />
+          <output id="kout">8</output>
+        </label>
+        <div class="prompt" id="prompt" aria-live="polite"></div>
+        <div class="curve">
+          <svg id="curve" role="img"></svg>
+          <p class="readout" id="readout"></p>
+        </div>
+      </section>
+      <p id="msg" class="msg" hidden></p>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
