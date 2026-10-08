@@ -55,7 +55,7 @@ Fallbacks that keep the app working on a supported setup are fine, such as copy-
 
 ## License
 
-Maleficium is Apache 2.0, and contributions are accepted under the same license. Bundled third-party files (themes, engine binaries) need a compatible license and an entry in [NOTICE](../NOTICE).
+Maleficium is AGPL-3.0, and contributions are accepted under the same license. Bundled third-party files (themes, engine binaries) need a compatible license and an entry in [NOTICE](../NOTICE).
 
 ## Templates
 

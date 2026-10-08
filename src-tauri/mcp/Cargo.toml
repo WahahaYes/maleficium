@@ -1,7 +1,7 @@
 [package]
 name = "maleficium-mcp"
 version.workspace = true
-license = "Apache-2.0"
+license = "AGPL-3.0-only"
 edition = "2021"
 description = "The stdio MCP server over maleficium-core: no Tauri"
 authors = ["Ethan Wilson"]

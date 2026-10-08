@@ -1,7 +1,7 @@
 [package]
 name = "maleficium-engine"
 version = "0.3.0"
-license = "Apache-2.0"
+license = "AGPL-3.0-only"
 description = "The compile and convert engines, run as a child of the app"
 authors = ["Ethan Wilson"]
 edition = "2021"

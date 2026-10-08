@@ -1,7 +1,7 @@
 [package]
 name = "maleficium-index"
 version = "0.1.0"
-license = "Apache-2.0"
+license = "AGPL-3.0-only"
 edition = "2021"
 description = "Project index: every file's text and symbols, cross-file maps, search (pure, no I/O, wasm32-ready)"
 

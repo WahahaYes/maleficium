@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### License
+
+- **Maleficium is now AGPL-3.0.** New versions are licensed under the GNU Affero General Public License v3.0 instead of Apache 2.0. Using, modifying and sharing the app is unchanged; running a modified version as a network service now requires offering its source to that service's users. Releases up to 0.3.0 stay under Apache 2.0. The built-in templates remain CC0.
+
 ### Changes
 
 - **The interactive package comes with the template.** Tools > Install Interactive Package is gone. Every project made from a template already contains `maleficium-interactive.sty` at its root; after that it is an ordinary project file and the project folder wins, as with any package. A `.sty` or `.cls` the TeX bundle does not have is an error that names the file and says to add it to your project folder next to your main file. Nothing is downloaded or installed by the app.
