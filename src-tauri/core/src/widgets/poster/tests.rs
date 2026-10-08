@@ -187,7 +187,7 @@ fn only_shipped_runtimes_render_and_the_hang_runtime_is_debug_only() {
     )
     .unwrap();
     let job = job_of(cx, &req(&id, "fig-mesh", &out));
-    assert!(job.document.contains("for(;;){}"));
+    assert!(job.document.contains("for (;;) {}"));
 }
 
 fn png(w: u32, h: u32) -> Vec<u8> {
