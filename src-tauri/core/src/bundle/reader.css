@@ -808,6 +808,18 @@ body.m-reader {
   text-decoration: none;
 }
 
+.m-reader .m-license {
+  display: inline-block;
+  padding: 0 var(--m-space-2);
+  border: 1px solid var(--m-color-rule);
+  border-radius: 999px;
+  font-family: var(--m-font-heading);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--m-color-muted);
+  text-decoration: none;
+}
+
 /* acmart's license note is a mark and a bare word, not a footnote */
 .m-reader .ltx_note.ltx_role_cc-license {
   display: none;
