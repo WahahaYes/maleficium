@@ -3,3 +3,4 @@
 *.png binary
 *.ico binary
 *.icns binary
+CHANGELOG.md merge=union

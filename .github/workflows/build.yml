@@ -13,6 +13,8 @@
 name: build
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_call:
 
@@ -28,11 +30,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       src: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.src }}
+      fixtures: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.fixtures }}
+      fixtures_files: ${{ steps.filter.outputs.fixtures_files }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: filter
         uses: dorny/paths-filter@v4
         with:
+          list-files: csv
           filters: |
             src:
               - 'src/**'
@@ -40,6 +45,10 @@ jobs:
               - 'scripts/**'
               - 'e2e/**/*.py'
               - '.github/workflows/**'
+            fixtures:
+              - 'e2e/fixtures/**'
+              - 'e2e/papers-run.py'
+              - 'e2e/mcp_client.py'
 
   package:
     needs: changes
@@ -91,7 +100,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1
+          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
       - name: Windows vcpkg install
         if: runner.os == 'Windows'
         shell: pwsh
@@ -105,7 +114,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1
+          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -126,6 +135,8 @@ jobs:
           workspaces: |
             src-tauri
             src-tauri/engine
+          # Main seeds caches every PR reads; PR runs never write their own sets.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Engine
         run: sh scripts/build-engine.sh
@@ -151,18 +162,103 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run check
 
+  fast_check:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - name: Check (lint, format, types, tests)
+        run: npx tsc --noEmit --skipLibCheck && npx eslint . && npx prettier --check . && npx vitest run
+
+  fixture_papers:
+    needs: changes
+    if: needs.changes.outputs.fixtures == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - name: Changed vendored papers
+        id: papers
+        run: |
+          FILES="${{ needs.changes.outputs.fixtures_files }}"
+          ARGS=""
+          for f in $(echo "$FILES" | tr ',' ' '); do
+            case "$f" in
+              e2e/fixtures/vendored/*/*)
+                paper=$(echo "$f" | cut -d/ -f4)
+                case " $ARGS " in
+                  *" --paper $paper "*) ;;
+                  *) ARGS="$ARGS --paper $paper" ;;
+                esac
+                ;;
+            esac
+          done
+          echo "papers:$ARGS"
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+      - name: Papers run (changed fixtures)
+        run: python3 e2e/papers-run.py --brief ${{ steps.papers.outputs.args }}
+
+  purge_caches:
+    runs-on: ubuntu-latest
+    needs: [package]
+    if: github.event_name == 'push'
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Prune old caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --limit 100 || true
+          # Keep main's seeded caches; prune everything else.
+          gh cache list --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
+            [ -n "$id" ] && gh cache delete "$id" || true
+          done
+
   ci:
     runs-on: ubuntu-latest
-    needs: [changes, package]
+    needs: [changes, package, fast_check, fixture_papers, purge_caches]
     if: always()
     steps:
-      - name: Gate on source changes
+      - name: Gate on source and fixture changes
         run: |
-          if [ "${{ needs.changes.outputs.src }}" != "true" ]; then
-            echo "No source changes; CI passes by skip."
+          SRC="${{ needs.changes.outputs.src }}"
+          FIX="${{ needs.changes.outputs.fixtures }}"
+          PURGE="${{ needs.purge_caches.result }}"
+          FAIL=0
+          if [ "$SRC" != "true" ] && [ "$FIX" != "true" ]; then
+            echo "No source or fixture changes; CI passes by skip."
             exit 0
           fi
-          if [ "${{ needs.package.result }}" != "success" ]; then
-            echo "package result: ${{ needs.package.result }}"
-            exit 1
+          if [ "$SRC" = "true" ]; then
+            echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
+            if [ "${{ needs.package.result }}" != "success" ]; then FAIL=1; fi
+            if [ "${{ needs.fast_check.result }}" != "success" ]; then FAIL=1; fi
           fi
+          if [ "$FIX" = "true" ]; then
+            echo "fixture_papers: ${{ needs.fixture_papers.result }}"
+            if [ "${{ needs.fixture_papers.result }}" != "success" ]; then FAIL=1; fi
+          fi
+          if [ "$PURGE" != "skipped" ] && [ "$PURGE" != "success" ]; then
+            echo "purge_caches: $PURGE"
+            FAIL=1
+          fi
+          exit $FAIL
