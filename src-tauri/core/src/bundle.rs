@@ -1780,12 +1780,20 @@ fn check_destination(root: &Path, dest: &str, profile: BundleProfile) -> Result<
         Ok(m) => match profile {
             BundleProfile::SingleFile => {
                 if m.is_dir() {
-                    return Err(format!("export destination is a folder: {}", out.display()));
+                    return Err(format!(
+                        "export destination is a folder: {}. The single-file profile writes one html file: pass a file path, such as {}",
+                        out.display(),
+                        out.join("paper.html").display()
+                    ));
                 }
             }
             _ => {
                 if !m.is_dir() {
-                    return Err(format!("export destination is a file: {}", out.display()));
+                    return Err(format!(
+                        "export destination is a file: {}. The {} profile writes a folder: pass a path that does not exist yet (it is created) or an earlier bundle to replace",
+                        out.display(),
+                        profile_name(profile)
+                    ));
                 }
                 let empty = std::fs::read_dir(&out)
                     .map_err(|e| format!("cannot list {}: {e}", out.display()))?
@@ -1793,7 +1801,7 @@ fn check_destination(root: &Path, dest: &str, profile: BundleProfile) -> Result<
                     .is_none();
                 if !empty && !is_earlier_bundle(&out) {
                     return Err(format!(
-                        "export destination is not empty and is not an earlier bundle: {}",
+                        "export destination is not empty and is not an earlier bundle: {}. Pass a path that does not exist yet (it is created) or an earlier bundle to replace",
                         out.display()
                     ));
                 }
