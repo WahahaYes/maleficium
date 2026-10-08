@@ -710,10 +710,30 @@ fn an_export_replaces_an_earlier_bundle_but_never_a_foreign_folder() {
     export(&p, &empty.to_string_lossy(), BundleProfile::Folder).unwrap();
     let file = p.out.join("a-file");
     std::fs::write(&file, "x").unwrap();
-    assert!(export(&p, &file.to_string_lossy(), BundleProfile::Folder).is_err());
-    // A single-file export overwrites a file but not a folder.
+    let e = export(&p, &file.to_string_lossy(), BundleProfile::Folder).unwrap_err();
+    assert!(
+        e.contains("is a file") && e.contains("folder profile writes a folder"),
+        "{e}"
+    );
+    // A single-file export overwrites a file but not a folder, and says
+    // what to pass instead.
     export(&p, &file.to_string_lossy(), BundleProfile::SingleFile).unwrap();
-    assert!(export(&p, &foreign.to_string_lossy(), BundleProfile::SingleFile).is_err());
+    let e = export(&p, &foreign.to_string_lossy(), BundleProfile::SingleFile).unwrap_err();
+    assert!(
+        e.contains("is a folder") && e.contains("pass a file path, such as"),
+        "{e}"
+    );
+    assert!(
+        e.contains(&foreign.join("paper.html").display().to_string()),
+        "{e}"
+    );
+    // A folder that does not exist yet is named, with what the export needs.
+    let gone = p.out.join("no-such-folder").join("paper.html");
+    let e = export(&p, &gone.to_string_lossy(), BundleProfile::SingleFile).unwrap_err();
+    assert!(
+        e.contains("no-such-folder") && e.contains("inside a folder that already exists"),
+        "{e}"
+    );
 }
 
 #[test]
