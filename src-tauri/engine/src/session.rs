@@ -59,7 +59,9 @@ fn resource_dir(exe: &Path) -> Option<PathBuf> {
 
 /// The directory of latexml format dumps: `--dumps`, else
 /// `MALEFICIUM_DUMP_DIR`, else `resources/dumps` in the app's resource
-/// directory.
+/// directory. A directory without `latex.*.dump.txt` is refused: latexml
+/// would run without the LaTeX format, lose expl3, and report packages as
+/// missing from the bundle instead of failing.
 pub fn dump_dir(arg: Option<PathBuf>) -> Result<PathBuf, String> {
     let chosen = arg
         .or_else(|| {
@@ -72,16 +74,30 @@ pub fn dump_dir(arg: Option<PathBuf>) -> Result<PathBuf, String> {
             Some(resource_dir(&exe)?.join("resources").join("dumps"))
         });
     match chosen {
-        Some(d) if d.is_dir() => {
+        Some(d) if d.is_dir() && has_latex_dump(&d) => {
             // Absolute: convert changes into the input's directory.
             std::path::absolute(&d).map_err(|e| format!("bad dumps path: {e}"))
         }
+        Some(d) if d.is_dir() => Err(format!(
+            "no LaTeX format dump (latex.*.dump.txt) in {}; run scripts/build-engine.sh to make it",
+            d.display()
+        )),
         Some(d) => Err(format!(
             "no format dumps at {}; pass --dumps or set MALEFICIUM_DUMP_DIR",
             d.display()
         )),
         None => Err("no format dumps; pass --dumps or set MALEFICIUM_DUMP_DIR".into()),
     }
+}
+
+fn has_latex_dump(dir: &Path) -> bool {
+    fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("latex.") && name.ends_with(".dump.txt")
+        })
+    })
 }
 
 pub fn prepare(o: &Options) -> Result<Session, String> {
@@ -290,10 +306,25 @@ mod tests {
 
     #[test]
     fn dump_dir_prefers_the_argument_and_reports_a_missing_directory() {
-        let here = std::env::temp_dir();
+        let here = std::env::temp_dir().join(format!("maleficium-dumps-{}", std::process::id()));
+        fs::create_dir_all(&here).unwrap();
+        fs::write(here.join("latex.2022.dump.txt"), "").unwrap();
         assert_eq!(dump_dir(Some(here.clone())).unwrap(), here);
         let missing = here.join("maleficium-no-such-dumps");
         let err = dump_dir(Some(missing.clone())).unwrap_err();
         assert!(err.contains(&missing.display().to_string()), "{err}");
+        let _ = fs::remove_dir_all(&here);
+    }
+
+    #[test]
+    fn dump_dir_refuses_a_directory_without_the_latex_dump() {
+        let here =
+            std::env::temp_dir().join(format!("maleficium-no-latex-dump-{}", std::process::id()));
+        fs::create_dir_all(&here).unwrap();
+        fs::write(here.join("plain.2022.dump.txt"), "").unwrap();
+        let err = dump_dir(Some(here.clone())).unwrap_err();
+        assert!(err.contains("scripts/build-engine.sh"), "{err}");
+        assert!(err.contains(&here.display().to_string()), "{err}");
+        let _ = fs::remove_dir_all(&here);
     }
 }
