@@ -1031,22 +1031,32 @@ body.m-reader {
   }
 }
 
+/* The mode toggle takes the house control look the widgets share: a sans
+   pill with a light outline that turns accent on hover and focus. */
 .m-reader .m-mode {
   position: fixed;
   top: var(--m-space-2);
   right: var(--m-space-2);
   z-index: 10;
-  font: var(--m-size-small) var(--m-font-heading);
-  color: var(--m-color-muted);
-  background: var(--m-color-surface);
-  border: 1px solid var(--m-color-rule);
-  border-radius: var(--m-radius);
-  padding: 0.15em 0.6em;
-  cursor: pointer;
-}
-.m-reader .m-mode:hover,
-.m-reader .m-mode:focus-visible {
+  font: 600 12px/1.25 var(--m-font-heading);
+  letter-spacing: 0.01em;
   color: var(--m-color-text);
+  background: var(--m-color-bg);
+  border: 1px solid color-mix(in srgb, var(--m-color-text) 28%, transparent);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+.m-reader .m-mode:hover {
+  border-color: var(--m-color-accent);
+  background: color-mix(in srgb, var(--m-color-accent) 10%, var(--m-color-bg));
+}
+.m-reader .m-mode:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
 }
 .m-reader .m-mode[hidden] {
   display: none;
