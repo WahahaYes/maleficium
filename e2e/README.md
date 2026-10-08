@@ -24,6 +24,10 @@ These scripts check the built app and its automation sidecar from the outside. T
 | `codrive-run.py` | Xvfb | An agent edits and compiles over MCP while the app is open: the preview follows, and no buffer or file is lost to the other side (manual; spends model credits) |
 | `showreel/` | Xvfb | An agent writes a document live in the open app while a director follows it for the camera, judged beat by beat (manual; spends model credits) |
 
+## In CI
+
+The `e2e` job in `.github/workflows/build.yml` runs `export-run.sh` (with `reader-run.mjs` and `wasm-cells.mjs`), `interactive-run.sh`, `poster-run.sh` and `approval-run.sh` on Linux for every change to the app, the runtime, the scripts or `e2e/`, and the required `ci` job fails with it. It runs them through `scripts/ci-e2e.sh`, which works the same way locally once `scripts/build-engine.sh` has run: it builds the debug app, checks that the engine copy in `target/debug` is the one in `src-tauri/binaries/`, then runs each suite in turn and stops at the first failure (`sh scripts/ci-e2e.sh poster` runs one).
+
 ## Running in isolation
 
 Run harnesses through `worktree-run.sh`, which checks out a pinned commit into a separate worktree so edits in your checkout cannot disturb a run:
