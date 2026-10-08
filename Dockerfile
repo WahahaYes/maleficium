@@ -12,8 +12,16 @@
 # Ubuntu 24.04, the oldest base the packages can support: the binaries link
 # against the build host's glibc, and the pinned Linux Tectonic (a glibc
 # build) already needs glibc 2.39. Going older means a musl Tectonic first.
+#
+# Two stages: `base` is the slow setup (system packages, Node, both Rust
+# toolchains); `build` adds the sources and runs the release build.
+# Prebake the setup once and reuse its layers from the registry:
+#
+#   docker build --target base -t ghcr.io/<owner>/maleficium-base .
+#   docker build --cache-from type=registry,ref=ghcr.io/<owner>/maleficium-base \
+#       --output type=local,dest=../maleficium-release .
 
-FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3 AS build
+FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3 AS base
 
 # Node's checksum is per version: bump it together with .nvmrc (a stale pair
 # fails the check below). Rust's version comes from rust-toolchain.toml.
@@ -44,9 +52,17 @@ RUN curl -sSfL -o /tmp/rustup-init \
     && rm /tmp/rustup-init \
     && rustup toolchain install
 
-# Dependencies before sources, so a source edit reuses these layers.
+# The engine's nightly pin, installed without its sources so engine edits
+# leave this layer alone.
+COPY src-tauri/engine/rust-toolchain.toml src-tauri/engine/
+RUN cd src-tauri/engine && rustup toolchain install
+
+FROM base AS build
+
+# Dependencies before sources, so a source edit reuses these layers. The npm
+# download cache persists between rebuilds.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # The engine builds from source here, on its own pinned nightly.
 COPY scripts/build-engine.sh scripts/dumps-key.sh scripts/
@@ -54,7 +70,6 @@ COPY src-tauri/engine src-tauri/engine
 # dumps-key.sh reads the bundle pin out of core/src/engine.rs, which lives
 # outside the engine dir; copy just that file so the dump stamp check can hit.
 COPY src-tauri/core/src/engine.rs src-tauri/core/src/engine.rs
-RUN cd src-tauri/engine && rustup toolchain install
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/src-tauri/engine/target \
     sh scripts/build-engine.sh
