@@ -127,7 +127,12 @@ check(
 const singleDir = join(singleFile, '..');
 const single = await host(singleDir, singleFile);
 const folder = await host(folderDir, join(folderDir, 'index.html'));
-const browser = await engines[engineName].launch({ headless: true });
+// Headless Firefox refuses WebGL on a software renderer (Mesa llvmpipe on a
+// GPU-less CI runner), which leaves the model widget in error; force it on.
+const browser = await engines[engineName].launch({
+  headless: true,
+  ...(engineName === 'firefox' ? { firefoxUserPrefs: { 'webgl.force-enabled': true } } : {}),
+});
 
 async function until(fn, ms = 30_000) {
   const end = Date.now() + ms;

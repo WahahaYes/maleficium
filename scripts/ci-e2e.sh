@@ -33,6 +33,16 @@ else
 fi
 TIMEOUT=${CI_E2E_TIMEOUT:-1800}
 
+# Headless Firefox has no WebGL without a display, so the model widget in the
+# reader run would end in error. With no display (a CI runner), run each
+# suite under its own virtual one; the poster run still starts its own Xvfb.
+if [ -n "${DISPLAY:-}" ]; then
+    on_display() { "$@"; }
+else
+    command -v xvfb-run >/dev/null 2>&1 || die "no display and no xvfb-run: install xvfb"
+    on_display() { xvfb-run -a "$@"; }
+fi
+
 # The engine the suites compile with is target/debug/maleficium-engine, which
 # cargo's build script (tauri-build) copies from src-tauri/binaries/ when that
 # file changes; the copy wins over binaries/ afterwards. Build first, then
@@ -59,7 +69,7 @@ for s in "$@"; do
     # (|| keeps set -e from ending the group before the status is written.)
     {
         st=0
-        timeout "$TIMEOUT" bash "e2e/$s-run.sh" 2>&1 || st=$?
+        on_display timeout "$TIMEOUT" bash "e2e/$s-run.sh" 2>&1 || st=$?
         echo "$st" >"$LOGS/$s.status"
     } | tee "$log"
     status=$(cat "$LOGS/$s.status")
