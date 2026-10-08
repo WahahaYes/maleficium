@@ -1933,7 +1933,7 @@ fn the_licence_block_cannot_close_its_comment() {
 }
 
 #[test]
-fn an_unapproved_denied_or_invalid_runtime_exports_as_its_poster() {
+fn a_denied_or_invalid_runtime_exports_as_its_poster_and_an_unapproved_one_runs() {
     let c = custom_project("rt-gate", HEAT_LINE);
     let run = |name: &str| {
         let d = dest(&c.p, name);
@@ -1956,27 +1956,38 @@ fn an_unapproved_denied_or_invalid_runtime_exports_as_its_poster() {
             index,
         )
     };
-    let (why, warns, index) = run("unapproved");
-    assert_eq!(why, "unapproved");
-    assert_eq!(warns, [
-        "runtime heatmap@1 is not approved in this project: fig-chart export as posters only. Approve it in View > Widgets and export again.",
-        STL_MISSING,
-    ]);
-    assert!(index.contains("Interactive version not included in this copy: runtime heatmap@1 was not approved by the author."));
+    // Approval gates running a runtime in the app, not an export: never
+    // approved, or changed since, it ships live like an html widget.
+    let live = |name: &str| {
+        let d = dest(&c.p, name);
+        let r = c.export(&d, BundleProfile::Folder).unwrap();
+        let m = manifest_of(Path::new(&d));
+        validate_manifest(&m).unwrap();
+        assert!(
+            widget_json(&m, "fig-chart").get("fallback").is_none(),
+            "{name}"
+        );
+        assert!(m["runtimes"].get("heatmap@1").is_some(), "{name}");
+        assert!(PathBuf::from(&d)
+            .join("widgets/fig-chart/index.html")
+            .is_file());
+        assert_eq!(runtime_warnings(&r), [STL_MISSING], "{name}");
+    };
+    live("unapproved");
 
     c.decide(crate::widget_approval::RuntimeDecision::Denied);
     let (why, warns, _) = run("denied");
     assert_eq!(why, "denied");
     assert_eq!(warns[0], "runtime heatmap@1 is denied in this project: fig-chart export as posters only. Allow it in View > Widgets to export it live.");
 
-    // Allowed, then changed with auto off: unapproved again.
+    // Allowed, then changed with auto off: unapproved again, and live.
     c.allow();
     std::fs::write(
         c.rt().join("index.html"),
         std::fs::read_to_string(c.rt().join("index.html")).unwrap() + "<!-- edit -->",
     )
     .unwrap();
-    assert_eq!(run("changed").0, "unapproved");
+    live("changed");
 
     let m = c.rt().join("runtime.json");
     let text = std::fs::read_to_string(&m)

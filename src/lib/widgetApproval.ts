@@ -17,14 +17,7 @@ import type {
 } from './generated/api';
 import type { BusEvent } from './generated/events';
 import { eventOf } from './events';
-import {
-  type ApprovalPrompt,
-  originLines,
-  promptFrom,
-  promptFromRuntime,
-  type RuntimePrompt,
-  WIDGETS_PANEL_PATH,
-} from './widgets.view';
+import { type ApprovalPrompt, originLines, promptFrom, WIDGETS_PANEL_PATH } from './widgets.view';
 
 export interface WidgetsIo {
   status(rootId: string, mainRel: string): Promise<WidgetsStatus>;
@@ -396,131 +389,8 @@ export function createRuntimeModel(io: WidgetsIo, rootId: string, mainRel: strin
 
 export type RuntimeModel = ReturnType<typeof createRuntimeModel>;
 
-/**
- * The queue of runtime pop-ups the user is asked about, one per runtime
- * version. Not now writes nothing and asks again next export; allow and
- * deny decide the shown digest and are refused if the package changed.
- */
-export function createRuntimePromptQueue(
-  io: Pick<WidgetsIo, 'decideRuntime'>,
-  rootId: string,
-  mainRel: string,
-) {
-  let queue: readonly RuntimePrompt[] = [];
-  let failure: string | null = null;
-  const waiters = new Set<() => void>();
-  const subs = new Set<() => void>();
-  const set = (q: readonly RuntimePrompt[], f: string | null) => {
-    queue = q;
-    failure = f;
-    subs.forEach((cb) => cb());
-    if (queue.length === 0) {
-      waiters.forEach((w) => w());
-      waiters.clear();
-    }
-  };
-  const enqueue = (p: RuntimePrompt) => {
-    if (queue.some((q) => q.key === p.key)) return;
-    set([...queue, p], failure);
-  };
-  const settle = async (decision: 'allowed' | 'denied' | null) => {
-    const p = queue[0];
-    if (!p) return;
-    if (decision) {
-      try {
-        await io.decideRuntime({
-          rootId,
-          mainRel,
-          runtime: p.reference,
-          digest: p.digest,
-          decision,
-        });
-        set(queue.slice(1), null);
-      } catch (e) {
-        set(queue.slice(1), `Not ${decision}: ${msg(e)} Review it in ${WIDGETS_PANEL_PATH}.`);
-      }
-    } else {
-      set(queue.slice(1), failure);
-    }
-  };
-  return {
-    enqueue,
-    enqueueAll(ps: readonly RuntimePrompt[]) {
-      ps.forEach(enqueue);
-    },
-    current: (): RuntimePrompt | null => queue[0] ?? null,
-    failure: () => failure,
-    allow: () => settle('allowed'),
-    deny: () => settle('denied'),
-    /** Closing the dialog: no write; this export stays poster-only. */
-    notNow: () => settle(null),
-    clearFailure() {
-      set(queue, null);
-    },
-    /** Resolves once every queued pop-up is answered; the export then runs. */
-    drain(): Promise<void> {
-      if (queue.length === 0) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        waiters.add(resolve);
-      });
-    },
-    subscribe(cb: () => void) {
-      subs.add(cb);
-      return () => {
-        subs.delete(cb);
-      };
-    },
-  };
-}
-
-export type RuntimePromptQueue = ReturnType<typeof createRuntimePromptQueue>;
-
-/**
- * The ref and digest a bus event asks about: an export (including an MCP
- * one) found a runtime waiting for the user. Matched by action name: the
- * event carries the same fields whatever surface the export ran on.
- */
-export function runtimeApprovalRef(
-  e: BusEvent,
-  rootId: string,
-): { runtime: string; digest: string } | null {
-  const raw = e.event as unknown as {
-    action?: string;
-    rootId?: string;
-    runtime?: string;
-    digest?: string;
-  };
-  if (raw.action !== 'runtime.approval-required' || raw.rootId !== rootId) return null;
-  if (typeof raw.runtime !== 'string' || typeof raw.digest !== 'string') return null;
-  return { runtime: raw.runtime, digest: raw.digest };
-}
-
-/** Turn a runtime bus event into a full pop-up via the status listing. */
-export async function offerRuntimeEvent(
-  io: Pick<WidgetsIo, 'status'>,
-  enqueue: (p: RuntimePrompt) => void,
-  e: BusEvent,
-  rootId: string,
-  mainRel: string,
-): Promise<void> {
-  const ref = runtimeApprovalRef(e, rootId);
-  if (!ref) return;
-  let status: WidgetsStatus;
-  try {
-    status = await io.status(rootId, mainRel);
-  } catch {
-    return;
-  }
-  const match = status.runtimes.find(
-    (s) => (s.runtime?.reference ?? s.widget) === ref.runtime && s.digest === ref.digest,
-  );
-  if (match && match.status === 'approval_required') enqueue(promptFromRuntime(match, mainRel));
-}
-
 /** True when a bus event means the runtime panel data is stale. */
 export function runtimeEventFor(e: BusEvent, rootId: string): boolean {
   const raw = e.event as unknown as { action?: string; rootId?: string };
   return raw.action === 'runtime.decided' && raw.rootId === rootId;
 }
-
-export { promptFromRuntime };

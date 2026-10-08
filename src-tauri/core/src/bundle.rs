@@ -98,7 +98,8 @@ pub enum BundleWarningKind {
     /// main file's folder, EPS, too large).
     Figure,
     /// A custom runtime's widgets export as posters only (not installed,
-    /// invalid, not approved or denied); one warning per runtime.
+    /// invalid or denied; in the in-app article also not approved); one
+    /// warning per runtime.
     Runtime,
     /// A custom widget's cached poster was rendered for an older state of
     /// its runtime: the export shows a placeholder until the next compile
@@ -621,6 +622,11 @@ impl Plan<'_> {
                         {
                             Some(Fallback::Denied)
                         }
+                        // Approval gates running a runtime inside the app, not
+                        // what an export ships: the reader's sandbox holds a
+                        // live widget either way, as it does an html widget. A
+                        // denied runtime stays a poster, the author's own no.
+                        (Gate::Approvals(_), _) => None,
                         (_, _) => Some(Fallback::Unapproved),
                     };
                     RuntimeUse::Valid(Box::new(ValidRuntime {

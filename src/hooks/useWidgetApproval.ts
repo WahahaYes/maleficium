@@ -9,27 +9,17 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { desktopWidgetsIo } from '../lib/widgetApproval.tauri';
 import { transport } from '../lib/event-transport';
 import { eventOf } from '../lib/events';
-import type { WidgetsStatus } from '../lib/generated/api';
 import {
   createPromptQueue,
   createRuntimeModel,
-  createRuntimePromptQueue,
   createWidgetsModel,
-  offerRuntimeEvent,
   promptFromEvent,
-  runtimeApprovalRef,
   runtimeEventFor,
   widgetEventFor,
   type PromptQueue,
   type RuntimeModel,
-  type RuntimePromptQueue,
   type WidgetsModel,
 } from '../lib/widgetApproval';
-
-export interface RuntimeGate {
-  status: (rootId: string, mainRel: string) => Promise<WidgetsStatus>;
-  prompts: RuntimePromptQueue;
-}
 
 export function useWidgetApproval(deps: { projectId: string | null; mainRel: string | null }) {
   const { projectId, mainRel } = deps;
@@ -50,19 +40,6 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [target?.projectId, target?.mainRel],
   );
-  const runtimePrompts: RuntimePromptQueue | null = useMemo(
-    () =>
-      target ? createRuntimePromptQueue(desktopWidgetsIo, target.projectId, target.mainRel) : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [target?.projectId, target?.mainRel],
-  );
-  const runtimeGate: RuntimeGate | null = useMemo(
-    () =>
-      runtimePrompts
-        ? { status: (r, m) => desktopWidgetsIo.status(r, m), prompts: runtimePrompts }
-        : null,
-    [runtimePrompts],
-  );
 
   useEffect(() => {
     if (!model || !prompts || !projectId) return;
@@ -81,22 +58,14 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
   }, [model, prompts, projectId]);
 
   useEffect(() => {
-    if (!runtimeModel || !runtimePrompts || !projectId || !mainRel) return;
+    if (!runtimeModel || !projectId) return;
     return transport().subscribe((e) => {
-      void offerRuntimeEvent(
-        desktopWidgetsIo,
-        (p) => runtimePrompts.enqueue(p),
-        e,
-        projectId,
-        mainRel,
-      );
-      if (runtimeApprovalRef(e, projectId)) void runtimeModel.refresh();
       if (runtimeEventFor(e, projectId)) void runtimeModel.refresh();
       if (widgetEventFor(e, projectId)) void runtimeModel.refresh();
       // A compile can add or drop held runtimes without an approval event.
       if (e.event.action === 'compile.finish') void runtimeModel.refresh();
     });
-  }, [runtimeModel, runtimePrompts, projectId, mainRel]);
+  }, [runtimeModel, projectId]);
 
   // The article banner reads the same listing the panel shows, so the
   // listing loads with the project and stays current without the panel.
@@ -129,14 +98,6 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
     (cb) => (runtimeModel ? runtimeModel.subscribe(cb) : () => {}),
     () => (runtimeModel ? runtimeModel.get() : null),
   );
-  const runtimePromptState = useSyncExternalStore(
-    (cb) => (runtimePrompts ? runtimePrompts.subscribe(cb) : () => {}),
-    () =>
-      runtimePrompts
-        ? `${runtimePrompts.current()?.key ?? ''}|${runtimePrompts.failure() ?? ''}`
-        : '',
-  );
-  void runtimePromptState;
 
   return {
     panelOpen,
@@ -149,10 +110,5 @@ export function useWidgetApproval(deps: { projectId: string | null; mainRel: str
     onApprovalRequired: prompts ? prompts.onApprovalRequired : null,
     runtimeModel,
     runtimeState,
-    runtimePrompts,
-    runtimePrompt: runtimePrompts ? runtimePrompts.current() : null,
-    runtimeFailure: runtimePrompts ? runtimePrompts.failure() : null,
-    /** The export gate: pending runtimes pop up before the export runs. */
-    runtimeGate,
   };
 }
