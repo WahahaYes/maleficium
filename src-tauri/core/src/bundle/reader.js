@@ -334,6 +334,22 @@
     }
   }
   var manifest = island('mfw-manifest');
+  // acmart's Creative Commons licence converts to a bare "© cc" line and a
+  // note holding only the type ("by", "by-sa", ...): show it as the licence
+  // it names (acmart's default version, 4.0).
+  (function () {
+    var note = document.querySelector('.ltx_note.ltx_role_cc-license .ltx_note_content');
+    var dates = document.querySelector('.ltx_dates');
+    if (!note || !dates || !/^\s*©\s*cc\s*$/i.test(dates.textContent)) return;
+    var type = ((note.lastChild && note.lastChild.textContent) || '').trim().toLowerCase();
+    if (!/^by(-nc)?(-sa|-nd)?$/.test(type)) return;
+    var a = document.createElement('a');
+    a.className = 'm-license';
+    a.setAttribute('href', 'https://creativecommons.org/licenses/' + type + '/4.0/');
+    a.textContent = 'CC ' + type.toUpperCase() + ' 4.0';
+    dates.textContent = '';
+    dates.appendChild(a);
+  })();
   // Links out of the paper open in a new tab, so the reader keeps its place.
   Array.prototype.forEach.call(document.querySelectorAll('a[href]'), function (a) {
     if (/^(https?|mailto):/i.test(a.getAttribute('href'))) {
