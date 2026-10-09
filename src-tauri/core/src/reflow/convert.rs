@@ -327,8 +327,9 @@ mod tests {
             .collect();
         assert_eq!(args[..2], ["convert", "/p/paper/main.tex"]);
         let after = |flag: &str| args[args.iter().position(|a| a == flag).unwrap() + 1].clone();
-        assert_eq!(after("--out"), "/w/article.html");
-        assert_eq!(after("--log"), "/w/convert.log");
+        let in_w = |f: &str| Path::new("/w").join(f).to_string_lossy().to_string();
+        assert_eq!(after("--out"), in_w("article.html"));
+        assert_eq!(after("--log"), in_w("convert.log"));
         assert_eq!(after("-b"), crate::engine::BUNDLE_URL);
         assert_eq!(after("--cache"), "/c");
         assert_eq!(after("--dumps"), "/d");
