@@ -517,6 +517,10 @@ mod tests {
         };
         write(&base, &me).unwrap();
         let p = proj.to_string_lossy().to_string();
+        // Absolute on every OS (a bare `/x` is not absolute on Windows).
+        let missing = base.join("no").join("such").join("dir");
+        let missing = missing.to_string_lossy().to_string();
+        let outside = base.join("passwd").to_string_lossy().to_string();
         for (pid, project, file, says) in [
             (
                 Some(1u32),
@@ -525,11 +529,11 @@ mod tests {
                 "no open Maleficium window has pid 1",
             ),
             (None, "relative/dir", None, "not an absolute folder"),
-            (None, "/no/such/dir/anywhere", None, "does not exist"),
+            (None, missing.as_str(), None, "does not exist"),
             (
                 None,
                 p.as_str(),
-                Some("/etc/passwd"),
+                Some(outside.as_str()),
                 "relative to the project",
             ),
             (None, p.as_str(), Some("../x.tex"), "does not exist"),

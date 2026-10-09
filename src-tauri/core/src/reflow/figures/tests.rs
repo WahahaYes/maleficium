@@ -501,9 +501,15 @@ fn folder_mode_writes_hash_named_files_and_deduplicates() {
 #[test]
 fn the_figure_file_names_do_not_come_from_the_author() {
     let (root, out) = project("names");
-    write(&root, "we ird\"name'.png", PNG);
+    // Windows forbids `"` in a file name; the rest still needs escaping.
+    let name = if cfg!(windows) {
+        "we ird name'.png"
+    } else {
+        "we ird\"name'.png"
+    };
+    write(&root, name, PNG);
     let e = embed(
-        &img("we ird\"name'.png"),
+        &img(name),
         &root,
         &Mode::Folder { dir: out },
         &Options::default(),
