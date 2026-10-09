@@ -37,7 +37,7 @@ function stillsPreset(file: string | undefined): Plugin {
   };
 }
 
-// Error-proof still (e2e/stills-run.py state 10): while the flag file
+// Error-proof still (e2e/stills-run.py state 12): while the flag file
 // exists, the pdf.js worker URL 404s so the worker fails to load and the
 // preview must render its error branch. Dev server only; unset, inert.
 function stillsBreakWorker(file: string | undefined): Plugin {
@@ -134,7 +134,7 @@ export default defineConfig(() => ({
   // nothing here renders; components are proven by the stills harness.
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'embed-runtime/**/*.test.ts'],
     pool: 'forks',
     testTimeout: 5_000,
   },

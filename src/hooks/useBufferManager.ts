@@ -136,7 +136,8 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
     });
   }
 
-  async function handleCloseAll() {
+  /** Close every open file; false when one could not be saved (it stays open). */
+  async function handleCloseAll(): Promise<boolean> {
     const paths = [...buffers.keys()];
     let n = 0;
     for (const p of paths) {
@@ -150,6 +151,7 @@ export function useBufferManager(deps: UseBufferManagerDeps) {
       message: `closed ${n} file${n === 1 ? '' : 's'}`,
       event: { action: 'file.close-many', count: n },
     });
+    return n === paths.length;
   }
 
   return {

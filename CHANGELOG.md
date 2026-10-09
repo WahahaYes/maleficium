@@ -5,6 +5,16 @@
 ### License
 
 - **Maleficium is now AGPL-3.0.** New versions are licensed under the GNU Affero General Public License v3.0 instead of Apache 2.0. Using, modifying and sharing the app is unchanged; running a modified version as a network service now requires offering its source to that service's users. Releases up to 0.3.0 stay under Apache 2.0. The built-in templates remain CC0.
+- **What ships inside your papers is MIT-0.** The reader, the widget bridge and built-in runtimes, `maleficium-interactive.sty` and the custom-runtime samples and scaffolds are licensed under MIT No Attribution, so an exported paper or a project made with Maleficium carries no licence obligations. The interactive package moves from CC0 to MIT-0 and the runtime samples from MIT to MIT-0, and a custom runtime may now declare `MIT-0`.
+
+### Changes
+
+- **The interactive package comes with the template.** Tools > Install Interactive Package is gone. Every project made from a template already contains `maleficium-interactive.sty` at its root; after that it is an ordinary project file and the project folder wins, as with any package. A `.sty` or `.cls` the TeX bundle does not have is an error that names the file and says to add it to your project folder next to your main file. Nothing is downloaded or installed by the app.
+- **Interactive posters are cached in the project.** A model, chart or HTML widget with no `poster=` gets a poster Maleficium renders itself, saved in `.maleficium/posters/` beside the main file when you compile. This is the one place a compile writes into your project. The folder has a README, is safe to delete and may be committed, so the paper compiles with its posters without Maleficium. A widget new in a compile shows its poster in the same compile: the compile renders the missing poster, then runs the engine again before handing back the PDF. Source zips and bundle exports include the cache. `\interactivemodel` takes `camera=`, `size=` and `background=`, and `\interactivechart` takes `scale=`, to shape the poster.
+- **Your own HTML widgets need approval.** View > Widgets lists each widget with its status, a diff of what changed since you approved it, Approve and Revoke, and an auto-approval setting that is off by default. An unapproved widget is never rendered, and an agent over MCP can read the status but cannot approve.
+- **Preview in Browser and a reflowed reader.** File > Preview in Browser exports the paper as one file and opens it. The bundle's `index.html` is now the paper itself, reflowed from your LaTeX with each widget mounted in place, and `paper.pdf` stays in the bundle as the version of record and a download, not embedded. Anything the conversion could not read, join or find (a macro, a widget, a figure) is listed in the export's warnings. An undefined macro gets one warning per macro name (with its spots and the project-folder hint for its package) instead of one bare count; a package the log says needs shell escape, or a file the bundle lacks, is named as such.
+- **Html widgets can declare origins.** `framedomains=` and `resourcedomains=` (or `widget.json`) name the `https` origins one widget may frame or load, for example a YouTube or Vimeo player; see docs/VIDEO-EMBEDS.md. The origins are part of the approval.
+- **No QR codes or "Interactive version" marks.** `maleficium-interactive.sty` no longer draws the footer QR code or the one-line mark under each widget: the package adds no links and each widget is just its poster. `\maleficiumsetup` and its `bundleurl=` and `qr=` keys are removed; delete any call to them.
 
 ### Fixes
 
@@ -17,9 +27,17 @@
 
 - **Hosts that support MCP Apps show the snippet inline.** The `snippet` tool now names a small View (`ui://maleficium/snippet/v1`): the rendered region of the PDF beside the source lines, with previous/next page, a whole-page toggle, and a refresh when a compile replaces the PDF. It follows the host's light or dark theme and never inverts the page. Hosts without Apps support get the same text and, with `with_image`, the same image as before. A new `snippet_render` tool, hidden from the model, lets the View re-render without a model turn.
 
+- **Every MCP tool declares what it does.** All 32 tools now carry explicit read-only, destructive, idempotent and open-world hints, so hosts and directories can tell a safe read from a write without guessing. A regression test fails if a tool is added without them, and each tool has a handler test. `PRIVACY.md` states that the app and server work locally, and the README links it.
+
 ### Templates
 
 - **One look across the built-in templates.** The Resume and CV are redesigned around a shared style: Libertinus type, a violet accent, a two-tone slash that opens every heading, slanted skill chips, and a "Made with Maleficium" footer. Article, Assignment, Book, Letter, Report and the Welcome tour share a matching document style, and Slides has a matching style. Journal Paper keeps plain IEEEtran formatting. Every template ends each page with a small "Made with Maleficium" mark that links to the project; deleting one `\usepackage{maleficium-footer}` line removes it. Each folder carries its own copy of the style files, so a project stays self-contained.
+
+### For contributors
+
+- **The TeX engine is built from source.** Compiling no longer runs a downloaded Tectonic binary. A new crate, `src-tauri/engine`, builds `maleficium-engine` (Tectonic 0.17.0 through its library API, with the same arguments and status lines) and still runs as a killable child of the app and the MCP server. It also links the latexml converter, as groundwork for a reflowed reader. Build it with `sh scripts/build-engine.sh` before `npm run build` or `tauri build`; CI builds it on all four targets, and the old sidecar download script is gone.
+- **The engine converts a paper to HTML with no TeX installed.** `maleficium-engine convert` resolves every file latexml asks for from the pinned Tectonic bundle (through a built-in `kpsewhich` mode, also reachable as `maleficium-engine kpsewhich`), generates the TeX Live 2022 kernel dumps at build time (`maleficium-engine dump`, run by `scripts/build-engine.sh` and cached in CI), and writes its stylesheets beside `--out` and never beside the source. It reports a failed post-processing step instead of returning raw XML, and tags each figure with `data-graphic`. The `maleficium-interactive` widgets convert to placeholders that join to the `.mfw` sidecar by order, and `reflow::figures` makes the article's figures self-contained. These are the pieces of the reflowed reader; nothing in the app calls them yet.
+- **Sidecar downloads retry.** A single 504 from GitHub no longer fails a CI job: the download is retried four times, and the sha256 pin is still checked.
 
 ## 0.3.0 - 2026-09-30
 

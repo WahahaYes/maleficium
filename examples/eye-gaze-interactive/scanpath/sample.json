@@ -1,0 +1,72 @@
+{
+  "about": "The E1 example query of Wilson et al., ETRA '25 (fig:query_example). Labels, their order (most recent first), the current object and the response are as published. On-frame positions are hand-placed on the visible objects for illustration (x, y as fractions of the frame); null means the object is not located in this frame. Fixation durations are not part of the published example and are not shown.",
+  "questions": {
+    "E1": "What am I fixating on?",
+    "E2": "What am I going to interact with?"
+  },
+  "system": "You will see an image from the user's point of view. Your task is to guess what the user is currently looking at by inferring context from the image contents. The user may give info about previous fixations (objects gazed at in the past).",
+  "visible": [
+    "Vinyl holder",
+    "Thermostat",
+    "…",
+    "Record player",
+    "Speaker",
+    "Game",
+    "Picture frame",
+    "Vinyl holder",
+    "Textbook",
+    "TV"
+  ],
+  "current": {
+    "label": "Dinosaur",
+    "x": 0.636,
+    "y": 0.775
+  },
+  "fixations": [
+    {
+      "label": "Dinosaur",
+      "x": 0.6,
+      "y": 0.735
+    },
+    {
+      "label": "Dinosaur",
+      "x": 0.672,
+      "y": 0.835
+    },
+    {
+      "label": "Dinosaur",
+      "x": 0.618,
+      "y": 0.69
+    },
+    {
+      "label": "Frisbee",
+      "x": null,
+      "y": null
+    },
+    {
+      "label": "Bird house",
+      "x": 0.548,
+      "y": 0.505
+    },
+    {
+      "label": "Coffee table",
+      "x": 0.43,
+      "y": 0.8
+    },
+    {
+      "label": "Coffee canister",
+      "x": 0.492,
+      "y": 0.632
+    },
+    {
+      "label": "Chopping board",
+      "x": null,
+      "y": null
+    }
+  ],
+  "published": {
+    "context": 8,
+    "truth": "Dinosaur",
+    "response": "Dinosaur"
+  }
+}

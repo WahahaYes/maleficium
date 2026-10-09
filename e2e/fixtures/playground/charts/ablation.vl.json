@@ -1,0 +1,18 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Accuracy by method",
+  "data": {
+    "values": [
+      { "method": "baseline", "accuracy": 0.71 },
+      { "method": "ours-small", "accuracy": 0.79 },
+      { "method": "ours-base", "accuracy": 0.84 },
+      { "method": "ours-large", "accuracy": 0.88 },
+      { "method": "ours-xl", "accuracy": 0.89 }
+    ]
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": { "field": "method", "type": "nominal", "sort": null },
+    "y": { "field": "accuracy", "type": "quantitative" }
+  }
+}

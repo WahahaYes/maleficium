@@ -196,6 +196,202 @@ struct CancelParams {
     job_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WidgetsParams {
+    root_id: String,
+    main_rel: String,
+}
+
+/// Unknown fields are refused: there is no approval argument for an agent
+/// to pass, so an `approve` (or anything like it) is an error.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetsStatusParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WidgetCheckParams {
+    root_id: String,
+    main_rel: String,
+    /// The widget id, as `widgets` lists it.
+    widget: String,
+}
+
+/// Unknown fields are refused: the scaffold takes a name and an
+/// optional `--from`, nothing that could approve or install.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeScaffoldParams {
+    /// The new runtime's name (`<name>` of `<name>@1`).
+    name: String,
+    /// Fork a built-in: only `model@1` (its viewer as an editable
+    /// `viewer.js` over vendored three.js).
+    from: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeScaffoldOut {
+    reference: String,
+    /// Absolute path of the draft folder in the user library.
+    path: String,
+}
+
+// Flatten keeps the wire shape (`status` at top level) as an object schema.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WidgetCheckOut {
+    #[serde(flatten)]
+    pub status: core::widget_approval::WidgetApprovalStatus,
+}
+
+/// Unknown fields are refused: the validator reads one package, nothing
+/// that could approve, install or allow.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeValidateParams {
+    /// The package ref (`<name>@<major>`).
+    reference: String,
+    /// With it, the project's installed copy; without it, the library's.
+    root_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AppWindowsParams {}
+
+/// One running Maleficium window and what it holds.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppWindow {
+    pid: u32,
+    /// The open project folder (absolute); absent when none is open.
+    project: Option<String>,
+    /// The document's main file, relative to the project.
+    main_rel: Option<String>,
+    /// The file in the user's editor, relative to the project.
+    active_rel: Option<String>,
+    /// The root id this server already granted for the project, if any.
+    root_id: Option<String>,
+    /// The open request this window holds, if any: waiting (no outcome),
+    /// opened or dismissed.
+    request: Option<serde_json::Value>,
+    /// Unix ms of the window's last update (a heartbeat every 30 s).
+    updated_ms: u64,
+}
+
+/// An ask that a window open a project; nothing opens until the user
+/// clicks Open in that window.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct AppRequestOpenParams {
+    /// The project folder, absolute.
+    project: String,
+    /// A file in it to show, relative to the project.
+    file: Option<String>,
+    /// The window to ask (from app_windows); needed when several are open.
+    pid: Option<u32>,
+    /// How long to wait for the user's answer, in ms (default 30000, at
+    /// most 120000). 0 returns at once.
+    wait_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppRequestOpenOut {
+    request_id: String,
+    pid: u32,
+    project: String,
+    file: Option<String>,
+    /// `opened`, `dismissed`, or `waiting` (the user has not answered yet).
+    outcome: String,
+    /// What to do next.
+    hint: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct AppWindowsOut {
+    /// Running windows, most recently active first.
+    windows: Vec<AppWindow>,
+    /// What to do with them.
+    hint: String,
+}
+
+/// Unknown fields are refused: the install copies one validated draft,
+/// and nothing it takes could approve, allow or decide.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeInstallParams {
+    /// The project to install into.
+    root_id: String,
+    /// The library draft's ref (`<name>@<major>`).
+    reference: String,
+    /// Swap out a different copy already at `runtimes/<ref>/`.
+    replace: Option<bool>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeInstallOut {
+    reference: String,
+    /// The project-relative folder: `runtimes/<ref>`.
+    path: String,
+    files: usize,
+    /// `installed`, `replaced`, or `unchanged` (already exactly these files).
+    outcome: String,
+    /// Whether this copy may run now: the user allowed this exact content
+    /// before, or auto-approval covers it.
+    approved: bool,
+    /// The user's auto-approval setting for this project.
+    auto_approve: bool,
+    /// True when the user has to allow it in the app: ask them to.
+    ask_user: bool,
+    /// What happens next, written for the agent to act on or relay.
+    hint: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct RuntimeValidateOut {
+    reference: String,
+    path: String,
+    valid: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    manifest: Option<serde_json::Value>,
+}
+
+/// Unknown fields are refused: the export has no approval argument for an
+/// agent to pass, so an `approved_fetch` (or anything like it) is an error,
+/// not something quietly ignored.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ExportBundleParams {
+    root_id: String,
+    main_rel: String,
+    /// Absolute path outside the project: a new or empty folder (folder,
+    /// hosted), or the file to write (single-file).
+    dest: String,
+    profile: maleficium_events::BundleProfile,
+    /// Single-file warning threshold in bytes; default 50 MiB.
+    size_cap_bytes: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PreviewBundleParams {
+    root_id: String,
+    main_rel: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct PreviewBundleOut {
+    /// Absolute path of the single-file bundle's index.html, outside the project.
+    path: String,
+    bytes: u64,
+    widgets: u32,
+    warnings: Vec<core::bundle::BundleWarning>,
+    /// How to view it: nothing was opened.
+    hint: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct CancelOut {
     status: String,
@@ -290,6 +486,15 @@ struct LogTailParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct MainParams {
+    root_id: String,
+    main_rel: String,
+}
+
+/// Unknown fields are refused: the document takes a project and a main
+/// file, nothing that could approve or fetch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DocumentParams {
     root_id: String,
     main_rel: String,
 }
@@ -700,6 +905,365 @@ impl Maleficium {
     }
 
     #[tool(
+        description = "The interactive widgets of main_rel's last compile: for each, its page, rect (PDF units, origin bottom-left), type, runtime, sources, options, alt, float label and figure number, and declared csp origins, in document order. Empty when the document declares none. Fails (isError) when main_rel was never compiled, or when the widget sidecar and the pdf disagree (recompile), or when a widget bundle's widget.json is invalid.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets(
+        &self,
+        Parameters(p): Parameters<WidgetsParams>,
+    ) -> Result<Json<core::widgets::WidgetList>, String> {
+        self.tool("widgets", || {
+            let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
+                &p.main_rel,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Approval state of every html widget (author code) of main_rel's last compile, so you can ask the user about all of them at once. approved: runs as is (via user, or via auto when the project's auto-approval covers a content change). approval_required: a normal result, not an error, with cause (never_approved, changed_since_approval, declared_origins_changed, revoked), digest, declaredOrigins, whatHappens, userAction, agentMustNot and a message to relay. unavailable: the folder cannot be approved (a symlink, a special file, too large). exempt: first-party widgets that need no approval. Custom runtimes the document uses are listed in runtimes, one entry per ref carrying the package facts (runtime) the user reviews; missing or invalid ones are in unavailable. autoApprove is the project's setting. Only the user approves, revokes or changes auto-approval, in the app's View > Widgets: no tool can, and nothing written into the project counts.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widgets_status(
+        &self,
+        Parameters(p): Parameters<WidgetsStatusParams>,
+    ) -> Result<Json<core::widget_approval::WidgetsStatus>, String> {
+        self.tool("widgets_status", || {
+            let s = core::widget_approval::widgets_status(&self.cx, &p.root_id, &p.main_rel)?;
+            let changed: Vec<_> = s
+                .widgets
+                .iter()
+                .chain(s.runtimes.iter())
+                .filter_map(|w| {
+                    core::widget_approval::digest_changed_event(
+                        &p.root_id,
+                        w,
+                        maleficium_events::Actor::Agent,
+                    )
+                })
+                .collect();
+            let _ = core::eventlog::append(&changed);
+            Ok(Json(s))
+        })
+    }
+
+    #[tool(
+        description = "Whether one html widget of main_rel may run: status approved, or status approval_required as a normal result (not an error) carrying the widget id, path, digest, cause, declaredOrigins, whatHappens, userAction (the user approves it in the app's View > Widgets), agentMustNot and a message to relay. Do not poll it in a loop: it only changes when the user acts. Fails (isError) for an unknown or first-party widget, which needs no approval, and for a folder that cannot be approved (a symlink, a special file, outside the project, too large).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn widget_check(
+        &self,
+        Parameters(p): Parameters<WidgetCheckParams>,
+    ) -> Result<Json<WidgetCheckOut>, String> {
+        self.tool("widget_check", || {
+            let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
+            let w = list
+                .widgets
+                .iter()
+                .find(|w| w.id == p.widget)
+                .ok_or_else(|| format!("{} has no widget {}", p.main_rel, p.widget))?;
+            let target =
+                core::widget_approval::WidgetTarget::of(&p.main_rel, w)?.ok_or_else(|| {
+                    format!(
+                        "widget {} runs a first-party runtime: it needs no approval",
+                        p.widget
+                    )
+                })?;
+            let checked =
+                core::widget_approval::check_widget_approval(&self.cx, &p.root_id, &target)?;
+            if let Some(e) = core::widget_approval::digest_changed_event(
+                &p.root_id,
+                &checked.status,
+                maleficium_events::Actor::Agent,
+            ) {
+                let _ = core::eventlog::append(std::slice::from_ref(&e));
+            }
+            Ok(Json(WidgetCheckOut {
+                status: checked.status,
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Scaffold a custom widget runtime draft in the user library (maleficium-runtimes/<name>@1): a caption-overlay-shaped package (runtime.json, a classic index.html loading the built bridge.js, a sample for the required role, LICENSE), or with from model@1 a fork of the built-in model viewer (viewer.js, the viewer as a readable classic script to edit in place, over three.js vendored under vendor/). Refused when the draft folder exists and is not empty. Writes only to the library, never to a project, and never approves anything: the user reviews and allows the draft in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_scaffold(
+        &self,
+        Parameters(p): Parameters<RuntimeScaffoldParams>,
+    ) -> Result<Json<RuntimeScaffoldOut>, String> {
+        self.tool("runtime_scaffold", || {
+            let dir = core::runtime_author::scaffold(&p.name, p.from.as_deref())?;
+            let reference = dir
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+            Ok(Json(RuntimeScaffoldOut {
+                reference,
+                path: path_string(dir),
+            }))
+        })
+    }
+
+    #[tool(
+        description = "List the Maleficium app windows the user has open: each one's project folder, the document's main file and the file in front, most recently active first, and the root_id if you already granted that folder. Use it at the start of a session to work in the project the user already has open: grant its folder (grant with root = project), and your edits and compiles show in their window. Read-only; to have the window open a project, use app_request_open, which asks the user first.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn app_windows(
+        &self,
+        Parameters(_): Parameters<AppWindowsParams>,
+    ) -> Result<Json<AppWindowsOut>, String> {
+        self.tool("app_windows", || {
+            let requests = core::presence::requests();
+            let windows: Vec<AppWindow> = core::presence::list()
+                .into_iter()
+                .map(|p| AppWindow {
+                    request: requests
+                        .iter()
+                        .find(|r| r.pid == p.pid)
+                        .and_then(|r| serde_json::to_value(r).ok()),
+                    root_id: p
+                        .project
+                        .as_deref()
+                        .and_then(|d| core::presence::granted_as(&self.cx, d)),
+                    pid: p.pid,
+                    project: p.project,
+                    main_rel: p.main_rel,
+                    active_rel: p.active_rel,
+                    updated_ms: p.updated_ms,
+                })
+                .collect();
+            let with_project = windows.iter().filter(|w| w.project.is_some()).count();
+            let hint = match (windows.len(), with_project) {
+                (0, _) => "No Maleficium window is open. Ask the user to open the app and their project, or grant a folder they name.".to_string(),
+                (_, 0) => "Maleficium is open but holds no project folder. Ask the user which folder to work in, or to open it in the app.".to_string(),
+                (_, 1) => "Grant the open project's folder (grant with root = project) unless it has a root_id already; work there so the user sees your edits and compiles.".to_string(),
+                _ => "Several projects are open: ask the user which one to work in before granting it; the first is the most recently active.".to_string(),
+            };
+            Ok(Json(AppWindowsOut { windows, hint }))
+        })
+    }
+
+    #[tool(
+        description = "Ask the user's Maleficium window to open a project folder (and optionally show a file in it). The window shows the user a prompt naming the folder; nothing opens until they click Open, and they may dismiss it. Use it when the user asks to see a project in the app, or after creating one for them. Waits up to wait_ms (default 30 s) for their answer: outcome opened, dismissed, or waiting (the prompt stays up; tell the user it is there, and read the answer later from app_windows). One ask per window at a time; never resend one the user dismissed.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    fn app_request_open(
+        &self,
+        Parameters(p): Parameters<AppRequestOpenParams>,
+    ) -> Result<Json<AppRequestOpenOut>, String> {
+        self.tool("app_request_open", || {
+            let r = core::presence::request_open(p.pid, &p.project, p.file.as_deref())?;
+            let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(30_000).min(120_000));
+            let start = std::time::Instant::now();
+            let mut now = r.clone();
+            while now.outcome.is_none() && start.elapsed() < wait {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                match core::presence::request_state(r.pid, &r.id) {
+                    Some(s) => now = s,
+                    None => break,
+                }
+            }
+            let (outcome, hint) = match now.outcome {
+                Some(core::presence::OpenOutcome::Opened) => (
+                    "opened",
+                    match core::presence::granted_as(&self.cx, &now.project) {
+                        Some(id) => format!("The user opened it. Work in it as root_id {id}; they see your edits and compiles."),
+                        None => "The user opened it. Grant the folder (grant with root = project) to work in it; they see your edits and compiles.".to_string(),
+                    },
+                ),
+                Some(core::presence::OpenOutcome::Dismissed) => (
+                    "dismissed",
+                    "The user dismissed it. Do not ask again unless they say so.".to_string(),
+                ),
+                None => (
+                    "waiting",
+                    "The user has not answered: the prompt stays in their window. Tell them it is there; app_windows shows their answer later. Do not send it again.".to_string(),
+                ),
+            };
+            Ok(Json(AppRequestOpenOut {
+                request_id: r.id,
+                pid: r.pid,
+                project: r.project,
+                file: r.file,
+                outcome: outcome.to_string(),
+                hint,
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Install a custom widget runtime from the user library into a project: copies maleficium-runtimes/<ref>/ to the project's runtimes/<ref>/, which \\interactiveruntime[runtime=<ref>] uses. Only a draft that validates installs (run runtime_validate first). A different copy already in the project is kept unless replace is true; the same files report unchanged. Installing never approves. When the result has ask_user true, ask the user to allow the runtime in the app (View > Widgets) as its hint says: auto-approval covers only an update to a runtime the user already allowed, never a first install.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_install(
+        &self,
+        Parameters(p): Parameters<RuntimeInstallParams>,
+    ) -> Result<Json<RuntimeInstallOut>, String> {
+        self.tool("runtime_install", || {
+            let done = core::runtime_author::install(
+                &self.cx,
+                &p.root_id,
+                &p.reference,
+                p.replace.unwrap_or(false),
+            )?;
+            let status =
+                core::widget_approval::check_runtime(&self.cx, &p.root_id, &p.reference, &[])?
+                    .status
+                    .ok_or_else(|| {
+                        format!("{} installed but does not read as a runtime", p.reference)
+                    })?;
+            let next = core::runtime_author::after_install(&p.reference, &status);
+            Ok(Json(RuntimeInstallOut {
+                reference: done.reference,
+                path: done.rel,
+                files: done.files,
+                outcome: done.outcome.as_str().to_string(),
+                approved: next.approved,
+                auto_approve: next.auto_approve,
+                ask_user: next.ask_user,
+                hint: next.hint,
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Validate a custom widget runtime package: the manifest, entry, vendored files and samples, plus the static scan (remote loads, eval, module imports, network APIs, workers, storage, undeclared WebAssembly, dangling references). With root_id it reads the project's installed runtimes/<ref>/ copy; without it the user library's copy. Read-only: it reports errors and warnings and never approves, installs or changes anything.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn runtime_validate(
+        &self,
+        Parameters(p): Parameters<RuntimeValidateParams>,
+    ) -> Result<Json<RuntimeValidateOut>, String> {
+        self.tool("runtime_validate", || {
+            let v = match &p.root_id {
+                Some(root_id) => {
+                    core::runtime_author::validate_project(&self.cx, root_id, &p.reference)?
+                }
+                None => core::runtime_author::validate_library(&p.reference)?,
+            };
+            let valid = v.valid();
+            Ok(Json(RuntimeValidateOut {
+                reference: v.reference,
+                path: v.path,
+                valid,
+                errors: v.errors,
+                warnings: v.warnings,
+                manifest: v
+                    .manifest
+                    .map(|m| serde_json::to_value(&m).unwrap_or(serde_json::Value::Null)),
+            }))
+        })
+    }
+
+    #[tool(
+        description = "Export main_rel's last compile as a paper bundle at dest, an absolute path outside the project: profile folder or hosted writes a folder (manifest.json, index.html, paper.pdf, theme/, widgets/<id>/index.html, content-addressed assets/), single-file writes one html file with everything inline. Every widget is one self-contained document with a strict CSP; assets are sha256-hashed from the project's files. Writes only to dest (an earlier bundle there is replaced; any other non-empty folder is refused) and never fetches: a remote asset with no local copy is refused, since hashing it would need a download that only the user can approve in the app. Returns the path, bytes, counts and warnings (size cap, runtimes missing from this build, files an author bundle could not inline). Fails before any compile, for a destination inside the project, and for an invalid manifest.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn export_bundle(
+        &self,
+        Parameters(p): Parameters<ExportBundleParams>,
+    ) -> Result<Json<core::bundle::BundleExported>, String> {
+        self.tool("export_bundle", || {
+            let r = core::bundle::export_bundle(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+                &p.dest,
+                p.profile,
+                p.size_cap_bytes,
+            );
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                p.profile,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            Ok(Json(r?))
+        })
+    }
+
+    #[tool(
+        description = "Preview main_rel's last compile as a paper bundle: exports the single-file profile (everything inline, opens from file://) to index.html in a scratch folder under the app data dir, never in the project, and returns its absolute path. It does not open anything: open the path in a browser yourself, or tell the user to (the app's File menu has Preview in Browser). One scratch folder per project; the next preview replaces it. Same rules as export_bundle: never fetches, no approvals, fails before any compile and for an invalid manifest. The browser sandbox is the only isolation: it is not egress-proof, so treat widgets as untrusted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn preview_bundle(
+        &self,
+        Parameters(p): Parameters<PreviewBundleParams>,
+    ) -> Result<Json<PreviewBundleOut>, String> {
+        self.tool("preview_bundle", || {
+            let r = core::bundle::preview_bundle(&self.cx, &p.root_id, &p.main_rel);
+            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+                &p.main_rel,
+                core::bundle::BundleProfile::SingleFile,
+                &r,
+                maleficium_events::Actor::Agent,
+            )));
+            let r = r?;
+            Ok(Json(PreviewBundleOut {
+                hint: format!("open {} in a browser to view it", r.path),
+                path: r.path,
+                bytes: r.bytes,
+                widgets: r.widgets,
+                warnings: r.warnings,
+            }))
+        })
+    }
+
+    #[tool(
         description = "Cancel a running compile job",
         annotations(
             read_only_hint = false,
@@ -959,6 +1523,28 @@ impl Maleficium {
     ) -> Result<Json<core::structure::Citations>, String> {
         self.tool("citations", || {
             Ok(Json(core::structure::citations(
+                &self.cx,
+                &p.root_id,
+                &p.main_rel,
+            )?))
+        })
+    }
+
+    #[tool(
+        description = "Document structure of main_rel from its conversion to HTML (never the PDF): sections with levels, theorems with kinds, equations with TeX, citations with bibliography entries, figures with captions, and widget placeholders in order. Citation keys are the conversion's bibliography ids; the citations tool has the source-level keys. Needs no compile; widget ids and rects are the widgets tool's job.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn document_structure(
+        &self,
+        Parameters(p): Parameters<DocumentParams>,
+    ) -> Result<Json<core::document::DocumentStructure>, String> {
+        self.tool("document_structure", || {
+            Ok(Json(core::document::document_structure(
                 &self.cx,
                 &p.root_id,
                 &p.main_rel,
@@ -1229,6 +1815,29 @@ pub fn serve_stdio() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    /// A latexml-shaped conversion (see core's reflow/article): the fixed
+    /// HTML the document cases convert instead of running the engine.
+    const CONVERTED: &str =
+        include_str!("../../core/src/reflow/fixtures/interactive-converted.frag");
+
+    /// A converter that hands back fixed HTML.
+    struct FixedHtml(String);
+
+    impl core::reflow::convert::Converter for FixedHtml {
+        fn convert(
+            &self,
+            _cx: &core::Core,
+            _main: &std::path::Path,
+            _work: &std::path::Path,
+        ) -> core::reflow::convert::Conversion {
+            core::reflow::convert::Conversion {
+                html: Ok(self.0.clone()),
+                errors: Vec::new(),
+                log: String::new(),
+            }
+        }
+    }
+
     /// Every tool call reports an agent event through the shared writer's
     /// shape: the call name, its outcome, and actor `agent`.
     #[test]
@@ -1304,6 +1913,491 @@ mod tests {
             get("compile_run"),
             format!(r#"{{"resourceUri":"{COMPILE_VIEW_URI}","visibility":["model","app"]}}"#)
         );
+    }
+
+    /// The widget list only reads: hosts may call it without confirmation.
+    /// Its failures reach the client as tool errors, never as an empty list.
+    #[test]
+    fn widgets_is_a_read_only_tool_and_failures_are_errors() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "widgets").expect("widgets");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let m = Maleficium::default();
+        let err = m
+            .widgets(Parameters(WidgetsParams {
+                root_id: "nope".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The document structure only reads the conversion: hosts may call it
+    /// without confirmation. Its parameters refuse unknown fields, and its
+    /// failures reach the client as tool errors, never as an empty document.
+    #[test]
+    fn document_structure_is_a_read_only_tool_over_the_conversion() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "document_structure")
+            .expect("document_structure");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["main_rel", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(serde_json::from_value::<DocumentParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "main.tex"})
+        )
+        .is_ok());
+        assert!(serde_json::from_value::<DocumentParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "main.tex", "approve": true})
+        )
+        .is_err());
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-document");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\section{Hi}\n").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "docm", &root.to_string_lossy()).unwrap();
+        m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
+        let d = m
+            .document_structure(Parameters(DocumentParams {
+                root_id: "docm".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .expect("a fixed conversion parses")
+            .0;
+        assert_eq!(d.main, "main.tex");
+        assert_eq!(d.sections.len(), 2);
+        assert_eq!(d.figures.len(), 4);
+        assert_eq!(d.widgets.len(), 5);
+        assert_eq!(d.citations.len(), 1);
+
+        let err = m
+            .document_structure(Parameters(DocumentParams {
+                root_id: "nope".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The export writes a new place and replaces only an earlier bundle, so
+    /// it is not read-only; it never fetches, so it is not open-world. An
+    /// agent has no way to approve a download: the parameters refuse any
+    /// field the schema does not list, and the tool has no approval argument.
+    /// The preview tool takes no destination (the core picks the scratch
+    /// folder) and no approval, and it only returns a path: opening it is the
+    /// app menu's job.
+    #[test]
+    fn preview_bundle_takes_a_project_and_nothing_else() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "preview_bundle")
+            .expect("preview_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(props, ["main_rel", "root_id"]);
+        assert!(serde_json::from_value::<PreviewBundleParams>(
+            serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn export_bundle_cannot_be_given_an_approval_and_fails_closed() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "export_bundle")
+            .expect("export_bundle");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            props,
+            ["dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+        let base = serde_json::json!({
+            "root_id": "r", "main_rel": "main.tex", "dest": "/tmp/x", "profile": "folder"
+        });
+        assert!(serde_json::from_value::<ExportBundleParams>(base.clone()).is_ok());
+        for extra in [
+            "approved_fetch",
+            "approve_fetch",
+            "approve",
+            "fetch",
+            "network",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(["https://media.example.org/clip.mp4"]);
+            assert!(
+                serde_json::from_value::<ExportBundleParams>(v).is_err(),
+                "{extra} must not be accepted"
+            );
+        }
+        let m = Maleficium::default();
+        let err = m
+            .export_bundle(Parameters(
+                serde_json::from_value::<ExportBundleParams>(base).unwrap(),
+            ))
+            .err()
+            .expect("an ungranted root fails");
+        assert!(!err.is_empty());
+    }
+
+    /// The runtime authoring tools stay on their side of the approval
+    /// boundary: the scaffold writes only to the user library, the
+    /// validator only reads, the install only copies a validated draft into
+    /// a granted project, and none takes a parameter that approves or
+    /// allows.
+    #[test]
+    fn runtime_tools_are_library_scoped_and_cannot_approve() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_scaffold")
+            .expect("runtime_scaffold");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["from", "name"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_validate")
+            .expect("runtime_validate");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["reference", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let t = tools
+            .iter()
+            .find(|t| t.name == "runtime_install")
+            .expect("runtime_install");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true), "replace swaps a copy out");
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["reference", "replace", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        assert!(serde_json::from_value::<RuntimeScaffoldParams>(
+            serde_json::json!({"name": "orbit-view", "from": "model@1"})
+        )
+        .is_ok());
+        assert!(serde_json::from_value::<RuntimeValidateParams>(
+            serde_json::json!({"reference": "orbit-view@1"})
+        )
+        .is_ok());
+        for extra in ["approve", "allow", "decide", "digest", "revoke", "mode"] {
+            let mut v = serde_json::json!({"name": "orbit-view"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeScaffoldParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"reference": "orbit-view@1"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeValidateParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"root_id": "r", "reference": "orbit-view@1"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<RuntimeInstallParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+        let m = Maleficium::default();
+        assert!(m
+            .runtime_scaffold(Parameters(
+                serde_json::from_value(serde_json::json!({"name": "nope!"})).unwrap()
+            ))
+            .is_err());
+        // An ungranted project: nothing to install into.
+        assert!(m
+            .runtime_install(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
+                )
+                .unwrap()
+            ))
+            .is_err());
+    }
+
+    /// The app-windows view is read-only and takes no arguments: it lists
+    /// what the user's open windows hold and can open or change nothing.
+    #[test]
+    fn app_windows_is_a_read_only_view_with_no_arguments() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "app_windows")
+            .expect("app_windows");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        assert!(schema["properties"]
+            .as_object()
+            .is_none_or(|p| p.is_empty()));
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(
+            serde_json::from_value::<AppWindowsParams>(serde_json::json!({"open": true})).is_err()
+        );
+        let out = Maleficium::default()
+            .app_windows(Parameters(
+                serde_json::from_value(serde_json::json!({})).unwrap(),
+            ))
+            .unwrap();
+        assert!(!out.0.hint.is_empty());
+    }
+
+    /// The open request only asks: its arguments name a folder, a file, a
+    /// window and a wait, nothing that could open without the user. (Not
+    /// called here: a live app on this machine would show the prompt.)
+    #[test]
+    fn app_request_open_takes_only_what_the_prompt_shows() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "app_request_open")
+            .expect("app_request_open");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["file", "pid", "project", "wait_ms"]);
+        assert_eq!(schema["additionalProperties"], false);
+        for extra in ["force", "focus", "skip_prompt", "open"] {
+            let mut v = serde_json::json!({"project": "/p"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<AppRequestOpenParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+    }
+
+    /// The approval boundary: no tool approves, revokes or switches
+    /// auto-approval. No tool is named for it, no tool takes a parameter
+    /// for it (and the approval tools refuse unknown fields), and this
+    /// crate never calls the core's user-action functions.
+    #[test]
+    fn no_tool_can_approve_revoke_or_change_auto_approval() {
+        let tools = Maleficium::tool_router().list_all();
+        let banned = ["approv", "revok", "auto", "mode", "trust", "allow"];
+        for t in &tools {
+            let name = t.name.to_lowercase();
+            assert!(!banned.iter().any(|b| name.contains(b)), "tool {name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            let props = schema["properties"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for key in props.keys() {
+                let k = key.to_lowercase();
+                assert!(
+                    !banned.iter().any(|b| k.contains(b)),
+                    "tool {name} takes `{key}`"
+                );
+            }
+        }
+        for name in ["widgets_status", "widget_check"] {
+            let t = tools.iter().find(|t| t.name == name).expect(name);
+            let a = t.annotations.as_ref().expect("annotations");
+            assert_eq!(a.read_only_hint, Some(true), "{name}");
+            assert_eq!(a.open_world_hint, Some(false), "{name}");
+            let schema = serde_json::to_value(&*t.input_schema).unwrap();
+            assert_eq!(schema["additionalProperties"], false, "{name}");
+        }
+        // Every output schema is an object, so `opencode mcp list` accepts the server.
+        for t in &tools {
+            if let Some(out) = t.output_schema.as_ref() {
+                let schema = serde_json::to_value(&**out).unwrap();
+                assert_eq!(schema["type"], "object", "tool {}", t.name);
+            }
+        }
+        let base = serde_json::json!({"root_id": "r", "main_rel": "main.tex", "widget": "w"});
+        assert!(serde_json::from_value::<WidgetCheckParams>(base.clone()).is_ok());
+        for extra in [
+            "approve",
+            "approved",
+            "auto_approve",
+            "digest",
+            "revoke",
+            "mode",
+        ] {
+            let mut v = base.clone();
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetCheckParams>(v).is_err(),
+                "{extra}"
+            );
+            let mut v = serde_json::json!({"root_id": "r", "main_rel": "main.tex"});
+            v[extra] = serde_json::json!(true);
+            assert!(
+                serde_json::from_value::<WidgetsStatusParams>(v).is_err(),
+                "{extra}"
+            );
+        }
+        let src = include_str!("lib.rs");
+        for f in [
+            "approve",
+            "approve_at",
+            "revoke",
+            "revoke_at",
+            "set_auto_approve",
+            "set_auto_at",
+            "decide_runtime",
+            "decide_runtime_at",
+            "review_runtime",
+            "review_runtime_at",
+        ] {
+            let call = format!("widget_approval::{f}(");
+            assert!(!src.contains(&call), "the MCP crate calls {call}");
+        }
+    }
+
+    /// A widget nobody approved is a normal result naming what the user
+    /// must do, never a tool error; a first-party one is an error.
+    #[test]
+    fn widget_check_returns_approval_required_as_a_normal_result() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-approval");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("widgets/demo")).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        std::fs::write(dir.join("widgets/demo/index.html"), "<p>demo</p>").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "ap", &root.to_string_lossy()).unwrap();
+        let o = core::outputs::outputs_of(&m.cx, "ap", "main.tex").unwrap();
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(
+            o.outdir.join(&o.pdf_name),
+            include_bytes!("../../core/testdata/interactive/main.pdf"),
+        )
+        .unwrap();
+        std::fs::write(
+            o.outdir.join("main.mfw"),
+            include_str!("../../core/testdata/interactive/main.mfw"),
+        )
+        .unwrap();
+        let p = |widget: &str| {
+            Parameters(WidgetCheckParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+                widget: widget.into(),
+            })
+        };
+        let r = m.widget_check(p("fig-demo")).expect("a normal result").0;
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["status"], "approval_required", "{v}");
+        assert_eq!(v["widget"], "fig-demo");
+        assert_eq!(v["path"], "widgets/demo");
+        assert_eq!(v["cause"], "never_approved");
+        assert_eq!(v["digest"].as_str().unwrap().len(), 64);
+        assert!(v["userAction"].as_str().unwrap().contains("View > Widgets"));
+        assert!(m.widget_check(p("fig-mesh")).is_err());
+        assert!(m.widget_check(p("nope")).is_err());
+        let s = m
+            .widgets_status(Parameters(WidgetsStatusParams {
+                root_id: "ap".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .expect("status")
+            .0;
+        assert_eq!(s.pending, 1);
+        assert_eq!(s.exempt.len(), 4);
+        let _ = std::fs::remove_dir_all(&o.outdir);
     }
 
     /// Every embedded View is a whole html page that loads nothing from
@@ -1712,6 +2806,15 @@ mod tests {
                 main_rel: "main.tex".into()
             }))
             .is_ok());
+        m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
+        let doc = m
+            .document_structure(Parameters(DocumentParams {
+                root_id: "cov".into(),
+                main_rel: "main.tex".into(),
+            }))
+            .unwrap();
+        assert_eq!(doc.0.sections.len(), 2);
+        assert_eq!(doc.0.widgets.len(), 5);
         assert!(m
             .precompile_checks(Parameters(MainParams {
                 root_id: "cov".into(),
@@ -1795,6 +2898,66 @@ mod tests {
             }))
             .is_err());
 
+        // Never compiled: the widget tools fail closed, none returns an empty list.
+        let main = |extra: serde_json::Value| {
+            let mut v = serde_json::json!({"root_id": "cov", "main_rel": "main.tex"});
+            v.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            v
+        };
+        assert!(m
+            .widgets(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widgets_status(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .widget_check(Parameters(
+                serde_json::from_value(main(serde_json::json!({"widget": "w"}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .preview_bundle(Parameters(
+                serde_json::from_value(main(serde_json::json!({}))).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .export_bundle(Parameters(
+                serde_json::from_value(main(
+                    serde_json::json!({"dest": "/tmp/maleficium-cov-bundle", "profile": "folder"})
+                ))
+                .unwrap()
+            ))
+            .is_err());
+
+        // The runtime authoring tools: the scaffold refuses a bad name
+        // before touching the library, and the validator fails closed on
+        // an ungranted root or a missing library copy. Neither writes to
+        // a project, and neither can approve.
+        assert!(m
+            .runtime_scaffold(Parameters(
+                serde_json::from_value(serde_json::json!({"name": "Model"})).unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .runtime_validate(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
+                )
+                .unwrap()
+            ))
+            .is_err());
+        assert!(m
+            .runtime_validate(Parameters(
+                serde_json::from_value(serde_json::json!({"reference": "nope@1"})).unwrap()
+            ))
+            .is_err());
+
         let covered = [
             "grant",
             "info",
@@ -1820,6 +2983,7 @@ mod tests {
             "file_graph",
             "labels_refs",
             "citations",
+            "document_structure",
             "precompile_checks",
             "search",
             "replace_preview",
@@ -1828,6 +2992,16 @@ mod tests {
             "definition",
             "find_files",
             "diagnostics",
+            "widgets",
+            "widgets_status",
+            "widget_check",
+            "export_bundle",
+            "preview_bundle",
+            "runtime_scaffold",
+            "runtime_validate",
+            "runtime_install",
+            "app_windows",
+            "app_request_open",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(

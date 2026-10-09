@@ -5,16 +5,19 @@ use crate::Core;
 
 use std::collections::HashMap;
 use std::process::Child;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use maleficium_structure::{
     CompilePhase, FetchOutcome, LineSignal, MissingDependency, MissingReason,
 };
 
-use maleficium_events::{CompileFailure, CompileLine, CompileReport, OfflineReadiness};
+use maleficium_events::{
+    Actor, BusEvent, CompileFailure, CompileLine, CompileReport, OfflineReadiness,
+};
 
 use super::{engine, readiness};
+use crate::widgets::poster::cache as posters;
 
 /// One compile timeout for every adapter: the desktop streaming run and the
 /// MCP job service both give the engine this long before killing it.
@@ -107,8 +110,15 @@ impl Progress {
 }
 
 struct LiveJob {
-    /// The running engine; a cancel takes it from here.
+    /// The running engine (or poster renderer); a cancel takes it from here.
+    /// Empty between runs, while the worker still owns the job: cancel then
+    /// flags the worker instead, so the next run never spawns.
     child: Arc<Mutex<Option<Child>>>,
+    /// Set by cancel; the worker checks it before every engine spawn.
+    cancelled: Arc<AtomicBool>,
+    /// Set by the worker once its record is ready; a cancel past this point
+    /// is "nothing to cancel", as before.
+    done: Arc<AtomicBool>,
     lines: Vec<String>,
     progress: Progress,
     done_tx: Option<std::sync::mpsc::Sender<JobRecord>>,
@@ -132,6 +142,14 @@ impl Jobs {
     }
 }
 
+/// The one sentence for a package or class the pinned bundle does not carry:
+/// the project folder is the only place it can come from.
+pub(crate) fn missing_package_text(file: &str) -> String {
+    format!(
+        "{file} is not in the TeX bundle: add it to your project folder next to your main file."
+    )
+}
+
 /// The failure message: the first 500 bytes of the last run's stderr, or
 /// the flow's own account when it stopped before spawning. A missing
 /// external tool is named instead: the engine's own "No such file or
@@ -152,6 +170,15 @@ pub fn failure_text(c: &engine::Compiled) -> String {
             format!("{tool} is not installed: the engine runs it to finish this document. Install {tool} and compile again")
         };
     }
+    if let Some(MissingDependency {
+        file: Some(file),
+        reason: MissingReason::NotInBundle,
+    }) = &c.missing
+    {
+        if file.ends_with(".sty") || file.ends_with(".cls") {
+            return missing_package_text(file);
+        }
+    }
     if c.lines.is_empty() {
         return String::from("no TeX support files are cached yet and there is no network");
     }
@@ -167,6 +194,26 @@ pub fn failure_text(c: &engine::Compiled) -> String {
         end -= 1;
     }
     format!("bundled tectonic failed: {}", &tail[..end])
+}
+
+/// A status line of the compile's own (not the engine's).
+fn status(text: String) -> CompileLine {
+    CompileLine {
+        stream: maleficium_events::CompileStream::Status,
+        text,
+        signal: None,
+    }
+}
+
+/// A compile that never spawned: a cancel in a poster phase (or before the
+/// first run) ends here instead of in the engine.
+fn cancelled_compile() -> engine::Compiled {
+    engine::Compiled {
+        status: JobStatus::Cancelled,
+        lines: Vec::new(),
+        missing: None,
+        cached_only: false,
+    }
 }
 
 /// Keep what one compile showed: its engine log, and what it says about
@@ -213,6 +260,7 @@ pub fn report(
         failure: Some(failure),
         missing: c.missing.clone(),
         message,
+        approvals: Vec::new(),
     };
     Ok(match c.status {
         JobStatus::Success => CompileReport {
@@ -226,6 +274,7 @@ pub fn report(
             failure: None,
             missing: c.missing.clone(),
             message: String::new(),
+            approvals: Vec::new(),
         },
         JobStatus::Failed if c.missing.is_some() => {
             failed(CompileFailure::MissingDependency, failure_text(c))
@@ -242,6 +291,15 @@ pub fn report(
             return Err(String::from("compile cancelled"))
         }
     })
+}
+
+/// One `widget.approval-required` event per html widget the finished
+/// compile found waiting for the user.
+fn approval_events(cx: &Core, root_id: &str, main_rel: &str, actor: Actor) -> Vec<BusEvent> {
+    posters::approvals_needed(cx, root_id, main_rel)
+        .iter()
+        .map(|r| crate::widget_approval::approval_required_event(root_id, r, actor))
+        .collect()
 }
 
 /// A foreground compile for adapters that stream lines themselves: resolves
@@ -271,10 +329,14 @@ pub fn run_blocking(
 
     let id = cx.jobs().next_id();
     let child = Arc::new(Mutex::new(None));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(AtomicBool::new(false));
     cx.jobs().live.lock().unwrap().insert(
         id.clone(),
         LiveJob {
             child: child.clone(),
+            cancelled: cancelled.clone(),
+            done: done.clone(),
             lines: Vec::new(),
             progress: Progress::default(),
             done_tx: None,
@@ -283,12 +345,50 @@ pub fn run_blocking(
         },
     );
     *cx.jobs().current.lock().unwrap() = Some(id.clone());
-    let c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
-        sink.push(l);
-    });
+    let off = || cancelled.load(Ordering::SeqCst);
+    if !off() {
+        posters::before_compile_job(
+            cx,
+            root_id,
+            main_rel,
+            &mut |text| sink.push(&status(text)),
+            &child,
+            &cancelled,
+        );
+    }
+    let mut c = if off() {
+        Ok(cancelled_compile())
+    } else {
+        engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
+            sink.push(l);
+        })
+    };
+    // A widget new in this compile has no poster yet: render what its widget
+    // list now asks for and compile again, so the pdf shows the posters.
+    // A cancel in the poster phase skips the second run.
+    if matches!(&c, Ok(r) if r.status == JobStatus::Success)
+        && !off()
+        && posters::before_compile_job(
+            cx,
+            root_id,
+            main_rel,
+            &mut |text| sink.push(&status(text)),
+            &child,
+            &cancelled,
+        ) > 0
+        && !off()
+    {
+        c = engine::compile(&out, &child, COMPILE_TIMEOUT_SECS, networked, &mut |l| {
+            sink.push(l);
+        });
+    }
+    if off() {
+        c = Ok(cancelled_compile());
+    }
     if cx.jobs().current.lock().unwrap().as_deref() == Some(id.as_str()) {
         *cx.jobs().current.lock().unwrap() = None;
     }
+    done.store(true, Ordering::SeqCst);
     cx.jobs().live.lock().unwrap().remove(&id);
     let c = match c {
         Ok(c) => c,
@@ -298,11 +398,19 @@ pub fn run_blocking(
                 failure: Some(CompileFailure::SpawnFailed),
                 missing: None,
                 message,
+                approvals: Vec::new(),
             })
         }
     };
     settle(cx, root_id, main_rel, &out, &c);
-    report(&out, &c, COMPILE_TIMEOUT_SECS)
+    let mut approvals = Vec::new();
+    if c.status == JobStatus::Success {
+        posters::after_compile(cx, root_id, main_rel, &mut |text| sink.push(&status(text)));
+        approvals = approval_events(cx, root_id, main_rel, Actor::System);
+    }
+    let mut rep = report(&out, &c, COMPILE_TIMEOUT_SECS)?;
+    rep.approvals = approvals;
+    Ok(rep)
 }
 
 /// Cancel the foreground compile, if one is running: the adapter's Cancel
@@ -354,11 +462,15 @@ pub fn run(
 
     let id = cx.jobs().next_id();
     let child = Arc::new(Mutex::new(None));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(AtomicBool::new(false));
     let (tx, rx) = std::sync::mpsc::channel();
     cx.jobs().live.lock().unwrap().insert(
         id.clone(),
         LiveJob {
             child: child.clone(),
+            cancelled: cancelled.clone(),
+            done: done.clone(),
             lines: Vec::new(),
             progress: Progress::default(),
             done_tx: Some(tx),
@@ -378,7 +490,45 @@ pub fn run(
                 job.progress.note(l.signal.as_ref());
             }
         };
-        let record = match engine::compile(&out, &child, timeout_secs, networked, &mut on_line) {
+        let off = || cancelled.load(Ordering::SeqCst);
+        // The poster phases park no engine child: a cancel then flags the
+        // worker, and every spawn below checks the flag first.
+        if !off() {
+            posters::before_compile_job(
+                cx,
+                &root_id,
+                &rel,
+                &mut |text| on_line(&status(text)),
+                &child,
+                &cancelled,
+            );
+        }
+        let mut compiled = if off() {
+            Ok(cancelled_compile())
+        } else {
+            engine::compile(&out, &child, timeout_secs, networked, &mut on_line)
+        };
+        // A widget new in this compile has no poster yet: render what its
+        // widget list now asks for and compile again, so the pdf shows them.
+        // A cancel in the poster phase skips the second run.
+        if matches!(&compiled, Ok(r) if r.status == JobStatus::Success)
+            && !off()
+            && posters::before_compile_job(
+                cx,
+                &root_id,
+                &rel,
+                &mut |text| on_line(&status(text)),
+                &child,
+                &cancelled,
+            ) > 0
+            && !off()
+        {
+            compiled = engine::compile(&out, &child, timeout_secs, networked, &mut on_line);
+        }
+        if off() {
+            compiled = Ok(cancelled_compile());
+        }
+        let record = match compiled {
             Err(e) => JobRecord {
                 status: JobStatus::Failed,
                 pdf_url: None,
@@ -389,6 +539,12 @@ pub fn run(
             },
             Ok(c) => {
                 settle(cx, &root_id, &rel, &out, &c);
+                if c.status == JobStatus::Success {
+                    posters::after_compile(cx, &root_id, &rel, &mut |text| on_line(&status(text)));
+                    // No window hears this run: the log carries the request.
+                    let _ =
+                        crate::eventlog::append(&approval_events(cx, &root_id, &rel, Actor::Agent));
+                }
                 // The record keeps the whole stream: every run and status line.
                 let (lines, progress) = cx
                     .jobs()
@@ -425,6 +581,7 @@ pub fn run(
         };
         if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {
             job.lines = record.lines.clone();
+            job.done.store(true, Ordering::SeqCst);
             if let Some(tx) = job.done_tx.take() {
                 let _ = tx.send(record);
             }
@@ -480,21 +637,23 @@ pub fn poll(cx: &Core, job_id: &str, tail_lines: usize) -> Result<JobRecord, Str
     })
 }
 
-/// Cancel a running job: takes the child, kills + reaps it.
+/// Cancel a running job: flags the worker (so a cancel between engine runs
+/// still stops the compile) and kills + reaps the parked child, engine or
+/// poster renderer. A settled job keeps the old "nothing to cancel".
 pub fn cancel(cx: &Core, job_id: &str) -> Result<String, String> {
     let mut guard = cx.jobs().live.lock().unwrap();
     let job = guard
         .get_mut(job_id)
         .ok_or_else(|| format!("unknown job: {}", job_id))?;
-    let taken = job.child.lock().unwrap().take();
-    match taken {
-        Some(mut c) => {
-            let _ = c.kill();
-            let _ = c.wait();
-            Ok(String::from("cancelled"))
-        }
-        None => Err(String::from("nothing to cancel")),
+    if job.finished.is_some() || job.done.load(Ordering::SeqCst) {
+        return Err(String::from("nothing to cancel"));
     }
+    job.cancelled.store(true, Ordering::SeqCst);
+    if let Some(mut c) = job.child.lock().unwrap().take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    Ok(String::from("cancelled"))
 }
 
 #[cfg(test)]
@@ -530,6 +689,28 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("bundled tectonic failed"), "{text}");
+    }
+
+    fn not_in_bundle(file: &str) -> Option<MissingDependency> {
+        Some(MissingDependency {
+            file: Some(file.into()),
+            reason: MissingReason::NotInBundle,
+        })
+    }
+
+    #[test]
+    fn a_package_the_bundle_lacks_names_the_file_and_the_project_folder() {
+        for file in ["maleficium-interactive.sty", "myclass.cls"] {
+            assert_eq!(
+                failure_text(&failed(not_in_bundle(file))),
+                format!(
+                    "{file} is not in the TeX bundle: add it to your project folder next to your main file."
+                )
+            );
+        }
+        // Other support files the bundle lacks keep the engine's own text.
+        let text = failure_text(&failed(not_in_bundle("nofont.tfm")));
+        assert!(text.starts_with("bundled tectonic failed"), "{text}");
     }
 
     #[test]
@@ -570,6 +751,8 @@ mod tests {
             id.to_string(),
             LiveJob {
                 child: Arc::new(Mutex::new(None)),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                done: Arc::new(AtomicBool::new(false)),
                 lines: Vec::new(),
                 progress: Progress::default(),
                 done_tx: None,
@@ -611,6 +794,54 @@ mod tests {
     fn cancel_unknown_job_fails() {
         let cx = &Core::default();
         assert!(cancel(cx, "job-404").is_err());
+    }
+
+    #[test]
+    fn cancel_without_a_parked_child_still_stops_a_live_job() {
+        // The worker is alive in its poster phase between engine runs, so
+        // the child slot is empty: cancel flags the worker instead of
+        // reporting nothing to cancel.
+        let cx = &Core::default();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        cx.jobs().live.lock().unwrap().insert(
+            "job-poster".to_string(),
+            LiveJob {
+                child: Arc::new(Mutex::new(None)),
+                cancelled: cancelled.clone(),
+                done: Arc::new(AtomicBool::new(false)),
+                lines: Vec::new(),
+                progress: Progress::default(),
+                done_tx: None,
+                done_rx: None,
+                finished: None,
+            },
+        );
+        assert_eq!(cancel(cx, "job-poster").unwrap(), "cancelled");
+        assert!(cancelled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn cancel_of_a_settled_job_keeps_nothing_to_cancel() {
+        // The worker sent its record: the slot is empty as in the poster
+        // phase, but there is genuinely nothing left to stop.
+        let cx = &Core::default();
+        cx.jobs().live.lock().unwrap().insert(
+            "job-done".to_string(),
+            LiveJob {
+                child: Arc::new(Mutex::new(None)),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                done: Arc::new(AtomicBool::new(true)),
+                lines: Vec::new(),
+                progress: Progress::default(),
+                done_tx: None,
+                done_rx: None,
+                finished: None,
+            },
+        );
+        assert_eq!(
+            cancel(cx, "job-done").unwrap_err(),
+            String::from("nothing to cancel")
+        );
     }
 
     #[test]
@@ -697,5 +928,148 @@ mod tests {
     #[test]
     fn shutdown_without_jobs_is_a_no_op() {
         shutdown(&Core::default());
+    }
+
+    const POSTER_PDF: &[u8] = include_bytes!("../testdata/interactive/main.pdf");
+    const POSTER_SIDECAR: &str = include_str!("../testdata/interactive/main.mfw");
+    const POSTER_GLB: &[u8] = include_bytes!("../../../e2e/fixtures/interactive/models/mesh.glb");
+    const POSTER_SPEC: &[u8] =
+        include_bytes!("../../../e2e/fixtures/interactive/charts/ablation.vl.json");
+
+    /// A project whose last compile left the model and the chart without
+    /// posters, so the next compile's poster phase renders them.
+    fn poster_project(cx: &Core, name: &str) -> (String, std::path::PathBuf) {
+        let dir = crate::test_scratch::dir(&format!("cancel-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (rel, bytes) in [
+            ("main.tex", &b"x"[..]),
+            ("models/mesh.glb", POSTER_GLB),
+            ("charts/ablation.vl.json", POSTER_SPEC),
+            ("widgets/demo/index.html", b"<p>hi</p>"),
+        ] {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, bytes).unwrap();
+        }
+        let root = dunce::canonicalize(&dir).unwrap();
+        let id = format!("cancel-{name}");
+        crate::fs::grant_root(cx, &id, &root.to_string_lossy()).unwrap();
+        let o = crate::outputs::outputs_of(cx, &id, "main.tex").unwrap();
+        let _ = std::fs::remove_dir_all(&o.outdir);
+        std::fs::create_dir_all(&o.outdir).unwrap();
+        std::fs::write(o.outdir.join(&o.pdf_name), POSTER_PDF).unwrap();
+        let side = POSTER_SIDECAR
+            .replace("|figures/mesh.png|", "||")
+            .replace("|figures/chart.png|", "||");
+        std::fs::write(o.outdir.join("main.mfw"), side).unwrap();
+        (id, root)
+    }
+
+    /// A poster phase that only a cancel ends early.
+    struct SlowPoster {
+        entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        exit: Mutex<String>,
+    }
+
+    impl SlowPoster {
+        fn new() -> (Self, std::sync::mpsc::Receiver<()>) {
+            let (tx, rx) = std::sync::mpsc::channel();
+            (
+                SlowPoster {
+                    entered: Mutex::new(Some(tx)),
+                    exit: Mutex::new(String::new()),
+                },
+                rx,
+            )
+        }
+    }
+
+    impl crate::widgets::poster::cache::PosterRenderer for SlowPoster {
+        fn render(
+            &self,
+            _cx: &Core,
+            reqs: &[crate::widgets::poster::PosterRequest],
+        ) -> Vec<Result<crate::widgets::poster::PosterOutcome, String>> {
+            reqs.iter()
+                .map(|_| Err(String::from("slow poster: no cancel handle")))
+                .collect()
+        }
+
+        fn render_cancel(
+            &self,
+            _cx: &Core,
+            reqs: &[crate::widgets::poster::PosterRequest],
+            _slot: &Mutex<Option<std::process::Child>>,
+            cancelled: &AtomicBool,
+        ) -> Vec<Result<crate::widgets::poster::PosterOutcome, String>> {
+            if let Some(tx) = self.entered.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            let start = std::time::Instant::now();
+            while !cancelled.load(Ordering::SeqCst)
+                && start.elapsed() < std::time::Duration::from_secs(30)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if cancelled.load(Ordering::SeqCst) {
+                *self.exit.lock().unwrap() = String::from("cancelled");
+                return reqs
+                    .iter()
+                    .map(|_| Err(String::from("compile cancelled")))
+                    .collect();
+            }
+            *self.exit.lock().unwrap() = String::from("finished");
+            reqs.iter()
+                .map(|r| {
+                    std::fs::write(&r.out_path, b"\x89PNG slow").map_err(|e| e.to_string())?;
+                    Ok(crate::widgets::poster::PosterOutcome::Rendered(
+                        crate::widgets::poster::PosterRendered {
+                            widget_id: r.widget_id.clone(),
+                            path: r.out_path.clone(),
+                            width: 4,
+                            height: 3,
+                            sha256: String::new(),
+                        },
+                    ))
+                })
+                .collect()
+        }
+    }
+
+    /// A cancel in the poster phase is accepted, runs no engine and writes
+    /// no pdf: the job settles cancelled. A spawned engine ends success,
+    /// failed or timed-out, so the cancelled record proves no run spawned.
+    #[test]
+    fn cancel_in_the_poster_window_runs_no_engine_and_writes_no_pdf() {
+        let cx = &Core::default();
+        let (id, _root) = poster_project(cx, "window");
+        let (poster, entered) = SlowPoster::new();
+        let poster = Arc::new(poster);
+        cx.set_poster_renderer(poster.clone());
+        let t0 = std::time::Instant::now();
+        let job = run(cx, &id, "main.tex", false, 60).unwrap();
+        entered
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the worker reached its poster phase");
+        assert_eq!(cancel(cx, &job).unwrap(), "cancelled");
+        let mut rec = poll(cx, &job, 5).unwrap();
+        while rec.status == JobStatus::Running && t0.elapsed() < std::time::Duration::from_secs(30)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            rec = poll(cx, &job, 5).unwrap();
+        }
+        assert_eq!(rec.status, JobStatus::Cancelled, "{rec:?}");
+        assert!(rec.pdf_url.is_none());
+        assert_eq!(rec.log, "compile cancelled");
+        assert_eq!(poster.exit.lock().unwrap().as_str(), "cancelled");
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(30),
+            "the poster phase stopped on the cancel, not on its budget"
+        );
+        // Settled: a second cancel keeps the old answer.
+        assert_eq!(
+            cancel(cx, &job).unwrap_err(),
+            String::from("nothing to cancel")
+        );
     }
 }

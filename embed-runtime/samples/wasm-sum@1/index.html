@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WASM sum</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
+        font-family: var(--m-font-body);
+        font-size: var(--m-size-base);
+      }
+      figure {
+        margin: 0;
+        padding: var(--m-space-3);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      #msg {
+        color: var(--m-color-error);
+        padding: var(--m-space-2);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <canvas id="view" width="640" height="400" role="img" aria-label="Summed numbers"></canvas>
+      <p id="msg" hidden></p>
+    </figure>
+    <script>
+      (function () {
+        'use strict';
+        var canvas = document.getElementById('view');
+        var note = document.getElementById('msg');
+        var ctx = canvas.getContext('2d');
+        var total = 0;
+        var caption = 'Computed in WebAssembly';
+        var seenInit = false;
+        // (module (func (export "add") (param i32 i32) (result i32)
+        //   local.get 0 local.get 1 i32.add)): the only binary in the
+        // package, decoded here so no module file is fetched.
+        var ADD = 'AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags=';
+
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function fail(message) {
+          note.hidden = false;
+          note.textContent = message;
+          post({ type: 'status', state: 'error', message: message });
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function draw() {
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = token('--m-figure-accent', '#5B2A86');
+          ctx.fillRect(0, canvas.height - 44, canvas.width, 44);
+          ctx.fillStyle = token('--m-figure-ink', '#111111');
+          ctx.font = '48px ' + token('--m-font-body', 'serif');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(total), canvas.width / 2, canvas.height / 2 - 22);
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.font = '16px ' + token('--m-font-body', 'serif');
+          ctx.fillText(caption, canvas.width / 2, canvas.height - 22, canvas.width - 24);
+        }
+        function applyTheme(t) {
+          var root = document.documentElement;
+          var tokens = (t && t.tokens) || {};
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          draw();
+        }
+        function decode(b64) {
+          var bin = atob(b64);
+          var bytes = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) {
+            bytes[i] = bin.charCodeAt(i);
+          }
+          return bytes;
+        }
+        function parseCsv(text) {
+          var out = [];
+          var rows = text.split('\n');
+          for (var i = 0; i < rows.length; i++) {
+            var cells = rows[i].split(',');
+            for (var j = 0; j < cells.length; j++) {
+              var n = Number(cells[j].trim());
+              if (cells[j].trim() !== '' && isFinite(n)) {
+                out.push(n | 0);
+              }
+            }
+          }
+          return out;
+        }
+        function onInit(d) {
+          seenInit = true;
+          var opts = d.options || {};
+          if (typeof opts.caption === 'string') {
+            caption = opts.caption;
+          }
+          applyTheme(d.theme);
+          canvas.setAttribute('aria-label', d.alt || 'Summed numbers');
+          post({ type: 'status', state: 'loading' });
+          var given = d.sources && d.sources.data;
+          if (!given) {
+            return fail('this widget has no data source');
+          }
+          var numbers = parseCsv(new TextDecoder('utf-8').decode(given.bytes));
+          if (!numbers.length) {
+            return fail('the data source holds no numbers');
+          }
+          var bytes;
+          try {
+            bytes = decode(ADD);
+          } catch (e) {
+            return fail('the embedded module could not be decoded');
+          }
+          WebAssembly.instantiate(bytes).then(
+            function (o) {
+              var add = o.instance.exports.add;
+              var sum = 0;
+              for (var i = 0; i < numbers.length; i++) {
+                sum = add(sum, numbers[i]);
+              }
+              total = sum;
+              note.hidden = true;
+              draw();
+              post({ type: 'status', state: 'loaded' });
+            },
+            function () {
+              fail('WebAssembly is blocked: the page policy refused the module');
+            },
+          );
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            onInit(d);
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (!seenInit) {
+              return;
+            }
+            var png = canvas.toDataURL('image/png');
+            if (png.length < 8 * 1024 * 1024) {
+              post({ type: 'snapshot', requestId: d.requestId, png: png });
+            }
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

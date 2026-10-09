@@ -1,0 +1,12 @@
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\begin{document}
+% A custom runtime widget. No runtimes/ folder exists: the package only
+% checks shapes and files, so this compiles with the runtime not installed.
+% Option values stay verbatim (= and spaces inside), the main argument is
+% recorded under the reserved role primary.
+\interactiveruntime[runtime=stl-viewer@1, poster=figures/runtime-poster.png,
+  alt={Orbitable flange}, height=6cm, id=fig-part,
+  sources={texture=figures/runtime-texture.png, labels=data/results.csv},
+  color=accent, autorotate=true, expr={a=b}, ratio= 0.5 ]{models/mesh.glb}
+\end{document}

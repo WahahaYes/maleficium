@@ -1,6 +1,6 @@
 [package]
 name = "maleficium-core"
-version = "0.1.0"
+version.workspace = true
 license = "AGPL-3.0-only"
 edition = "2021"
 description = "Application core shared by the desktop app and the MCP server: no Tauri"
@@ -24,10 +24,17 @@ maleficium-events = { path = "../events" }
 maleficium-index = { path = "../index" }
 # Base64 previews over the JSON contract (bytes have no JSON shape).
 base64 = "0.22.1"
+# Poster snapshots are decoded to check they are sane, non-blank and
+# theme-responsive; only decoding is used, never encoding.
+png = "0.18.1"
 # Renders pdf pages for snippets. No embedded fonts: Tectonic embeds every font.
 hayro = { version = "0.7", default-features = false }
 # The core-owned file watcher (notify thread per session root). No Tauri.
 notify = "8"
+jsonschema = { version = "0.58", default-features = false }
+# The reader's sanitizer and article post-processing parse HTML with
+# html5ever through this DOM (already in the tree via tauri-utils).
+dom_query = { version = "0.27", default-features = false }
 
 [dev-dependencies]
 libc = "0.2.189"

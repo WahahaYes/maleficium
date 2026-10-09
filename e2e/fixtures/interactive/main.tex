@@ -1,0 +1,24 @@
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\maleficiumtheme{house}
+\begin{document}
+\section{Widgets}
+% Post-caption placement captures the float's label and number.
+\begin{figure}
+\centering
+\caption{A model.}
+\label{fig:mesh}
+\interactivemodel[poster=figures/mesh.png, height=6cm, id=fig-mesh, alt={Avatar mesh before and after protection}]{models/mesh.glb}
+\end{figure}
+% Pre-caption placement records empty label and figure rather than the
+% neighbour's; the annotation rect is unaffected.
+\begin{figure}
+\centering
+\interactivevideo[poster=figures/clip.png, height=5cm, id=fig-clip, alt={Session playback}]{media/clip.mp4}
+\caption{A video.}
+\label{fig:clip}
+\end{figure}
+\interactivetable[pdfrows=2, id=tab-results, alt={Full scores for all configurations}]{data/results.csv}
+\interactivechart[poster=figures/chart.png, height=5cm, id=fig-chart, alt={Ablation chart}]{charts/ablation.vl.json}
+\interactive[poster=figures/demo.png, height=8cm, id=fig-demo, alt={Live demo widget}]{widgets/demo/}
+\end{document}

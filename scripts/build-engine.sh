@@ -6,6 +6,11 @@
 # SyncTeX parser is vendored (src-tauri/engine/synctex), all on the nightly
 # pinned by src-tauri/engine/rust-toolchain.toml. The build needs a few GB of
 # RAM: cap it with CARGO_BUILD_JOBS on a small machine.
+# Then the latexml format dumps (`maleficium-engine dump`, from the bundle pinned
+# in src-tauri/core/src/engine.rs) into src-tauri/resources/dumps/, which the
+# app bundles as resources; they are stamped with scripts/dumps-key.sh so an
+# unchanged pin is not regenerated (CI caches that directory). Generating them
+# needs the network (about 11 MB of bundle files, a couple of minutes).
 # Then a smoke test: compile a two-page document and query it both ways
 # (view -> Page:, edit -> Input:/Line:) through the built engine.
 # Idempotent: the cargo build is incremental.
@@ -65,6 +70,23 @@ install -m 755 "${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/release/malef
 say "$TRIPLE: installed"
 
 engine="$BIN/maleficium-engine-$TRIPLE$EXE"
+
+DUMPS="$ROOT/src-tauri/resources/dumps"
+dumps_key=$(sh "$ROOT/scripts/dumps-key.sh") || die "cannot read the dump key"
+bundle_url=$(sh "$ROOT/scripts/dumps-key.sh" url) || die "cannot read the bundle pin"
+if [ "$(cat "$DUMPS/.stamp" 2>/dev/null)" = "$dumps_key" ] && ls "$DUMPS"/latex.*.dump.txt >/dev/null 2>&1; then
+    say "dumps up to date ($dumps_key)"
+else
+    say "generating format dumps ($dumps_key)"
+    mkdir -p "$DUMPS"
+    rm -f "$DUMPS"/*.dump.txt "$DUMPS"/*.version "$DUMPS/.stamp"
+    "$engine" dump --out "$DUMPS" --bundle "$bundle_url" \
+        --cache "$ROOT/src-tauri/engine/target/dump-cache" >/dev/null 2>&1 || die "dump failed"
+    ls "$DUMPS"/plain.*.dump.txt "$DUMPS"/latex.*.dump.txt "$DUMPS"/texlive.*.version >/dev/null \
+        || die "dump wrote no dumps"
+    printf '%s\n' "$dumps_key" >"$DUMPS/.stamp"
+fi
+
 doc=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-engine-smoke-XXXXXX")
 trap 'rm -rf "$doc"' EXIT
 printf '\\documentclass{article}\n\\begin{document}\nfirst page\n\\newpage\nsecond page\n\\end{document}\n' >"$doc/smoke.tex"
@@ -79,4 +101,10 @@ view=$(cd "$doc" && "$engine" synctex view -i "5:1:$native_doc/smoke.tex" -o "sm
 echo "$view" | grep -q '^Page:2$' || die "synctex view smoke failed: $view"
 edit=$(cd "$doc" && "$engine" synctex edit -o "1:100:100:smoke.pdf" | tr -d '\r')
 { echo "$edit" | grep -q '^Input:' && echo "$edit" | grep -q '^Line:'; } || die "synctex edit smoke failed: $edit"
+# Convert with no TeX installed: the engine answers latexml's kpsewhich calls
+# from the pinned bundle.
+printf '\\documentclass{article}\n\\begin{document}\n\\section{Smoke}\nHello $x^2$.\n\\end{document}\n' >"$doc/convert.tex"
+(cd "$doc" && "$engine" convert convert.tex --out convert.html --bundle "$bundle_url" \
+    --cache "$ROOT/src-tauri/engine/target/dump-cache" --dumps "$DUMPS" >/dev/null 2>&1) || die "smoke convert failed"
+grep -q 'ltx_title_section' "$doc/convert.html" || die "smoke convert produced no section"
 say "$TRIPLE: smoke ok"

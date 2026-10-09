@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CompileButton from './components/CompileButton';
@@ -16,7 +16,9 @@ import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDi
 import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
 import { hoverText } from './lib/definition.view';
-import { projectIndex } from './lib/project-index';
+import { projectIndex, type ProjectMacro } from './lib/project-index';
+import { publishPresence } from './lib/presence';
+import OpenRequestPrompt from './components/OpenRequestPrompt';
 import type { Hit } from './lib/generated/index';
 import HistoryDialog from './components/HistoryDialog';
 import ShortcutsDialog from './components/ShortcutsDialog';
@@ -30,13 +32,20 @@ import { listDir1Level, loadTex, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
 import { cancelCompile, compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
-import { emit } from './lib/events';
+import { emit, eventOf } from './lib/events';
+import { transport } from './lib/event-transport';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
 import { structure } from './lib/structure';
 import type { OutlineEntry } from './lib/generated/structure';
 import type { ZoomAction } from './lib/zoom';
+import ExportReportDialog from './components/ExportReportDialog';
+import ExportProgress from './components/ExportProgress';
 import { useExport } from './hooks/useExport';
+import { useWidgetApproval } from './hooks/useWidgetApproval';
+import { approvalBannerText, pendingRuntimes, pendingWidgets } from './lib/widgets.view';
+import WidgetsPanel from './components/WidgetsPanel';
+import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
 import { FileHistory } from './lib/file-history';
@@ -55,6 +64,8 @@ import { useFileOps } from './hooks/useFileOps';
 import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
+import { useArticle } from './hooks/useArticle';
+import { anchorForLine, shouldRefreshArticle } from './lib/article';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -180,6 +191,14 @@ export default function App({
     setMainToPath,
     pickMain,
   } = useMainFile({ root, projectId, rootRef, setLog });
+  // What this window has open, for the MCP server's read view of the app.
+  useEffect(() => {
+    publishPresence(
+      projectId,
+      mainFile ? relInProject(mainFile) : null,
+      projectId ? relInProject(fileName) : null,
+    );
+  }, [projectId, root, mainFile, fileName, relInProject]);
   const handleSelect = useFileSelection({
     fileName,
     fileNameRef,
@@ -350,7 +369,17 @@ export default function App({
       clearMainFile: clearMain,
       handleSelect,
       warmCompile,
+      closeAll: handleCloseAll,
     });
+  // An agent's ask the user accepted: the File > Open path (or the open
+  // project already), then the named file.
+  const openForAgent = useCallback(
+    async (project: string, file: string | null) => {
+      if (rootRef.current !== project) await openRoot(project);
+      if (file) await handleSelectRef.current(joinPath(project, file));
+    },
+    [openRoot],
+  );
   const { handleCreate, handleRename, handleDelete, handleClean, handleUndo } = useFileOps({
     root,
     projectId,
@@ -395,16 +424,23 @@ export default function App({
         return;
       }
       const found = l.definitions.length;
+      // A macro with no project definition is built in, not an error.
+      const builtin = found === 0 && l.ref.kind === 'macro';
       emit({
         scope: 'app',
-        kind: found > 0 ? 'info' : 'warn',
+        kind: found > 0 || builtin ? 'info' : 'warn',
         actor: 'user',
-        message: found > 0 ? `definition of ${l.ref.key}` : `no definition for ${l.ref.key}`,
+        message:
+          found > 0
+            ? `definition of ${l.ref.key}`
+            : builtin
+              ? `${l.ref.key} is built in or from a package`
+              : `no definition for ${l.ref.key}`,
         event: { action: 'nav.definition', kind: l.ref.kind, key: l.ref.key, found },
       });
       const d = l.definitions[0];
       if (!d) {
-        setLog(hoverText(l));
+        setLog(hoverText(l) ?? `${l.ref.key} is built in or from a package`);
         return;
       }
       const abs = joinPath(root, d.rel);
@@ -417,6 +453,7 @@ export default function App({
   const definitionRef = useRef<{
     hover: (line: string, col: number) => Promise<string | null>;
     go: (line: string, col: number) => void;
+    macros: () => Promise<ProjectMacro[]>;
   } | null>(null);
   definitionRef.current = {
     hover: (line, col) =>
@@ -425,6 +462,7 @@ export default function App({
         () => null,
       ),
     go: (line, col) => void goToDefinitionAt(line, col),
+    macros: () => (projectId ? projectIndex().macros(projectId) : Promise.resolve([])),
   };
   const goToDefinitionRef = useRef<() => void>(() => {});
   goToDefinitionRef.current = () => {
@@ -574,6 +612,10 @@ export default function App({
     const base = baseName(t) || t;
     return relOf(t) === t ? base : `${relOf(t)}`;
   })();
+  const widgetApproval = useWidgetApproval({
+    projectId,
+    mainRel: mainFile ? relInProject(mainFile) : null,
+  });
   const [templateMode, setTemplateMode] = useState<TemplateDialogMode>(null);
   const exporter = useExport({
     pdf: previewDoc?.source ?? null,
@@ -626,7 +668,7 @@ export default function App({
       setSearchFocus((k) => k + 1);
     },
     openRecent: (r) => {
-      void openRoot(r, { warm: true });
+      void openRoot(r);
     },
     clearRecents: () => {
       pruneRecentProjects(() => false);
@@ -720,9 +762,13 @@ export default function App({
       void makeOffline();
     },
     showPrecheck: openPrecheck,
+    showWidgets: widgetApproval.openPanel,
     toggleAutoCompile: () => setAutoCompile(!autoCompile),
     exportPdf: () => void exporter.exportPdfAs(),
     exportZip: () => void exporter.exportZipAs(),
+    exportBundleFolder: () => void exporter.exportBundleAs('folder'),
+    exportBundleSingleFile: () => void exporter.exportBundleAs('single-file'),
+    previewInBrowser: () => void exporter.previewBundle(),
     newFromTemplate: () => setTemplateMode('gallery'),
     saveAsTemplate: () => setTemplateMode('save'),
     importTemplate: () => setTemplateMode('import'),
@@ -764,6 +810,85 @@ export default function App({
 
   const mainDoc =
     mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
+  // The Article tab's bytes: loaded on demand, reloaded by hand.
+  const article = useArticle();
+  const articleHtml = article.html;
+  const articleStamp = article.stamp;
+  const articleLoad = article.load;
+  const articleAnchors = article.anchors;
+  // Auto-refresh: a finished compile bumps the preview stamp; when the
+  // article shows older bytes, reload it. Never loads on its own: the
+  // first visit stays manual (see shouldRefreshArticle).
+  const previewStamp = previewDoc?.stamp ?? null;
+  useEffect(() => {
+    if (!mainDoc) return;
+    if (
+      shouldRefreshArticle(
+        articleHtml,
+        articleStamp,
+        previewStamp,
+        compilePhase === 'compiling',
+        true,
+      )
+    ) {
+      void articleLoad(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
+    }
+  }, [mainDoc, previewStamp, compilePhase, articleHtml, articleStamp, articleLoad]);
+  // Forward-only sync: the caret line's section maps to the article anchor
+  // the frame scrolls to. Sections come from the active buffer's outline;
+  // the article names the same headings with latexml numbers attached.
+  const articleAnchor = useMemo(
+    () =>
+      anchorForLine(
+        currentLine,
+        outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
+        articleAnchors,
+      ),
+    [currentLine, outline, articleAnchors],
+  );
+  // The article banner names the held widgets and runtimes from the same
+  // listing the Widgets panel shows; approving there clears it.
+  const approvalText = useMemo(
+    () =>
+      approvalBannerText(
+        pendingWidgets(widgetApproval.state?.status ?? null),
+        pendingRuntimes(widgetApproval.runtimeState?.status ?? null),
+      ),
+    [widgetApproval.state, widgetApproval.runtimeState],
+  );
+  const handleArticleSync = useCallback((anchor: string) => {
+    emit({
+      scope: 'preview',
+      kind: 'info',
+      actor: 'user',
+      message: `article sync → ${anchor}`,
+      event: { action: 'article.sync', anchor },
+    });
+  }, []);
+  // Approve round-trip: the bytes' Approve button opens the Widgets panel
+  // (approval wants the panel's review, never a blind click-through); the
+  // approval settled there re-exports the article below.
+  const handleArticleApproveRequest = useCallback(
+    (widget: string) => {
+      emit({
+        scope: 'preview',
+        kind: 'info',
+        actor: 'user',
+        message: `article asks approval for ${widget}`,
+        event: { action: 'article.approve-request', widget },
+      });
+      widgetApproval.openPanel();
+    },
+    [widgetApproval],
+  );
+  const articleReload = article.reload;
+  useEffect(() => {
+    if (!projectId) return;
+    return transport().subscribe((e) => {
+      const acted = eventOf(e, 'widget.approved') ?? eventOf(e, 'widget.revoked');
+      if (acted && acted.rootId === projectId) articleReload();
+    });
+  }, [projectId, articleReload]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -885,6 +1010,19 @@ export default function App({
             }}
             syncDisabled={compilePhase === 'compiling'}
             zoomActionRef={zoomActionRef}
+            compiling={compilePhase === 'compiling'}
+            articleHtml={article.html}
+            articleLoading={article.loading}
+            articleError={article.error}
+            canLoadArticle={mainDoc != null && pdfUrl != null}
+            onLoadArticle={() => {
+              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
+            }}
+            articleAnchor={articleAnchor}
+            onArticleSync={handleArticleSync}
+            onApproveArticle={handleArticleApproveRequest}
+            approvalText={approvalText}
+            onReviewApprovals={widgetApproval.openPanel}
           />
         }
       />
@@ -896,6 +1034,7 @@ export default function App({
         onJump={handleProblemJump}
       />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <OpenRequestPrompt onOpen={openForAgent} />
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -938,12 +1077,29 @@ export default function App({
         restoringRev={restoringRev}
         onRestore={(rev) => void restoreRevision(rev)}
       />
+      <ExportProgress run={exporter.run} onCancel={() => void exporter.cancelExport()} />
+      <ExportReportDialog report={exporter.bundleReport} onClose={exporter.closeBundleReport} />
       <TemplateDialogs
         mode={templateMode}
         onClose={() => setTemplateMode(null)}
         project={root && projectId ? { rootId: projectId, path: root } : null}
         mainRel={mainFile ? relInProject(mainFile) : null}
-        openRoot={(r, main) => openRoot(r, { warm: true, cold: true, main })}
+        openRoot={(r, main) => openRoot(r, { main })}
+      />
+      <WidgetsPanel
+        open={widgetApproval.panelOpen}
+        onClose={widgetApproval.closePanel}
+        model={widgetApproval.model}
+        state={widgetApproval.state}
+        runtimeModel={widgetApproval.runtimeModel}
+        runtimeState={widgetApproval.runtimeState}
+      />
+      <WidgetApprovalPrompt
+        prompt={widgetApproval.prompts?.current() ?? null}
+        failure={widgetApproval.prompts?.failure() ?? null}
+        onApprove={() => void widgetApproval.prompts?.approve()}
+        onSkip={() => widgetApproval.prompts?.skip()}
+        onDismissFailure={() => widgetApproval.prompts?.clearFailure()}
       />
       <StatusBar
         mainFile={relOf(mainFile)}

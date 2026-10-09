@@ -14,7 +14,7 @@ npm run dev:desktop            # the app, with hot reload
 
 `npm run dev` serves the frontend alone in a browser. Both dev commands pick a free port, so several checkouts can run side by side.
 
-`sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, a copy of the `e2e/fixtures/simple` test fixture, and the real papers in `e2e/fixtures/vendored`. It keeps any project folder that already exists; delete one to get a fresh copy.
+`sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, a copy of the `e2e/fixtures/simple` test fixture, the real papers in `e2e/fixtures/vendored`, and `interactive-paper` (the `e2e/fixtures/playground` widget paper, with `maleficium-interactive.sty` copied in). It keeps any project folder that already exists; delete one to get a fresh copy.
 
 Recommended: `pre-commit install` runs the format, lint, and type checks on each commit, and checks each commit message.
 
@@ -55,7 +55,7 @@ Fallbacks that keep the app working on a supported setup are fine, such as copy-
 
 ## License
 
-Maleficium is AGPL-3.0, and contributions are accepted under the same license. Bundled third-party files (themes, engine binaries) need a compatible license and an entry in [NOTICE](../NOTICE).
+Maleficium is AGPL-3.0, and contributions are accepted under the same license. The exception is [embed-runtime/](../embed-runtime/README.md), the code that ships inside papers and projects: it is MIT-0, contributions there are accepted under MIT-0, and nothing in it may import or copy code from outside it (a test checks). Bundled third-party files (themes, engine binaries) need a compatible license and an entry in [NOTICE](../NOTICE).
 
 ## Templates
 

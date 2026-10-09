@@ -15,7 +15,7 @@
   },
   "scripts": {
     "predev": "sh scripts/reclaim.sh",
-    "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh",
+    "predev:desktop": "sh scripts/reclaim.sh && sh scripts/check-freshness.sh --strict",
     "dev": "sh scripts/dev.sh web",
     "dev:desktop": "sh scripts/dev.sh desktop",
     "dev:serve": "vite",
@@ -29,7 +29,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "clean": "sh scripts/clean.sh"
+    "clean": "sh scripts/clean.sh",
+    "build:runtimes": "vite build --config embed-runtime/vite.config.ts --mode table && vite build --config embed-runtime/vite.config.ts --mode chart && vite build --config embed-runtime/vite.config.ts --mode model && vite build --config embed-runtime/vite.config.ts --mode video && vite build --config embed-runtime/vite.config.ts --mode bridge && vite build --config embed-runtime/vite.config.ts --mode fork-three && vite build --config embed-runtime/vite.config.ts --mode fork-viewer"
   },
   "dependencies": {
     "@codemirror/language": "^6.12.4",
@@ -48,7 +49,8 @@
     "codemirror": "^6.0.2",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "temml": "0.13.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -56,6 +58,7 @@
     "@types/node": "^22.20.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
@@ -64,8 +67,12 @@
     "globals": "^16.5.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.9.8",
+    "three": "0.186.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.0",
+    "vega": "^6.4.0",
+    "vega-interpreter": "^2.3.2",
+    "vega-lite": "^6.4.3",
     "vite": "^8.3.0",
     "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.11"

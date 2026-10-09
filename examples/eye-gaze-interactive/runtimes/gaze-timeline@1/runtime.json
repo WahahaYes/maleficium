@@ -1,0 +1,51 @@
+{
+  "contract": 1,
+  "name": "gaze-timeline",
+  "version": "1.0.0",
+  "title": "Gaze timeline",
+  "description": "One context parameter drives three linked views: a scene frame with the scanpath of the last k fixations, the model query those fixations build, and the metric curve measured over k.",
+  "authors": ["Ethan Wilson"],
+  "license": "MIT-0",
+  "sources": {
+    "frame": {
+      "primary": true,
+      "required": true,
+      "extensions": ["jpg", "jpeg", "png"],
+      "maxBytes": 8388608,
+      "description": "The scene frame the fixations are drawn over."
+    },
+    "trace": {
+      "required": true,
+      "extensions": ["json"],
+      "maxBytes": 1048576,
+      "description": "The scanpath: current object, prior fixations most recent first (x, y as frame fractions or null), questions, visible objects, the published response."
+    },
+    "curve": {
+      "required": true,
+      "extensions": ["csv"],
+      "maxBytes": 1048576,
+      "description": "Metric by context size: experiment, fixations, vlm, ci_low, ci_high, greedy, ... (percent)."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "experiment": {
+        "type": "string",
+        "enum": ["E1", "E2"],
+        "default": "E1",
+        "description": "Which experiment's question and curve to show first."
+      },
+      "context": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10,
+        "default": 8,
+        "description": "The context size shown first."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

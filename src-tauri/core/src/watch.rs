@@ -361,6 +361,11 @@ fn process_batch(cx: &Core, root_id: &str, root: &Path, events: Vec<Event>) {
         if is_echo(cx, &root.join(&rel)) {
             continue;
         }
+        // Hidden paths (the poster cache, build outputs, version control)
+        // are never shown, so a change there is nothing to react to.
+        if rel.split('/').any(crate::is_hidden_name) {
+            continue;
+        }
         queue.push_back(WatchEvent { rel, change });
         while queue.len() > MAX_QUEUED {
             queue.pop_front();
@@ -483,6 +488,31 @@ mod tests {
         .unwrap();
         stop(cx, &id).unwrap();
         // Idempotent stop.
+        stop(cx, &id).unwrap();
+    }
+
+    #[test]
+    fn watcher_never_queues_poster_cache_writes() {
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "hidden");
+        start_with_mode(cx, &id, Mode::Recommended).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        std::fs::create_dir_all(dir.join(".maleficium/posters")).unwrap();
+        std::fs::write(dir.join(".maleficium/posters/a.png"), "png").unwrap();
+        std::fs::write(dir.join("seen.tex"), "x").unwrap();
+        let mut got = Vec::new();
+        for _ in 0..25 {
+            got.extend(poll(cx, &id).unwrap());
+            if got.iter().any(|e| e.rel == "seen.tex") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(got.iter().any(|e| e.rel == "seen.tex"), "{got:?}");
+        assert!(
+            !got.iter().any(|e| e.rel.starts_with(".maleficium")),
+            "cache write queued in {got:?}"
+        );
         stop(cx, &id).unwrap();
     }
 

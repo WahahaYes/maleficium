@@ -7,6 +7,7 @@
 import type {
   FileMatch,
   Lookup,
+  ProjectMacro,
   Query,
   Ranked,
   ReplaceApplied,
@@ -14,7 +15,16 @@ import type {
   SearchResult,
 } from './generated/index';
 
-export type { FileMatch, Lookup, Query, Ranked, ReplaceApplied, ReplacePreview, SearchResult };
+export type {
+  FileMatch,
+  Lookup,
+  ProjectMacro,
+  Query,
+  Ranked,
+  ReplaceApplied,
+  ReplacePreview,
+  SearchResult,
+};
 
 export interface ProjectIndexProvider {
   /** Build the index now (dropping overlays); resolves to the files listed. */
@@ -39,6 +49,8 @@ export interface ProjectIndexProvider {
     col: number,
     mainRel: string | null,
   ): Promise<Lookup | null>;
+  /** Every macro the project defines, by name (for the math preview). */
+  macros(rootId: string): Promise<ProjectMacro[]>;
   /** Rank any list of names by the finder's fuzzy score, best first. */
   rank(query: string, items: string[]): Promise<Ranked[]>;
   /** Plan replacing every match; writes nothing. */

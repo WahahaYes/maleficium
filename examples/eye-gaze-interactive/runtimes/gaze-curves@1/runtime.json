@@ -1,0 +1,46 @@
+{
+  "contract": 1,
+  "name": "gaze-curves",
+  "version": "1.0.0",
+  "title": "Gaze curves",
+  "description": "Line charts with their controls, legend and live readout outside the plot: accuracy against prior-fixation context (view context), or required eye-tracking accuracy against object coverage (view coverage).",
+  "authors": ["Ethan Wilson"],
+  "license": "MIT-0",
+  "sources": {
+    "data": {
+      "primary": true,
+      "required": true,
+      "extensions": ["csv"],
+      "maxBytes": 1048576,
+      "description": "context: experiment, fixations, vlm, ci_low, ci_high, greedy, random_prior, random_visible, source. coverage: measure, space, pct, deg."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "view": {
+        "type": "string",
+        "enum": ["context", "coverage"],
+        "default": "context",
+        "description": "Which chart the data draws."
+      },
+      "pick": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "default": 6,
+        "description": "The x value picked first: a context size, or a coverage percentile."
+      },
+      "accuracy": {
+        "type": "number",
+        "minimum": 0.5,
+        "maximum": 8,
+        "default": 3,
+        "description": "coverage: the tracker error shown first, in degrees."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

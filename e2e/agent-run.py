@@ -30,10 +30,10 @@ Manual only: it spends model credits. See e2e/README.md.
 import argparse, base64, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, threading, time
 
 from mcp_client import McpClient
+import templates
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-TEMPLATES = os.path.join(ROOT, "src-tauri", "templates")
 SCENARIOS = os.path.join(HERE, "agent-scenarios")
 IDENT = "io.github.wahahayes.maleficium"
 CACHE_ROOT = "/var/tmp/maleficium-agent-cache"
@@ -169,8 +169,7 @@ def apply_edits(project, edits):
 
 def make_fixture(scenario, project, solved=False):
     """The template plus the scenario's edits and files (plus its solution)."""
-    shutil.copytree(os.path.join(TEMPLATES, scenario["template"]), project)
-    os.remove(os.path.join(project, "template.json"))
+    templates.materialize(scenario["template"], project)
     for rel, text in scenario.get("files", {}).items():
         with open(os.path.join(project, rel), "w") as f:
             f.write(text)
@@ -1162,6 +1161,119 @@ def self_test_oracles():
     return bad
 
 
+def self_test_runtime_authoring(server):
+    """A fresh agent authors a runtime through the MCP tools, no model: the
+    scaffolded draft validates with a silent scan, bad-cdn@1 still fails on
+    url-load, and neither tool takes an approval. Scratch HOME throughout,
+    so the library writes stay contained. Returns a bad count."""
+    bad = 0
+
+    def check(name, good, detail=""):
+        nonlocal bad
+        bad += not good
+        say("self-test runtime-authoring %s: %s%s" % (name, "ok" if good else "WRONG",
+                                                      " (%s)" % detail if detail else ""))
+
+    with tempfile.TemporaryDirectory(dir="/var/tmp") as home:
+        mcp = Mcp(server, home)
+        try:
+            ok, draft = mcp.call("runtime_scaffold", {"name": "self-test-draft"})
+            check("scaffold", ok, draft if not ok else draft["reference"])
+            if ok:
+                want = {"runtime.json", "index.html", "bridge.js", "samples/photo.svg", "LICENSE"}
+                have = {os.path.relpath(os.path.join(r, f), draft["path"])
+                        for r, _, fs in os.walk(draft["path"]) for f in fs}
+                check("draft-shape", draft["reference"] == "self-test-draft@1" and want <= have,
+                      sorted(have))
+                ok, valid = mcp.call("runtime_validate", {"reference": draft["reference"]})
+                check("draft-validates", ok and valid["valid"] and not valid["errors"]
+                      and not valid["warnings"], valid if ok else valid)
+            with tempfile.TemporaryDirectory(dir="/var/tmp") as p:
+                shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
+                                os.path.join(p, "runtimes", "bad-cdn@1"))
+                ok, _ = mcp.call("grant", {"root_id": "rt", "root": p})
+                check("grant", ok)
+                ok, red = mcp.call("runtime_validate",
+                                   {"root_id": "rt", "reference": "bad-cdn@1"})
+                check("bad-cdn-fails-url-load",
+                      ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
+                      red if ok else red)
+            ok, fork = mcp.call("runtime_scaffold",
+                                {"name": "self-test-fork", "from": "model@1"})
+            check("fork-scaffold", ok, fork if not ok else fork["reference"])
+            if ok:
+                want = {"runtime.json", "index.html", "bridge.js", "viewer.js",
+                        "vendor/three/three.js", "vendor/three/LICENSE",
+                        "samples/mesh.glb", "LICENSE"}
+                have = {os.path.relpath(os.path.join(r, f), fork["path"])
+                        for r, _, fs in os.walk(fork["path"]) for f in fs}
+                check("fork-shape", fork["reference"] == "self-test-fork@1" and want == have,
+                      sorted(have))
+                # The fork is the built-in viewer as a readable classic
+                # script over vendored three.js: untouched, it validates
+                # with a silent scan, so it can go straight to install.
+                ok, green = mcp.call("runtime_validate", {"reference": fork["reference"]})
+                check("fork-validates-untouched",
+                      ok and green["valid"] and not green["errors"] and not green["warnings"],
+                      green if ok else green)
+                # Install: the validated fork goes into a granted project as
+                # runtimes/<ref>/, never approved; the same files again are
+                # unchanged, and an edited draft replaces only on request.
+                with tempfile.TemporaryDirectory(dir="/var/tmp") as proj:
+                    ok, _ = mcp.call("grant", {"root_id": "rt-inst", "root": proj})
+                    check("grant-install", ok)
+                    args = {"root_id": "rt-inst", "reference": fork["reference"]}
+                    ok, inst = mcp.call("runtime_install", args)
+                    check("install-copies-unapproved",
+                          ok and inst["outcome"] == "installed" and not inst["approved"]
+                          and inst["ask_user"] and inst["hint"].startswith("Ask the user to allow")
+                          and inst["path"] == "runtimes/self-test-fork@1"
+                          and os.path.isfile(os.path.join(proj, "runtimes", "self-test-fork@1", "viewer.js")),
+                          inst)
+                    ok, there = mcp.call("runtime_validate", args)
+                    check("install-validates-in-project", ok and there["valid"], there)
+                    ok, again = mcp.call("runtime_install", args)
+                    check("install-again-unchanged", ok and again["outcome"] == "unchanged", again)
+                    with open(os.path.join(fork["path"], "viewer.js"), "a") as f:
+                        f.write("\n// edited\n")
+                    ok, refused = mcp.call("runtime_install", args)
+                    check("install-keeps-a-different-copy", not ok and "replace" in refused, refused)
+                    ok, swapped = mcp.call("runtime_install", dict(args, replace=True))
+                    check("install-replaces-on-request",
+                          ok and swapped["outcome"] == "replaced" and not swapped["approved"], swapped)
+            with tempfile.TemporaryDirectory(dir="/var/tmp") as q:
+                shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
+                                os.path.join(q, "runtimes", "bad-cdn@1"))
+                ok, _ = mcp.call("grant", {"root_id": "rt-fix", "root": q})
+                check("grant-fix", ok)
+                ok, red = mcp.call("runtime_validate",
+                                   {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                check("repair-fails-url-load",
+                      ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
+                      red if ok else red)
+                entry = os.path.join(q, "runtimes", "bad-cdn@1", "index.html")
+                with open(entry) as f:
+                    text = f.read()
+                fixed = "\n".join(l for l in text.split("\n") if "cdn.example.com" not in l)
+                with open(entry, "w") as f:
+                    f.write(fixed)
+                ok, green = mcp.call("runtime_validate",
+                                     {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                check("repair-fixed-validates",
+                      ok and green["valid"] and not green["errors"],
+                      green if ok else green)
+            ok, _ = mcp.call("runtime_scaffold", {"name": "nope", "approve": True})
+            check("scaffold-refuses-approval", not ok)
+            ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
+            check("validate-refuses-approval", not ok)
+            ok, _ = mcp.call("runtime_install",
+                             {"root_id": "rt-inst", "reference": "nope@1", "approve": True})
+            check("install-refuses-approval", not ok)
+        finally:
+            mcp.close()
+    return bad
+
+
 def self_test_scripts(scenarios, server, warm, out):
     """Scenarios with a `script` run end to end with the scripted fake agent:
     as written it must pass every oracle; with a wrong answer line, or with
@@ -1190,7 +1302,8 @@ def self_test_scripts(scenarios, server, warm, out):
 def self_test(scenarios, server, warm, out):
     """Solved fixtures must pass every file oracle; raw fixtures must fail one;
     scripted scenarios must pass as scripted and fail when tampered with."""
-    bad = self_test_oracles() + self_test_scripts(scenarios, server, warm, out)
+    bad = self_test_oracles() + self_test_scripts(scenarios, server, warm, out) \
+        + self_test_runtime_authoring(server)
     run_oracles = {"compiles", "clean_log", "outline_has", "file_matches", "file_lacks", "count_equal",
                    "section_matches", "unchanged", "secret_not_leaked"}
     with tempfile.TemporaryDirectory(dir="/var/tmp") as t:

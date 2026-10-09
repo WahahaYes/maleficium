@@ -6,6 +6,7 @@ use crate::Core;
 
 use maleficium_index::definition::{self, Lookup, RefAt};
 use maleficium_index::search::{self, FileMatch, Query, SearchResult};
+use maleficium_index::ProjectMacro;
 
 /// Hits one search returns by default.
 pub const MAX_HITS: usize = 1000;
@@ -48,6 +49,11 @@ pub fn definition_at(
     super::index::with(cx, root_id, |l| {
         Some(definition::lookup(&l.index, &r, main_rel))
     })
+}
+
+/// Every macro the project defines, for rendering its math.
+pub fn macros(cx: &Core, root_id: &str) -> Result<Vec<ProjectMacro>, String> {
+    super::index::with(cx, root_id, |l| l.index.macro_list())
 }
 
 /// Where a reference is defined: a known ref, or the one at a 1-based line

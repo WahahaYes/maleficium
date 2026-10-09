@@ -17,6 +17,8 @@ import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
 import type { AppearancePrefs } from '../lib/appearance';
 import { editorTheme } from '../lib/editorTheme';
+import { mathPreview } from '../lib/mathPreview';
+import type { ProjectMacro } from '../lib/project-index';
 import FindBar from './FindBar';
 
 export interface EditorViewportProps {
@@ -69,6 +71,8 @@ function EditorViewport({
   definitionRef?: React.MutableRefObject<{
     hover: (line: string, col: number) => Promise<string | null>;
     go: (line: string, col: number) => void;
+    /** The project's macros, for the math preview. */
+    macros: () => Promise<ProjectMacro[]>;
   } | null>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -81,6 +85,7 @@ function EditorViewport({
   const onChangeRef = useLatest(onChange);
   const onSaveRef = useLatest(onSave);
   const muiTheme = useTheme();
+  const muiThemeRef = useLatest(muiTheme);
   // Theme compartment: prefs + tokens restyle the live view on mode flip.
   const themeCompartment = useRef(new Compartment()).current;
   // MUI find bar state: opened by Ctrl+F or the menu, seeded from selection.
@@ -137,6 +142,11 @@ function EditorViewport({
               return { dom };
             },
           };
+        }),
+        // Caret in a formula: the formula rendered above it.
+        mathPreview({
+          macros: () => definitionRef?.current?.macros() ?? Promise.resolve([]),
+          errorColor: () => muiThemeRef.current.palette.error.main,
         }),
         themeCompartment.of(editorTheme(prefsRef.current, muiTheme)),
         EditorView.updateListener.of((u) => {
