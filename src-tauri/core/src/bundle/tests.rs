@@ -765,8 +765,10 @@ fn the_export_has_no_network_code() {
 
 // ---- the manifest schema and its red controls ---------------------------
 
-fn good_manifest() -> Value {
-    let p = project("manifest", REAL_SIDECAR);
+/// A real export's manifest. Each caller names its own project folder:
+/// tests run in parallel, and a shared one is wiped under the other's read.
+fn good_manifest(name: &str) -> Value {
+    let p = project(name, REAL_SIDECAR);
     let d = dest(&p, "m");
     export(&p, &d, BundleProfile::Folder).unwrap();
     manifest_of(Path::new(&d))
@@ -774,7 +776,7 @@ fn good_manifest() -> Value {
 
 #[test]
 fn the_schema_rejects_what_the_note_forbids() {
-    let good = good_manifest();
+    let good = good_manifest("manifest-schema");
     validate_manifest(&good).unwrap();
     let bad = |f: &dyn Fn(&mut Value)| -> String {
         let mut m = good.clone();
@@ -1253,7 +1255,7 @@ fn reader_flags_default_to_contents_with_the_theme_measure() {
 
 #[test]
 fn the_reader_block_enforces_its_closed_shapes() {
-    let good = good_manifest();
+    let good = good_manifest("manifest-reader");
     assert_eq!(
         good["paper"]["reader"],
         json!({"contents": true, "measure": "default"})
