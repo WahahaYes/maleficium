@@ -2,8 +2,9 @@
 
 The one smoke path for every OS. Only installing is per OS:
   Linux:   the .deb into a clean Ubuntu container (so its Depends are what
-           make it run, not a build host's -dev packages); payload checks;
-           the AppImage carries no libwayland
+           make it run, not a build host's -dev packages); payload checks
+           (binaries, desktop entry, dumps resource); the AppImage carries
+           no libwayland and ships the dumps resource
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
            every binary is built for this machine
   Windows: silent NSIS install; check the installed binaries
@@ -203,13 +204,19 @@ def linux(dir, shots):
             fail("package lacks %s" % want)
     if not any(f.endswith("Maleficium.desktop") for f in files):
         fail("package lacks its desktop entry")
-    say("install ok")
+    dumps = [f for f in files if f.startswith("/usr/lib/Maleficium/resources/dumps/")]
+    if not any(os.path.basename(f).startswith("latex.") and f.endswith(".dump.txt") for f in dumps):
+        fail("package lacks the latexml format dumps under /usr/lib/Maleficium/resources/dumps")
+    say("install ok (%d dumps resource files)" % len(dumps))
     with tempfile.TemporaryDirectory() as t:
         run([os.path.abspath(img), "--appimage-extract"], cwd=t, stdout=subprocess.DEVNULL)
         bundled = glob.glob(os.path.join(t, "squashfs-root/usr/lib/libwayland-*"))
         if bundled:
             fail("AppImage bundles %s (clashes with newer host Mesa)" % os.path.basename(bundled[0]))
-    say("AppImage bundles no libwayland")
+        dumps = glob.glob(os.path.join(t, "squashfs-root/usr/lib/Maleficium/resources/dumps/latex.*.dump.txt"))
+        if not dumps:
+            fail("AppImage lacks the latexml format dumps (usr/lib/Maleficium/resources/dumps)")
+    say("AppImage bundles no libwayland, dumps resource ok")
     home = tempfile.mkdtemp(prefix="smoke-home-")
     env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
     env["HOME"] = home

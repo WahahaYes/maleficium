@@ -1,0 +1,6 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "data": { "values": [{ "a": "x", "b": 1 }] },
+  "mark": "bar",
+  "encoding": { "x": { "field": "a" }, "y": { "field": "b" } }
+}

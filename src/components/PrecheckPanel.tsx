@@ -83,35 +83,36 @@ export default function PrecheckPanel({
       </Typography>
       <Box sx={{ overflowY: 'auto', borderTop: 1, borderBottom: 1, borderColor: 'divider' }}>
         {precheck.findings.map((f) => (
-          <ButtonBase
-            key={`${f.kind}|${f.name}|${f.path}|${f.line}`}
-            onClick={() => onJump(precheck.rootPath, f.path, f.line)}
-            title={`Go to ${f.path}:${f.line}`}
-            sx={{
-              display: 'block',
-              width: '100%',
-              textAlign: 'left',
-              px: 1.5,
-              py: 0.75,
-              '&:hover': { bgcolor: 'action.hover' },
-            }}
-          >
-            <Typography variant="caption" color="warning.main" component="div">
-              {KIND_LABEL[f.kind]}
-            </Typography>
-            <Typography variant="body2" component="div" noWrap>
-              {f.name}
-              <Typography component="span" variant="caption" color="text.secondary">
-                {'  '}
-                {f.path}:{f.line}
+          <Box key={`${f.kind}|${f.name}|${f.path}|${f.line}`}>
+            <ButtonBase
+              onClick={() => onJump(precheck.rootPath, f.path, f.line)}
+              title={`Go to ${f.path}:${f.line}`}
+              sx={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                px: 1.5,
+                py: 0.75,
+                '&:hover': { bgcolor: 'action.hover' },
+              }}
+            >
+              <Typography variant="caption" color="warning.main" component="div">
+                {KIND_LABEL[f.kind]}
               </Typography>
-            </Typography>
-            {f.suggestion ? (
-              <Typography variant="caption" color="text.secondary" component="div">
-                Try: {f.suggestion}
+              <Typography variant="body2" component="div" noWrap>
+                {f.name}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {'  '}
+                  {f.path}:{f.line}
+                </Typography>
               </Typography>
-            ) : null}
-          </ButtonBase>
+              {f.suggestion ? (
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Try: {f.suggestion}
+                </Typography>
+              ) : null}
+            </ButtonBase>
+          </Box>
         ))}
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.5 }}>

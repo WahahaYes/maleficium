@@ -31,6 +31,7 @@ jobs:
     outputs:
       src: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.src }}
       fixtures: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.fixtures }}
+      e2e: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.e2e }}
       fixtures_files: ${{ steps.filter.outputs.fixtures_files }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,13 +43,26 @@ jobs:
             src:
               - 'src/**'
               - 'src-tauri/**'
+              - 'embed-runtime/**'
               - 'scripts/**'
               - 'e2e/**/*.py'
               - '.github/workflows/**'
             fixtures:
               - 'e2e/fixtures/**'
+              - 'examples/**'
               - 'e2e/papers-run.py'
               - 'e2e/mcp_client.py'
+            # The interactive-papers suites: everything src covers, plus the
+            # suites themselves, their fixture and the browser driver's pin.
+            e2e:
+              - 'src/**'
+              - 'src-tauri/**'
+              - 'embed-runtime/**'
+              - 'scripts/**'
+              - 'e2e/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/**'
 
   package:
     needs: changes
@@ -139,6 +153,19 @@ jobs:
           # Main seeds caches every PR reads; PR runs never write their own sets.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      # latexml's format dumps come from the pinned bundle over the network
+      # (about two minutes). They belong to one latexml version and one
+      # bundle pin, so the cache is keyed on exactly that pair
+      # (scripts/dumps-key.sh); build-engine.sh skips generation on a hit.
+      # Both steps are UNVERIFIED on macOS and Windows until CI runs.
+      - name: Format dumps key
+        id: dumps-key
+        run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
+      - name: Format dumps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/resources/dumps
+          key: ${{ steps.dumps-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
 
@@ -207,15 +234,18 @@ jobs:
           save-if: false
       - name: Engine
         run: sh scripts/build-engine.sh
-      - name: Changed vendored papers
+      - name: Changed vendored papers and examples
         id: papers
         run: |
           FILES="${{ needs.changes.outputs.fixtures_files }}"
           ARGS=""
           for f in $(echo "$FILES" | tr ',' ' '); do
             case "$f" in
-              e2e/fixtures/vendored/*/*)
-                paper=$(echo "$f" | cut -d/ -f4)
+              e2e/fixtures/vendored/*/* | examples/*/*)
+                case "$f" in
+                  examples/*) paper=$(echo "$f" | cut -d/ -f2) ;;
+                  *) paper=$(echo "$f" | cut -d/ -f4) ;;
+                esac
                 case " $ARGS " in
                   *" --paper $paper "*) ;;
                   *) ARGS="$ARGS --paper $paper" ;;
@@ -227,6 +257,102 @@ jobs:
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
       - name: Papers run (changed fixtures)
         run: python3 e2e/papers-run.py --brief ${{ steps.papers.outputs.args }}
+
+  # The interactive-papers suites (e2e/README.md): paper export with the
+  # reader in Chromium, Firefox and WebKit, the interactive package, headless
+  # widget posters under Xvfb, and html widget approval. Linux only, in a
+  # debug build (the poster run needs the debug-only hanging runtime).
+  # scripts/ci-e2e.sh runs them the same way locally.
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # No debug info: the debug build is only run, and it is large.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The engine, a debug app build and three browsers outgrow the
+      # runner's free disk; drop toolchains this job never uses.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+      # Xvfb for the virtual displays, Mesa's software GL for the posters
+      # WebKitGTK renders (only recommended by it), and mutool for the
+      # interactive run's table row check.
+      - name: Linux build packages
+        run: |
+          sudo apt-get update
+          xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri mupdf-tools
+      # Ubuntu 24.04's AppArmor denies unprivileged user namespaces, so the
+      # export run's offline cells (unshare -rn) would print skip:.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Python packages
+        run: python -m pip install jsonschema
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
+        working-directory: src-tauri/engine
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: npm ci
+      - name: Format dumps key
+        id: dumps-key
+        run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
+      - name: Format dumps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/resources/dumps
+          key: ${{ steps.dumps-key.outputs.key }}
+      # Before any cargo build: tauri-build copies this engine into
+      # target/debug, and ci-e2e.sh checks the copy matches.
+      - name: Engine
+        run: sh scripts/build-engine.sh
+      # The browsers belong to the playwright-core version in the lockfile.
+      - name: Playwright browsers cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Playwright browsers and their system libraries
+        run: npx playwright-core install --with-deps chromium firefox webkit
+      # The TeX bundle the suites compile against, fetched on first use and
+      # content-addressed by the pinned digest.
+      - name: TeX bundle key
+        id: bundle-key
+        run: |
+          d=$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' src-tauri/core/src/engine.rs)
+          [ -n "$d" ] || { echo "BUNDLE_DIGEST not found in src-tauri/core/src/engine.rs"; exit 1; }
+          echo "digest=$d" >> "$GITHUB_OUTPUT"
+      - name: TeX bundle cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
+      - name: Interactive-papers suites
+        env:
+          CI_E2E_LOGS: ${{ runner.temp }}/e2e-logs
+        run: sh scripts/ci-e2e.sh
+      - name: Upload suite logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs/*.log
+          if-no-files-found: ignore
 
   purge_caches:
     runs-on: ubuntu-latest
@@ -248,16 +374,17 @@ jobs:
 
   ci:
     runs-on: ubuntu-latest
-    needs: [changes, package, fast_check, fixture_papers, purge_caches]
+    needs: [changes, package, fast_check, e2e, fixture_papers, purge_caches]
     if: always()
     steps:
       - name: Gate on source and fixture changes
         run: |
           SRC="${{ needs.changes.outputs.src }}"
+          E2E="${{ needs.changes.outputs.e2e }}"
           FIX="${{ needs.changes.outputs.fixtures }}"
           PURGE="${{ needs.purge_caches.result }}"
           FAIL=0
-          if [ "$SRC" != "true" ] && [ "$FIX" != "true" ]; then
+          if [ "$SRC" != "true" ] && [ "$E2E" != "true" ] && [ "$FIX" != "true" ]; then
             echo "No source or fixture changes; CI passes by skip."
             exit 0
           fi
@@ -265,6 +392,10 @@ jobs:
             echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
             if [ "${{ needs.package.result }}" != "success" ]; then FAIL=1; fi
             if [ "${{ needs.fast_check.result }}" != "success" ]; then FAIL=1; fi
+          fi
+          if [ "$E2E" = "true" ]; then
+            echo "e2e: ${{ needs.e2e.result }}"
+            if [ "${{ needs.e2e.result }}" != "success" ]; then FAIL=1; fi
           fi
           if [ "$FIX" = "true" ]; then
             echo "fixture_papers: ${{ needs.fixture_papers.result }}"

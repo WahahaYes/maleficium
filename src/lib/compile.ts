@@ -1,8 +1,20 @@
-import { cancelCompileRun, runCompileTex, subscribeCompileLines } from './compile.tauri';
+import {
+  cancelCompileRun,
+  openPreview,
+  runCompileTex,
+  subscribeCompileLines,
+} from './compile.tauri';
 import { request } from './core-request.tauri';
-import type { CompileFailure, CompileLine, EventKind, OfflineReadiness } from './generated/events';
+import type {
+  BusEvent,
+  CompileFailure,
+  CompileLine,
+  EventKind,
+  OfflineReadiness,
+} from './generated/events';
 import type { Diagnostic, Finding, MissingDependency } from './generated/structure';
-import type { Exported } from './generated/api';
+import type { BundleExported, Exported } from './generated/api';
+import type { BundleProfile } from './generated/events';
 import type { OutputStamp } from './externalRefresh';
 
 /**
@@ -22,6 +34,8 @@ export type CompileResult = {
   log: string;
   failure: CompileFailure | null;
   missing: MissingDependency | null;
+  /** `widget.approval-required` events for the bus: html widgets awaiting the user. */
+  approvals: BusEvent[];
 };
 
 export function onCompileLine(cb: (line: CompileLine) => void): Promise<() => void> {
@@ -45,10 +59,18 @@ export async function compileTex(
       log: r.message,
       failure: r.failure,
       missing: r.missing,
+      approvals: r.approvals,
     };
   } catch (e) {
     // Refused before the engine ran (target outside the root) or cancelled.
-    return { ok: false, pdfUrl: null, log: String(e), failure: 'engine-error', missing: null };
+    return {
+      ok: false,
+      pdfUrl: null,
+      log: String(e),
+      failure: 'engine-error',
+      missing: null,
+      approvals: [],
+    };
   }
 }
 
@@ -61,7 +83,7 @@ export function describeMissing(m: MissingDependency): string {
     case 'fetch-failed':
       return `could not download ${f}: check the network connection`;
     case 'not-in-bundle':
-      return `${f} is not in the TeX bundle: fetching cannot help`;
+      return `${f} is not in the TeX bundle: add it to your project folder next to your main file.`;
     case 'bundle-unreachable':
       return 'the TeX bundle is not cached and cannot be reached';
     case 'bundle-invalid':
@@ -169,6 +191,36 @@ export async function exportZip(rootId: string, dest: string): Promise<Exported>
   return await request('exportZip', { rootId, dest });
 }
 
+/**
+ * Write main_rel's paper bundle to `dest` (absolute, outside the project):
+ * a folder for `folder` and `hosted`, one file for `single-file`. The call
+ * carries no approval to download anything; the core refuses remote assets
+ * it cannot hash locally.
+ */
+export async function exportBundle(
+  rootId: string,
+  mainRel: string,
+  dest: string,
+  profile: BundleProfile,
+  sizeCapBytes: number | null = null,
+): Promise<BundleExported> {
+  return await request('exportBundle', { rootId, mainRel, dest, profile, sizeCapBytes });
+}
+
+/** Stop a running bundle export: it fails as cancelled and writes nothing. */
+export async function exportCancel(): Promise<string> {
+  return await request('exportCancel', {});
+}
+
+/**
+ * Export the single-file bundle of main_rel's last compile to the app's
+ * scratch folder for this project and open it in the OS default browser.
+ * Desktop only; the previous preview is replaced.
+ */
+export async function previewInBrowser(rootId: string, mainRel: string): Promise<BundleExported> {
+  return await openPreview(rootId, mainRel);
+}
+
 /** Whether a previous compile left a pdf. Never throws. */
 export async function outputsFresh(rootId: string, mainRel: string): Promise<boolean> {
   try {
@@ -264,7 +316,7 @@ export function describeFinding(f: Finding): string {
   const at = `${f.path}:${f.line}`;
   switch (f.kind) {
     case 'not-in-bundle':
-      return `${f.name} is in neither the TeX bundle nor the project (${at})`;
+      return `${f.name} is not in the TeX bundle: add it to your project folder next to your main file (${at}).`;
     case 'external-tool':
       return (
         `${at} needs ${f.name}, a program outside the TeX bundle` +

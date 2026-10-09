@@ -1,0 +1,31 @@
+{
+  "contract": 1,
+  "name": "wasm-sum",
+  "version": "1.0.0",
+  "title": "WASM sum",
+  "description": "Adds a CSV grid with a tiny embedded WebAssembly module.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "sources": {
+    "data": {
+      "primary": true,
+      "required": true,
+      "extensions": ["csv"],
+      "description": "The numbers to add."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "caption": {
+        "type": "string",
+        "default": "Computed in WebAssembly",
+        "maxLength": 200,
+        "description": "Line drawn under the total."
+      }
+    }
+  },
+  "capabilities": { "webgl": false, "wasm": true },
+  "vendored": []
+}

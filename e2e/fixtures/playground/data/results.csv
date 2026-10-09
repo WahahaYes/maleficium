@@ -1,0 +1,6 @@
+method,accuracy,latency
+baseline,0.71,12
+ours-small,0.79,15
+ours-base,0.84,21
+ours-large,0.88,34
+ours-xl,0.89,58

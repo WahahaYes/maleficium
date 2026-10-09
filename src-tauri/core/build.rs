@@ -22,25 +22,28 @@ fn files(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) {
 /// into each template's embedded files at build time, so the repo holds
 /// one copy while instantiated projects stay self-contained.
 const SHARED_DIR: &str = "shared";
-/// Shared files every template embeds.
-const SHARED_ALL: &[&str] = &["maleficium-footer.sty", "maleficium-mark.pdf"];
-/// Shared files only some templates embed: file, template ids.
-const SHARED_SOME: &[(&str, &[&str])] = &[
-    (
-        "maleficium-doc.sty",
-        &[
-            "article",
-            "assignment",
-            "book",
-            "letter",
-            "report",
-            "welcome",
-        ],
-    ),
-    ("maleficium-cv.sty", &["cv", "resume"]),
-    ("maleficium-slides.sty", &["beamer"]),
-    ("maleficium-links.sty", &["journal"]),
-];
+/// Which shared file each template embeds (see the file's header); also
+/// read by e2e/templates.py.
+const OVERLAY: &str = "overlay.txt";
+
+/// The overlay map: (path relative to shared/, template ids or None for all).
+fn overlay(shared: &Path) -> Vec<(String, Option<Vec<String>>)> {
+    let path = shared.join(OVERLAY);
+    println!("cargo:rerun-if-changed={}", path.display());
+    let text = std::fs::read_to_string(&path).expect("templates/shared/overlay.txt readable");
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let (file, ids) = l
+                .split_once(':')
+                .unwrap_or_else(|| panic!("overlay.txt: no `:` in `{l}`"));
+            let ids = ids.trim();
+            let ids = (ids != "*").then(|| ids.split_whitespace().map(String::from).collect());
+            (file.trim().to_string(), ids)
+        })
+        .collect()
+}
 
 /// Embeds `templates/<id>/**` as `TEMPLATES: &[(id, &[(rel path, bytes)])]`,
 /// shared by the desktop app and the MCP binary.
@@ -49,6 +52,7 @@ fn embed_templates() {
     println!("cargo:rerun-if-changed={}", root.display());
     let shared = root.join(SHARED_DIR);
     println!("cargo:rerun-if-changed={}", shared.display());
+    let map = overlay(&shared);
     let mut ids: Vec<_> = std::fs::read_dir(&root)
         .expect("templates dir readable")
         .flatten()
@@ -73,21 +77,22 @@ fn embed_templates() {
                 (s, dir.join(&rel))
             })
             .collect();
-        let shared_for = |name: &str| {
-            SHARED_ALL.contains(&name)
-                || SHARED_SOME
-                    .iter()
-                    .any(|(f, tids)| *f == name && tids.contains(&id.as_str()))
-        };
-        for name in SHARED_ALL.iter().chain(SHARED_SOME.iter().map(|(f, _)| f)) {
-            if shared_for(name) {
-                let dup = rels.iter().any(|(r, _)| r == name);
-                assert!(
-                    !dup,
-                    "template {id} carries its own {name}; the copy in {SHARED_DIR}/ is the source"
-                );
-                rels.push((name.to_string(), shared.join(name)));
+        for (file, ids) in &map {
+            if !ids.as_ref().is_none_or(|ids| ids.contains(&id)) {
+                continue;
             }
+            let src = shared.join(file);
+            let name = Path::new(file)
+                .file_name()
+                .expect("an overlay entry names a file")
+                .to_string_lossy()
+                .to_string();
+            assert!(
+                !rels.iter().any(|(r, _)| *r == name),
+                "template {id} carries its own {name}; {SHARED_DIR}/{OVERLAY} names its source"
+            );
+            assert!(src.is_file(), "overlay.txt names {file}, which is missing");
+            rels.push((name, src));
         }
         rels.sort_by(|a, b| a.0.cmp(&b.0));
         writeln!(src, "    ({id:?}, &[").unwrap();

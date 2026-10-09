@@ -4,7 +4,9 @@
 //! dependency.
 
 pub mod api;
+pub mod bundle;
 pub mod compile;
+pub mod document;
 pub mod engine;
 pub mod eventlog;
 pub mod export;
@@ -14,8 +16,13 @@ pub mod history;
 pub mod index;
 pub mod mainfile;
 pub mod outputs;
+pub mod presence;
+pub mod reader_style;
 pub mod readiness;
+pub mod reflow;
 pub mod replace;
+pub mod runtime_author;
+pub mod runtimes;
 pub mod search;
 pub mod snippet;
 pub mod structure;
@@ -23,7 +30,10 @@ pub mod synctex;
 pub mod templates;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_scratch;
+pub mod theme;
 pub mod watch;
+pub mod widget_approval;
+pub mod widgets;
 
 pub use compile::{
     cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus, Progress,
@@ -54,6 +64,9 @@ struct State {
     watchers: watch::Watchers,
     queues: watch::Queues,
     owns: watch::OwnWrites,
+    poster_renderer: std::sync::Mutex<Option<Arc<dyn widgets::poster::cache::PosterRenderer>>>,
+    converts: reflow::convert::Running,
+    converter: std::sync::Mutex<Option<Arc<dyn reflow::convert::Converter>>>,
 }
 
 impl Core {
@@ -77,6 +90,39 @@ impl Core {
     }
     pub(crate) fn owns(&self) -> &watch::OwnWrites {
         &self.0.owns
+    }
+    /// The poster renderer compiles use; the desktop app installs its
+    /// in-process one at startup.
+    pub fn set_poster_renderer(&self, r: Arc<dyn widgets::poster::cache::PosterRenderer>) {
+        *self
+            .0
+            .poster_renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(r);
+    }
+    pub(crate) fn poster_renderer(
+        &self,
+    ) -> Option<Arc<dyn widgets::poster::cache::PosterRenderer>> {
+        self.0
+            .poster_renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+    pub(crate) fn converts(&self) -> &reflow::convert::Running {
+        &self.0.converts
+    }
+    /// The converter exports use instead of the bundled engine: tests
+    /// install one that needs no engine.
+    pub fn set_converter(&self, c: Arc<dyn reflow::convert::Converter>) {
+        *self.0.converter.lock().unwrap_or_else(|e| e.into_inner()) = Some(c);
+    }
+    pub(crate) fn converter(&self) -> Option<Arc<dyn reflow::convert::Converter>> {
+        self.0
+            .converter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 

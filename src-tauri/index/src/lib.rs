@@ -67,6 +67,18 @@ pub struct MacroDef {
     pub body: String,
 }
 
+/// One macro the project defines, by name: what a math preview needs to
+/// render the source the way the document reads it.
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, TS)]
+pub struct ProjectMacro {
+    /// With its backslash, as written.
+    pub name: String,
+    /// The defining command (`newcommand`, `DeclareMathOperator`, `def`, ...).
+    pub command: String,
+    pub params: Option<u8>,
+    pub body: String,
+}
+
 /// Project-wide definition maps, keyed as written: label keys, bib entry
 /// keys, macro names with their backslash. Each key lists every definition
 /// in path order, so a duplicate shows as a second entry.
@@ -299,6 +311,28 @@ impl ProjectIndex {
         self.files.iter().map(|(k, r)| self.view(k, r))
     }
 
+    /// Every macro the project defines, by name: the first definition in
+    /// path order. A body cut at [`ms::MACRO_BODY_MAX`] is left out, since
+    /// it no longer says what the macro does.
+    pub fn macro_list(&self) -> Vec<ProjectMacro> {
+        let mut out: Vec<ProjectMacro> = self
+            .maps()
+            .macros
+            .iter()
+            .filter_map(|(name, defs)| {
+                let d = defs.first()?;
+                (d.body.len() <= ms::MACRO_BODY_MAX).then(|| ProjectMacro {
+                    name: name.clone(),
+                    command: d.command.clone(),
+                    params: d.params,
+                    body: d.body.clone(),
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
+    }
+
     /// The definition maps, rebuilt on first read after a change.
     pub fn maps(&self) -> &Maps {
         self.maps.get_or_init(|| {
@@ -350,6 +384,7 @@ pub fn typescript() -> String {
         Unindexed::decl(&cfg),
         Loc::decl(&cfg),
         MacroDef::decl(&cfg),
+        ProjectMacro::decl(&cfg),
         search::Query::decl(&cfg),
         search::Hit::decl(&cfg),
         search::FileHits::decl(&cfg),
@@ -468,6 +503,31 @@ mod tests {
             }]
         );
         assert_eq!(m.macros["\\R"][0].body, "\\mathbb{R}");
+    }
+
+    #[test]
+    fn macro_list_names_each_macro_once_and_skips_cut_bodies() {
+        let mut i = ProjectIndex::new();
+        let long = "x".repeat(ms::MACRO_BODY_MAX + 1);
+        i.set_disk(
+            "a.tex",
+            text(&format!(
+                "\\newcommand{{\\R}}{{\\mathbb{{R}}}}\n\\DeclareMathOperator{{\\argmax}}{{arg\\,max}}\n\\newcommand{{\\big}}{{{long}}}"
+            )),
+        );
+        i.set_disk("b.tex", text("\\renewcommand{\\R}{\\mathbf{R}}"));
+        let names: Vec<(String, String)> = i
+            .macro_list()
+            .into_iter()
+            .map(|m| (m.name, m.body))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                ("\\R".into(), "\\mathbb{R}".into()),
+                ("\\argmax".into(), "arg\\,max".into()),
+            ]
+        );
     }
 
     #[test]

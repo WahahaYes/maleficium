@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""papers-run.py — compile every vendored real paper and score the result.
+"""papers-run.py — compile every vendored real paper and example and score the result.
 
-Each folder in e2e/fixtures/vendored/ with a fixture.json is one paper:
+Each folder in e2e/fixtures/vendored/ or examples/ with a fixture.json is one
+paper (names are unique across both):
 
     {"main": "paper.tex", "expect": "fail", "why": "minted needs shell escape"}
 
@@ -28,6 +29,7 @@ from mcp_client import McpClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 VENDORED = os.path.join(HERE, "fixtures", "vendored")
+EXAMPLES = os.path.join(ROOT, "examples")
 COMPILE_TIMEOUT = 900
 
 
@@ -45,15 +47,18 @@ def build_sidecar():
 
 def load_papers(names):
     papers = []
-    for name in sorted(os.listdir(VENDORED)):
-        spec = os.path.join(VENDORED, name, "fixture.json")
-        if not os.path.isfile(spec):
-            continue
-        with open(spec) as f:
-            p = json.load(f)
-        if p.get("expect") not in ("pass", "fail"):
-            sys.exit("papers: %s: expect must be \"pass\" or \"fail\"" % spec)
-        papers.append(dict(p, name=name))
+    for base in (VENDORED, EXAMPLES):
+        for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            spec = os.path.join(base, name, "fixture.json")
+            if not os.path.isfile(spec):
+                continue
+            with open(spec) as f:
+                p = json.load(f)
+            if p.get("expect") not in ("pass", "fail"):
+                sys.exit("papers: %s: expect must be \"pass\" or \"fail\"" % spec)
+            if any(q["name"] == name for q in papers):
+                sys.exit("papers: two papers are named %s" % name)
+            papers.append(dict(p, name=name, dir=os.path.join(base, name)))
     if names:
         missing = set(names) - {p["name"] for p in papers}
         if missing:
@@ -81,7 +86,7 @@ def blocker(rec, diags):
 
 def run_paper(mcp, paper, scratch):
     proj = os.path.join(scratch, paper["name"])
-    shutil.copytree(os.path.join(VENDORED, paper["name"]), proj)
+    shutil.copytree(paper["dir"], proj)
     ok, g = mcp.tool("grant", {"root_id": paper["name"], "root": proj})
     if not ok:
         return {"status": "grant-failed", "blocker": g}
@@ -138,7 +143,7 @@ def main():
 
     papers = load_papers(a.paper)
     if not papers:
-        sys.exit("papers: no fixture.json under %s" % VENDORED)
+        sys.exit("papers: no fixture.json under %s or %s" % (VENDORED, EXAMPLES))
     argv = [os.path.abspath(a.bin)] if a.bin else [build_sidecar()]
     if a.bin and os.path.basename(a.bin).startswith("maleficium") and not a.bin.endswith("-mcp"):
         argv.append("--mcp")

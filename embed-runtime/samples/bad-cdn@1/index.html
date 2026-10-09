@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bad CDN sample</title>
+  </head>
+  <body>
+    <p>A deliberately bad runtime: it loads a script from a CDN.</p>
+    <script src="https://cdn.example.com/x.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            post({ type: 'status', state: 'loaded' });
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

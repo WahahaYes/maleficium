@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Caption overlay</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg);
+        color: var(--m-figure-ink);
+        font-family: var(--m-font-body);
+        font-size: var(--m-size-base);
+      }
+      figure {
+        margin: 0;
+        padding: var(--m-space-3);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      #msg {
+        color: var(--m-color-error);
+        padding: var(--m-space-2);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <canvas id="view" width="640" height="400" role="img" aria-label="Captioned picture"></canvas>
+      <p id="msg" hidden></p>
+    </figure>
+    <script>
+      (function () {
+        'use strict';
+        var canvas = document.getElementById('view');
+        var note = document.getElementById('msg');
+        var ctx = canvas.getContext('2d');
+        var picture = null;
+        var caption = 'An example overlay';
+        var position = 'bottom';
+        var seenInit = false;
+
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function fail(message) {
+          note.hidden = false;
+          note.textContent = message;
+          post({ type: 'status', state: 'error', message: message });
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function draw() {
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          if (!picture) {
+            return;
+          }
+          var scale = Math.min(canvas.width / picture.width, canvas.height / picture.height);
+          var w = picture.width * scale;
+          var h = picture.height * scale;
+          var x = (canvas.width - w) / 2;
+          var y = (canvas.height - h) / 2;
+          ctx.drawImage(picture, x, y, w, h);
+          var bar = 44;
+          var by = position === 'top' ? y : y + h - bar;
+          ctx.fillStyle = token('--m-figure-accent', '#5B2A86');
+          ctx.fillRect(x, by, w, bar);
+          ctx.fillStyle = token('--m-figure-bg', '#FFFFFF');
+          ctx.font = '16px ' + token('--m-font-body', 'serif');
+          ctx.textBaseline = 'middle';
+          ctx.fillText(caption, x + 12, by + bar / 2, w - 24);
+        }
+        function applyTheme(t) {
+          var root = document.documentElement;
+          var tokens = (t && t.tokens) || {};
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          draw();
+        }
+        function onInit(d) {
+          seenInit = true;
+          var opts = d.options || {};
+          if (typeof opts.caption === 'string') {
+            caption = opts.caption;
+          }
+          if (opts.position === 'top' || opts.position === 'bottom') {
+            position = opts.position;
+          }
+          applyTheme(d.theme);
+          canvas.setAttribute('aria-label', d.alt || 'Captioned picture');
+          post({ type: 'status', state: 'loading' });
+          var given = d.sources && d.sources.image;
+          if (!given) {
+            return fail('this widget has no image source');
+          }
+          var blob = new Blob([given.bytes], { type: given.mime || 'application/octet-stream' });
+          var url = URL.createObjectURL(blob);
+          var img = new Image();
+          img.onload = function () {
+            URL.revokeObjectURL(url);
+            picture = img;
+            note.hidden = true;
+            draw();
+            post({ type: 'status', state: 'loaded' });
+          };
+          img.onerror = function () {
+            URL.revokeObjectURL(url);
+            fail('the image source could not be shown');
+          };
+          img.src = url;
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            onInit(d);
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (!seenInit) {
+              return;
+            }
+            var png = canvas.toDataURL('image/png');
+            if (png.length < 8 * 1024 * 1024) {
+              post({ type: 'snapshot', requestId: d.requestId, png: png });
+            }
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

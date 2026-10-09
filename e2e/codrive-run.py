@@ -8,8 +8,8 @@
      the filesystem (the project, and the engine outputs under that HOME) is
      all they share;
   2. the window is placed at 0,0 at the full screen size (no window manager,
-     no chrome), the project is opened and compiled once from the app (not
-     with --fresh), and in contested mode the harness starts typing into the
+     no chrome), the project is opened (which compiles it, as opening any
+     project does), and in contested mode the harness starts typing into the
      contested file, so its buffer holds unsaved edits when the agent writes
      that file;
   3. the agent runs headless over MCP through an agent-run.py runner, with
@@ -35,7 +35,7 @@ it gets SIGINT when the run ends (e.g. `exec ffmpeg -f x11grab -video_size
 $CODRIVE_SCREEN -i $DISPLAY $CODRIVE_RUN_DIR/screen.mp4`).
 
 Usage:
-  python3 e2e/codrive-run.py [-n N] [--mode contested|showcase|race] [--fresh]
+  python3 e2e/codrive-run.py [-n N] [--mode contested|showcase|race]
                              [--runner opencode|claude|script] [--model M]
                              [--out DIR] [--budget USD] [--no-build]
 Env: CODRIVE_DISPLAY (:97), CODRIVE_SCREEN (1920x1080), CODRIVE_PORT (1423,
@@ -273,7 +273,7 @@ def read_texts(project, names):
     return out
 
 
-def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, bundle_url, fresh=False):
+def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, bundle_url):
     cd = s["codrive"]
     agent_dir = os.path.join(run_base, "agent")
     project = os.path.join(agent_dir, "project")
@@ -303,20 +303,11 @@ def one_run(s, server, warm, runner, model, mode, run_base, procs, preset_file, 
                        "h": int(h)}, "run_start_ms": tl.at("run.start"), "timeline": "timeline.jsonl",
                        "app_log": os.path.relpath(app.log.path, run_base),
                        "agent_events": "agent/events.jsonl"}, f, indent=2)
-        # The first preview: the app builds the fixture once, as a user would
-        # with Ctrl+R, so the agent's compiles are rewrites of a shown pdf.
-        if fresh:
-            # Never compiled: the app skips its warm build and shows no pdf.
-            if not app.log.wait("compile.warm-skipped", app.launched - 1, 30):
-                die("a fresh project did not skip the warm build (see %s)" % app.log.path)
-            time.sleep(2)
-        else:
-            m = now_ms()
-            app.click(450, 200)
-            app.key("ctrl+r")
-            if not app.log.wait("preview.page-render", m, 300):
-                die("the fixture's first compile never painted (see %s)" % app.log.path)
-            tl.mark("preview.first")
+        # The first preview: opening the project compiles it, so the agent's
+        # compiles are rewrites of a shown pdf.
+        if not app.log.wait("preview.page-render", app.launched - 1, 300):
+            die("the project's compile on open never painted (see %s)" % app.log.path)
+        tl.mark("preview.first")
         if mode == "contested":
             app.open_tree_row(project, cd["tree_rows"], cd["contested"])
             app.click(450, 200)
@@ -444,8 +435,6 @@ def main():
                     help="contested: the user types in the contested file while the agent works; "
                          "showcase: hands off, for recordings; race: no agent, outside writes timed "
                          "against autosave")
-    ap.add_argument("--fresh", action="store_true",
-                    help="open the project never compiled, so the agent's first compile is the first pdf")
     ap.add_argument("-n", type=int, default=1)
     ap.add_argument("--out", help="results dir (default /var/tmp/maleficium-codrive-runs/<stamp>)")
     ap.add_argument("--budget", type=float, default=5.0)
@@ -501,7 +490,7 @@ def main():
                 break
             run_base = os.path.join(out, "%s-%s-%d" % (s["id"], a.mode, i + 1))
             say("run %s (%s, %s) ..." % (os.path.basename(run_base), a.runner, a.model))
-            res = one_run(s, server, warm, a.runner, a.model, a.mode, run_base, procs, preset, bundle_url, a.fresh)
+            res = one_run(s, server, warm, a.runner, a.model, a.mode, run_base, procs, preset, bundle_url)
             spent += res["metrics"]["cost"]
             with open(os.path.join(run_base, "result.json"), "w") as f:
                 json.dump(res, f, indent=2)

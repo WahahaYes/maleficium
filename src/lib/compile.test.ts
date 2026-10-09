@@ -27,7 +27,9 @@ describe('describeMissing', () => {
   });
 
   it('tells apart fixable-by-network from not-fixable-by-network', () => {
-    expect(describeMissing({ file: 'x.sty', reason: 'not-in-bundle' })).toMatch(/cannot help/);
+    expect(describeMissing({ file: 'x.sty', reason: 'not-in-bundle' })).toMatch(
+      /add it to your project folder/,
+    );
     expect(describeMissing({ file: 'x.sty', reason: 'not-cached' })).toMatch(/network/);
     expect(describeMissing({ reason: 'cache-empty' })).toMatch(/needs network/);
   });
@@ -65,11 +67,21 @@ describe('offlineBadge', () => {
   });
 });
 
+describe('describeMissing', () => {
+  it('tells the author to put a package the bundle lacks in the project folder', () => {
+    expect(describeMissing({ file: 'maleficium-interactive.sty', reason: 'not-in-bundle' })).toBe(
+      'maleficium-interactive.sty is not in the TeX bundle: add it to your project folder next to your main file.',
+    );
+  });
+});
+
 describe('describeFinding', () => {
   it('names the dependency and where the document asks for it', () => {
     expect(
       describeFinding({ kind: 'not-in-bundle', name: 'nopkga.sty', path: 'main.tex', line: 2 }),
-    ).toBe('nopkga.sty is in neither the TeX bundle nor the project (main.tex:2)');
+    ).toBe(
+      'nopkga.sty is not in the TeX bundle: add it to your project folder next to your main file (main.tex:2).',
+    );
     const biber = describeFinding({
       kind: 'external-tool',
       name: 'biber',

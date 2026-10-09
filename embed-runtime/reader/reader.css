@@ -1,0 +1,1144 @@
+* {
+  box-sizing: border-box;
+}
+body.m-reader {
+  margin: 0;
+  background: var(--m-color-bg);
+  color: var(--m-color-text);
+  font: var(--m-size-base)/var(--m-leading) var(--m-font-body);
+  color-scheme: light dark;
+}
+.m-reader[data-theme='dark'] {
+  color-scheme: dark;
+}
+.m-reader main {
+  max-width: var(--m-figure-max);
+  margin: 0 auto;
+  padding: var(--m-space-5) var(--m-space-3);
+}
+.m-reader header,
+.m-reader figcaption,
+.m-reader .note {
+  max-width: var(--m-measure);
+}
+.m-reader h1,
+.m-reader h2 {
+  font-family: var(--m-font-heading);
+  line-height: 1.2;
+}
+.m-reader h1 {
+  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale) * var(--m-scale));
+  margin: 0 0 var(--m-space-2);
+}
+.m-reader h2 {
+  font-size: calc(var(--m-size-base) * var(--m-scale));
+  margin: var(--m-space-5) 0 var(--m-space-3);
+  border-top: 1px solid var(--m-color-rule);
+  padding-top: var(--m-space-3);
+}
+.m-reader .authors,
+.m-reader .note {
+  color: var(--m-color-muted);
+}
+.m-reader a {
+  color: var(--m-color-link);
+}
+.m-reader a:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader figure {
+  margin: 0 0 var(--m-space-5);
+}
+.m-reader .frame {
+  position: relative;
+  /* The host owns the width: the column, or the author's width= as a
+     fraction of it (--fw), never narrower than 20rem while the column
+     allows, so a half-width figure widens to the column on a phone. The
+     widget owns the height: the frame keeps the poster's aspect until the
+     live widget reports its content's height (.sized, set by the page). */
+  width: max(calc(var(--fw, 1) * 100%), min(100%, 20rem));
+  margin-inline: auto;
+  aspect-ratio: var(--ar, 4/3);
+  background: var(--m-figure-bg);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  overflow: hidden;
+}
+.m-reader .frame iframe,
+.m-reader .frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.m-reader .frame img {
+  object-fit: contain;
+}
+.m-reader .frame.sized {
+  aspect-ratio: auto;
+}
+/* Posters are pictures of the page, light in both modes, like graphics:
+  they keep the paper's light plate. The live widget is on the mode's
+  plate, --m-figure-bg. */
+.m-reader .frame .poster {
+  background: var(--m-paper);
+}
+.m-reader .frame iframe {
+  opacity: 0;
+  pointer-events: none;
+}
+.m-reader figure.live iframe {
+  opacity: 1;
+  pointer-events: auto;
+}
+.m-reader figure.live .poster {
+  display: none;
+}
+.m-reader figcaption {
+  margin-top: var(--m-space-2);
+  font-size: var(--m-size-small);
+}
+.m-reader figure[data-state='error'] iframe {
+  opacity: 0;
+  pointer-events: none;
+}
+.m-reader figure[data-state='error'] .poster {
+  display: block;
+}
+.m-reader figure[data-state='error'] figcaption::after {
+  content: ' (the interactive view failed; the poster is shown)';
+  color: var(--m-color-muted);
+}
+/* A widget this copy cannot run (a custom runtime left out, or one this
+  reader does not know) keeps its poster, with a short note why. */
+.m-reader figure[data-state='poster-only'] iframe {
+  display: none;
+}
+.m-reader figure[data-state='poster-only'] .poster {
+  display: block;
+}
+.m-reader .m-widget-note {
+  margin: var(--m-space-1) 0 0;
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+/* The in-app article's approval offer under a held-back widget's poster:
+   a plain button in the theme's accent, keyboard-visible. */
+.m-reader .m-approve {
+  margin: var(--m-space-1) 0 0;
+  font: inherit;
+  font-size: var(--m-size-small);
+  padding: var(--m-space-1) var(--m-space-2);
+  color: var(--m-color-background);
+  background: var(--m-color-accent);
+  border: 1px solid transparent;
+  border-radius: var(--m-radius);
+  cursor: pointer;
+}
+.m-reader .m-approve:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader .unsupported {
+  padding: var(--m-space-3);
+  background: var(--m-color-target);
+  border-radius: var(--m-radius);
+}
+
+/* ---- The article: latexml's ltx_* classes are the hooks (reader contract). ---- */
+.m-reader {
+  scroll-padding-top: var(--m-space-3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+.m-reader article,
+.m-reader .ltx_page_main,
+.m-reader .ltx_page_content {
+  max-width: var(--m-measure);
+  margin: 0 auto;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+/* Reader flags (paper.reader.measure): closed tokens only, overriding the
+   theme's --m-measure for the article column. `default` is the theme's
+   68ch and needs no rule. */
+.m-reader[data-measure='narrow'] {
+  --m-measure: 56ch;
+}
+.m-reader[data-measure='wide'] {
+  --m-measure: 80ch;
+}
+/* Full: the text and the figures take the whole window, less the gutters. */
+.m-reader[data-measure='full'] {
+  --m-measure: 100%;
+  --m-figure-max: 100%;
+}
+.m-reader[data-measure='full'] main {
+  padding-inline: var(--m-space-5);
+}
+.m-reader .ltx_page_footer,
+.m-reader .ltx_page_logo {
+  display: none;
+}
+.m-reader [id] {
+  scroll-margin-top: var(--m-space-3);
+}
+.m-reader :target,
+.m-reader .m-flash {
+  background: var(--m-color-target);
+  box-shadow: 0 0 0 var(--m-space-1) var(--m-color-target);
+  border-radius: 2px;
+}
+
+/* Headings and numbered tags */
+/* The house mark of the templates: two slanted bars, accent and light. */
+.m-reader {
+  --m-slash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10.6 8'%3E%3Cpath d='M0 8H3.4L6.4 0H3Z M4.6 8H7.6L10.6 0H7.6Z'/%3E%3C/svg%3E");
+}
+.m-reader .ltx_title_document::after,
+.m-reader .ltx_title_section::before,
+.m-reader .ltx_title_bibliography::before,
+.m-reader .ltx_title_appendix::before {
+  content: '';
+  display: inline-block;
+  height: 0.47em;
+  /* The split runs up the gap between the bars, at their slant, so each
+     bar takes one colour; the box keeps the mark's 10.6 : 8 aspect. */
+  aspect-ratio: 10.6 / 8;
+  background: linear-gradient(
+    110.56deg,
+    var(--m-color-accent) 0 51.5%,
+    color-mix(in srgb, var(--m-color-accent) 55%, var(--m-color-bg)) 51.5%
+  );
+  -webkit-mask: var(--m-slash) center / contain no-repeat;
+  mask: var(--m-slash) center / contain no-repeat;
+}
+.m-reader .ltx_title_section::before,
+.m-reader .ltx_title_bibliography::before,
+.m-reader .ltx_title_appendix::before {
+  margin-right: 0.45em;
+  vertical-align: 0.05em;
+}
+.m-reader .ltx_title_document::after {
+  display: block;
+  height: 0.6em;
+  margin-top: var(--m-space-3);
+}
+.m-reader .ltx_title {
+  font-family: var(--m-font-heading);
+  line-height: 1.25;
+  font-weight: 600;
+  margin: var(--m-space-4) 0 var(--m-space-2);
+  border: 0;
+  padding: 0;
+}
+.m-reader .ltx_title_document {
+  font-family: var(--m-font-body);
+  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale) * var(--m-scale) * 1.15);
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: left;
+  margin: var(--m-space-4) 0 var(--m-space-3);
+}
+.m-reader .ltx_title_section,
+.m-reader .ltx_title_bibliography,
+.m-reader .ltx_title_appendix {
+  font-size: calc(var(--m-size-base) * var(--m-scale) * var(--m-scale));
+  margin-top: var(--m-space-5);
+}
+.m-reader .ltx_title_subsection {
+  font-size: calc(var(--m-size-base) * var(--m-scale));
+  margin-top: var(--m-space-4);
+}
+.m-reader .ltx_title_subsubsection,
+.m-reader .ltx_title_paragraph {
+  font-size: var(--m-size-base);
+  margin-top: var(--m-space-3);
+}
+.m-reader .ltx_title_paragraph {
+  display: inline;
+  margin-right: 0.5em;
+}
+.m-reader .ltx_title_paragraph + .ltx_para {
+  display: inline;
+}
+.m-reader .ltx_tag_section,
+.m-reader .ltx_tag_subsection,
+.m-reader .ltx_tag_subsubsection,
+.m-reader .ltx_tag_appendix {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: 0.5em;
+  color: var(--m-color-accent);
+  font-variant-numeric: tabular-nums;
+}
+.m-reader .ltx_title_subsubsection {
+  color: var(--m-color-accent);
+}
+.m-reader .ltx_subtitle {
+  text-align: center;
+  font-family: var(--m-font-heading);
+  color: var(--m-color-muted);
+  margin-bottom: var(--m-space-3);
+}
+
+/* Authors and front matter */
+.m-reader .ltx_authors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: var(--m-space-3) var(--m-space-4);
+  margin: 0 0 var(--m-space-3);
+  color: var(--m-color-text);
+  font-family: var(--m-font-heading);
+}
+.m-reader .ltx_author_before {
+  display: none;
+}
+.m-reader .ltx_creator {
+  display: block;
+  flex: 0 1 auto;
+}
+.m-reader .ltx_pubnotes {
+  font-size: 0.8em;
+  line-height: 1.45;
+  margin-bottom: var(--m-space-3);
+}
+.m-reader .ltx_personname {
+  font-family: var(--m-font-heading);
+  font-weight: 600;
+}
+.m-reader .ltx_author_notes,
+.m-reader .ltx_contact,
+.m-reader .ltx_pubnotes,
+.m-reader .ltx_dates,
+.m-reader .ltx_keywords {
+  display: block;
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+.m-reader .ltx_author_notes_content {
+  display: block;
+}
+.m-reader .ltx_contact {
+  display: block;
+}
+.m-reader .ltx_pubnotes {
+  text-align: left;
+  font-family: var(--m-font-heading);
+}
+.m-reader .ltx_contact_name,
+.m-reader .ltx_pubnote .ltx_note_name {
+  display: none;
+}
+.m-reader .ltx_pubnote.ltx_role_conference {
+  color: var(--m-color-text);
+  font-weight: 600;
+}
+.m-reader .ltx_pubnote.ltx_role_doi::before,
+.m-reader .ltx_pubnote.ltx_role_isbn::before {
+  content: 'DOI ';
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.m-reader .ltx_pubnote.ltx_role_isbn::before {
+  content: 'ISBN ';
+}
+.m-reader .ltx_pubnote.ltx_role_ccs {
+  display: inline-block;
+  margin: var(--m-space-1) var(--m-space-1) 0 0;
+  padding: 0 var(--m-space-2);
+  border: 1px solid var(--m-color-rule);
+  border-radius: 999px;
+}
+.m-reader .ltx_pubnote {
+  display: block;
+}
+.m-reader .ltx_pubnote.ltx_role_booktitle {
+  display: none;
+}
+.m-reader .ltx_orcidlogo {
+  height: 1em;
+  width: 1em;
+  vertical-align: -0.1em;
+}
+.m-reader .ltx_keywords {
+  font-family: var(--m-font-heading);
+  margin: var(--m-space-2) 0 var(--m-space-4);
+}
+.m-reader .ltx_keywords .ltx_title {
+  display: inline;
+  font-size: inherit;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--m-color-accent);
+}
+.m-reader .ltx_abstract {
+  margin: var(--m-space-4) auto;
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-color-surface);
+  border-left: 3px solid var(--m-color-accent);
+  border-radius: var(--m-radius);
+  font-size: var(--m-size-small);
+  line-height: 1.55;
+  hyphens: manual;
+}
+.m-reader .ltx_abstract > :last-child,
+.m-reader .ltx_abstract > :last-child > .ltx_p:last-child {
+  margin-bottom: 0;
+}
+.m-reader .ltx_abstract .ltx_title {
+  font-size: var(--m-size-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: var(--m-space-1) 0;
+  color: var(--m-color-accent);
+}
+
+/* Text, paragraphs, lists */
+.m-reader .ltx_p {
+  margin: 0 0 var(--m-space-3);
+}
+.m-reader .ltx_para > .ltx_p:last-child {
+  margin-bottom: var(--m-space-3);
+}
+.m-reader .ltx_font_bold {
+  font-weight: 700;
+}
+.m-reader .ltx_font_italic,
+.m-reader .ltx_font_slanted,
+.m-reader .ltx_font_oblique {
+  font-style: italic;
+}
+.m-reader .ltx_font_smallcaps {
+  font-variant: small-caps;
+}
+.m-reader .ltx_font_typewriter,
+.m-reader .ltx_verbatim,
+.m-reader code {
+  font-family: var(--m-font-mono);
+  font-size: 0.9em;
+}
+.m-reader .ltx_font_sansserif {
+  font-family: var(--m-font-heading);
+}
+.m-reader code.ltx_verbatim {
+  background: var(--m-color-surface);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+}
+.m-reader pre,
+.m-reader .ltx_listing,
+.m-reader .ltx_verbatim.ltx_block {
+  display: block;
+  font-family: var(--m-font-mono);
+  font-size: 0.85em;
+  line-height: 1.45;
+  background: var(--m-color-surface);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  padding: var(--m-space-2) var(--m-space-3);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0 0 var(--m-space-3);
+}
+.m-reader .ltx_itemize,
+.m-reader .ltx_enumerate,
+.m-reader .ltx_description {
+  margin: 0 0 var(--m-space-3);
+  padding-left: 1.6em;
+}
+.m-reader .ltx_itemize,
+.m-reader .ltx_enumerate {
+  list-style: none;
+}
+.m-reader .ltx_item {
+  margin: 0 0 var(--m-space-1);
+  position: relative;
+}
+.m-reader .ltx_itemize > .ltx_item > .ltx_tag_item,
+.m-reader .ltx_enumerate > .ltx_item > .ltx_tag_item {
+  position: absolute;
+  left: -1.6em;
+  width: 1.4em;
+  text-align: right;
+  color: var(--m-color-muted);
+}
+.m-reader .ltx_item > .ltx_para:first-of-type > .ltx_p:first-child {
+  margin-top: 0;
+}
+.m-reader .ltx_description {
+  padding-left: 0;
+}
+.m-reader .ltx_description dt {
+  font-weight: 700;
+  margin-top: var(--m-space-2);
+}
+.m-reader .ltx_description dd {
+  margin-left: 1.6em;
+}
+.m-reader .ltx_centering,
+.m-reader .ltx_align_center {
+  text-align: center;
+}
+.m-reader .ltx_align_left {
+  text-align: left;
+}
+.m-reader .ltx_align_right {
+  text-align: right;
+}
+.m-reader .ltx_sup {
+  vertical-align: super;
+  font-size: 0.75em;
+}
+
+/* Figures, captions, tables */
+.m-reader figure.ltx_figure,
+.m-reader figure.ltx_table {
+  display: flex;
+  flex-direction: column;
+  margin: var(--m-space-4) 0;
+}
+.m-reader figure.ltx_figure > figcaption {
+  order: 2;
+}
+/* A widget inside a captioned float: the float's caption is its caption, and
+   latexml's empty paragraphs around it take no room. */
+.m-reader figure.ltx_figure p:empty,
+.m-reader figure.ltx_table p:empty {
+  display: none;
+}
+.m-reader figure.ltx_figure > figure[data-widget],
+.m-reader figure.ltx_table > figure[data-widget],
+.m-reader figure.ltx_figure_panel > figure[data-widget] {
+  margin: 0;
+  width: 100%;
+}
+.m-reader figcaption.ltx_caption {
+  max-width: none;
+  margin: var(--m-space-2) 0 0;
+  font-size: var(--m-size-small);
+  line-height: 1.45;
+  text-align: left;
+}
+.m-reader .ltx_caption .ltx_tag {
+  font-weight: 700;
+  font-family: var(--m-font-heading);
+  color: var(--m-color-accent);
+}
+.m-reader figure.ltx_table > figcaption {
+  margin: 0 0 var(--m-space-2);
+}
+.m-reader img {
+  max-width: 100%;
+  height: auto;
+}
+.m-reader img.ltx_graphics {
+  display: block;
+  margin: 0 auto;
+  background: var(--m-paper);
+  border-radius: 2px;
+}
+/* A figure's image fills its float: latexml drops the author's
+   \includegraphics size (no image tools run), so raw pixels would show a
+   tiny source as a dot and a huge one overflowing. The float, not the
+   pixel count, decides the size; small sources upscale, large ones keep
+   their clamp from the generic img rule above. */
+.m-reader figure img.ltx_graphics {
+  width: 100%;
+  height: auto;
+}
+.m-reader .ltx_flex_figure,
+.m-reader .ltx_flex_cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-space-3);
+  justify-content: center;
+}
+.m-reader .ltx_flex_cell {
+  flex: 1 1 14rem;
+  flex-direction: column;
+}
+.m-reader .ltx_missing_image,
+.m-reader .ltx_missing_figure,
+.m-reader .m-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 8rem;
+  padding: var(--m-space-3);
+  border: 2px dashed var(--m-color-error);
+  border-radius: var(--m-radius);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--m-color-surface) 0 10px,
+    var(--m-color-error-bg) 10px 20px
+  );
+  color: var(--m-color-error);
+  font: var(--m-size-small) var(--m-font-mono);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-reader .ltx_tabular,
+.m-reader table.ltx_tabular {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: var(--m-size-small);
+  font-variant-numeric: tabular-nums;
+}
+.m-reader .ltx_tabular td,
+.m-reader .ltx_tabular th {
+  padding: 0.25em 0.7em;
+  vertical-align: baseline;
+}
+.m-reader .ltx_border_t,
+.m-reader .ltx_border_tt {
+  border-top: 1px solid var(--m-color-text);
+}
+.m-reader .ltx_border_b,
+.m-reader .ltx_border_bb {
+  border-bottom: 1px solid var(--m-color-text);
+}
+.m-reader .ltx_border_l {
+  border-left: 1px solid var(--m-color-text);
+}
+.m-reader .ltx_border_r {
+  border-right: 1px solid var(--m-color-text);
+}
+.m-reader .ltx_border_tt {
+  border-top-width: 2px;
+}
+.m-reader .ltx_border_bb {
+  border-bottom-width: 2px;
+}
+
+/* Theorems and proofs */
+.m-reader .ltx_theorem,
+.m-reader .ltx_proof,
+.m-reader .ltx_remark {
+  margin: var(--m-space-3) 0;
+  padding: var(--m-space-1) 0 var(--m-space-1) var(--m-space-3);
+  border-left: 3px solid var(--m-color-rule);
+}
+.m-reader .ltx_theorem {
+  border-left-color: var(--m-color-accent);
+}
+.m-reader .ltx_runin {
+  display: inline;
+  margin: 0 0.4em 0 0;
+  font-family: inherit;
+  font-size: inherit;
+}
+.m-reader .ltx_runin + .ltx_para,
+.m-reader .ltx_runin + .ltx_para > .ltx_p:first-child {
+  display: inline;
+}
+/* A proof folds: its title is the summary, with a drawn disclosure mark. */
+.m-reader details.ltx_proof > summary {
+  display: block;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.m-reader details.ltx_proof > summary::-webkit-details-marker {
+  display: none;
+}
+.m-reader details.ltx_proof > summary::before {
+  content: '';
+  display: inline-block;
+  margin-right: 0.45em;
+  border-style: solid;
+  border-width: 0.3em 0 0.3em 0.45em;
+  border-color: transparent transparent transparent var(--m-color-muted);
+  vertical-align: 0.05em;
+  transition: transform 0.15s;
+}
+.m-reader details.ltx_proof[open] > summary::before {
+  transform: rotate(90deg);
+}
+.m-reader details.ltx_proof > summary:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader details.ltx_proof > summary .ltx_runin {
+  margin: 0;
+}
+/* A proof's closing mark, drawn instead of the qed glyph (U+220E renders
+   as a solid box in fonts without it). */
+.m-reader .m-qed {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border: 0.09em solid currentColor;
+  vertical-align: baseline;
+}
+
+/* Math */
+.m-reader math {
+  font-family: var(--m-font-math);
+}
+.m-reader math[display='block'] {
+  display: block;
+  display: block math;
+  text-align: center;
+  margin-inline: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: var(--m-space-1) 0;
+}
+.m-reader table.ltx_equation,
+.m-reader table.ltx_eqn_table {
+  width: 100%;
+  margin: var(--m-space-3) 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.m-reader .ltx_eqn_cell {
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+.m-reader .ltx_eqn_center_padleft,
+.m-reader .ltx_eqn_center_padright {
+  width: 0;
+}
+.m-reader .ltx_eqno {
+  width: 3.5em;
+  text-align: right;
+  color: var(--m-color-muted);
+  white-space: nowrap;
+}
+
+/* Citations, references, bibliography, footnotes */
+.m-reader .ltx_cite {
+  font-style: normal;
+}
+.m-reader a.ltx_ref {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+.m-reader a.ltx_url,
+.m-reader a.ltx_href {
+  overflow-wrap: anywhere;
+}
+.m-reader .ltx_biblist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--m-size-small);
+  line-height: 1.5;
+}
+.m-reader .ltx_bibitem {
+  margin: 0 0 var(--m-space-2);
+  padding-left: 2.6em;
+  text-indent: -2.6em;
+}
+.m-reader .ltx_bibitem .ltx_tag_bibitem {
+  display: inline-block;
+  min-width: 2.2em;
+  margin-right: 0.4em;
+  color: var(--m-color-muted);
+  text-indent: 0;
+}
+.m-reader .ltx_bibblock {
+  text-indent: 0;
+}
+.m-reader .ltx_bib_title {
+  font-style: italic;
+}
+/* A citation's preview card: its bibliography entry, beside the link. */
+.m-reader .m-cite-card {
+  position: fixed;
+  z-index: 20;
+  max-width: min(28rem, calc(100vw - 16px));
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-tooltip-bg);
+  color: var(--m-tooltip-fg);
+  border: 1px solid var(--m-tooltip-border);
+  border-radius: var(--m-radius);
+  box-shadow: var(--m-shadow);
+  font-size: var(--m-size-small);
+  line-height: 1.45;
+}
+.m-reader .m-cite-card[hidden] {
+  display: none;
+}
+.m-reader .m-cite-card .ltx_tag_bibitem {
+  margin-right: 0.4em;
+  color: var(--m-color-muted);
+}
+.m-reader .ltx_note_outer {
+  display: contents;
+}
+.m-reader .ltx_note_content {
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+.m-reader .ltx_note_content::before {
+  content: ' [';
+}
+.m-reader .ltx_note_content::after {
+  content: ']';
+}
+.m-reader .ltx_note_content > .ltx_note_mark,
+.m-reader .ltx_note_content > .ltx_tag_note {
+  display: none;
+}
+.m-reader .ltx_note > .ltx_note_mark,
+.m-reader a.m-note-ref {
+  font-size: 0.75em;
+  font-family: var(--m-font-heading);
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 1px;
+}
+.m-reader.m-notes-on .ltx_note_outer {
+  display: none;
+}
+.m-reader .m-notes ol {
+  padding-left: 1.6em;
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+.m-reader .m-notes li {
+  margin-bottom: var(--m-space-1);
+}
+.m-reader .m-notes li > a {
+  margin-left: 0.4em;
+  text-decoration: none;
+}
+
+.m-reader .m-license {
+  display: inline-block;
+  padding: 0 var(--m-space-2);
+  border: 1px solid var(--m-color-rule);
+  border-radius: 999px;
+  font-family: var(--m-font-heading);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--m-color-muted);
+  text-decoration: none;
+}
+
+/* acmart's license note is a mark and a bare word, not a footnote */
+.m-reader .ltx_note.ltx_role_cc-license {
+  display: none;
+}
+
+/* Visible markers for what went wrong */
+.m-reader .ltx_ERROR {
+  font-family: var(--m-font-mono);
+  font-size: 0.9em;
+  color: var(--m-color-error);
+  text-decoration: underline wavy var(--m-color-error);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+.m-reader .m-warn {
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-color-error-bg);
+  border-left: 3px solid var(--m-color-error);
+  border-radius: var(--m-radius);
+  font-size: var(--m-size-small);
+}
+
+/* A widget still waiting for its mount (or left unmounted) */
+.m-reader .m-widget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 6rem;
+  border: 1px dashed var(--m-color-rule);
+  border-radius: var(--m-radius);
+  background: var(--m-color-surface);
+  color: var(--m-color-muted);
+  font: var(--m-size-small) var(--m-font-heading);
+}
+.m-reader .m-widget:empty::before {
+  content: 'Interactive figure';
+}
+.m-reader .m-widget-model:empty::before {
+  content: 'Interactive 3D model';
+}
+.m-reader .m-widget-video:empty::before {
+  content: 'Video';
+}
+.m-reader .m-widget-table:empty::before {
+  content: 'Interactive table';
+}
+.m-reader .m-widget-chart:empty::before {
+  content: 'Interactive chart';
+}
+.m-reader .m-widget-html:empty::before {
+  content: 'Interactive figure';
+}
+
+/* Contents: the article's own nav; reader.js adds the collapse and the marker */
+.m-reader .m-version {
+  margin: 0 auto var(--m-space-3);
+  text-align: center;
+  font-family: var(--m-font-heading);
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+}
+.m-reader .m-version a {
+  color: var(--m-color-link);
+}
+.m-reader .m-colophon {
+  margin: var(--m-space-5) auto var(--m-space-4);
+  text-align: center;
+}
+.m-reader .m-made-with {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--m-font-heading);
+  font-size: var(--m-size-small);
+  color: var(--m-color-muted);
+  text-decoration: none;
+}
+.m-reader .m-made-with:hover .m-made-with-text {
+  text-decoration: underline;
+}
+.m-reader .m-mark {
+  height: 1.4em;
+  width: auto;
+}
+.m-reader .m-contents {
+  margin: 0 0 var(--m-space-4);
+  font-family: var(--m-font-heading);
+  font-size: var(--m-size-small);
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-color-surface);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+}
+.m-reader .m-contents-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+.m-reader .m-contents-toggle {
+  all: unset;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: var(--m-space-1) 0;
+}
+.m-reader .m-contents-toggle::after {
+  content: ' \25BE';
+  color: var(--m-color-muted);
+}
+.m-reader .m-contents.m-collapsed .m-contents-toggle::after {
+  content: ' \25B8';
+}
+.m-reader .m-contents-toggle:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader .m-contents.m-collapsed > ol {
+  display: none;
+}
+.m-reader .m-contents ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.m-reader .m-contents ol ol {
+  padding-left: var(--m-space-3);
+}
+.m-reader .m-contents a {
+  display: block;
+  padding: 2px 0 2px var(--m-space-2);
+  border-left: 2px solid transparent;
+  color: var(--m-color-muted);
+  text-decoration: none;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.m-reader .m-contents a:hover {
+  color: var(--m-color-text);
+}
+.m-reader .m-contents a.m-active {
+  color: var(--m-color-link);
+  border-left-color: var(--m-color-accent);
+  font-weight: 600;
+}
+@media (max-width: 1099px) {
+  .m-reader .m-contents > ol {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+@media (min-width: 1100px) {
+  .m-reader article.m-has-contents {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, var(--m-measure));
+    column-gap: var(--m-space-5);
+    justify-content: center;
+    max-width: none;
+  }
+  .m-reader article.m-has-contents > * {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .m-reader article.m-has-contents > .m-contents {
+    grid-column: 1;
+    grid-row: 1 / span 200;
+    align-self: start;
+    position: sticky;
+    top: var(--m-space-3);
+    max-height: calc(100vh - 2 * var(--m-space-3));
+    overflow-y: auto;
+    margin: 0;
+    background: none;
+    border: 0;
+    padding: 0;
+  }
+  .m-reader .m-contents-toggle {
+    cursor: default;
+  }
+  .m-reader .m-contents-toggle::after {
+    content: none;
+  }
+}
+
+/* Widgets listed at the end because the join failed */
+.m-reader .m-unplaced {
+  margin-top: var(--m-space-5);
+  padding-top: var(--m-space-3);
+  border-top: 1px solid var(--m-color-rule);
+}
+.m-reader .m-unplaced > h2 {
+  font-size: 1.15em;
+}
+
+@media (max-width: 600px) {
+  .m-reader main {
+    padding: var(--m-space-3) var(--m-space-3) var(--m-space-5);
+  }
+  .m-reader {
+    --m-size-base: 1rem;
+  }
+  .m-reader .ltx_abstract {
+    margin-left: calc(-1 * var(--m-space-2));
+    margin-right: calc(-1 * var(--m-space-2));
+  }
+}
+
+/* The mode toggle takes the house control look the widgets share: a sans
+   pill with a light outline that turns accent on hover and focus. */
+.m-reader .m-mode {
+  position: fixed;
+  top: var(--m-space-2);
+  right: var(--m-space-2);
+  z-index: 10;
+  font: 600 12px/1.25 var(--m-font-heading);
+  letter-spacing: 0.01em;
+  color: var(--m-color-text);
+  background: var(--m-color-bg);
+  border: 1px solid color-mix(in srgb, var(--m-color-text) 28%, transparent);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+.m-reader .m-mode:hover {
+  border-color: var(--m-color-accent);
+  background: color-mix(in srgb, var(--m-color-accent) 10%, var(--m-color-bg));
+}
+.m-reader .m-mode:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-reader .m-mode[hidden] {
+  display: none;
+}
+
+@media print {
+  .m-reader .m-mode {
+    display: none;
+  }
+  .m-reader,
+  .m-reader[data-theme='dark'] {
+    --m-color-bg: #fff;
+    --m-color-surface: #f4f4f4;
+    --m-color-text: #000;
+    --m-color-muted: #444;
+    --m-color-rule: #bbb;
+    --m-color-link: #000;
+    --m-color-accent: #000;
+    --m-color-target: transparent;
+    --m-figure-bg: #fff;
+    --m-paper: #fff;
+    --m-color-error: #b3261e;
+  }
+  .m-reader .m-contents,
+  .m-reader noscript {
+    display: none;
+  }
+  .m-reader main,
+  .m-reader article.m-has-contents {
+    display: block;
+    max-width: none;
+    padding: 0;
+  }
+  .m-reader article,
+  .m-reader .ltx_page_main,
+  .m-reader .ltx_page_content {
+    max-width: none;
+  }
+  .m-reader .frame iframe {
+    display: none;
+  }
+  /* Print shows the poster: back to its own aspect. */
+  .m-reader .frame.sized {
+    height: auto !important;
+    aspect-ratio: var(--ar, 4/3);
+  }
+  .m-reader figure.live .poster {
+    display: block;
+  }
+  .m-reader a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .m-reader figure,
+  .m-reader .ltx_theorem,
+  .m-reader .ltx_bibitem {
+    break-inside: avoid;
+  }
+  .m-reader .ltx_title {
+    break-after: avoid;
+  }
+  .m-reader :target,
+  .m-reader .m-flash {
+    background: none;
+    box-shadow: none;
+  }
+  .m-reader .m-cite-card,
+  .m-reader details.ltx_proof > summary::before {
+    display: none;
+  }
+}

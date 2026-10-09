@@ -15,6 +15,7 @@ export const desktopProjectIndex: ProjectIndexProvider = {
   rank: (query, items) => request('fuzzyRank', { query, items, max: null }),
   definitionAt: (rootId, line, col, mainRel) =>
     request('indexDefinitionAt', { rootId, line, col, mainRel }),
+  macros: (rootId) => request('indexMacros', { rootId }),
   replacePreview: (rootId, query, replacement, mainRel) =>
     request('indexReplacePreview', { rootId, query, replacement, mainRel }),
   replaceApply: (rootId, token, keepOpen) =>
