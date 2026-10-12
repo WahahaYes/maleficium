@@ -48,6 +48,7 @@ case "$MODE" in
         # rustup env when present, else fail with a pointer.
         if ! command -v cargo >/dev/null 2>&1; then
             for env in "${HOME:-/nonexistent}/.cargo/env" /usr/local/cargo/env; do
+                # shellcheck source=/dev/null
                 if [ -f "$env" ]; then . "$env"; break; fi
             done
         fi

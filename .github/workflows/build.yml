@@ -64,8 +64,87 @@ jobs:
               - 'package-lock.json'
               - '.github/workflows/**'
 
+  # Every pre-commit hook except clippy (heavy; the package jobs run it in
+  # npm run check), as the first and cheapest gate: the other jobs wait for
+  # it. Formatters rewrite files, so a hook that changes anything fails here.
+  precommit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: npm cache dir
+        id: npm-dir
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - name: npm cache
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - run: npm ci
+      - name: npm cache save
+        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
+        run: rustup toolchain install
+      - run: pip install pre-commit==4.6.1
+      - name: Pre-commit environments cache
+        id: pc-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Hooks (all files)
+        # gitleaks scans staged changes, which CI has none of; it runs below
+        # over the pushed commits instead.
+        env:
+          SKIP: gitleaks,cargo-clippy
+        run: pre-commit run --all-files --show-diff-on-failure
+      - name: Pre-commit environments cache save
+        if: github.ref == 'refs/heads/main' && steps.pc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Secrets (gitleaks, pushed commits)
+        env:
+          RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          cd "$GITHUB_WORKSPACE"
+          case "$RANGE" in
+            0000000*|..*) RANGE="HEAD~1..HEAD" ;;
+          esac
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact -v --log-opts "$RANGE"
+      - name: Commit messages (no ai attribution)
+        if: github.event_name == 'pull_request'
+        run: |
+          for sha in $(git rev-list --no-merges "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/msg"
+            pre-commit run no-ai-attribution --hook-stage commit-msg --commit-msg-filename "$RUNNER_TEMP/msg" || { echo "bad message in $sha"; exit 1; }
+          done
+
   package:
-    needs: changes
+    needs: [changes, precommit]
     if: needs.changes.outputs.src == 'true'
     name: ${{ matrix.artifact }}
     strategy:
@@ -213,7 +292,7 @@ jobs:
         run: npm run check
 
   fast_check:
-    needs: changes
+    needs: [changes, precommit]
     if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -239,11 +318,11 @@ jobs:
         with:
           path: ${{ steps.npm-dir.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Check (lint, format, types, tests)
-        run: npx tsc --noEmit --skipLibCheck && npx eslint . && npx prettier --check . && npx vitest run
+      - name: Unit tests
+        run: npx vitest run
 
   fixture_papers:
-    needs: changes
+    needs: [changes, precommit]
     if: needs.changes.outputs.fixtures == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -301,7 +380,7 @@ jobs:
   # debug build (the poster run needs the debug-only hanging runtime).
   # scripts/ci-e2e.sh runs them the same way locally.
   e2e:
-    needs: changes
+    needs: [changes, precommit]
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -435,7 +514,7 @@ jobs:
 
   ci:
     runs-on: ubuntu-24.04
-    needs: [changes, package, fast_check, e2e, fixture_papers, purge_caches]
+    needs: [changes, precommit, package, fast_check, e2e, fixture_papers, purge_caches]
     if: always()
     steps:
       - name: Gate on source and fixture changes
@@ -445,9 +524,11 @@ jobs:
           FIX="${{ needs.changes.outputs.fixtures }}"
           PURGE="${{ needs.purge_caches.result }}"
           FAIL=0
+          echo "precommit: ${{ needs.precommit.result }}"
+          if [ "${{ needs.precommit.result }}" != "success" ]; then FAIL=1; fi
           if [ "$SRC" != "true" ] && [ "$E2E" != "true" ] && [ "$FIX" != "true" ]; then
             echo "No source or fixture changes; CI passes by skip."
-            exit 0
+            exit $FAIL
           fi
           if [ "$SRC" = "true" ]; then
             echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
