@@ -481,34 +481,26 @@ fn real_dir(d: &Path) -> bool {
 pub const README: &str = "# .maleficium
 
 Maleficium writes this folder when it compiles a paper that uses
-`maleficium-interactive.sty`. It holds auto-posters: still images of the
-interactive model and chart widgets that have no `poster=` of their own,
-of html widgets without one that you approved in View > Widgets, and of
-custom-runtime widgets without one whose runtime you allowed there.
+`maleficium-interactive.sty`. It holds auto-posters: still images that
+stand in for interactive widgets without a `poster=` of their own.
 
-- `posters/<sha256>.png` is one poster. Its name is a hash of the widget's
-  source files, its options, the runtime and the renderer version, so any
-  change to the widget renders a new poster.
+- `posters/<sha256>.png` is one poster. Any change to the widget gives
+  it a new name.
 - `posters/<main>.map` tells the package which poster belongs to which
-  widget of `<main>.tex`. A poster is used only while the widget's recorded
-  options still match; otherwise the widget shows a placeholder.
+  widget of `<main>.tex`.
 
 It is safe to delete. The next compile in Maleficium renders the posters
-again. A widget that is new in a compile gets its poster in the same
-compile: the compile renders it after the engine's first pass and runs
-the engine again, so the pdf shows the poster. A poster that cannot be
-rendered stays a placeholder.
+again.
 
-You may commit it. With the folder in place the paper compiles with its
-posters anywhere the package is installed, without Maleficium; without
-the folder those widgets show a placeholder box.
+You may commit it. Then the paper compiles with its posters anywhere the
+package is installed, without Maleficium. Without the folder those
+widgets show a placeholder box.
 
-Cleanup: after each successful compile, posters that no widget of a
-compiled main file uses are deleted. When the folder grows past its cap
-(100 MiB unless MALEFICIUM_POSTER_CACHE_MIB sets another size in MiB),
-the oldest posters the paper just compiled does not use go first.
+Each successful compile deletes posters the paper no longer uses. Past
+100 MiB (or the size in MiB that MALEFICIUM_POSTER_CACHE_MIB sets), the
+oldest unused posters go first.
 
-Maleficium writes this README only when it is missing, so edits stay.
+Maleficium writes this README only when it is missing, so your edits stay.
 ";
 
 /// Writes the README when it is missing; an existing one (edited or not)
