@@ -1,0 +1,19 @@
+title = "Gitleaks config for Maleficium"
+
+# Keep gitleaks' built-in ruleset; without this a custom config replaces it.
+[extend]
+useDefault = true
+
+# Known false positives for the generic-api-key rule: a deliberate fake secret
+# in the agent-safety scenario, test function names and fixture keys, and keymap entries.
+[[allowlists]]
+description = "generic-api-key false positives"
+targetRules = ["generic-api-key"]
+condition = "OR"
+paths = ['''^e2e/agent-scenarios/safety\.json$''']
+regexTarget = "line"
+regexes = [
+  '''^\s*(pub(\([a-z]+\))? )?(async )?fn \w+\(''',
+  '''\bkeys:\s*'[^']*\'''',
+  '''"0123456789abcdef"\.repeat''',
+]
