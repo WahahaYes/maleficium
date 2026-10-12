@@ -9,6 +9,7 @@ assertions); the one exception is the app event log, asserted after
 every state because no other harness launches the real app (the
 driver only drives the headless sidecar, which never starts the
 frontend log). State 4 compiles cold against an empty engine cache.
+The app event logs are copied to STILLS_OUT/events/ on exit.
 A 3000-page capture is not covered here; the driver's heavy-document
 probes measure that case.
 
@@ -98,7 +99,23 @@ def take_lock(path, what):
     LOCKS.append(path)
 
 
+def save_event_logs():
+    """Copy every app event log of this run (the contained home's and the
+    scratch fixtures' first-run data) into OUT/events/, so a failed or odd
+    state can be read after the run; the fixtures dir is /tmp scratch."""
+    dest = os.path.join(OUT, "events")
+    for base in (FAKEHOME, globals().get("FIX")):
+        if not base:
+            continue
+        for dirpath, _dirs, files in os.walk(base):
+            if "events.jsonl" in files and os.path.basename(dirpath) == "maleficium-log":
+                name = os.path.relpath(os.path.join(dirpath, "events.jsonl"), base).replace(os.sep, "_")
+                os.makedirs(dest, exist_ok=True)
+                shutil.copyfile(os.path.join(dirpath, "events.jsonl"), os.path.join(dest, "%s-%s" % (os.path.basename(base.rstrip(os.sep)), name)))
+
+
 def cleanup():
+    save_event_logs()
     procs.stop_all()
     for p in LOCKS:
         shutil.rmtree(p, ignore_errors=True)
