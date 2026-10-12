@@ -17,6 +17,12 @@ repos:
       - id: mixed-line-ending
         args: ['--fix=lf']
         exclude: ^src-tauri/binaries/
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        args: ['--config', '.gitleaks.toml']
+        verbose: true
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
