@@ -40,6 +40,12 @@ export function updateBuffer(
   return next;
 }
 
+/** Whether saving `text` writes something other than what is on disk. A
+ *  buffer the app never loaded counts as changed. */
+export function changesDisk(buf: BufferState | undefined, text: string): boolean {
+  return buf == null || text !== buf.disk;
+}
+
 export function markSaved(
   buffers: Map<string, BufferState>,
   path: string,

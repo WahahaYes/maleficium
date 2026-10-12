@@ -339,11 +339,16 @@ pub enum AppEvent {
         path: String,
         reason: SaveBlockedReason,
     },
+    /// `changed` is false when the text written matches what was last on
+    /// disk; such a save does not arm auto-compile.
     #[serde(rename = "file.save")]
     FileSave {
         path: String,
         chars: u64,
         mode: SaveMode,
+        /// Logs from before the field read as unchanged.
+        #[serde(default)]
+        changed: bool,
     },
     /// An implicit save failed; the buffer stays dirty.
     #[serde(rename = "file.save-failed")]

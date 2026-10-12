@@ -146,7 +146,13 @@ describe('event log recording', () => {
         kind: 'success',
         actor: 'user',
         message: 'two',
-        event: { action: 'file.save', path: '/p/a.tex', chars: 1, mode: 'manual' },
+        event: {
+          action: 'file.save',
+          path: '/p/a.tex',
+          chars: 1,
+          mode: 'manual',
+          changed: true,
+        },
       });
       await settle(log);
       // The run starts by rotating, never by truncating: the first backend
