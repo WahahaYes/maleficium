@@ -523,12 +523,19 @@ def state5():
     os.makedirs(firstrun, exist_ok=True)
     shutil.rmtree(FAKEHOME + "/article", ignore_errors=True)
 
-    def finishes(n, timeout):
-        """Wait for `n` compile.finish events in the first-run log."""
+    want_root = os.path.join(os.path.realpath(FAKEHOME), "article")
+
+    def finishes(n, timeout, target=None):
+        """Wait for `n` compile.finish events in the first-run log, counting
+        only `target`'s when given (the tour may build more than once)."""
         end = time.time() + timeout
         got = 0
         while time.time() < end:
-            got = sum(1 for e in acts(firstlog.events()) if e.get("action") == "compile.finish")
+            got = sum(
+                1
+                for e in acts(firstlog.events())
+                if e.get("action") == "compile.finish" and target in (None, e.get("target"))
+            )
             if got >= n:
                 return
             time.sleep(3)
@@ -555,7 +562,7 @@ def state5():
     time.sleep(3)
     # A double-click on a card creates it at the shown location (home).
     xdo(DISP, "mousemove", "--window", WIN, "167", "200", "click", "--repeat", "2", "--delay", "200", "1")
-    finishes(2, 300)
+    finishes(1, 300, want_root + "/main.tex")
     time.sleep(3)
     shot("05-created")
     stop_app()
@@ -571,7 +578,6 @@ def state5():
 
     w = [i for i, a in enumerate(names) if a == "template.welcome"]
     fin = [e for e in evs if e.get("action") == "compile.finish"]
-    want_root = os.path.join(os.path.realpath(FAKEHOME), "article")
     made = [e for e in evs if e.get("action") == "template.create"]
     mains = [e.get("mainFile") for e in evs if e.get("action") == "main.resolved" and e.get("root") == want_root]
     problems = []
@@ -587,8 +593,9 @@ def state5():
         problems.append("template root %s, want %s" % (made[-1:], want_root))
     if mains != [want_root + "/main.tex"]:
         problems.append("main for the new project: %s" % mains)
-    if not (len(fin) >= 2 and fin[1].get("ok") is True and fin[1].get("target") == want_root + "/main.tex"):
-        problems.append("template build: %s" % fin[1:2])
+    built = [e for e in fin if e.get("target") == want_root + "/main.tex"]
+    if not (built and built[0].get("ok") is True):
+        problems.append("template build: %s" % built[:1])
     if not os.path.isfile(want_root + "/main.tex"):
         problems.append("no main.tex in the new project")
     if problems:
