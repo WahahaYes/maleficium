@@ -4,7 +4,9 @@
 #   python e2e/package-smoke.py out      install them, compile through the
 #                                        installed engine, check the first
 #                                        launch, screenshot it
-#   npm run check                        lint, format, types, every test suite
+#   npm run check:platform               path tests, clippy, cargo test (lint,
+#                                        format, types and vitest run once, in
+#                                        the precommit and fast_check jobs)
 # Only toolchain setup differs per OS. Pins live in rust-toolchain.toml and
 # .nvmrc. Linux builds on the oldest Ubuntu the packages support (24.04:
 # the bundled Tectonic needs glibc 2.39), for the widest glibc baseline.
@@ -101,6 +103,9 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
         run: rustup toolchain install
+      # A version written into the app or docs goes stale at the next bump.
+      - name: No hardcoded versions
+        run: python scripts/release-meta.py stale
       - run: pip install pre-commit==4.6.1
       - name: Pre-commit environments cache
         id: pc-cache
@@ -224,9 +229,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      # A version written into the app or docs goes stale at the next bump.
-      - name: No hardcoded versions
-        run: python scripts/release-meta.py stale
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       # The engine is its own workspace with its own (nightly) pin.
@@ -287,9 +289,11 @@ jobs:
           name: screenshot-${{ matrix.artifact }}
           path: ${{ runner.temp }}/shots/*.png
           if-no-files-found: ignore
-      - name: Check (lint, format, types, tests)
+      # Lint, format, types and vitest run once, in precommit and fast_check;
+      # here only what can differ by platform: path handling and the Rust crates.
+      - name: Platform checks (path tests, clippy, cargo test)
         if: ${{ !cancelled() }}
-        run: npm run check
+        run: npm run check:platform
 
   fast_check:
     needs: [changes, precommit]
