@@ -16,7 +16,7 @@ npm run dev:desktop            # the app, with hot reload
 
 `sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, a copy of the `e2e/fixtures/simple` test fixture, the real papers in `e2e/fixtures/vendored`, and `interactive-paper` (the `e2e/fixtures/playground` widget paper, with `maleficium-interactive.sty` copied in). It keeps any project folder that already exists; delete one to get a fresh copy.
 
-Recommended: `pre-commit install` runs the format, lint, and type checks on each commit, and checks each commit message.
+Recommended: `pre-commit install` runs the format, lint, type, and secret-scan (gitleaks) checks on each commit, and checks each commit message. False positives go in `.gitleaks.toml`.
 
 ## Before you commit
 
