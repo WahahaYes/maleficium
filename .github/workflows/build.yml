@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       src: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.src }}
       fixtures: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.fixtures }}
@@ -77,7 +77,7 @@ jobs:
           - { runner: macos-15-intel, artifact: macos-x86_64 }
           - { runner: windows-2025, artifact: windows-x86_64 }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 75
+    timeout-minutes: 100
     defaults:
       run:
         shell: bash
@@ -114,21 +114,21 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
+          key: vcpkg-x64-windows-static-md-engine-v2-${{ hashFiles('scripts/vcpkg-ports.txt') }}
+          restore-keys: vcpkg-x64-windows-static-md-engine-v2-
       - name: Windows vcpkg install
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $t = "x64-windows-static-md"
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install `
-            "freetype:$t" "graphite2:$t" "harfbuzz[graphite2]:$t" "icu:$t" `
-            "libpng:$t" "fontconfig:$t" "libxml2:$t" "libxslt:$t"
+          $ports = Get-Content scripts/vcpkg-ports.txt | Where-Object { $_ } | ForEach-Object { "${_}:$t" }
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install @ports
       - name: Windows vcpkg cache save
-        if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v1-${{ hashFiles('.github/workflows/build.yml') }}
+          key: vcpkg-x64-windows-static-md-engine-v2-${{ hashFiles('scripts/vcpkg-ports.txt') }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -193,7 +193,7 @@ jobs:
   fast_check:
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -208,7 +208,7 @@ jobs:
   fixture_papers:
     needs: changes
     if: needs.changes.outputs.fixtures == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -355,7 +355,7 @@ jobs:
           if-no-files-found: ignore
 
   purge_caches:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [package]
     if: github.event_name == 'push'
     permissions:
@@ -373,7 +373,7 @@ jobs:
           done
 
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [changes, package, fast_check, e2e, fixture_papers, purge_caches]
     if: always()
     steps:
@@ -390,6 +390,7 @@ jobs:
           fi
           if [ "$SRC" = "true" ]; then
             echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
+            if [ "${{ needs.package.result }}" = "cancelled" ]; then echo "package was cancelled: a job hit its timeout-minutes, not a test failure"; fi
             if [ "${{ needs.package.result }}" != "success" ]; then FAIL=1; fi
             if [ "${{ needs.fast_check.result }}" != "success" ]; then FAIL=1; fi
           fi

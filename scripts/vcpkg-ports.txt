@@ -1,0 +1,8 @@
+freetype
+graphite2
+harfbuzz[graphite2]
+icu
+libpng
+fontconfig
+libxml2
+libxslt
