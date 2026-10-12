@@ -34,11 +34,25 @@ export const KEYMAP: KeyChord[] = [
   { id: 'zoom-in', label: 'Zoom preview in', keys: 'Ctrl+=' },
   { id: 'zoom-out', label: 'Zoom preview out', keys: 'Ctrl+-' },
   { id: 'zoom-fit-width', label: 'Fit preview to width', keys: 'Ctrl+0' },
-  { id: 'shortcuts', label: 'This shortcuts list', keys: '?' },
+  { id: 'shortcuts', label: 'This shortcuts list (outside a text field)', keys: '?' },
 ];
 
 export function matchesCompile(e: KeyboardEvent): boolean {
   return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r';
+}
+
+/** `?` opens the shortcuts list, except while typing: in the editor or any
+ *  text field it stays a question mark. */
+export function matchesShortcutsKey(e: KeyboardEvent): boolean {
+  return e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTextTarget(e.target);
+}
+
+function isTextTarget(t: EventTarget | null): boolean {
+  const el = t as { tagName?: string; isContentEditable?: boolean } | null;
+  if (!el) return false;
+  return (
+    el.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName ?? '')
+  );
 }
 
 export function matchesGoToDefinition(e: KeyboardEvent): boolean {

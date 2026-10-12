@@ -5,6 +5,7 @@ import {
   matchesForwardSync,
   matchesGoToDefinition,
   matchesMenuChord,
+  matchesShortcutsKey,
   menuChordId,
   zoomChord,
 } from '../lib/keymap';
@@ -54,7 +55,7 @@ export function useGlobalKeymap(
           e.preventDefault();
           a.menuAction(id);
         }
-      } else if (!mod && e.key === '?') {
+      } else if (matchesShortcutsKey(e)) {
         a.showShortcuts();
       } else if (mod && e.key.toLowerCase() === 'b') {
         e.preventDefault();
