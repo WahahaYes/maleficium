@@ -3,7 +3,7 @@
 # e2e job in .github/workflows/build.yml): export (with the reader and the
 # wasm cells in Chromium, Firefox and WebKit), interactive, poster and
 # approval. Stops at the first failing suite and exits non-zero.
-# Needs what the suites need (e2e/README.md): the engine and its format dumps
+# Needs what the suites' headers name: the engine and its format dumps
 # from scripts/build-engine.sh, python3 with jsonschema, npm ci and
 # playwright-core's three browsers, Xvfb, and openssl. Linux only.
 #   sh scripts/ci-e2e.sh [suite...]     default: export interactive poster approval
