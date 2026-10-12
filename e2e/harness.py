@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """harness.py — shared setup for the harnesses that drive the real app.
 
-codrive-run.py and showreel-run.py both launch the app built from this
+codrive-run.py and showreel/run.py both launch the app built from this
 checkout under Xvfb, serve its frontend from a vite dev server, and feed
 its engine bundle through a local mirror, so takes never depend on the
 network past the first cache fill. Everything here is parameterized by

@@ -21,6 +21,9 @@
 # Speculative loading: an approved widget with static and scripted
 # preconnect links to a loopback listener renders, and the listener sees no
 # TCP connection (the renderer turns LinkPreconnect off in its webview).
+#
+# Needs Xvfb and a debug build (the hanging runtime is debug-only).
+# POSTER_SHOTS=<dir> keeps the PNGs.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -3,6 +3,14 @@
 # grant -> compile -> poll -> synctex -> delete -> undo over JSON-RPC against
 # a scratch copy of e2e/fixtures/simple/, then asserts porcelain discipline +
 # artifact homes.
+#
+# A second half runs heavy documents: a 1000-file folder, cancelling a
+# 3000-page compile, and render budgets (PDF load, page render, peak memory)
+# with the preview's pdf.js. Heavy fixtures come from src/test/make-fixture.ts
+# and are reused from DRIVER_FIXTURES. DRIVER_LOG sets the JSONL run log,
+# WARM_ONLY=1 stops after the first compile, POLL_ROUNDS bounds polling, and
+# MCP_ROOT_OVERRIDE drives an existing folder in place. The render budgets
+# need pdfjs-dist's optional @napi-rs/canvas; without it they print skip:.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"

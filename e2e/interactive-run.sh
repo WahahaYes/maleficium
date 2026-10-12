@@ -6,6 +6,8 @@
 # documents (bad ids, files, alt, unknown options, misplaced or malformed
 # poster parameters, every \interactiveruntime error) and the custom runtime
 # widget's sidecar line.
+# The table row text checks need `mutool` and print skip: without it.
+# POLL_ROUNDS bounds polling.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
