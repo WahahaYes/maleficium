@@ -18,6 +18,7 @@
 #      compiles with its posters through a sidecar with no app beside it
 #      and no display, leaving .maleficium as it was; the bundle export
 #      takes the cached posters.
+# Needs Xvfb and pdfimages (poppler-utils).
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"

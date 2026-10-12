@@ -1,6 +1,8 @@
 # Vendored VSCode color themes
 
-Third-party color themes, each MIT-licensed (full texts in `LICENSES/`). Files are JSONC as shipped upstream (comments, trailing commas); the tier-1 reader must tolerate both. Files whose upstream lacks a `type` field resolve dark/light from background luminance.
+Third-party VSCode color themes, each under the MIT licence. The full licence texts are in `LICENSES/`, one per upstream repository.
+
+Files are kept as upstream ships them, which is JSONC with comments and trailing commas. `src/lib/vscodeTheme.ts` reads them and, when a theme has no `type` field, decides dark or light from its background luminance. Each file is registered in `src/lib/themeCatalog.ts`.
 
 | File | Source | Pin | License |
 | --- | --- | --- | --- |
@@ -23,4 +25,4 @@ Third-party color themes, each MIT-licensed (full texts in `LICENSES/`). Files a
 | catppuccin-mocha.jsonc | official vsix Catppuccin/catppuccin-vsc 3.19.0 via open-vsx (shipped LICENSE is MIT) | vsix-3.19.0 | MIT © 2021 Catppuccin |
 | catppuccin-latte.jsonc | official vsix Catppuccin/catppuccin-vsc 3.19.0 via open-vsx (shipped LICENSE is MIT) | vsix-3.19.0 | MIT © 2021 Catppuccin |
 
-Only color data is vendored. SynthWave's glow hack (custom CSS injection) is excluded; Dracula's YAML source and the build-generated GitHub / Catppuccin themes are not vendored.
+Only the color theme JSON is vendored. SynthWave's glow effect (custom CSS injection) is left out. For Dracula, GitHub and Catppuccin, whose themes are generated at build time, the file is taken from the published extension.

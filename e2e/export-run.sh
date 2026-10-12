@@ -6,6 +6,9 @@
 # widget, destination-inside-the-project refusal, the single-file size cap,
 # a remote-only asset refused (and not approvable over MCP), and that the
 # export itself runs with no network at all (an empty network namespace).
+# Needs python3 with jsonschema and playwright-core's browsers (the reader
+# cells run e2e/reader-run.mjs). Without `unshare -rn` the no-network step
+# prints skip:. POLL_ROUNDS bounds polling.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
