@@ -14,22 +14,18 @@ npm run dev:desktop            # the app, with hot reload
 
 `npm run dev` serves the frontend alone in a browser. Both dev commands pick a free port, so several checkouts can run side by side.
 
-`sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, a copy of the `e2e/fixtures/simple` test fixture, the real papers in `e2e/fixtures/vendored`, and `interactive-paper` (the `e2e/fixtures/playground` widget paper, with `maleficium-interactive.sty` copied in). It keeps any project folder that already exists; delete one to get a fresh copy.
+`sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, plus the e2e fixtures. It keeps projects that already exist; delete one to get a fresh copy. See [scripts/playground.sh](../scripts/playground.sh).
 
-Recommended: `pre-commit install` runs the format, lint, and type checks on each commit, and checks each commit message.
+Recommended: `pre-commit install` runs the formatters, linters and type checks on each commit, and checks each commit message.
 
 ## Before you commit
 
 Run these from the repo root:
 
 ```sh
-./node_modules/.bin/tsc --noEmit --skipLibCheck
-npm run lint && npm run format:check
-npm test
-cargo test --manifest-path src-tauri/Cargo.toml --workspace
-npm run build
-cargo check --manifest-path src-tauri/Cargo.toml --workspace
-e2e/project-footprint.sh
+npm run check            # types, lint, format, vitest, cargo fmt, clippy and test
+npm run build            # the production frontend build
+e2e/project-footprint.sh # the app never writes into a user's project
 ```
 
 A GUI change is not confirmed until someone has clicked through it in the real app on a desktop.
@@ -59,7 +55,7 @@ Maleficium is AGPL-3.0, and contributions are accepted under the same license. T
 
 ## Templates
 
-Built-in templates live in `src-tauri/templates/` and are CC0. A new one needs the CC0 header and a row in the table in [src-tauri/templates/README.md](../src-tauri/templates/README.md), which records where each template came from.
+Built-in templates live in `src-tauri/templates/` and are CC0. A new one is a folder with a `template.json`, the CC0 header in its main file, and an Origin note if it is adapted from outside work. See [src-tauri/templates/README.md](../src-tauri/templates/README.md) for how to add one.
 
 ## README screenshots
 
@@ -73,6 +69,6 @@ Appearance settings flow through `AppearancePrefs` into the theme factory. Bundl
 
 ## Tests and harnesses
 
-Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output goes to the OS temp dir and is never committed. See [e2e/README.md](../e2e/README.md) for what each harness proves and how to run it.
+Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output stays outside the repo and is never committed. Each harness says in its header what it proves and how to run it; [e2e/README.md](../e2e/README.md) covers the conventions.
 
 Rust build caches grow without limit. `npm run clean` drops the incremental caches; add `-- --all` to remove the target dirs, or `-- --dry-run` to see sizes first.

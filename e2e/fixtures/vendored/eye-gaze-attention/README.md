@@ -10,10 +10,10 @@ Ethan Wilson, Naveen Sendhilnathan, Charlie S. Burlingham, Yusuf Mansour, Robert
 
 ## What it exercises
 
-- acmart (`sigconf,nonacm,authorversion`) from a class file shipped beside the paper, overriding the bundle's copy
-- Eight `\author` blocks with affiliations, a CC copyright block, and ACM conference metadata
-- Seven `\input` sections, ACM-Reference-Format BibTeX, and large PNG figures
+- acmart (`sigconf,nonacm,authorversion`) from a class file beside the paper, which overrides the bundle's copy.
+- Eight authors with affiliations, a CC copyright block, and ACM conference metadata.
+- `\input` sections, ACM-Reference-Format BibTeX, and large PNG figures.
 
 ## Builds today
 
-Yes, with 74 warnings. Many of them are fragments (`''`, `-> MinLibReg-ot1`) of Tectonic's multi-line font-substitution notes, split into separate diagnostics.
+Yes, with warnings. Many warnings are fragments of Tectonic's multi-line font-substitution notes (`''`, `-> MinLibReg-ot1`), split into separate diagnostics.
