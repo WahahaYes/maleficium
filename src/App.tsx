@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CompileButton from './components/CompileButton';
@@ -12,43 +12,23 @@ import PreviewPane from './components/PreviewPane';
 import SideColumn from './components/SideColumn';
 import WorkArea from './components/WorkArea';
 import { mainFileTip } from './lib/mainFileTip';
-import { AboutDialog, GoToLineDialog, RenameDialog } from './components/SimpleDialogs';
-import PaletteDialog from './components/PaletteDialog';
 import { paletteCommands } from './lib/palette';
-import { hoverText } from './lib/definition.view';
-import { projectIndex, type ProjectMacro } from './lib/project-index';
 import { publishPresence } from './lib/presence';
-import OpenRequestPrompt from './components/OpenRequestPrompt';
-import type { Hit } from './lib/generated/index';
-import HistoryDialog from './components/HistoryDialog';
-import ShortcutsDialog from './components/ShortcutsDialog';
-import SettingsDialog from './components/SettingsDialog';
 import type { AppearancePrefs } from './lib/appearance';
 import StatusBar from './components/StatusBar';
-import PrecheckPanel from './components/PrecheckPanel';
-import ExternalChangeDialog from './components/ExternalChangeDialog';
 import { useExternalChanges } from './hooks/useExternalChanges';
 import { listDir1Level, loadTex, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
 import { compileLogTitle } from './lib/compile';
-import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
-import { emit, eventOf } from './lib/events';
-import { transport } from './lib/event-transport';
+import { onPdf, type PreviewDoc } from './lib/preview-bus';
+import { emit } from './lib/events';
 import { startEventLog } from './lib/eventlog';
 import { historyAvailability } from './lib/history.view';
-import { structure } from './lib/structure';
-import type { OutlineEntry } from './lib/generated/structure';
 import type { ZoomAction } from './lib/zoom';
-import ExportReportDialog from './components/ExportReportDialog';
-import ExportProgress from './components/ExportProgress';
 import { useExport } from './hooks/useExport';
 import { useWidgetApproval } from './hooks/useWidgetApproval';
-import { approvalBannerText, pendingRuntimes, pendingWidgets } from './lib/widgets.view';
-import WidgetsPanel from './components/WidgetsPanel';
-import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
-import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
 import { buildMenus, type MenuContext } from './lib/commands';
-import { commandActions, type AppDialog } from './lib/commandActions';
+import { commandActions } from './lib/commandActions';
 import { FileHistory } from './lib/file-history';
 import { grantUntitledAccess } from './lib/projectAccess';
 import { useProjectReplace } from './hooks/useProjectReplace';
@@ -59,13 +39,17 @@ import { useGlobalKeymap } from './hooks/useGlobalKeymap';
 import { useShellLayout } from './hooks/useShellLayout';
 import { useBufferManager } from './hooks/useBufferManager';
 import { useCompileRunner } from './hooks/useCompileRunner';
+import AppDialogs from './components/AppDialogs';
+import { useArticleSync } from './hooks/useArticleSync';
+import { useDialogs } from './hooks/useDialogs';
+import { useNavigation } from './hooks/useNavigation';
+import { useOutline } from './hooks/useOutline';
+import { useProjectRoot } from './hooks/useProjectRoot';
 import { useProjectTree } from './hooks/useProjectTree';
 import { useFileOps } from './hooks/useFileOps';
 import { useRevisionHistory } from './hooks/useRevisionHistory';
 import { useIndexOverlays } from './hooks/useIndexOverlays';
 import { useSynctex } from './hooks/useSynctex';
-import { useArticle } from './hooks/useArticle';
-import { anchorForLine, shouldRefreshArticle } from './lib/article';
 
 const HELLO = '\\documentclass{article}\n\\begin{document}\nHello Maleficium\n\\end{document}\n';
 
@@ -87,8 +71,8 @@ export default function App({
   const shell = useShellLayout();
   const { toggleTree } = shell;
   const [tex, setTex] = useState(HELLO);
-  const [root, setRoot] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const { root, projectId, rootRef, projectIdRef, setRootNow, setProjectIdNow, relInProject } =
+    useProjectRoot();
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [fileName, setFileName] = useState('hello.tex');
   const [trash] = useState(() => new FileHistory());
@@ -99,17 +83,20 @@ export default function App({
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
   const pdfUrl = previewDoc?.url ?? null;
-  // Ref mirror: the subscribe-once listener reads forward SyncTeX via ref,
-  // never state.
-  // Bumped on every inverse SyncTeX hit to flash the line amber.
   // Ref mirror for the watcher closure (the effect is root-scoped).
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
-  // Latest closures for the subscribe-once global keymap listener.
+  // Latest closures for the subscribe-once global keymap listener. The
+  // listener never closes over render state: assign every render and call
+  // only `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
+  // listener would never resubscribe.
   const compileRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncRef = useRef<() => Promise<void>>(async () => {});
   const forwardSyncLineRef = useRef<(file: string, line: number) => void>(() => {});
   const handleSelectRef = useRef<(path: string) => Promise<void>>(async () => {});
+  // Viewport bridge assigned via viewportRef prop. Without it
+  // selectAll/expand/shrink/goToLine no-op.
+  const viewportRef = useRef<EditorViewportHandle | null>(null);
   const { buffers, setBuffers, buffersRef, handleCloseBuffer, handleCloseOthers, handleCloseAll } =
     useBufferManager({
       fileName,
@@ -128,39 +115,7 @@ export default function App({
   });
 
   // Revision history: app-local, keyed by the backend-minted project id.
-  const rootRef = useRef<string | null>(root);
-  rootRef.current = root;
-  // Project switches move the ref at once, so async work started for the
-  // old root can tell it is stale before the next render.
-  const setRootNow = useCallback((v: string | null) => {
-    rootRef.current = v;
-    setRoot(v);
-  }, []);
-  const projectIdRef = useRef<string | null>(projectId);
-  projectIdRef.current = projectId;
-  const setProjectIdNow = useCallback((v: string | null) => {
-    projectIdRef.current = v;
-    setProjectId(v);
-  }, []);
-
-  /** Project-relative path for a file inside the open project, else null. */
-  const relInProject = useCallback((abs: string): string | null => {
-    const r = rootRef.current;
-    return r ? relUnder(r, abs) : null;
-  }, []);
-  const {
-    revisionCount,
-    historyOpen,
-    setHistoryOpen,
-    historyRows,
-    historyAvail,
-    historySummary,
-    historyNotice,
-    restoringRev,
-    noteSavedRevision,
-    openHistory,
-    restoreRevision,
-  } = useRevisionHistory({
+  const history = useRevisionHistory({
     root,
     projectId,
     relInProject,
@@ -209,7 +164,7 @@ export default function App({
     setPreviewFile,
     setLargeFile,
     setLog,
-    noteSavedRevision,
+    noteSavedRevision: history.noteSavedRevision,
     resolveMain,
     rootRef,
     projectIdRef,
@@ -223,27 +178,16 @@ export default function App({
     await setMainToPath(path);
   };
 
-  // UI tree is 1 level + expand-on-demand. The recursive walk runs only
-  // for main-file scan + watcher baseline, never on the open path.
-  // Tree CRUD: create/rename via plugin-fs; own-write marks suppress echoes.
-
-  // One-off compile of a tree-selected file. This is EXPECTED to fail for
-  // fragments (a chapter without \documentclass cannot build alone) — the
-  // engine error is the honest answer, surfaced through the normal failure
-  // path (phase + stream + click-to-jump rows).
-
   const menuActionRef = useRef<(id: string) => void>(() => {});
   const zoomActionRef = useRef<((a: ZoomAction) => void) | null>(null);
-  // Double-click in the editor = forward SyncTeX from the caret line
-  // (complements single-click inverse on the PDF canvas).
   useGlobalKeymap(
     {
       compile: () => void compileRef.current(),
-      goToDefinition: () => goToDefinitionRef.current(),
+      goToDefinition: () => nav.goToDefinitionRef.current(),
       forwardSync: () => void forwardSyncRef.current(),
       zoom: (z) => zoomActionRef.current?.(z),
       menuAction: (id) => menuActionRef.current(id),
-      showShortcuts: () => setDialog('shortcuts'),
+      showShortcuts: () => dialogs.show('shortcuts'),
       toggleTree,
       select: (path) => void handleSelectRef.current(path),
     },
@@ -272,11 +216,10 @@ export default function App({
     buffers,
     setBuffers,
     largeFile,
-    noteSavedRevision,
+    noteSavedRevision: history.noteSavedRevision,
     setLog,
   });
 
-  // Publish engine-log problems as first-class stream events (click-to-jump).
   /** One tree level on expand; an unreadable folder says so and lists empty. */
   async function expandDir(dir: string): Promise<TreeEntry[]> {
     try {
@@ -314,10 +257,6 @@ export default function App({
     });
   }
 
-  // Latest-closure refs for the subscribe-once keymap listener. The listener
-  // never closes over render state: assign every render and call only
-  // `*.current()`. Untitled typing updates `tex` alone, so a dep-driven
-  // listener would never resubscribe.
   const { logCollapsed, setLogCollapsed, layout } = shell;
   const {
     compilePhase,
@@ -378,7 +317,7 @@ export default function App({
       if (rootRef.current !== project) await openRoot(project);
       if (file) await handleSelectRef.current(joinPath(project, file));
     },
-    [openRoot],
+    [openRoot, rootRef],
   );
   const { handleCreate, handleRename, handleDelete, handleClean, handleUndo } = useFileOps({
     root,
@@ -394,99 +333,19 @@ export default function App({
     reloadTree,
     handleSelect,
   });
-  // Menu-opened modals; one shows at a time.
-  const [dialog, setDialog] = useState<AppDialog | null>(null);
-  const closeDialog = () => setDialog(null);
+  const dialogs = useDialogs();
   // Project search replaces the tree + outline in the side column while open.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchFocus, setSearchFocus] = useState(0);
-  const [hitSelect, setHitSelect] = useState<{
-    path: string;
-    line: number;
-    col: number;
-    len: number;
-    key: number;
-  } | null>(null);
-  // Go to definition (F12 / Ctrl+click) and its hover, over the project index.
-  const lookupAt = useCallback(
-    (line: string, col: number) => {
-      if (!projectId) return Promise.resolve(null);
-      const main = mainFile ? relInProject(mainFile) : null;
-      return projectIndex().definitionAt(projectId, line, col, main);
-    },
-    [projectId, mainFile, relInProject],
-  );
-  const goToDefinitionAt = useCallback(
-    async (line: string, col: number) => {
-      if (!root) return;
-      const l = await lookupAt(line, col).catch(() => null);
-      if (!l) {
-        setLog('nothing to go to here');
-        return;
-      }
-      const found = l.definitions.length;
-      // A macro with no project definition is built in, not an error.
-      const builtin = found === 0 && l.ref.kind === 'macro';
-      emit({
-        scope: 'app',
-        kind: found > 0 || builtin ? 'info' : 'warn',
-        actor: 'user',
-        message:
-          found > 0
-            ? `definition of ${l.ref.key}`
-            : builtin
-              ? `${l.ref.key} is built in or from a package`
-              : `no definition for ${l.ref.key}`,
-        event: { action: 'nav.definition', kind: l.ref.kind, key: l.ref.key, found },
-      });
-      const d = l.definitions[0];
-      if (!d) {
-        setLog(hoverText(l) ?? `${l.ref.key} is built in or from a package`);
-        return;
-      }
-      const abs = joinPath(root, d.rel);
-      if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
-      setHitSelect({ path: abs, line: d.line, col: 0, len: 0, key: Date.now() });
-      if (found > 1) setLog(`${l.ref.key}: ${found} definitions (duplicate) — showing the first`);
-    },
-    [root, lookupAt],
-  );
-  const definitionRef = useRef<{
-    hover: (line: string, col: number) => Promise<string | null>;
-    go: (line: string, col: number) => void;
-    macros: () => Promise<ProjectMacro[]>;
-  } | null>(null);
-  definitionRef.current = {
-    hover: (line, col) =>
-      lookupAt(line, col).then(
-        (l) => (l ? hoverText(l) : null),
-        () => null,
-      ),
-    go: (line, col) => void goToDefinitionAt(line, col),
-    macros: () => (projectId ? projectIndex().macros(projectId) : Promise.resolve([])),
-  };
-  const goToDefinitionRef = useRef<() => void>(() => {});
-  goToDefinitionRef.current = () => {
-    const at = viewportRef.current?.caretAt();
-    if (at) void goToDefinitionAt(at.text, at.col);
-  };
-  // File finder / command palette: one dialog, `>` switches to commands.
-  const [paletteOpen, setPaletteOpen] = useState<string | null>(null);
-  const findFiles = useCallback(
-    (query: string) =>
-      projectId ? projectIndex().findFiles(projectId, query) : Promise.resolve([]),
-    [projectId],
-  );
-  const rankNames = useCallback(
-    (query: string, items: string[]) => projectIndex().rank(query, items),
-    [],
-  );
-  const openFileRel = useCallback(
-    (rel: string) => {
-      if (root) void handleSelectRef.current(joinPath(root, rel));
-    },
-    [root],
-  );
+  const nav = useNavigation({
+    root,
+    projectId,
+    mainRel: mainFile ? relInProject(mainFile) : null,
+    fileNameRef,
+    selectRef: handleSelectRef,
+    viewportRef,
+    setLog,
+  });
   const { lastReplace, runSearch, runPreview, runApply, undoReplace } = useProjectReplace({
     projectId,
     root,
@@ -497,23 +356,6 @@ export default function App({
     setTex,
     fileNameRef,
   });
-  const openHit = useCallback(
-    async (rel: string, hit: Hit) => {
-      if (!root) return;
-      const abs = joinPath(root, rel);
-      if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
-      setHitSelect({ path: abs, line: hit.line, col: hit.col, len: hit.len, key: Date.now() });
-    },
-    [root],
-  );
-  const openFinding = useCallback(async (rootPath: string, rel: string, line: number) => {
-    const abs = joinPath(rootPath, rel);
-    if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
-    setHitSelect({ path: abs, line, col: 0, len: 0, key: Date.now() });
-  }, []);
-  // Viewport bridge assigned via viewportRef prop. Without it
-  // selectAll/expand/shrink/goToLine no-op.
-  const viewportRef = useRef<EditorViewportHandle | null>(null);
   const {
     currentLine,
     setCurrentLine,
@@ -538,42 +380,7 @@ export default function App({
     forwardSyncRef,
     forwardSyncLineRef,
   });
-  // Outline: active buffer only, debounced 500ms. Full-fidelity entries
-  // (parse cap 1000); the view slices to 100 per filter (filter-first,
-  // cap-second). Sections-only rows feed the Selection submenus.
-  const [outline, setOutline] = useState<OutlineEntry[]>([]);
-  // Multi-pick set for Selection > Pick Sections.
-  const [outlinePicks, setOutlinePicks] = useState<number[]>([]);
-  useEffect(() => {
-    // A reply for a superseded buffer is dropped: parses resolve async.
-    let stale = false;
-    const t = setTimeout(() => {
-      const t0 = performance.now();
-      structure()
-        .outline(tex)
-        .then(({ entries }) => {
-          if (stale) return;
-          setOutline(entries);
-          if (tex.length > 1_000_000) {
-            const ms = Math.round(performance.now() - t0);
-            emit({
-              scope: 'app',
-              kind: 'info',
-              actor: 'system',
-              message: `outline parsed ${entries.length} entries in ${ms}ms`,
-              event: { action: 'outline.parse', entries: entries.length, ms },
-            });
-          }
-        })
-        .catch(() => {
-          /* outline never blocks editing */
-        });
-    }, 500);
-    return () => {
-      stale = true;
-      clearTimeout(t);
-    };
-  }, [tex, fileName]);
+  const outline = useOutline(tex, fileName);
 
   const handleTexChange = useCallback(
     (v: string) => {
@@ -613,7 +420,6 @@ export default function App({
     projectId,
     mainRel: mainFile ? relInProject(mainFile) : null,
   });
-  const [templateMode, setTemplateMode] = useState<TemplateDialogMode>(null);
   const exporter = useExport({
     pdf: previewDoc?.source ?? null,
     project: root && projectId ? { rootId: projectId, path: root } : null,
@@ -632,10 +438,8 @@ export default function App({
     logCollapsed,
     outlineVisible: shell.outlineVisible,
     // Selection submenus navigate sections only.
-    outlineLines: outline
-      .filter((o) => o.kind === 'section')
-      .map((o) => ({ line: o.line, title: o.title })),
-    outlinePicks,
+    outlineLines: outline.sections,
+    outlinePicks: outline.picks,
     canUndoDelete: trash.size > 0,
     canUndoReplace: lastReplace != null,
     historyAvailable:
@@ -674,16 +478,13 @@ export default function App({
       save,
       setMain: setMainToOpenFile,
       resolveExternal,
-      openHistory,
+      openHistory: history.openHistory,
     },
     editor: {
       viewport: () => viewportRef.current,
-      goToDefinition: () => goToDefinitionRef.current(),
+      goToDefinition: () => nav.goToDefinitionRef.current(),
       pickSection: setCurrentLine,
-      togglePick: (line) =>
-        setOutlinePicks((prev) =>
-          prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line],
-        ),
+      togglePick: outline.togglePick,
     },
     compile: {
       compile: () => compileRef.current(),
@@ -696,12 +497,7 @@ export default function App({
       zoom: (a) => zoomActionRef.current?.(a),
     },
     exporter,
-    dialogs: {
-      show: setDialog,
-      palette: setPaletteOpen,
-      template: setTemplateMode,
-      widgets: widgetApproval.openPanel,
-    },
+    dialogs: { ...dialogs, widgets: widgetApproval.openPanel },
   });
   const menuSections = buildMenus(menuCtx, menuActions);
   useDevCamera((m) => {
@@ -721,87 +517,17 @@ export default function App({
     }
   };
 
-  const mainDoc =
-    mainFile && root && projectId ? sourceFor(mainFile, [{ rootId: projectId, path: root }]) : null;
-  // The Article tab's bytes: loaded on demand, reloaded by hand.
-  const article = useArticle();
-  const articleHtml = article.html;
-  const articleStamp = article.stamp;
-  const articleLoad = article.load;
-  const articleAnchors = article.anchors;
-  // Auto-refresh: a finished compile bumps the preview stamp; when the
-  // article shows older bytes, reload it. Never loads on its own: the
-  // first visit stays manual (see shouldRefreshArticle).
-  const previewStamp = previewDoc?.stamp ?? null;
-  useEffect(() => {
-    if (!mainDoc) return;
-    if (
-      shouldRefreshArticle(
-        articleHtml,
-        articleStamp,
-        previewStamp,
-        compilePhase === 'compiling',
-        true,
-      )
-    ) {
-      void articleLoad(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
-    }
-  }, [mainDoc, previewStamp, compilePhase, articleHtml, articleStamp, articleLoad]);
-  // Forward-only sync: the caret line's section maps to the article anchor
-  // the frame scrolls to. Sections come from the active buffer's outline;
-  // the article names the same headings with latexml numbers attached.
-  const articleAnchor = useMemo(
-    () =>
-      anchorForLine(
-        currentLine,
-        outline.filter((o) => o.kind === 'section').map((o) => ({ line: o.line, title: o.title })),
-        articleAnchors,
-      ),
-    [currentLine, outline, articleAnchors],
-  );
-  // The article banner names the held widgets and runtimes from the same
-  // listing the Widgets panel shows; approving there clears it.
-  const approvalText = useMemo(
-    () =>
-      approvalBannerText(
-        pendingWidgets(widgetApproval.state?.status ?? null),
-        pendingRuntimes(widgetApproval.runtimeState?.status ?? null),
-      ),
-    [widgetApproval.state, widgetApproval.runtimeState],
-  );
-  const handleArticleSync = useCallback((anchor: string) => {
-    emit({
-      scope: 'preview',
-      kind: 'info',
-      actor: 'user',
-      message: `article sync → ${anchor}`,
-      event: { action: 'article.sync', anchor },
-    });
-  }, []);
-  // Approve round-trip: the bytes' Approve button opens the Widgets panel
-  // (approval wants the panel's review, never a blind click-through); the
-  // approval settled there re-exports the article below.
-  const handleArticleApproveRequest = useCallback(
-    (widget: string) => {
-      emit({
-        scope: 'preview',
-        kind: 'info',
-        actor: 'user',
-        message: `article asks approval for ${widget}`,
-        event: { action: 'article.approve-request', widget },
-      });
-      widgetApproval.openPanel();
-    },
-    [widgetApproval],
-  );
-  const articleReload = article.reload;
-  useEffect(() => {
-    if (!projectId) return;
-    return transport().subscribe((e) => {
-      const acted = eventOf(e, 'widget.approved') ?? eventOf(e, 'widget.revoked');
-      if (acted && acted.rootId === projectId) articleReload();
-    });
-  }, [projectId, articleReload]);
+  const articleSync = useArticleSync({
+    mainFile,
+    root,
+    projectId,
+    previewStamp: previewDoc?.stamp ?? null,
+    compiling: compilePhase === 'compiling',
+    currentLine,
+    sections: outline.sections,
+    widgets: widgetApproval,
+  });
+  const { article, mainDoc } = articleSync;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -829,7 +555,7 @@ export default function App({
             searchOpen={searchOpen}
             search={{
               runSearch,
-              onOpenHit: (rel, hit) => void openHit(rel, hit),
+              onOpenHit: nav.openHit,
               runPreview,
               runApply,
               lastReplace,
@@ -861,7 +587,7 @@ export default function App({
               filterHidden: true,
             }}
             outlineVisible={shell.outlineVisible}
-            outline={{ entries: outline, onJump: (line) => setCurrentLine(line) }}
+            outline={{ entries: outline.entries, onJump: (line) => setCurrentLine(line) }}
           />
         }
         editor={
@@ -899,12 +625,12 @@ export default function App({
               onSave: save,
               line: currentLine,
               flashKey: synctexFlash,
-              select: hitSelect && hitSelect.path === fileName ? hitSelect : undefined,
+              select: nav.reveal && nav.reveal.path === fileName ? nav.reveal : undefined,
               viewportRef,
               onDoubleClickRef: forwardSyncLineRef,
               filePath: fileName,
               prefs,
-              definitionRef,
+              definitionRef: nav.definitionRef,
             }}
             log={log}
             logTitle={compileLogTitle(log, compiled)}
@@ -928,13 +654,11 @@ export default function App({
             articleLoading={article.loading}
             articleError={article.error}
             canLoadArticle={mainDoc != null && pdfUrl != null}
-            onLoadArticle={() => {
-              if (mainDoc) void article.load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
-            }}
-            articleAnchor={articleAnchor}
-            onArticleSync={handleArticleSync}
-            onApproveArticle={handleArticleApproveRequest}
-            approvalText={approvalText}
+            onLoadArticle={articleSync.loadNow}
+            articleAnchor={articleSync.anchor}
+            onArticleSync={articleSync.onSync}
+            onApproveArticle={articleSync.onApproveRequest}
+            approvalText={articleSync.approvalText}
             onReviewApprovals={widgetApproval.openPanel}
           />
         }
@@ -946,83 +670,15 @@ export default function App({
         onToggleCollapse={shell.toggleLog}
         onJump={handleProblemJump}
       />
-      <ShortcutsDialog open={dialog === 'shortcuts'} onClose={closeDialog} />
-      <OpenRequestPrompt onOpen={openForAgent} />
-      <SettingsDialog
-        open={dialog === 'settings'}
-        onClose={closeDialog}
-        prefs={prefs}
-        onChange={onPrefs}
-        precheckPopup={precheckPopup}
-        onPrecheckPopup={setPrecheckPopup}
-      />
-      <RenameDialog
-        open={dialog === 'rename'}
-        title={baseName(fileName) || fileName}
-        initial={baseName(fileName)}
-        onClose={closeDialog}
-        onRename={(name) => void handleRename(fileName, name)}
-      />
-      <GoToLineDialog
-        open={dialog === 'goToLine'}
-        initial={String(currentLine)}
-        onClose={closeDialog}
-        onGo={(n) => viewportRef.current?.goToLine(n)}
-      />
-      <AboutDialog open={dialog === 'about'} onClose={closeDialog} />
-      <PaletteDialog
-        open={paletteOpen != null}
-        initial={paletteOpen ?? ''}
-        onClose={() => setPaletteOpen(null)}
-        findFiles={findFiles}
-        rank={rankNames}
-        commands={paletteCommands(menuSections, ['file.quick-open', 'view.command-palette'])}
-        onOpenFile={openFileRel}
-      />
-      <HistoryDialog
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        fileLabel={relInProject(fileName)}
-        availability={historyAvail}
-        rows={historyRows}
-        summary={historySummary}
-        notice={historyNotice}
-        restoringRev={restoringRev}
-        onRestore={(rev) => void restoreRevision(rev)}
-      />
-      <ExportProgress run={exporter.run} onCancel={() => void exporter.cancelExport()} />
-      <ExportReportDialog report={exporter.bundleReport} onClose={exporter.closeBundleReport} />
-      <TemplateDialogs
-        mode={templateMode}
-        onClose={() => setTemplateMode(null)}
-        project={root && projectId ? { rootId: projectId, path: root } : null}
-        mainRel={mainFile ? relInProject(mainFile) : null}
-        openRoot={(r, main) => openRoot(r, { main })}
-      />
-      <WidgetsPanel
-        open={widgetApproval.panelOpen}
-        onClose={widgetApproval.closePanel}
-        model={widgetApproval.model}
-        state={widgetApproval.state}
-        runtimeModel={widgetApproval.runtimeModel}
-        runtimeState={widgetApproval.runtimeState}
-      />
-      <WidgetApprovalPrompt
-        prompt={widgetApproval.prompts?.current() ?? null}
-        failure={widgetApproval.prompts?.failure() ?? null}
-        onApprove={() => void widgetApproval.prompts?.approve()}
-        onSkip={() => widgetApproval.prompts?.skip()}
-        onDismissFailure={() => widgetApproval.prompts?.clearFailure()}
-      />
       <StatusBar
         mainFile={relOf(mainFile)}
         mainFileTitle={mainFile}
         historyCount={trash.size}
-        revisionCount={revisionCount}
-        revisionTitle={`${revisionCount} revision${revisionCount === 1 ? '' : 's'} of ${
+        revisionCount={history.revisionCount}
+        revisionTitle={`${history.revisionCount} revision${history.revisionCount === 1 ? '' : 's'} of ${
           relInProject(fileName) ?? fileName
         } — click to open History`}
-        onOpenHistory={() => void openHistory()}
+        onOpenHistory={() => void history.openHistory()}
         phase={compilePhase}
         timer={compileTimer}
         message={compilePhase === 'compiling' ? (progress ?? log) : log}
@@ -1031,23 +687,43 @@ export default function App({
         warnings={precheck?.findings.length ?? 0}
         onOpenWarnings={openPrecheck}
       />
-      {conflicts.length > 0 ? (
-        <ExternalChangeDialog
-          path={relInProject(conflicts[0]) ?? conflicts[0]}
-          more={conflicts.length - 1}
-          onReload={() => void resolveExternal('reload')}
-          onKeep={() => void resolveExternal('keep')}
-        />
-      ) : null}
-      {precheck && precheckOpen ? (
-        <PrecheckPanel
-          key={`${precheck.target}:${precheck.findings.length}`}
-          precheck={precheck}
-          popupEnabled={precheckPopup}
-          onJump={(r, rel, line) => void openFinding(r, rel, line)}
-          onClose={closePrecheck}
-        />
-      ) : null}
+      <AppDialogs
+        dialogs={dialogs}
+        file={{
+          path: fileName,
+          rel: relInProject(fileName),
+          line: currentLine,
+          rename: (name) => void handleRename(fileName, name),
+          goToLine: (n) => viewportRef.current?.goToLine(n),
+        }}
+        palette={{
+          findFiles: nav.findFiles,
+          rank: nav.rankNames,
+          commands: paletteCommands(menuSections, ['file.quick-open', 'view.command-palette']),
+          onOpenFile: nav.openFileRel,
+        }}
+        settings={{ prefs, onPrefs, precheckPopup, onPrecheckPopup: setPrecheckPopup }}
+        history={history}
+        exporter={exporter}
+        widgets={widgetApproval}
+        templates={{
+          project: root && projectId ? { rootId: projectId, path: root } : null,
+          mainRel: mainFile ? relInProject(mainFile) : null,
+          openRoot: (r, main) => openRoot(r, { main }),
+        }}
+        conflicts={{
+          labels: conflicts.map((c) => relInProject(c) ?? c),
+          resolve: (c) => void resolveExternal(c),
+        }}
+        precheck={{
+          findings: precheck,
+          open: precheckOpen,
+          popup: precheckPopup,
+          close: closePrecheck,
+          onJump: nav.openFinding,
+        }}
+        openForAgent={openForAgent}
+      />
     </Box>
   );
 }
