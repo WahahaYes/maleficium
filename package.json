@@ -26,6 +26,7 @@
     "tauri": "tauri",
     "test": "vitest run",
     "check": "tsc --noEmit --skipLibCheck && eslint . && prettier --check . && vitest run && cargo fmt --all --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --workspace --no-fail-fast",
+    "check:platform": "vitest run src/lib/paths src/lib/fs-provider src/lib/recentProjects src/lib/preview-bus src/lib/eventlog src/lib/compile src/lib/externalRefresh src/lib/structure && cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --workspace --no-fail-fast",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
