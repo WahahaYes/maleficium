@@ -351,12 +351,22 @@ def since_events(since, path=None):
 
 
 def state1():
-    """Default: open, no compile. Idle shell + quiet preview. Ctrl+S forces a
-    save so the log carries file.save + revision.record live."""
+    """Default: open, no compile. Idle shell + quiet preview. A save of
+    unchanged text compiles nothing; a one-line edit and Ctrl+S then puts
+    file.save + revision.record + compile.auto in the log live."""
     start_app(FIX + "/simple")
     wait_window(300)
     open_project()
     click_editor()
+    mnoop = now_ms()
+    key("ctrl+s")
+    wait_event("file.save", mnoop, 15)
+    time.sleep(3)
+    if APPLOG.find("compile.auto", mnoop):
+        die("a save that changed nothing auto-compiled")
+    key("ctrl+End")
+    key("Return")
+    xdo(DISP, "type", "--delay", "40", "% saved")
     msave = now_ms()
     key("ctrl+s")
     wait_event("file.save", msave, 15)
@@ -523,12 +533,19 @@ def state5():
     os.makedirs(firstrun, exist_ok=True)
     shutil.rmtree(FAKEHOME + "/article", ignore_errors=True)
 
-    def finishes(n, timeout):
-        """Wait for `n` compile.finish events in the first-run log."""
+    want_root = os.path.join(os.path.realpath(FAKEHOME), "article")
+
+    def finishes(n, timeout, target=None):
+        """Wait for `n` compile.finish events in the first-run log, counting
+        only `target`'s when given (the tour may build more than once)."""
         end = time.time() + timeout
         got = 0
         while time.time() < end:
-            got = sum(1 for e in acts(firstlog.events()) if e.get("action") == "compile.finish")
+            got = sum(
+                1
+                for e in acts(firstlog.events())
+                if e.get("action") == "compile.finish" and target in (None, e.get("target"))
+            )
             if got >= n:
                 return
             time.sleep(3)
@@ -555,7 +572,7 @@ def state5():
     time.sleep(3)
     # A double-click on a card creates it at the shown location (home).
     xdo(DISP, "mousemove", "--window", WIN, "167", "200", "click", "--repeat", "2", "--delay", "200", "1")
-    finishes(2, 300)
+    finishes(1, 300, want_root + "/main.tex")
     time.sleep(3)
     shot("05-created")
     stop_app()
@@ -571,7 +588,6 @@ def state5():
 
     w = [i for i, a in enumerate(names) if a == "template.welcome"]
     fin = [e for e in evs if e.get("action") == "compile.finish"]
-    want_root = os.path.join(os.path.realpath(FAKEHOME), "article")
     made = [e for e in evs if e.get("action") == "template.create"]
     mains = [e.get("mainFile") for e in evs if e.get("action") == "main.resolved" and e.get("root") == want_root]
     problems = []
@@ -587,8 +603,9 @@ def state5():
         problems.append("template root %s, want %s" % (made[-1:], want_root))
     if mains != [want_root + "/main.tex"]:
         problems.append("main for the new project: %s" % mains)
-    if not (len(fin) >= 2 and fin[1].get("ok") is True and fin[1].get("target") == want_root + "/main.tex"):
-        problems.append("template build: %s" % fin[1:2])
+    built = [e for e in fin if e.get("target") == want_root + "/main.tex"]
+    if not (built and built[0].get("ok") is True):
+        problems.append("template build: %s" % built[:1])
     if not os.path.isfile(want_root + "/main.tex"):
         problems.append("no main.tex in the new project")
     if problems:
@@ -713,9 +730,11 @@ def state7():
         xdo(DISP, "click", "--repeat", str(notches), "--delay", "150", str(button))
 
     def open_compiled(project, prefix):
-        """Open at fit width, save to compile, wait for paint. The paint wait is
-        anchored at launch: the log accumulates across runs, so an unanchored
-        grep would pass on a stale render."""
+        """Open at fit width, compile, wait for paint. Opening warm-compiles
+        on its own, so the Ctrl+R compile is the one measured: the open's
+        paint lands before the mark however long that build takes.
+        Paint waits are anchored: the log accumulates across runs, so an
+        unanchored grep would pass on a stale render."""
         start_app(project)
         wait_window(300)
         mlaunch = now_ms()
@@ -723,9 +742,12 @@ def state7():
         open_project()
         click_editor()
         key("ctrl+0")
-        mark(prefix + "-open")
-        key("ctrl+s")
         wait_event("preview.page-render", mlaunch, 600)
+        time.sleep(1)
+        mrun = now_ms()
+        mark(prefix + "-open")
+        key("ctrl+r")
+        wait_event("preview.page-render", mrun, 600)
         time.sleep(5)
 
     open_compiled(FIX + "/simple", "portrait")
