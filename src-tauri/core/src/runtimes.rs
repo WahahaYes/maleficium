@@ -84,6 +84,13 @@ const MAX_VENDORED_FILES: usize = 256;
 const VENDOR_DIR: &str = "vendor/";
 const SAMPLES_DIR: &str = "samples/";
 
+/// Metadata every package may carry, whatever its manifest says: the
+/// manifest, the top-level readme and licence, and the samples. Never folded
+/// into the widget, so the scanner skips exactly these.
+pub fn is_package_metadata(path: &str) -> bool {
+    matches!(path, MANIFEST | "README.md" | "LICENSE") || path.starts_with(SAMPLES_DIR)
+}
+
 fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(pattern).expect("a static pattern compiles"))
 }
@@ -309,12 +316,10 @@ impl RuntimeManifest {
             .collect()
     }
 
-    /// Package files that are metadata, never folded: the manifest, the
-    /// readme and licence, the samples and every vendored licence file.
+    /// Package files that are metadata, never folded: [`is_package_metadata`]
+    /// plus every vendored licence file.
     pub fn is_metadata(&self, path: &str) -> bool {
-        matches!(path, MANIFEST | "README.md" | "LICENSE")
-            || path.starts_with(SAMPLES_DIR)
-            || self.vendored.iter().any(|v| v.license_file == path)
+        is_package_metadata(path) || self.vendored.iter().any(|v| v.license_file == path)
     }
 }
 

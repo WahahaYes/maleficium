@@ -403,6 +403,41 @@ fn unreferenced_excludes_the_metadata_set() {
 }
 
 #[test]
+fn readme_and_licence_names_elsewhere_are_scanned() {
+    // Only the top-level README.md and LICENSE are metadata; any other file
+    // with such a name is folded into the widget, so the scanner reads it.
+    let r = scan(
+        &files(&[
+            (
+                "index.html",
+                &entry(
+                    "<script src=\"lib/README.js\"></script><script src=\"LICENSE.js\"></script>",
+                ),
+            ),
+            ("lib/README.js", "fetch('https://cdn.example.com/x');"),
+            ("LICENSE.js", "var s = 'https://cdn.example.com/y.js';"),
+            ("lib/README.md", "notes"),
+        ]),
+        &none(),
+        false,
+    );
+    let mut errs: Vec<(&str, &str)> = r.errors.iter().map(|f| (f.rule, f.file.as_str())).collect();
+    errs.sort();
+    assert_eq!(
+        errs,
+        [
+            ("network-api", "lib/README.js"),
+            ("url-load", "LICENSE.js"),
+            ("url-load", "lib/README.js")
+        ],
+        "{:?}",
+        rules(&r.errors)
+    );
+    assert_eq!(rules(&r.warnings), ["unreferenced"]);
+    assert_eq!(r.warnings[0].file, "lib/README.md");
+}
+
+#[test]
 fn global_hook_red() {
     let r = scan(
         &files(&[
