@@ -12,6 +12,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { hoverTooltip, keymap } from '@codemirror/view';
 import { Compartment, EditorState, EditorSelection, Prec } from '@codemirror/state';
 import { search } from '@codemirror/search';
+import { externalSync, hasUserEdit } from '../lib/editorSync';
 import { appOwnedEditorKeys } from '../lib/editorKeys';
 import { texMode } from '../lib/texMode';
 import { DEFAULT_PREFS } from '../lib/appearance';
@@ -150,7 +151,7 @@ function EditorViewport({
         }),
         themeCompartment.of(editorTheme(prefsRef.current, muiTheme)),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) {
+          if (hasUserEdit(u.transactions)) {
             lastSentRef.current = u.state.doc.toString();
             onChangeRef.current(lastSentRef.current);
           }
@@ -225,7 +226,10 @@ function EditorViewport({
     lastSentRef.current = value;
     const cur = view.state.doc.toString();
     if (cur !== value) {
-      view.dispatch({ changes: { from: 0, to: cur.length, insert: value } });
+      view.dispatch({
+        changes: { from: 0, to: cur.length, insert: value },
+        annotations: externalSync.of(true),
+      });
     }
   }, [value]);
 
