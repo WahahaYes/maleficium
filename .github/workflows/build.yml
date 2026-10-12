@@ -18,6 +18,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # labeled: adding full-ci to a PR starts the full platform matrix.
+    types: [opened, synchronize, reopened, labeled]
   workflow_call:
 
 permissions:
@@ -35,6 +37,7 @@ jobs:
       fixtures: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.fixtures }}
       e2e: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.e2e }}
       fixtures_files: ${{ steps.filter.outputs.fixtures_files }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: filter
@@ -48,6 +51,21 @@ jobs:
               - 'embed-runtime/**'
               - 'scripts/**'
               - 'e2e/**/*.py'
+              - '.github/workflows/**'
+            # What can differ by platform: the app and engine builds, packaging,
+            # the install smoke, the toolchain pins, and the TS path layer.
+            platform:
+              - 'src-tauri/**'
+              - 'scripts/package.sh'
+              - 'scripts/build-engine.sh'
+              - 'scripts/engine-key.sh'
+              - 'scripts/vcpkg-ports.txt'
+              - 'scripts/linux-deps.txt'
+              - 'e2e/package-smoke.py'
+              - 'src/lib/paths.ts'
+              - 'src/lib/fs-provider*'
+              - 'rust-toolchain.toml'
+              - 'package-lock.json'
               - '.github/workflows/**'
             fixtures:
               - 'e2e/fixtures/**'
@@ -65,6 +83,21 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/**'
+
+      # Pull requests get the Linux package job always, and macOS and Windows
+      # only when the PR touches a platform-sensitive path or carries the
+      # full-ci label. Pushes to main, releases and the like get all four.
+      - id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          PLATFORM: ${{ steps.filter.outputs.platform }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          m='{"runner":"ubuntu-24.04","artifact":"linux-x86_64"}'
+          if [ "$EVENT" != pull_request ] || [ "$PLATFORM" = true ] || [ "$LABELED" = true ]; then
+            m="$m"',{"runner":"macos-15","artifact":"macos-aarch64"},{"runner":"macos-15-intel","artifact":"macos-x86_64"},{"runner":"windows-2025","artifact":"windows-x86_64"}'
+          fi
+          echo "matrix={\"include\":[$m]}" >> "$GITHUB_OUTPUT"
 
   # Every pre-commit hook except clippy (heavy; the package jobs run it in
   # npm run check), as the first and cheapest gate: the other jobs wait for
@@ -154,12 +187,7 @@ jobs:
     name: ${{ matrix.artifact }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, artifact: linux-x86_64 }
-          - { runner: macos-15, artifact: macos-aarch64 }
-          - { runner: macos-15-intel, artifact: macos-x86_64 }
-          - { runner: windows-2025, artifact: windows-x86_64 }
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 100
     defaults:
@@ -263,8 +291,26 @@ jobs:
         with:
           path: src-tauri/resources/dumps
           key: ${{ steps.dumps-key.outputs.key }}
+      # The built engine, keyed on its sources, the runner image and the
+      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
+      # cargo when the restored binary is stamped with the current key.
+      - name: Engine key
+        id: engine-key
+        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Engine cache
+        id: engine-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
+      - name: Engine cache save
+        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Format dumps cache save
         if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -345,8 +391,26 @@ jobs:
             src-tauri
             src-tauri/engine
           save-if: false
+      # The built engine, keyed on its sources, the runner image and the
+      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
+      # cargo when the restored binary is stamped with the current key.
+      - name: Engine key
+        id: engine-key
+        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Engine cache
+        id: engine-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
+      - name: Engine cache save
+        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Changed vendored papers and examples
         id: papers
         run: |
@@ -433,8 +497,26 @@ jobs:
           key: ${{ steps.dumps-key.outputs.key }}
       # Before any cargo build: tauri-build copies this engine into
       # target/debug, and ci-e2e.sh checks the copy matches.
+      # The built engine, keyed on its sources, the runner image and the
+      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
+      # cargo when the restored binary is stamped with the current key.
+      - name: Engine key
+        id: engine-key
+        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Engine cache
+        id: engine-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
+      - name: Engine cache save
+        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/binaries
+          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
       - name: Format dumps cache save
         if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
