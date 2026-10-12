@@ -27,18 +27,6 @@ pub struct Report {
     pub warnings: Vec<Finding>,
 }
 
-/// Package metadata, never folded into the widget document: `runtime.json`,
-/// everything under `samples/`, and any readme/licence file (top level or
-/// a vendored `licenseFile`). Metadata is not scanned and never
-/// `unreferenced`.
-fn is_metadata(path: &str) -> bool {
-    if path == "runtime.json" || path.starts_with("samples/") {
-        return true;
-    }
-    let base = path.rsplit('/').next().unwrap_or(path);
-    base.starts_with("README") || base.starts_with("LICENSE") || base.starts_with("LICENCE")
-}
-
 /// Packages over this many bytes earn a `size` warning.
 const SIZE_LIMIT: usize = 5 * 1024 * 1024;
 
@@ -515,7 +503,7 @@ pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>, wasm
     );
 
     for (path, bytes) in files {
-        if is_metadata(path) {
+        if super::is_package_metadata(path) {
             continue;
         }
         // Gap: non-UTF-8 files scan through a lossy view; offsets still
@@ -666,7 +654,8 @@ pub fn scan(files: &BTreeMap<String, Vec<u8>>, vendored: &BTreeSet<String>, wasm
         referenced.insert("index.html".to_string());
     }
     for path in files.keys() {
-        if is_metadata(path) || vendored.contains(path) || referenced.contains(path) {
+        if super::is_package_metadata(path) || vendored.contains(path) || referenced.contains(path)
+        {
             continue;
         }
         warnings.push(finding(
