@@ -132,7 +132,16 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+      - name: npm cache dir
+        id: npm-dir
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - name: npm cache
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -153,6 +162,12 @@ jobs:
           # Main seeds caches every PR reads; PR runs never write their own sets.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - name: npm cache save
+        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # latexml's format dumps come from the pinned bundle over the network
       # (about two minutes). They belong to one latexml version and one
       # bundle pin, so the cache is keyed on exactly that pair
@@ -162,12 +177,19 @@ jobs:
         id: dumps-key
         run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
       - name: Format dumps cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: dumps-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/resources/dumps
           key: ${{ steps.dumps-key.outputs.key }}
       - name: Engine
         run: sh scripts/build-engine.sh
+      - name: Format dumps cache save
+        if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/resources/dumps
+          key: ${{ steps.dumps-key.outputs.key }}
 
       # The same on every OS from here.
       - name: Package
@@ -200,8 +222,23 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+      - name: npm cache dir
+        id: npm-dir
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - name: npm cache
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
       - run: npm ci
+      - name: npm cache save
+        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-dir.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Check (lint, format, types, tests)
         run: npx tsc --noEmit --skipLibCheck && npx eslint . && npx prettier --check . && npx vitest run
 
@@ -313,7 +350,8 @@ jobs:
         id: dumps-key
         run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
       - name: Format dumps cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: dumps-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/resources/dumps
           key: ${{ steps.dumps-key.outputs.key }}
@@ -321,14 +359,27 @@ jobs:
       # target/debug, and ci-e2e.sh checks the copy matches.
       - name: Engine
         run: sh scripts/build-engine.sh
+      - name: Format dumps cache save
+        if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/resources/dumps
+          key: ${{ steps.dumps-key.outputs.key }}
       # The browsers belong to the playwright-core version in the lockfile.
       - name: Playwright browsers cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Playwright browsers and their system libraries
         run: npx playwright-core install --with-deps chromium firefox webkit
+      - name: Playwright browsers cache save
+        if: github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # The TeX bundle the suites compile against, fetched on first use and
       # content-addressed by the pinned digest.
       - name: TeX bundle key
@@ -338,7 +389,8 @@ jobs:
           [ -n "$d" ] || { echo "BUNDLE_DIGEST not found in src-tauri/core/src/engine.rs"; exit 1; }
           echo "digest=$d" >> "$GITHUB_OUTPUT"
       - name: TeX bundle cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: tex-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
           key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
@@ -346,6 +398,12 @@ jobs:
         env:
           CI_E2E_LOGS: ${{ runner.temp }}/e2e-logs
         run: sh scripts/ci-e2e.sh
+      - name: TeX bundle cache save
+        if: github.ref == 'refs/heads/main' && steps.tex-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
       - name: Upload suite logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -367,6 +425,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh cache list --limit 100 || true
+          used=$(gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" --jq .active_caches_size_in_bytes 2>/dev/null || echo 0)
+          echo "cache use: $((used / 1048576)) MiB of 10240 MiB"
+          if [ "$used" -gt 7516192768 ]; then echo "::warning::repo cache use is above 7 GiB (cap is 10 GiB)"; fi
           # Keep main's seeded caches; prune everything else.
           gh cache list --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
             [ -n "$id" ] && gh cache delete "$id" || true
