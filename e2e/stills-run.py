@@ -720,9 +720,11 @@ def state7():
         xdo(DISP, "click", "--repeat", str(notches), "--delay", "150", str(button))
 
     def open_compiled(project, prefix):
-        """Open at fit width, save to compile, wait for paint. The paint wait is
-        anchored at launch: the log accumulates across runs, so an unanchored
-        grep would pass on a stale render."""
+        """Open at fit width, save to compile, wait for paint. Opening warm-
+        compiles on its own, so the save's compile is the one measured: the
+        open's paint lands before the mark however long that build takes.
+        Paint waits are anchored: the log accumulates across runs, so an
+        unanchored grep would pass on a stale render."""
         start_app(project)
         wait_window(300)
         mlaunch = now_ms()
@@ -730,9 +732,12 @@ def state7():
         open_project()
         click_editor()
         key("ctrl+0")
+        wait_event("preview.page-render", mlaunch, 600)
+        time.sleep(1)
+        msave = now_ms()
         mark(prefix + "-open")
         key("ctrl+s")
-        wait_event("preview.page-render", mlaunch, 600)
+        wait_event("preview.page-render", msave, 600)
         time.sleep(5)
 
     open_compiled(FIX + "/simple", "portrait")
