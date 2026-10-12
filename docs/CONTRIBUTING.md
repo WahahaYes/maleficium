@@ -16,7 +16,7 @@ npm run dev:desktop            # the app, with hot reload
 
 `sh scripts/playground.sh` fills an ignored `playground/` with projects to open by hand: one per built-in template, plus the e2e fixtures. It keeps projects that already exist; delete one to get a fresh copy. See [scripts/playground.sh](../scripts/playground.sh).
 
-Recommended: `pre-commit install` runs the formatters, linters and type checks on each commit, and checks each commit message.
+Recommended: `pre-commit install` runs the formatters, linters, type checks and a gitleaks secret scan on each commit, and checks each commit message. False positives go in `.gitleaks.toml`.
 
 ## Before you commit
 
