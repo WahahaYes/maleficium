@@ -1,8 +1,8 @@
 # Embedding a YouTube or Vimeo video
 
-A paper bundle can show a video hosted by YouTube or Vimeo inside an interactive figure. There is no embed widget type. You write a small custom `html` widget that frames the provider's player, and you declare the player's origin so the exporter lets that one widget frame it.
+A paper bundle can show a YouTube or Vimeo video inside an interactive figure. There is no embed widget type. You write a small `html` widget that frames the provider's player, and you declare the player's origin so that one widget may frame it.
 
-If you can ship the video file, use `\interactivevideo` with a local file instead. That keeps the bundle offline and hashed, with no third party involved. Everything below is about the cost of leaving that default.
+If you can ship the video file, use `\interactivevideo` with a local file instead. The bundle then stays offline and hashed, with no third party involved. The rest of this page is about what you give up by not doing that.
 
 ## The widget
 
@@ -32,7 +32,7 @@ Make a folder next to your main file, for example `widgets/talk/`, with an `inde
 
 For Vimeo, use `https://player.vimeo.com/video/VIDEO_ID?dnt=1` and declare `https://player.vimeo.com`.
 
-Then declare the origin. Use one of the two places below, or both; the two lists are merged.
+Then declare the origin, in `widget.json`, in the macro, or both. The two lists are merged.
 
 In `widgets/talk/widget.json`:
 
@@ -51,38 +51,41 @@ Or as a macro option:
 \end{figure}
 ```
 
-`resourcedomains=` (or `resourceDomains` in `widget.json`) is declared the same way, for images, scripts, styles, fonts and media the widget loads from another origin. `connectDomains` can be declared in `widget.json` only. Put several origins in one option by separating them with spaces.
+Separate several origins with spaces.
 
-**Only frame origins work in a single-file bundle.** A single-file bundle runs each widget as a document inside the reader page, so the widget is held to the reader page's policy as well as its own. That policy allows frames from the declared frame origins and nothing else from outside: no images, scripts, styles, fonts, media or connections. So `resourceDomains` and `connectDomains` are written into the widget's policy but have no effect there. The widget cannot load from those origins. In a folder bundle each widget is a document of its own, so all three lists apply. If a widget needs a resource origin, export the folder profile, or ship the files in the widget's folder.
+Give the widget a `poster=`. The app renders posters with declared origins unreachable, so an automatic poster of this widget would show an empty frame.
 
-Give the widget a `poster=`. The app renders posters with every declared origin turned off, so an automatic poster of this widget would show an empty frame.
+### Resource and connect origins
+
+`resourcedomains=` (or `resourceDomains` in `widget.json`) declares origins the widget may load images, scripts, styles, fonts and media from. `connectDomains` is declared in `widget.json` only.
+
+These two lists take effect only in a folder bundle. In a single-file bundle each widget runs inside the reader page and is held to its policy too, which allows declared frame origins and nothing else from outside. If a widget needs files from another origin there, export the folder profile, or put the files in the widget's folder.
 
 ## What the declaration does
 
-- **One widget, one policy.** The origins go into that widget's own content security policy (`frame-src` for `frameDomains`). No other widget in the bundle gets them, so another widget cannot frame your player's origin.
-- **The reader allows only the union, and each widget only its own.** A single-file bundle runs each widget inside the reader page, and that page's policy applies too. Its `frame-src` is exactly the set of frame origins your widgets declared, and nothing else. Each widget also sits in a small wrapper document whose `frame-src` names only that widget's origins. A frame's own navigation is checked against its parent, so the wrapper is what stops a widget from navigating its own frame to another widget's origin. Chromium, Firefox and WebKit all enforce this in the tests. A folder bundle loads each widget as a document of its own, so the reader page needs no frame origins and its policy stays `frame-src 'self'`, which also blocks that navigation.
-- **The origins are part of the approval.** An `html` widget runs in the app only after you approve it in View > Widgets, which shows the declared origins. The approval covers the folder's files and the declared origins together. Changing either one, in `widget.json` or in the macro option, makes the widget need approval again. Auto-approval never covers an origin the last approval did not include.
-- **One approval per folder.** An approval is stored for the widget's folder in the project. If two documents in the project use the same folder with different macro origins, each one's origins differ from the approval the other one left. Whichever you approve, the other needs approval again. This is deliberate: an approval never stretches to origins you did not see. To avoid the back and forth, give each document its own copy of the folder, or declare the origins in `widget.json` so both documents share them.
-- **Preview in Browser is not gated.** Preview in Browser exports a single-file bundle and opens it in your default browser. Every `html` widget in it runs there, approved or not, under the bundle's policies. Opening the preview is your explicit action, so the app asks for no approval first. Exported bundles are the same: what they run is up to whoever opens them.
-- **The PDF is not affected.** The PDF shows the poster. The declaration matters only in the exported bundle.
+- **It covers one widget.** The origins go into that widget's own content security policy. No other widget in the bundle can use them. The exported bundle enforces this in Chromium, Firefox and WebKit.
+- **The origins are part of the approval.** An `html` widget runs in the app only after you approve it in View > Widgets, which shows its declared origins. Changing the folder's files or its origins, in `widget.json` or the macro, asks for approval again. Auto-approval never approves an origin the last approval did not include.
+- **One approval per folder.** If two documents in a project use the same folder with different macro origins, approving one leaves the other unapproved. To avoid the back and forth, give each document its own copy of the folder, or declare the origins in `widget.json` so both share them.
+- **Preview in Browser and exports are not gated.** Preview in Browser opens a single-file bundle in your browser, and every `html` widget in it runs there, approved or not. An exported bundle runs wherever someone opens it.
+- **The PDF is not affected.** It shows the poster.
 
 ## Which origins are accepted
 
-An origin is `https://`, a lowercase host name or IPv4 address, and an optional port, for example `https://www.youtube-nocookie.com` or `https://media.example.org:8443`. The widget list refuses anything else, and so does the export:
+An origin is `https://`, a lowercase host name or IPv4 address, and an optional port, for example `https://www.youtube-nocookie.com` or `https://media.example.org:8443`. The widget list and the export both refuse anything else, including:
 
-- schemes other than `https` (`http:`, `data:`, `blob:`, `javascript:`, `ws:`)
+- other schemes (`http:`, `data:`, `blob:`, `javascript:`)
 - wildcards (`https://*.example.org`) and CSP keywords (`'self'`, `*`)
 - paths, queries, fragments and credentials (`https://example.org/embed`, `https://user@example.org`)
-- uppercase hosts, empty or over-long labels, trailing dots, port 0, ports above 65535, and ports with leading zeros
+- uppercase hosts, trailing dots, and ports outside 1-65535 or written with leading zeros
 
-A widget can declare at most 16 origins, counting every list and both places together.
+A widget can declare at most 16 origins, counting every list in both places (`MAX_ORIGINS` in `src-tauri/core/src/widgets.rs`).
 
 ## Before you publish
 
-**Referrer and sandbox.** Every widget frame is sandboxed with scripts allowed and no origin of its own, and it sends no referrer. A player framed inside it inherits that sandbox: it gets no cookies or storage, cannot open pop-ups, and cannot go fullscreen. The request for the player carries no `Referer` header. Some providers refuse embeds under these conditions. YouTube, for example, has shown "Error 153" when an embed sends no referrer. Maleficium's tests use local stand-in servers and have never loaded a real YouTube or Vimeo player. Check your embed in the browsers your readers use. Keep the poster and a plain link to the video in the caption, so readers still get the video if the player refuses to run.
+**Referrer and sandbox.** Every widget frame is sandboxed with scripts allowed and no origin of its own, and sends no referrer. A player framed inside it inherits that: no cookies or storage, no pop-ups, no fullscreen, no `Referer` header. Some providers refuse embeds under these conditions. YouTube, for example, has shown "Error 153" for embeds that send no referrer. Maleficium's tests do not load a real YouTube or Vimeo player, so check your embed in the browsers your readers use. Keep the poster and a plain link to the video in the caption, so readers still get the video if the player refuses to run.
 
-**Tracking.** The player loads as soon as a reader opens the page. The provider then sees the reader's IP address, browser and the page the request came from, as far as the browser reveals it. `youtube-nocookie.com` and Vimeo's `dnt=1` cut down on cookies, but they do not stop tracking. A bundle with no declared origins makes no request outside itself. A bundle with an embed loses that property for this figure. Say so if your venue or readers care.
+**Tracking.** The player loads as soon as a reader opens the page. The provider then sees the reader's IP address and browser. `youtube-nocookie.com` and Vimeo's `dnt=1` reduce cookies but do not stop tracking. A bundle with no declared origins makes no request outside itself; an embed gives that up for this figure. Say so if your venue or readers care.
 
-**Link rot.** The provider can remove the video, make it private, block it in some regions or change its embed rules at any time. The bundle cannot detect any of this. The PDF of record and the poster stay. If the licence allows it, put a copy of the video in an archive that keeps files long term, and cite that copy in the caption.
+**Link rot.** The provider can remove the video, make it private, block it in some regions or change its embed rules at any time, and the bundle cannot tell. The PDF and the poster stay. If the licence allows it, archive a copy of the video somewhere that keeps files long term, and cite that copy in the caption.
 
-**Browsers are not egress-proof.** A content security policy tells the browser what a page may load. It is not a network firewall. Browsers make some connections that the policy does not govern. WebKit can open preconnect TCP connections under `default-src 'none'`. Chromium can open a connection for a prerender, or for a frame the policy then blocks. So the declared origins limit what a widget can load and show, not every packet the reader's machine sends. Inside the app, the editor window and the poster renderer turn WebKit's speculative loading off on Linux (`LinkPreconnect` and the related prefetch features), and a test checks that the poster renderer opens no preconnect. On macOS and Windows the app sets nothing: WKWebView has no public switch, and WebView2 has no setting for it. Neither is tested.
+**Browsers are not egress-proof.** A content security policy limits what a page may load. It does not govern every connection the browser makes: preconnects, prerenders and blocked frames can still open connections. So declared origins limit what a widget can load and show, not every packet the reader's machine sends. Inside the app, on Linux, the editor window and the poster renderer turn speculative loading off. On macOS and Windows the webview offers no setting for it, so the app sets nothing there.

@@ -1,74 +1,104 @@
 # Custom widget runtimes
 
-A custom runtime is a small self-contained page that draws one interactive widget inside an exported paper bundle. The author writes `\interactiveruntime[runtime=stl-viewer@1, ...]{models/part.stl}`; the paper still compiles to PDF (the widget shows its poster), and the web bundle mounts the runtime live next to the poster.
+A custom runtime is a small self-contained page that draws one interactive widget inside an exported paper bundle. The author writes `\interactiveruntime[runtime=stl-viewer@1, ...]{models/part.stl}`. The PDF shows the widget's poster; the web bundle mounts the runtime live next to it.
+
+Working samples live in `embed-runtime/samples/`. Read them alongside this guide.
 
 ## Folder layout
 
-Project copy (the only one export reads): `runtimes/<name>@<major>/`. A user library copy installs from there. Layout:
+Export reads the project copy at `runtimes/<name>@<major>/`. Drafts live in the user library and are installed from there (see [Authoring flow](#authoring-flow-scaffold-validate-install-approve-export)).
 
 ```
 runtimes/caption-overlay@1/
-  runtime.json        REQUIRED, <= 64 KiB
-  index.html          REQUIRED, the entry; classic scripts/styles only
-  app.js, style.css   optional own code, referenced from index.html
-  vendor/<lib>/...    third-party code plus its licence text
-  samples/<file>      >= 1 file per required role (never exported)
-  README.md, LICENSE  optional docs (never exported)
+  runtime.json        required
+  index.html          required entry; classic scripts and styles only
+  app.js, style.css   your own code, referenced from index.html
+  vendor/<lib>/...    third-party code plus its licence file
+  samples/<file>      at least one file per required source role
+  README.md, LICENSE  optional
 ```
 
-Limits: no symlinks, regular files only, <= 4096 files, <= 64 MiB walked. `runtime.json`, `samples/**`, readmes, licences, and each vendored `licenseFile` are metadata: carried for review, never folded into the page. Everything else is inlined into `widgets/<id>/index.html`, which runs in a `sandbox="allow-scripts"` frame with no network, no `eval`, no storage, no workers, and no module `import`.
+The package holds regular files only, no symlinks. File-count and size limits are `MAX_FILES` and `MAX_BYTES` in `src-tauri/core/src/widget_approval.rs`.
+
+Metadata is carried for review but never exported into the page: `runtime.json`, `samples/`, `README.md`, `LICENSE`, and each vendored `licenseFile`. Everything else is inlined into one document, `widgets/<id>/index.html`. That document runs in a `sandbox="allow-scripts"` frame with no network, no `eval`, no storage, no workers, and no module `import`.
 
 ## runtime.json
 
-`contract` is exactly `1`. `name` matches the folder before `@` (`^[a-z][a-z0-9-]{1,39}$`, not a built-in or `m-*` name); `version` is `MAJOR.MINOR.PATCH` whose major matches the folder. `title` (1-80 chars), `description` (0-500), `authors` (1-16), `license` from the allowlist (MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, Zlib, 0BSD, CC0-1.0, Unlicense). `sources` has 1-8 roles `{primary?: bool, required: bool, extensions: [...], maxBytes?: int, description?}` with exactly one `primary: true` that is also required. `options` is an optional closed object schema (<= 32 string/number/integer/ boolean properties with defaults, enums, minimum/maximum, maxLength). `capabilities` is `{webgl: bool, wasm?: bool}`: contract 1 packages omit `wasm` and parse with it off; see [Contract 2: WebAssembly](#contract-2-webassembly). `vendored` lists third-party libraries (name, version, allowlist licence, a `source` claim that is never fetched, their `files` under `vendor/`, and a `licenseFile`). Unknown fields refuse.
+The manifest names the runtime, its licence, the source files it accepts, its options, and its capabilities. Unknown fields are refused. The parser and every limit (patterns, lengths, counts, the licence allowlist in `LICENSES`, reserved names and option keys) are in `src-tauri/core/src/runtimes.rs` (`parse_manifest`). The fields:
+
+- `contract`: `1`.
+- `name`: matches the folder before `@`. `version`: `MAJOR.MINOR.PATCH`, with the major matching the folder.
+- `title`, `description`, `authors`, `license` (from the allowlist).
+- `sources`: the roles the widget binds files to. Each role is `{required, extensions, primary?, maxBytes?, description?}`. Exactly one role is `primary: true`, and it must be required.
+- `options`: an optional closed schema of string, number, integer and boolean properties, each with a default. The host sends them typed and defaulted.
+- `capabilities`: `{webgl, wasm?}`. `wasm` defaults to false; see [Contract 2: WebAssembly](#contract-2-webassembly).
+- `vendored`: each third-party library's name, version, allowlist licence, `source` (a claim, never fetched), its `files` under `vendor/`, and its `licenseFile`.
 
 ## Bridge messages
 
-Every message carries `mfw: 1`. The runtime ignores anything not from `window.parent`. Host to runtime: `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}` (source bytes arrive as `ArrayBuffer`s; `options` is typed and defaulted); `theme {mode, tokens}` on mode change; `snapshot-request {requestId}` (no reply before `init`). Runtime to host: `ready` once; `status {state: loading|loaded|error, message? <=200}`; `snapshot {requestId, png}` (< 8 MiB data URL); `size {height}` (CSS px). You never send `size` yourself: the exporter puts a reporter at the head of every widget document that posts the document's height whenever it changes. Posting any unlisted type is a violation the host drops. Copy the listener shape from `embed-runtime/samples/`; authors cannot import the app's `bridge.ts`.
+The only channel between the widget and its host is `postMessage`. Every message carries `mfw: 1`. Ignore anything not from `window.parent`.
+
+Host to runtime:
+
+- `init {protocol: 1, widgetId, runtime, alt, options, sources, theme}`. Each source arrives as bytes (`ArrayBuffer`) under its role name.
+- `theme {mode, tokens}` when the colour mode changes.
+- `snapshot-request {requestId}`. Never sent before `init`.
+
+Runtime to host:
+
+- `ready`, once.
+- `status {state: loading|loaded|error, message?}`, message at most 200 characters.
+- `snapshot {requestId, png}`, a PNG data URL under 8 MiB.
+
+Any other type is dropped. Do not send `size`: the exporter adds a reporter to every widget document that posts its height whenever it changes.
+
+The reference implementation is `embed-runtime/src/bridge.ts`. Authors cannot import it; the scaffold copies its built form, `bridge.js`, into every draft.
 
 ## Layout: width from the host, height from your content
 
-The reader gives a widget the width of its column (or the author's `width=` as a fraction of it, never narrower than 20rem while the column allows) and sizes the frame to the widget's content height. Until the first report the frame keeps the poster's shape; the host holds the height between 120 px and the larger of 960 px and twice the window, past which the frame scrolls. A poster render is the exception: there the frame is the poster box, and your document should fill it as it would at that width.
+The reader gives a widget its column's width (or the author's `width=` fraction of it, at least 20rem when the column allows). The frame then follows your content's height, held between 120 px and the larger of 960 px and twice the window; past that it scrolls. Until the first height report the frame keeps the poster's shape. In a poster render the frame is the poster box: fill it as you would at that width.
 
-- **Size from width, never from height.** No `height: 100%`, `100vh` or `innerHeight` on the document: the frame follows the document, so a height taken from the frame grows until the cap. Give media (plot, canvas, image, video) `width: 100%` and an `aspect-ratio`, with a `max-height` in px when a tall shape would get silly. `vh` inside the frame is the frame's own height; do not use it.
-- **Mobile first, one breakpoint.** The frame's viewport is your width, so `@media (min-width: 560px)` works. Below it: one column, in reading order controls, then the media, then the readout. Above it, side by side.
-- **Controls wrap, never clip.** `flex-wrap` button groups; drop long label suffixes below the breakpoint.
+- **Size from width, never from height.** No `height: 100%`, `100vh` or `innerHeight`: the frame follows the document, so a height taken from the frame grows until the cap. Give media `width: 100%` and an `aspect-ratio`, with a px `max-height` if needed.
+- **Mobile first, one breakpoint.** The frame's viewport is your width, so `@media (min-width: 560px)` works. Below it, one column: controls, media, readout. Above it, side by side.
+- **Controls wrap, never clip.** Use `flex-wrap` on button groups and shorten long labels below the breakpoint.
 - **Touch targets of 44 px** under `@media (pointer: coarse)`, sliders included.
-- **Nothing only on hover.** What a tooltip shows is also in a readout, and a pointer pick also works from the keyboard (a focusable plot that takes the arrow keys).
-- **Don't trap the page's scroll.** Plots take `touch-action: pan-y` (a vertical swipe scrolls the article, a horizontal drag picks); a stage that needs every gesture (3D orbit) takes `touch-action: none` and stays at most 480 px tall so the page can be scrolled past it.
-- **Keep your height steady under interaction.** When a control changes how much text shows, reserve the tallest state's height so the frame does not jump under a finger.
-- **Redraw on a width change only.** The window's `resize` event also fires when your own height changes the frame; compare the width before redrawing.
+- **Nothing only on hover.** What a tooltip shows also appears in a readout, and a pointer pick also works from the keyboard.
+- **Don't trap the page's scroll.** Plots take `touch-action: pan-y`. A stage that needs every gesture (a 3D orbit) takes `touch-action: none` and stays at most 480 px tall.
+- **Keep your height steady.** If a control changes how much text shows, reserve the tallest state's height.
+- **Redraw on width changes only.** `resize` also fires when your own height changes the frame; compare the width first.
 
 ## Tokens a runtime may rely on
 
-`theme.tokens` holds exactly the 52 names of `theme::TOKENS`: fonts `--m-font-{body,heading,mono,math}`; `--m-size-{base,small}`, `--m-scale`, `--m-leading`, `--m-measure`, `--m-figure-max`, `--m-space-1..6`, `--m-radius`; `--m-color-{bg,surface,text,muted,rule, link,accent,target,error,error-bg,warning}`; `--m-tooltip-{bg,fg,border}`, `--m-shadow`; plate `--m-figure-{bg,surface,ink,accent}`; palettes `--m-cat-1..8`, `--m-seq-1..5`, `--m-div-{low,mid,high}`. Draw content on `--m-figure-bg` with `--m-figure-ink`/`--m-figure-accent`/palettes. The plate is the widget's default backdrop: the paper's page colour in the PDF poster (white unless the document sets `\pagecolor`), the reader's in the live page, or the author's `plate=` on that one widget, which holds in both modes and comes with the ink that reads on it. Paint on it unless your own option chooses otherwise (the built-in model viewer's `background=`, a chart spec's own `background`): the choice is the runtime's, the plate is what it gets by default. `--m-paper` is reader-only and never sent. Fonts do not cross origins.
+`theme.tokens` holds the CSS custom properties listed in `theme::TOKENS` (`src-tauri/core/src/theme.rs`): fonts, sizes, spacing, UI colours, and the figure tokens. Apply them on `:root`, as `applyTheme` in `bridge.ts` does.
+
+Draw with the figure tokens:
+
+- **Plate:** `--m-figure-bg` (backdrop), `--m-figure-surface`, `--m-figure-ink`, `--m-figure-accent`.
+- **Palettes:** categorical `--m-cat-*`, sequential `--m-seq-*`, diverging `--m-div-{low,mid,high}`.
+
+The plate is the widget's default backdrop. It is the page colour in the PDF poster, the reader's colour in the live page, or the author's `plate=` on that widget, which comes with an ink that reads on it. A runtime may offer its own background option; the plate is what it gets otherwise.
+
+Fonts do not cross origins: the frame gets the font token's family names, not the font files.
 
 ## Scan rules
 
-`runtimes::scan::scan` runs static checks; the CSP enforces at runtime. Errors refuse the package (poster-only, never approvable):
+Before a package can be approved, `runtimes::scan::scan` (`src-tauri/core/src/runtimes/scan.rs`) checks its code statically. The sandbox's content security policy is the real boundary; the scan catches honest mistakes early. Each rule's id, message and hint are in that file.
 
-- `url-load`: loads a remote URL (...); runtimes must be self-contained. Absolute or `//` URLs in `src href srcset poster data action`, CSS `url()`/`@import`, or quoted JS strings.
-- `meta-refresh`: uses `<meta http-equiv="refresh">`.
-- `eval`: uses `eval()`, `new Function()`, or a string `setTimeout`/ `setInterval`.
-- `module-import`: a module `import`/`export`; runtimes are classic scripts.
-- `network-api`: `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`.
-- `worker`: `new Worker`, `importScripts`, shared/service workers.
-- `storage`: `localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`.
-- `wasm`: `WebAssembly` use, a `.wasm` string, or a `.wasm` file reference without `capabilities.wasm` (see below).
-- `missing-ref`: references "...", which is no file in the package.
+Errors make the package invalid: it exports as its poster and cannot be approved. They cover:
 
-Warnings (export proceeds; approval shows them):
+- loading anything remote (absolute or `//` URLs in markup, CSS or quoted JS strings) or a `<meta>` refresh;
+- dynamic code (`eval`, `new Function`, string timers) and module `import`/`export`;
+- network, worker and storage APIs;
+- WebAssembly without `capabilities.wasm`;
+- a reference to a file not in the package.
 
-- `vendored-url`: the URL rules inside a vendored file.
-- `unreferenced`: folded into the widget but nothing references it.
-- `global-hook`: assigns a `window.__` hook.
-- `size`: the package is over the 5 MiB budget.
+Warnings let export proceed and are shown at approval: remote URLs inside vendored files, inlined files nothing references, `window.__` globals, and a package over the size budget.
 
-Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, readmes, licences) is neither scanned nor `unreferenced`. The checks are regexes over `.html`/`.css`/`.js` (inline blocks included): matches inside comments flag, template literals and split strings slip through; the sandbox catches what they miss.
+Vendored files are checked only for remote URLs. Metadata is not scanned. The checks are regexes over `.html`, `.css` and `.js`, inline blocks included, so a match inside a comment is flagged and a split string slips through.
 
 ## Worked example: caption-overlay@1
 
-`embed-runtime/samples/caption-overlay@1/` shows an SVG with a text bar. `samples/photo.svg` exercises the required `image` role; `runtime.json` declares it primary with extensions `svg png jpg`, plus two options: `caption` (string, default `"An example overlay"`) and `position` (`top|bottom`, default `bottom`). `index.html` listens for `init`, turns `d.sources.image.bytes` into a blob URL, draws it on a canvas, paints the bar in `--m-figure-accent`, and answers `theme` and `snapshot-request`. Use it in a paper:
+`embed-runtime/samples/caption-overlay@1/` draws an image with a caption bar. It shows a manifest with one required source role and two options, an `index.html` that answers `init`, `theme` and `snapshot-request`, and a sample file. The scaffold starts every plain draft from it. To try it, copy the folder to `runtimes/caption-overlay@1/` in a project and write:
 
 ```latex
 \interactiveruntime[runtime=caption-overlay@1, poster=figures/photo.png,
@@ -76,31 +106,28 @@ Vendored files get only `vendored-url`. Metadata (`runtime.json`, `samples/**`, 
   sources={image=img/harbour.svg}, caption={Harbour at dusk}]{img/harbour.svg}
 ```
 
-Copy the folder to `runtimes/caption-overlay@1/` in a project to try it. `bad-cdn@1` next to it is the negative: one CDN `<script src>`, which the scanner fails with exactly `url-load`.
+`bad-cdn@1` beside it is the negative example: one CDN `<script src>`, which fails the scan with `url-load`.
 
 ## Contract 2: WebAssembly
 
-Contract 1 deliberately has no WASM. A runtime that compiles WebAssembly declares `"wasm": true` under `capabilities` (omitted means false, so every contract 1 package parses unchanged). The scanner refuses undeclared use as a `wasm` error — the `WebAssembly` identifier, a `.wasm` string in script, or a `.wasm` file reference from markup, style or script — so an undeclared package is invalid: poster-only, never approvable, like `bad-cdn@1`. Vendored files are exempt from the content rules (as with `eval` and the rest); the sandbox catches what the scan misses.
+WebAssembly is opt-in. A runtime that compiles a module declares `"wasm": true` under `capabilities`. Undeclared use (the `WebAssembly` identifier, or a `.wasm` string or file reference) is a scan error. Vendored files are not checked for it; the policy catches what the scan misses.
 
-A declaring runtime's folded document alone carries `'wasm-unsafe-eval'` in `script-src` (`script-src 'unsafe-inline' 'wasm-unsafe-eval'`); every other directive is the contract-1 policy, and non-declaring runtimes keep it byte for byte. Built-ins and html widgets never declare, so they never carry the token. The manifest's `runtimes` entry records the declaration (`"capabilities": {"webgl": ..., "wasm": ...}`), and the approval verdict and store are unchanged: allowing a runtime vouches for its WASM module as for the rest of its code.
+Only a declaring runtime's document adds `'wasm-unsafe-eval'` to `script-src`. Every other directive is unchanged, and runtimes that do not declare never get it. Approving a runtime vouches for its WebAssembly as for the rest of its code. The bundle manifest records the declaration under the runtime's `capabilities`.
 
-Posters of declaring runtimes render under the widened policy (renderer version 2), so the proposed-poster cache key moves for every custom widget: the next compile rerenders them. `embed-runtime/samples/wasm-sum@1/` is the declaring fixture (a CSV summed by an embedded add module); the non-declaring samples are the control.
-
-Engine gating (reader cells, October 2026, `e2e/wasm-cells.mjs` over the proof below): the token is what lets the module compile. With it the fixture reaches live in Chromium, Firefox and WebKit; with the token stripped from both layers the widget posts `status: error` in all three — each engine gates `WebAssembly.instantiate` on the token. (The "WebKitGTK 2.52 does not gate" note predates upstream gating; the measured WebKit build 2359 gates.) The non-declaring control reaches live with a token-free policy in all three engines.
+Without the token, browsers refuse to compile the module and the widget reports `status: error`. `embed-runtime/samples/wasm-sum@1/` is a declaring example: it sums a CSV with an embedded module.
 
 ## Proposed posters
 
-`poster=` is the document's own and always wins (D1). Without one, an approved runtime may propose the poster's pixels (D2): during the compile's poster pass the app folds the judged snapshot's files exactly as the export folds them and runs the runtime twice, once per colour mode. Both snapshots must be sane non-blank PNGs that differ (the runtime answers the theme); the light one becomes the poster. Anything else — a missing, invalid, unapproved, denied or licence-changed runtime, a blank or matching pair, a hang past the time limit — writes nothing, and the PDF shows the placeholder.
+An explicit `poster=` always wins. Without one, an approved runtime may propose its poster. During compile the app folds the runtime as an export would and renders it twice, once per colour mode, by sending `snapshot-request`. Both snapshots must be non-blank PNGs that differ (proof the runtime answers the theme); the light one becomes the poster. If the runtime is not approved, either snapshot fails, the pair matches, or it does not answer within the time limit, nothing is written and the PDF shows a placeholder.
 
-The proposal runs only while the runtime is approved (allowed at this digest, or an auto-covered content change): the poster cache keys it by the runtime digest, the ref, the bound sources and options, the poster theme and the renderer version, so any change names a poster that does not exist yet. The export's PDF picture is the mapped file; a map entry for an older state holds the placeholder with a `runtime-digest-changed` warning, never a refusal. The reader, the sanitizer and the manifest are untouched by proposals: a fallback widget is poster-only with its visible note, as before.
+Proposed posters are cached by the runtime's digest, its bound sources and options, and the theme. Any change to these renders a new poster on the next compile. If an export finds a poster made for an older runtime digest, it uses the placeholder and warns with `runtime-digest-changed`.
 
 ## Authoring flow: scaffold, validate, install, approve, export
 
-An agent drafts and installs the package through the MCP tools; approval is the user's alone:
+An agent drafts and installs the package through the app's MCP tools. Approval is the user's alone.
 
-1. Scaffold: `runtime_scaffold` writes a draft to the user library (`maleficium-runtimes/<name>@1`), either caption-overlay-shaped (`runtime.json`, a classic `index.html`, a sample for the required role, `LICENSE`) or with `from: model@1` a fork of the built-in model viewer: `viewer.js` is the viewer as a readable classic script you edit in place (no build step), over three.js vendored at `vendor/three/` (declared in `vendored`, so the scan holds it only to `vendored-url`) and `bridge.js`. Untouched, a fork validates with no errors or warnings. Refused when the draft folder exists and is not empty.
-2. Validate: `runtime_validate` without `root_id` reads the library copy and reports the manifest, scan errors and warnings; with `root_id` it reads the project's installed copy instead. Read-only either way: it never approves, installs, or changes anything, and approval-shaped fields are refused.
-3. Install: `runtime_install` copies the library draft into a granted project as `runtimes/<ref>/` (or the user copies the folder by hand). Only a draft that validates installs; a different copy already in the project stays unless `replace` is true, and the same files report `unchanged`. Copying reviewed files is not an approval. The result says whether the runtime runs now (`approved`) and, when it does not, sets `ask_user` with a `hint` the agent acts on: ask the user to allow it in View > Widgets. Auto-approval covers only an update to a runtime the user already allowed with the same licence and vendored libraries, never a first install, so a new runtime always asks.
-4. Approve: the user allows the exact package content in the app (View > Widgets). Approval decides what runs inside the app (the in-app article and the poster proposal); an export ships the runtime live whether or not it is approved, as it does an html widget, under the reader's sandbox and the widget's strict CSP. Only a denied, invalid or missing runtime exports as its poster, with a warning.
-
-The scaffold copies the built `bridge.js` into every draft (the plain draft's `index.html` loads it as a classic script): the runtime side of [Bridge messages](#bridge-messages), built from the app's `bridge.ts`, which authors never import.
+1. **Scaffold.** `runtime_scaffold` writes a draft to the user library at `maleficium-runtimes/<name>@1`. By default it is a copy of caption-overlay plus `bridge.js`. With `from: model@1` it forks the built-in model viewer instead: a readable `viewer.js` you edit in place (no build step) over a vendored three.js, which validates cleanly untouched. It refuses a folder that already has files.
+2. **Validate.** `runtime_validate` reports the manifest and scan findings for the library draft, or for a project's installed copy when given `root_id`. It changes nothing.
+3. **Install.** `runtime_install` copies a draft that validates into a project as `runtimes/<ref>/`; copying the folder by hand works too. A different copy already there is kept unless `replace` is true. Installing is not approving: when the runtime is not approved, the result sets `ask_user`, and the agent asks the user to allow it in View > Widgets. A first install always needs this.
+4. **Approve.** The user allows the exact package content in View > Widgets. Auto-approval covers only an update to an allowed runtime with the same licence and vendored libraries. Approval controls what runs inside the app: the in-app article and poster proposals.
+5. **Export.** An export ships the runtime live whether or not it is approved, under the reader's sandbox and the widget's policy, as it does an html widget. Only a denied, invalid or missing runtime exports as its poster, with a warning.
