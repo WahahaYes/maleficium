@@ -351,12 +351,22 @@ def since_events(since, path=None):
 
 
 def state1():
-    """Default: open, no compile. Idle shell + quiet preview. Ctrl+S forces a
-    save so the log carries file.save + revision.record live."""
+    """Default: open, no compile. Idle shell + quiet preview. A save of
+    unchanged text compiles nothing; a one-line edit and Ctrl+S then puts
+    file.save + revision.record + compile.auto in the log live."""
     start_app(FIX + "/simple")
     wait_window(300)
     open_project()
     click_editor()
+    mnoop = now_ms()
+    key("ctrl+s")
+    wait_event("file.save", mnoop, 15)
+    time.sleep(3)
+    if APPLOG.find("compile.auto", mnoop):
+        die("a save that changed nothing auto-compiled")
+    key("ctrl+End")
+    key("Return")
+    xdo(DISP, "type", "--delay", "40", "% saved")
     msave = now_ms()
     key("ctrl+s")
     wait_event("file.save", msave, 15)
@@ -720,9 +730,9 @@ def state7():
         xdo(DISP, "click", "--repeat", str(notches), "--delay", "150", str(button))
 
     def open_compiled(project, prefix):
-        """Open at fit width, save to compile, wait for paint. Opening warm-
-        compiles on its own, so the save's compile is the one measured: the
-        open's paint lands before the mark however long that build takes.
+        """Open at fit width, compile, wait for paint. Opening warm-compiles
+        on its own, so the Ctrl+R compile is the one measured: the open's
+        paint lands before the mark however long that build takes.
         Paint waits are anchored: the log accumulates across runs, so an
         unanchored grep would pass on a stale render."""
         start_app(project)
@@ -734,10 +744,10 @@ def state7():
         key("ctrl+0")
         wait_event("preview.page-render", mlaunch, 600)
         time.sleep(1)
-        msave = now_ms()
+        mrun = now_ms()
         mark(prefix + "-open")
-        key("ctrl+s")
-        wait_event("preview.page-render", msave, 600)
+        key("ctrl+r")
+        wait_event("preview.page-render", mrun, 600)
         time.sleep(5)
 
     open_compiled(FIX + "/simple", "portrait")

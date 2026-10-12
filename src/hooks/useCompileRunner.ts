@@ -474,7 +474,8 @@ export function useCompileRunner(deps: UseCompileRunnerDeps) {
     () =>
       transport().subscribe((e) => {
         const a = e.event.action;
-        if (a === 'file.save') {
+        // A save that wrote what was already on disk has nothing to build.
+        if (a === 'file.save' && e.event.changed) {
           savePathRef.current = e.event.path;
           feedAuto.current({ kind: 'save', at: Date.now(), path: e.event.path });
         } else if (a === 'compile.start') feedAuto.current({ kind: 'start' });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { emit } from '../lib/events';
-import { markSaved, type BufferState } from '../lib/buffers';
+import { changesDisk, markSaved, type BufferState } from '../lib/buffers';
 import { hasDir } from '../lib/paths';
 import { saveTex, saveTexToDisk } from '../lib/files';
 import type { RecordOutcome } from '../lib/history';
@@ -49,7 +49,13 @@ export function useSaveFile({
           kind: 'success',
           actor: 'user',
           message: 'saved ' + fileName,
-          event: { action: 'file.save', path: fileName, chars: text.length, mode: 'manual' },
+          event: {
+            action: 'file.save',
+            path: fileName,
+            chars: text.length,
+            mode: 'manual',
+            changed: changesDisk(cur, text),
+          },
         });
       } else {
         await saveTexToDisk(fileName, tex);
@@ -59,7 +65,13 @@ export function useSaveFile({
           kind: 'success',
           actor: 'user',
           message: 'saved ' + fileName,
-          event: { action: 'file.save', path: fileName, chars: tex.length, mode: 'untitled' },
+          event: {
+            action: 'file.save',
+            path: fileName,
+            chars: tex.length,
+            mode: 'untitled',
+            changed: true,
+          },
         });
       }
     } catch (e) {
@@ -95,7 +107,13 @@ export function useSaveFile({
               kind: 'info',
               actor: 'system',
               message: 'autosaved ' + fileName,
-              event: { action: 'file.save', path: fileName, chars: cur.value.length, mode: 'auto' },
+              event: {
+                action: 'file.save',
+                path: fileName,
+                chars: cur.value.length,
+                mode: 'auto',
+                changed: changesDisk(cur, cur.value),
+              },
             });
             setLog('autosaved ' + new Date().toTimeString().slice(0, 8));
           })

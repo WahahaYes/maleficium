@@ -5,6 +5,7 @@ import {
   getOrCreateBuffer,
   updateBuffer,
   markSaved,
+  changesDisk,
   enforceBufferCap,
   renameBuffer,
   dropBuffer,
@@ -62,6 +63,13 @@ describe('buffers dirty tracking', () => {
     expect(edited.get('/a.tex')?.dirty).toBe(true);
     const saved = markSaved(edited, '/a.tex');
     expect(saved.get('/a.tex')?.dirty).toBe(false);
+  });
+  it('a save changes disk only when the text differs from it', () => {
+    const buf = { value: 'a', dirty: true, disk: 'a', version: 2 };
+    // Typed then undone: dirty, yet the save rewrites the same bytes.
+    expect(changesDisk(buf, 'a')).toBe(false);
+    expect(changesDisk(buf, 'a2')).toBe(true);
+    expect(changesDisk(undefined, 'a')).toBe(true);
   });
 });
 
