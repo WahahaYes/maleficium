@@ -30,7 +30,7 @@ import ExternalChangeDialog from './components/ExternalChangeDialog';
 import { useExternalChanges } from './hooks/useExternalChanges';
 import { listDir1Level, loadTex, TreeEntry } from './lib/files';
 import { getOrCreateBuffer, updateBuffer, enforceBufferCap } from './lib/buffers';
-import { cancelCompile, compileLogTitle } from './lib/compile';
+import { compileLogTitle } from './lib/compile';
 import { onPdf, sourceFor, type PreviewDoc } from './lib/preview-bus';
 import { emit, eventOf } from './lib/events';
 import { transport } from './lib/event-transport';
@@ -47,9 +47,9 @@ import { approvalBannerText, pendingRuntimes, pendingWidgets } from './lib/widge
 import WidgetsPanel from './components/WidgetsPanel';
 import WidgetApprovalPrompt from './components/WidgetApprovalPrompt';
 import TemplateDialogs, { type TemplateDialogMode } from './components/TemplateDialogs';
-import { buildMenus, type CommandActions, type MenuContext } from './lib/commands';
+import { buildMenus, type MenuContext } from './lib/commands';
+import { commandActions, type AppDialog } from './lib/commandActions';
 import { FileHistory } from './lib/file-history';
-import { pruneRecentProjects } from './lib/recentProjects';
 import { grantUntitledAccess } from './lib/projectAccess';
 import { useProjectReplace } from './hooks/useProjectReplace';
 import { useFileSelection } from './hooks/useFileSelection';
@@ -243,7 +243,7 @@ export default function App({
       forwardSync: () => void forwardSyncRef.current(),
       zoom: (z) => zoomActionRef.current?.(z),
       menuAction: (id) => menuActionRef.current(id),
-      showShortcuts: () => setShortcutsOpen(true),
+      showShortcuts: () => setDialog('shortcuts'),
       toggleTree,
       select: (path) => void handleSelectRef.current(path),
     },
@@ -394,8 +394,9 @@ export default function App({
     reloadTree,
     handleSelect,
   });
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Menu-opened modals; one shows at a time.
+  const [dialog, setDialog] = useState<AppDialog | null>(null);
+  const closeDialog = () => setDialog(null);
   // Project search replaces the tree + outline in the side column while open.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchFocus, setSearchFocus] = useState(0);
@@ -510,10 +511,6 @@ export default function App({
     if (abs !== fileNameRef.current) await handleSelectRef.current(abs);
     setHitSelect({ path: abs, line, col: 0, len: 0, key: Date.now() });
   }, []);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [goToOpen, setGoToOpen] = useState(false);
-  // Rename dialog for the active file.
-  const [renameOpen, setRenameOpen] = useState(false);
   // Viewport bridge assigned via viewportRef prop. Without it
   // selectAll/expand/shrink/goToLine no-op.
   const viewportRef = useRef<EditorViewportHandle | null>(null);
@@ -652,144 +649,60 @@ export default function App({
     density,
     recentProjects,
   };
-  const menuActions: CommandActions = {
-    openProject: () => {
-      void open();
+  const menuActions = commandActions({
+    active: { path: fileName, inProject: isProjectFile(fileName), root },
+    shell,
+    appearance: { setTheme: onThemeMode, setDensity: onDensityMode },
+    project: {
+      open,
+      openRoot,
+      openWelcome,
+      setRecentProjects,
+      findInProject: () => {
+        shell.setTreeVisible(true);
+        setSearchOpen(true);
+        setSearchFocus((k) => k + 1);
+      },
+      undoReplace,
     },
-    findInFile: () => viewportRef.current?.openFind(),
-    undoReplace: () => {
-      void undoReplace();
+    files: {
+      handleCreate,
+      handleDelete,
+      handleClean,
+      handleUndo,
+      closeBuffer: handleCloseBuffer,
+      save,
+      setMain: setMainToOpenFile,
+      resolveExternal,
+      openHistory,
     },
-    quickOpen: () => setPaletteOpen(''),
-    commandPalette: () => setPaletteOpen('>'),
-    findInProject: () => {
-      shell.setTreeVisible(true);
-      setSearchOpen(true);
-      setSearchFocus((k) => k + 1);
+    editor: {
+      viewport: () => viewportRef.current,
+      goToDefinition: () => goToDefinitionRef.current(),
+      pickSection: setCurrentLine,
+      togglePick: (line) =>
+        setOutlinePicks((prev) =>
+          prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line],
+        ),
     },
-    openRecent: (r) => {
-      void openRoot(r);
+    compile: {
+      compile: () => compileRef.current(),
+      handleCompileFile,
+      makeOffline,
+      openPrecheck,
+      autoCompile,
+      setAutoCompile,
+      forwardSync: () => forwardSyncRef.current(),
+      zoom: (a) => zoomActionRef.current?.(a),
     },
-    clearRecents: () => {
-      pruneRecentProjects(() => false);
-      setRecentProjects([]);
+    exporter,
+    dialogs: {
+      show: setDialog,
+      palette: setPaletteOpen,
+      template: setTemplateMode,
+      widgets: widgetApproval.openPanel,
     },
-    newFile: () => {
-      if (root) void handleCreate(root, 'untitled.tex');
-      else
-        emit({
-          scope: 'fs',
-          kind: 'warn',
-          actor: 'user',
-          message: 'New File needs an open project',
-          event: { action: 'command.blocked', command: 'newFile', reason: 'no-project' },
-        });
-    },
-    closeFile: () => {
-      void handleCloseBuffer(fileName);
-    },
-    save: () => {
-      void save();
-    },
-    setMainFile: () => {
-      void setMainToOpenFile(fileName);
-    },
-    reloadFromDisk: () => {
-      void resolveExternal('reload');
-    },
-    keepMine: () => {
-      void resolveExternal('keep');
-    },
-    clean: () => {
-      void handleClean();
-    },
-    undoDelete: () => {
-      void handleUndo();
-    },
-    showHistory: () => {
-      void openHistory();
-    },
-    showSettings: () => {
-      setSettingsOpen(true);
-    },
-    renameActive: () => {
-      if (!isProjectFile(fileName)) {
-        emit({
-          scope: 'fs',
-          kind: 'warn',
-          actor: 'user',
-          message: 'Rename needs a project file (open one first)',
-          event: {
-            action: 'command.blocked',
-            command: 'renameActive',
-            reason: 'not-a-project-file',
-          },
-        });
-        return;
-      }
-      setRenameOpen(true);
-    },
-    deleteActive: () => {
-      void handleDelete(fileName);
-    },
-    selectAll: () => viewportRef.current?.selectAll(),
-    expandSelection: () => viewportRef.current?.expandSelection(),
-    shrinkSelection: () => viewportRef.current?.shrinkSelection(),
-    goToDefinition: () => goToDefinitionRef.current(),
-    goToLine: () => {
-      setGoToOpen(true);
-    },
-    pickOutlineSection: (line: number) => setCurrentLine(line),
-    toggleOutlinePick: (line: number) =>
-      setOutlinePicks((prev) =>
-        prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line],
-      ),
-    setPreset: shell.setPreset,
-    toggleTree: shell.toggleTree,
-    togglePreview: shell.togglePreview,
-    toggleLog: shell.toggleLog,
-    toggleOutline: shell.toggleOutline,
-    setTheme: (m) => onThemeMode(m),
-    setDensity: (d) => onDensityMode(d),
-    zoomPreview: (a) => zoomActionRef.current?.(a),
-    compile: () => {
-      void compileRef.current();
-    },
-    compileFile: () => {
-      void handleCompileFile(fileName);
-    },
-    makeOffline: () => {
-      void makeOffline();
-    },
-    showPrecheck: openPrecheck,
-    showWidgets: widgetApproval.openPanel,
-    toggleAutoCompile: () => setAutoCompile(!autoCompile),
-    exportPdf: () => void exporter.exportPdfAs(),
-    exportZip: () => void exporter.exportZipAs(),
-    exportBundleFolder: () => void exporter.exportBundleAs('folder'),
-    exportBundleSingleFile: () => void exporter.exportBundleAs('single-file'),
-    previewInBrowser: () => void exporter.previewBundle(),
-    newFromTemplate: () => setTemplateMode('gallery'),
-    saveAsTemplate: () => setTemplateMode('save'),
-    importTemplate: () => setTemplateMode('import'),
-    showWelcome: () => void openWelcome(),
-    cancelCompile: () => {
-      void cancelCompile().catch((e) =>
-        emit({
-          scope: 'compile',
-          kind: 'error',
-          actor: 'user',
-          message: 'cancel failed: ' + String(e).slice(0, 120),
-          event: { action: 'compile.cancel-failed', error: String(e).slice(0, 200) },
-        }),
-      );
-    },
-    forwardSync: () => {
-      void forwardSyncRef.current();
-    },
-    showShortcuts: () => setShortcutsOpen(true),
-    showAbout: () => setAboutOpen(true),
-  };
+  });
   const menuSections = buildMenus(menuCtx, menuActions);
   useDevCamera((m) => {
     if (m.op === 'open') {
@@ -1033,30 +946,30 @@ export default function App({
         onToggleCollapse={shell.toggleLog}
         onJump={handleProblemJump}
       />
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ShortcutsDialog open={dialog === 'shortcuts'} onClose={closeDialog} />
       <OpenRequestPrompt onOpen={openForAgent} />
       <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        open={dialog === 'settings'}
+        onClose={closeDialog}
         prefs={prefs}
         onChange={onPrefs}
         precheckPopup={precheckPopup}
         onPrecheckPopup={setPrecheckPopup}
       />
       <RenameDialog
-        open={renameOpen}
+        open={dialog === 'rename'}
         title={baseName(fileName) || fileName}
         initial={baseName(fileName)}
-        onClose={() => setRenameOpen(false)}
+        onClose={closeDialog}
         onRename={(name) => void handleRename(fileName, name)}
       />
       <GoToLineDialog
-        open={goToOpen}
+        open={dialog === 'goToLine'}
         initial={String(currentLine)}
-        onClose={() => setGoToOpen(false)}
+        onClose={closeDialog}
         onGo={(n) => viewportRef.current?.goToLine(n)}
       />
-      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AboutDialog open={dialog === 'about'} onClose={closeDialog} />
       <PaletteDialog
         open={paletteOpen != null}
         initial={paletteOpen ?? ''}
