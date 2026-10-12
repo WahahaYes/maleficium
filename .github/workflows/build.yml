@@ -3,7 +3,7 @@
 #   sh scripts/package.sh --out out      build this host's packages
 #   python e2e/package-smoke.py out      install them, compile through the
 #                                        installed engine, check the first
-#                                        launch, screenshot it
+#                                        launch
 #   npm run check                        lint, format, types, every test suite
 # Only toolchain setup differs per OS. Pins live in rust-toolchain.toml and
 # .nvmrc. Linux builds on the oldest Ubuntu the packages support (24.04:
@@ -279,14 +279,7 @@ jobs:
           path: out/*
           if-no-files-found: error
       - name: Smoke the installed packages
-        run: python e2e/package-smoke.py out --shots "$RUNNER_TEMP/shots"
-      - name: Upload launch screenshot
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: screenshot-${{ matrix.artifact }}
-          path: ${{ runner.temp }}/shots/*.png
-          if-no-files-found: ignore
+        run: python e2e/package-smoke.py out
       - name: Check (lint, format, types, tests)
         if: ${{ !cancelled() }}
         run: npm run check
