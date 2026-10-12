@@ -13,7 +13,9 @@
 # needs the network (about 11 MB of bundle files, a couple of minutes).
 # Then a smoke test: compile a two-page document and query it both ways
 # (view -> Page:, edit -> Input:/Line:) through the built engine.
-# Idempotent: the cargo build is incremental.
+# Idempotent: the cargo build is incremental, and skipped when the installed
+# binary is stamped with the current scripts/engine-key.sh (CI restores it from
+# a cache keyed on that).
 # Needs network, cargo (via rustup), a C and C++ compiler, and libclang headers.
 # POSIX sh.
 set -eu
@@ -60,16 +62,21 @@ fi
 # package resolution it would give is a separate decision.
 export KPATHSEA_SKIP_TOOLCHAIN_CHECK=1
 
-say "$TRIPLE: building src-tauri/engine"
-# The engine is its own workspace with its own toolchain pin, so build it from
-# its directory.
-(cd "$ROOT/src-tauri/engine" && cargo build --release) || die "engine build failed"
-mkdir -p "$BIN"
-install -m 755 "${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/release/maleficium-engine$EXE" \
-    "$BIN/maleficium-engine-$TRIPLE$EXE"
-say "$TRIPLE: installed"
-
 engine="$BIN/maleficium-engine-$TRIPLE$EXE"
+engine_key=$(sh "$ROOT/scripts/engine-key.sh") || die "cannot read the engine key"
+if [ -x "$engine" ] && [ "$(cat "$BIN/.engine-stamp" 2>/dev/null)" = "$engine_key" ]; then
+    say "$TRIPLE: engine up to date ($engine_key)"
+else
+    say "$TRIPLE: building src-tauri/engine ($engine_key)"
+    # The engine is its own workspace with its own toolchain pin, so build it
+    # from its directory.
+    rm -f "$BIN/.engine-stamp"
+    (cd "$ROOT/src-tauri/engine" && cargo build --release) || die "engine build failed"
+    mkdir -p "$BIN"
+    install -m 755 "${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/release/maleficium-engine$EXE" "$engine"
+    printf '%s\n' "$engine_key" >"$BIN/.engine-stamp"
+    say "$TRIPLE: installed"
+fi
 
 DUMPS="$ROOT/src-tauri/resources/dumps"
 dumps_key=$(sh "$ROOT/scripts/dumps-key.sh") || die "cannot read the dump key"
