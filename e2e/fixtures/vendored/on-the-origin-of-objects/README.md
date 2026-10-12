@@ -8,12 +8,12 @@ Yegor Bugayenko and Maxim Trunnikov. Main file: `paper.tex`.
 
 ## What it exercises
 
-- acmart (`acmsmall,nonacm`), natbib with `ACM-Reference-Format`, cleveref, babel with Russian, `T2A` font encoding
-- 18 `\input` sections and a bibliography in a subfolder
-- The author's own packages: `ffcode` for code listings and `eolang` for φ-calculus
+- acmart (`acmsmall,nonacm`), natbib with `ACM-Reference-Format`, cleveref, and babel with Russian in `T2A` font encoding.
+- Many `\input` sections and a bibliography in a subfolder.
+- The authors' own packages: `ffcode` for code listings and `eolang` for φ-calculus.
 
 ## Builds today
 
-No. `ffcode` loads `minted`, which runs Pygments through shell escape. The authors build with `pdflatex --shell-escape` (`.latexmkrc`). The app's pre-compile check reports `missing: minted (shell-escape-required)`.
+No. `ffcode` loads `minted`, which runs Pygments through shell escape. The authors build with `pdflatex --shell-escape` (`.latexmkrc`). The app's pre-compile check reports `missing: minted (shell-escape-required)`. The bundle also lacks `eolang.sty`.
 
-With shell escape forced on (`tectonic -Z shell-escape`), the next stop is `paper.tex:11: Undefined control sequence` at `\lst@AddToHook`. The paper targets a newer `ffcode` (built on `listings`) than the TeX Live 2022 bundle has.
+With shell escape forced on (`tectonic -Z shell-escape`), the build stops at `paper.tex:11: Undefined control sequence` (`\lst@AddToHook`). The paper expects a newer `ffcode`, built on `listings`, than the bundle has.

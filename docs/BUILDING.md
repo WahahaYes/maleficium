@@ -1,10 +1,8 @@
 # Building Maleficium from source
 
-Release targets: Linux x86_64 (`.deb` and AppImage), macOS aarch64 and x86_64 (`.dmg`), and Windows x86_64 (NSIS installer). Every route below needs network access during the build (npm, crates.io).
+Release targets are Linux x86_64 (`.deb` and AppImage), macOS aarch64 and x86_64 (`.dmg`), and Windows x86_64 (NSIS installer). Every build needs network access (npm, crates.io). Run every command from the repo root.
 
-Run every command below from the repo root.
-
-Every route runs the same build script, `scripts/package.sh`, which builds this host's packages (Linux `.deb` + AppImage, macOS `.dmg`, Windows NSIS setup) into `out/`. Toolchain pins live in one place each: `rust-toolchain.toml` (rustup picks it up) and `.nvmrc`.
+Every route ends in the same script, `scripts/package.sh`, which builds this host's packages into `out/`. Toolchain pins live in `rust-toolchain.toml` and `.nvmrc`.
 
 ## Docker (reproducible Linux)
 
@@ -12,35 +10,37 @@ Every route runs the same build script, `scripts/package.sh`, which builds this 
 docker build --output type=local,dest=../maleficium-release .
 ```
 
-This runs `package.sh` on Ubuntu 24.04, the same base CI builds on and the oldest the packages support (the bundled Linux Tectonic needs glibc 2.39), and writes the `.deb` and `.AppImage` into `../maleficium-release/`. A cold build takes a while; later builds reuse the dependency layers and a Cargo cache mount.
+This runs `package.sh` on Ubuntu 24.04 and writes the `.deb` and `.AppImage` into `../maleficium-release/`. Ubuntu 24.04 is the oldest base the packages support, because the bundled Tectonic needs glibc 2.39. Later builds reuse the dependency layers and a Cargo cache.
 
 ## On the host
 
 ### Toolchain
 
-- Node from `.nvmrc` (Vite needs `^20.19.0 || >=22.12.0`)
-- Rust from `rust-toolchain.toml` (`rustup toolchain install` in the repo root)
-- The engine (`src-tauri/engine`) is its own workspace with its own pinned nightly (latexml needs it): run `rustup toolchain install` there too. `scripts/build-engine.sh` builds it from source, which needs a few GB of RAM (cap parallelism with `CARGO_BUILD_JOBS=3` on a small machine) and a C and C++ compiler with libclang headers
+- Node from `.nvmrc`.
+- Rust from `rust-toolchain.toml`: run `rustup toolchain install` in the repo root.
+- The engine in `src-tauri/engine` is its own workspace with its own pinned nightly. Run `rustup toolchain install` there too. Building it needs a C and C++ compiler, libclang headers, and a few GB of RAM; set `CARGO_BUILD_JOBS=3` on a small machine.
 
 ### Linux
 
-System packages (Ubuntu 24.04 or newer, Debian 13 or newer), from the list CI and the Dockerfile use:
+On Ubuntu 24.04 or newer, or Debian 13 or newer, install the packages CI and the Dockerfile use:
 
 ```sh
 xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
 ```
 
-The engine links ICU, freetype, fontconfig, graphite2, libpng, libxml2 and libxslt from the system on Linux, so the `-dev` packages in that list are build dependencies and the matching libraries are runtime dependencies of the package (`libgraphite2-3` is declared today; the rest, and static linking on macOS and Windows, are still open). Fedora and Arch: install the Tauri 2 Linux prerequisites listed at <https://v2.tauri.app/start/prerequisites/#linux>, plus git, python3, graphite2 and a static zlib (Fedora: `zlib-ng-compat-static`).
+The engine links ICU, freetype, fontconfig, graphite2, libpng, libxml2 and libxslt from the system. The `-dev` packages in that list are build dependencies, and the `.deb` declares the matching libraries as runtime dependencies (`bundle.linux.deb.depends` in `src-tauri/tauri.conf.json`).
 
-A host build links against the host's glibc, so for packages meant for other machines prefer Docker or CI.
+On Fedora or Arch, install the [Tauri 2 Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux), plus git, python3, graphite2 and a static zlib (Fedora: `zlib-ng-compat-static`).
+
+A host build links against the host's glibc. For packages meant for other machines, use Docker or CI.
 
 ### macOS
 
-Needs Xcode Command Line Tools (`xcode-select --install`) and git. Build on the architecture you are targeting. The app is ad-hoc signed (`bundle.macOS.signingIdentity` is `-`), which Apple silicon requires before it will run a binary at all.
+Install Xcode Command Line Tools (`xcode-select --install`) and git, plus the engine's libraries from Homebrew (the `brew install` line in `.github/workflows/build.yml`). Build on the architecture you target. The app is ad-hoc signed, which Apple silicon requires before it runs a binary.
 
 ### Windows
 
-Needs Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg (static triplet `x64-windows-static-md`; see `.github/workflows/build.yml` for the ports and environment).
+Install Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg with the static triplet `x64-windows-static-md`. The ports and environment variables are in `.github/workflows/build.yml`.
 
 ### Build
 
@@ -50,9 +50,15 @@ sh scripts/build-engine.sh
 sh scripts/package.sh             # packages land in out/
 ```
 
-`build-engine.sh` builds `maleficium-engine` (Tectonic and latexml, pinned by `src-tauri/engine/Cargo.lock`, plus the vendored SyncTeX parser) into `src-tauri/binaries/` and smoke-tests it; the bundler packs it next to the app binary. It then runs `maleficium-engine dump` to generate latexml's kernel format dumps (`plain`, `latex` and a version stamp, about 3 MB) from the bundle pinned in `src-tauri/core/src/engine.rs` into `src-tauri/resources/dumps/` (untracked; needs the network, about two minutes), and `tauri.conf.json` bundles that directory as app resources. The dumps belong to one latexml version and one bundle pin (`scripts/dumps-key.sh` names the pair); an unchanged pair is not regenerated. `package.sh` refuses to run without them. The engine finds them at the app's resource directory plus `resources/dumps` (Linux `.deb`/AppImage: `../lib/Maleficium/` beside `usr/bin`; macOS: `Contents/Resources`; Windows: the install directory) unless `--dumps` or `MALEFICIUM_DUMP_DIR` says otherwise. Only the Linux layout was checked, against Tauri's `resource_dir`; the others are unverified.
+`build-engine.sh` builds `maleficium-engine` into `src-tauri/binaries/` and smoke-tests it. The engine holds Tectonic and latexml, pinned by `src-tauri/engine/Cargo.lock`, and a vendored SyncTeX parser. It is the app's only sidecar.
 
-`maleficium-engine convert` needs no TeX installation: it re-runs itself as `kpsewhich` (a link in a private scratch directory first on `PATH`), resolving every file latexml asks for from the pinned bundle's Tectonic cache and fetching what is missing. `e2e/convert-run.sh` proves it with the host TeX hidden. On Linux, `package.sh` also repacks the AppImage without the `libwayland-*` libraries the bundler copies in: they clash with a newer host Mesa and leave the window blank.
+`build-engine.sh` then generates latexml's format dumps into `src-tauri/resources/dumps/`, which the app bundles as resources. The dumps come from the TeX bundle pinned in `src-tauri/core/src/engine.rs`, so the first run needs the network for a couple of minutes. They are valid for one latexml version and one bundle pin. `scripts/dumps-key.sh` names that pair, and an unchanged pair is not regenerated.
+
+`package.sh` refuses to run without the engine or the dumps. The installed engine finds the dumps in the app's resources; `--dumps` or `MALEFICIUM_DUMP_DIR` points it elsewhere.
+
+`maleficium-engine convert` needs no TeX installation: it resolves every file latexml asks for from the pinned bundle. `e2e/convert-run.sh` proves this with the host TeX hidden.
+
+On Linux, `package.sh` repacks the AppImage without the `libwayland-*` libraries the bundler copies in. They clash with a newer host Mesa and leave the window blank.
 
 ## Checking
 
@@ -61,36 +67,41 @@ npm run check                     # lint, format, types, vitest, cargo fmt/clipp
 python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 ```
 
-`package-smoke.py` installs the way a user would (Linux: the `.deb` in a clean `ubuntu:24.04` container, so needs Docker; macOS: the `.dmg`; Windows: a silent NSIS install), compiles a page and answers a SyncTeX lookup through the installed MCP server (as `maleficium-mcp` and as `maleficium --mcp`), and requires the app's first launch to open the welcome project in its event log. See `e2e/README.md`.
+`package-smoke.py` installs the packages the way a user would, compiles through the installed engine, and checks the first launch. On Linux it needs Docker. See [e2e/README.md](../e2e/README.md).
 
 ## CI
 
-`.github/workflows/build.yml` runs on each pull request: one job per target (`ubuntu-24.04`, `macos-15` for aarch64, `macos-15-intel` for x86_64, `windows-2025`). Only toolchain setup differs between them; each then runs `package.sh`, `package-smoke.py`, and `npm run check`, and uploads its packages plus a `screenshot-*` of the smoke launch.
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) runs on pull requests and on pushes to `main`. It skips the jobs a change cannot affect, based on the paths it touches.
 
-`.github/workflows/release.yml` publishes a release when a `vX.Y.Z` tag is pushed. It checks that the tag is on `main` and that the manifests and `CHANGELOG.md` section are at X.Y.Z, runs `build.yml` on the tagged commit, and publishes the GitHub release with every package attached and that CHANGELOG section as its notes. A failed run can be rerun from the Actions tab.
+- Each release target builds on its own OS: `package.sh`, then `package-smoke.py`, then `npm run check`. Only toolchain setup differs between them. Each uploads its packages and a screenshot of the smoke launch.
+- An e2e job runs the interactive-papers suites on Linux, the same way `scripts/ci-e2e.sh` runs them locally.
+- Changed vendored papers and examples are recompiled.
+- A final `ci` job passes only if every job the change needed passed.
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs when a `vX.Y.Z` tag is pushed. It checks that the tag is on `main` and that the manifests and `CHANGELOG.md` are at X.Y.Z, runs `build.yml` on the tagged commit, and publishes the GitHub release with every package attached and the CHANGELOG section as its notes. A failed run can be rerun from the Actions tab.
 
 ## Cutting a release
 
-`main` is protected: changes land only by pull request, every build job must pass, and `v*` tags can't be moved or deleted once created. Only repository admins can create them.
+`main` is protected: changes land only by pull request after the required checks pass. `v*` tags cannot be moved or deleted, and only repository admins can create them.
 
-Collect the notes under `## Unreleased` at the top of `CHANGELOG.md` as changes land: each PR adds its bullets under that heading, which a release leaves in place, empty, for the next one. They become the GitHub release notes, so write them for users. Then, from any clean checkout with `npm ci` done:
+As changes land, each PR adds its notes under `## Unreleased` at the top of `CHANGELOG.md`. They become the GitHub release notes, so write them for users. Then, from any clean checkout with `npm ci` done:
 
 ```sh
 sh scripts/release.sh X.Y.Z
 ```
 
-That one command:
+That command:
 
-1. Cuts `release-X.Y.Z` from `origin/main` in a scratch worktree (your checkout is untouched), bumps `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` with their lockfiles, renames `## Unreleased` to `## X.Y.Z - <date>`, commits `release X.Y.Z`, pushes, and opens the release PR.
-2. Waits for the PR's required builds and merges it (merging only the commit that was built).
-3. Tags the merge commit `vX.Y.Z` and pushes the tag, as you.
-4. Waits for `release.yml` (see [CI](#ci)) to build that commit and publish the release, then prints its URL.
+1. Cuts `release-X.Y.Z` from `origin/main` in a scratch worktree, leaving your checkout untouched. It bumps the manifests and their lockfiles, renames `## Unreleased` to `## X.Y.Z - <date>`, commits `release X.Y.Z`, pushes, and opens the release PR.
+2. Waits for the PR's required checks and merges exactly the commit that was built.
+3. Tags the merge commit `vX.Y.Z` and pushes the tag as you.
+4. Waits for `release.yml` to publish the release, then prints its URL.
 
-End to end it takes about as long as two CI runs.
+Options and behavior:
 
-- `--notes-file FILE` uses FILE's text as the notes instead of `## Unreleased`.
-- Rerunning resumes where a run stopped: an open release PR is updated (merging `origin/main` in, keeping an existing `## X.Y.Z` section unless `--notes-file` replaces it), a merged release is tagged, and a pushed tag's release run is watched.
-- `--no-push` stops after the release commit and leaves the worktree for inspection.
-- It refuses a version number written into app source or docs, which the bump would leave stale (`release-meta.py stale`, also run in CI). The app reads its version from `package.json` at build time.
+- `--notes-file FILE` uses FILE as the notes instead of `## Unreleased`.
+- `--no-push` stops after the release commit and keeps the worktree for inspection.
+- Rerunning resumes where a run stopped. On a failed check it prints the failing steps and says whether to rerun or fix.
+- It refuses a version number written into app source or docs (`scripts/release-meta.py stale`, also run in CI). The app reads its version from `package.json` at build time.
 
-`sh scripts/release.sh build [--host] [--out DIR]` builds this checkout's Linux packages locally, in Docker or with `--host` on this machine, to smoke with `e2e/package-smoke.py` before a release. It publishes nothing.
+`sh scripts/release.sh build [--host] [--out DIR]` builds this checkout's Linux packages, in Docker or with `--host` on this machine, to smoke with `e2e/package-smoke.py` before a release. It publishes nothing.

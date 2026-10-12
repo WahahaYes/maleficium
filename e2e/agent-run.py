@@ -22,7 +22,8 @@ Usage:
                            [--budget USD]
   python3 e2e/agent-run.py --self-test [--bin ...]   # oracles vs. solutions and scripted agents, no model
 Needs: python3, bwrap, and the chosen runner's CLI, authenticated
-(opencode: `opencode auth`; claude: `claude auth login`, or `claude setup-token`).
+(opencode: `opencode auth`; claude: a `claude setup-token` token in
+CLAUDE_CODE_OAUTH_TOKEN or ~/.config/maleficium/claude-oauth-token).
 The source build needs
 `cargo build --manifest-path src-tauri/Cargo.toml --bin maleficium` first.
 Manual only: it spends model credits. See e2e/README.md.
