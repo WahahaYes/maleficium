@@ -190,6 +190,11 @@ jobs:
       matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 100
+    # Full LTO costs minutes per OS, so only v* tags (releases) pay for it.
+    # package.sh reads this, and the rust cache is keyed on it: the two modes
+    # rebuild every dependency, so they cannot share a cache.
+    env:
+      MALEFICIUM_LTO: ${{ startsWith(github.ref, 'refs/tags/v') && 'full' || 'thin' }}
     defaults:
       run:
         shell: bash
@@ -268,7 +273,9 @@ jobs:
           workspaces: |
             src-tauri
             src-tauri/engine
+          key: lto-${{ env.MALEFICIUM_LTO }}
           # Main seeds caches every PR reads; PR runs never write their own sets.
+          # Only main saves, so tag builds (full LTO) always build cold.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: npm cache save
