@@ -61,6 +61,8 @@ Run harnesses through `worktree-run.sh`, which checks out a pinned commit into a
 
 It carries your uncommitted `e2e/` changes into the worktree and builds into its own Cargo target dir, so it never touches your dev build. Its header covers the rest.
 
+The worktree links `src-tauri/binaries/` from the checkout you run it in, so run `sh scripts/build-engine.sh` there first. A checkout without the engine fails the app build with "resource path `binaries/maleficium-engine-…` doesn't exist".
+
 ## Reading the app's event log
 
 The app records every event as JSONL, one object per line, truncated at each launch:
@@ -71,7 +73,7 @@ cat "$L"                                  # the whole run
 grep '"action":"compile.finish"' "$L"     # one kind of event
 ```
 
-Match on `event.action` rather than the message text. Harnesses that launch the app give it a scratch `HOME`, so read the log under that `HOME` instead (for a stills run, set `STILLS_HOME`).
+Match on `event.action` rather than the message text. Harnesses that launch the app give it a scratch `HOME`, so read the log under that `HOME` instead (for a stills run, set `STILLS_HOME`). A stills run also copies every event log it saw, including the first-run logs under its scratch fixtures, into `$STILLS_OUT/events/` when it exits.
 
 ## Conventions
 
