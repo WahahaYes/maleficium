@@ -36,6 +36,25 @@ case "$(uname -s)" in
     *) die "unsupported host: $(uname -s)" ;;
 esac
 
+# Full LTO (Cargo.toml's release profile) costs minutes per OS. CI builds
+# that are not a v* tag link with thin LTO instead; tags and local builds
+# keep full LTO. Cargo's env overrides keep `tauri build` (and its
+# custom-protocol feature) intact. MALEFICIUM_LTO=full|thin forces either.
+LTO="${MALEFICIUM_LTO:-}"
+if [ -z "$LTO" ]; then
+    case "${CI:-}:${GITHUB_REF:-}" in
+        true:refs/tags/v*) LTO=full ;;
+        true:*) LTO=thin ;;
+        *) LTO=full ;;
+    esac
+fi
+case "$LTO" in
+    full) ;;
+    thin) export CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 ;;
+    *) die "MALEFICIUM_LTO must be full or thin, not '$LTO'" ;;
+esac
+echo "package: $LTO LTO"
+
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 # A reused target dir still holds packages from earlier versions.
 rm -rf "$BUNDLE"
