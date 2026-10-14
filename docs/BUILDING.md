@@ -40,7 +40,7 @@ Install Xcode Command Line Tools (`xcode-select --install`) and git, plus the en
 
 ### Windows
 
-Install Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg with the static triplet `x64-windows-static-md`. The ports and environment variables are in `.github/workflows/build.yml`.
+Install Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg with the static triplet `x64-windows-static`, which links the C runtime in as well, so the engine needs no Visual C++ Redistributable. The ports and environment variables are in `.github/workflows/build.yml`.
 
 ### Build
 

@@ -7,7 +7,8 @@ The one smoke path for every OS. Only installing is per OS:
            no libwayland and ships the dumps resource
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
            every binary is built for this machine
-  Windows: silent NSIS install; check the installed binaries
+  Windows: silent NSIS install; check the installed binaries, and that none
+           imports the Visual C++ runtime (absent on a fresh Windows)
 Then the same checks everywhere:
   1. the installed MCP server, as maleficium-mcp and as the app's --mcp,
      names itself, compiles a page with its bundled engine, and answers a
@@ -240,6 +241,45 @@ def macos(dir):
     launch("app", [os.path.join(bin, main)], events=events)
 
 
+# The Visual C++ runtime: absent from a fresh Windows, preinstalled on CI
+# runners, so a binary that imports it passes every check below and still
+# fails to start for users (0xC0000135). The UCRT (api-ms-win-crt-*) ships
+# with Windows 10 and later and is fine.
+VC_RUNTIME = {"msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll"}
+
+
+def pe_imports(path):
+    """The DLL names a 64-bit PE file imports, lowercased, from its import table."""
+    import struct
+
+    with open(path, "rb") as f:
+        data = f.read()
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe : pe + 4] != b"PE\0\0":
+        fail("%s is not a PE file" % path)
+    _, nsections, _, _, _, optsize = struct.unpack_from("<HHIIIH", data, pe + 4)
+    opt = pe + 24
+    if struct.unpack_from("<H", data, opt)[0] != 0x20B:
+        fail("%s is not a 64-bit PE file" % path)
+    import_rva = struct.unpack_from("<I", data, opt + 112 + 8)[0]  # data directory 1: imports
+    sections = [struct.unpack_from("<IIII", data, opt + optsize + i * 40 + 8) for i in range(nsections)]
+
+    def offset(rva):
+        for vsize, vaddr, rawsize, rawptr in sections:
+            if vaddr <= rva < vaddr + max(vsize, rawsize):
+                return rawptr + rva - vaddr
+        fail("%s: rva %#x is in no section" % (path, rva))
+
+    names, at = set(), offset(import_rva)
+    while True:
+        entry = struct.unpack_from("<IIIII", data, at)
+        if not any(entry):
+            return names
+        name = offset(entry[3])
+        names.add(data[name : data.index(b"\0", name)].decode("ascii").lower())
+        at += 20
+
+
 def windows(dir):
     setup = one(dir, "Maleficium_*-setup.exe")
     dest = tempfile.mkdtemp(prefix="smoke-")
@@ -248,7 +288,10 @@ def windows(dir):
     for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
         if not os.path.isfile(os.path.join(dest, b)):
             fail("install lacks %s" % b)
-    say("install ok (%s)" % dest)
+        runtime = pe_imports(os.path.join(dest, b)) & VC_RUNTIME
+        if runtime:
+            fail("%s imports the Visual C++ runtime (%s), which a fresh Windows lacks" % (b, ", ".join(sorted(runtime))))
+    say("install ok (%s), no Visual C++ runtime imports" % dest)
     compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"))
     compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"))
     events = os.path.join(os.environ["APPDATA"], IDENT, "maleficium-log", "events.jsonl")
