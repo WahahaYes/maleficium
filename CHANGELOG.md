@@ -18,6 +18,8 @@
 
 ### Fixes
 
+- **Windows compiles on a fresh install.** The bundled engine needed the Visual C++ Redistributable, which a fresh Windows does not have, so every compile failed there. The engine now carries its C runtime, and the build checks that no shipped Windows binary depends on the redistributable.
+- **An engine that cannot start says so.** An engine that failed without printing anything, as on that Windows, was reported as "no TeX support files are cached yet and there is no network" even with a working network. The message now gives the engine's exit status, and names a missing DLL on Windows.
 - **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
 - **A label's snippet lands on its figure.** `snippet` with a `label` (or a line such as `\label` or `\end{figure}` that has no box of its own) came back as the whole page body on the page where the float's text sits, so an agent asking about a figure got the wrong page. It now uses the nearest earlier line that has a placement of its own, which puts the snippet on the figure.
 

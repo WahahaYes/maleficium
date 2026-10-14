@@ -214,13 +214,15 @@ jobs:
           brew install pkg-config icu4c graphite2 freetype libpng fontconfig harfbuzz
       # Windows: the engine's C libraries come from vcpkg, statically linked
       # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
-      # find the same triplet through VCPKGRS_TRIPLET). The installed tree is
-      # cached: a cold vcpkg build of ICU is slow.
+      # find the same triplet through VCPKGRS_TRIPLET). The triplet links the
+      # C runtime statically too, matching the engine's +crt-static
+      # (src-tauri/engine/.cargo/config.toml), so no VC++ runtime is needed.
+      # The installed tree is cached: a cold vcpkg build of ICU is slow.
       - name: Windows engine libraries (vcpkg)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          VCPKG_TRIPLET: x64-windows-static-md
+          VCPKG_TRIPLET: x64-windows-static
         run: |
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET" >> $env:GITHUB_ENV
@@ -231,13 +233,13 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v2-${{ hashFiles('scripts/vcpkg-ports.txt') }}
-          restore-keys: vcpkg-x64-windows-static-md-engine-v2-
+          key: vcpkg-x64-windows-static-engine-v3-${{ hashFiles('scripts/vcpkg-ports.txt') }}
+          restore-keys: vcpkg-x64-windows-static-engine-v3-
       - name: Windows vcpkg install
         if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $t = "x64-windows-static-md"
+          $t = "x64-windows-static"
           $ports = Get-Content scripts/vcpkg-ports.txt | Where-Object { $_ } | ForEach-Object { "${_}:$t" }
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" install @ports
       - name: Windows vcpkg cache save
@@ -245,7 +247,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
-          key: vcpkg-x64-windows-static-md-engine-v2-${{ hashFiles('scripts/vcpkg-ports.txt') }}
+          key: vcpkg-x64-windows-static-engine-v3-${{ hashFiles('scripts/vcpkg-ports.txt') }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
