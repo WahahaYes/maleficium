@@ -398,15 +398,78 @@ fn run(
             JobOutcome::Cancelled => JobStatus::Cancelled,
             JobOutcome::TimedOut => JobStatus::TimedOut,
             JobOutcome::Exited(s) if s.success() => JobStatus::Success,
-            JobOutcome::Exited(_) => JobStatus::Failed,
+            JobOutcome::Exited(s) => {
+                if lines.is_empty() {
+                    let line = silent_exit_line(s.code());
+                    on_line(&line);
+                    lines.push(line);
+                }
+                JobStatus::Failed
+            }
         },
     };
     Ok((status, lines))
 }
 
+/// The account of an engine that failed without printing anything, such as
+/// one Windows could not load. Without it the empty run reads as "nothing
+/// cached and no network" (compile::failure_text).
+fn silent_exit_line(code: Option<i32>) -> CompileLine {
+    let text = match code {
+        // NTSTATUS codes read in hex; 0xC0000135 is STATUS_DLL_NOT_FOUND.
+        Some(c) if cfg!(windows) && c < 0 => {
+            let hint = if c as u32 == 0xC000_0135 {
+                ": a DLL it needs is missing"
+            } else {
+                ""
+            };
+            format!(
+                "the engine exited with {:#010X} and printed nothing{hint}",
+                c as u32
+            )
+        }
+        Some(c) => format!("the engine exited with code {c} and printed nothing"),
+        None => String::from("the engine was killed by a signal and printed nothing"),
+    };
+    CompileLine {
+        stream: CompileStream::Stderr,
+        text,
+        signal: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_silent_failure_is_reported_as_the_engine_not_the_network() {
+        let line = silent_exit_line(Some(3));
+        assert_eq!(line.stream, CompileStream::Stderr);
+        assert_eq!(
+            line.text,
+            "the engine exited with code 3 and printed nothing"
+        );
+        let c = Compiled {
+            status: JobStatus::Failed,
+            lines: vec![line],
+            missing: None,
+            cached_only: false,
+        };
+        let text = crate::compile::failure_text(&c);
+        assert!(text.contains("the engine exited with code 3"), "{text}");
+        assert!(!text.contains("no network"), "{text}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_missing_dll_is_named_on_windows() {
+        let text = silent_exit_line(Some(0xC000_0135_u32 as i32)).text;
+        assert_eq!(
+            text,
+            "the engine exited with 0xC0000135 and printed nothing: a DLL it needs is missing"
+        );
+    }
 
     #[test]
     fn url_key_matches_the_engine_cache_layout() {
