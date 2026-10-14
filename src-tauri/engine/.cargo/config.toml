@@ -1,0 +1,7 @@
+# Windows: link the C runtime into the engine, so it runs on a Windows without
+# the Visual C++ Redistributable (a fresh install has none; CI runners do).
+# cc-built C and C++ follow this flag; the vcpkg libraries come from the
+# matching x64-windows-static triplet (build.yml). package-smoke.py fails if a
+# shipped binary imports the runtime DLLs again.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
