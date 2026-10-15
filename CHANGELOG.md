@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-10-15
+
 0.4.0 was tagged but never published: its release build was rejected before it started. 0.4.1 is the first release with those changes; see the 0.4.0 changelog below for what's new.
 
 ### For contributors

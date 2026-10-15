@@ -2,7 +2,7 @@
   "name": "maleficium",
   "private": true,
   "license": "AGPL-3.0-only",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "author": "Ethan Wilson",
   "homepage": "https://github.com/WahahaYes/maleficium#readme",
