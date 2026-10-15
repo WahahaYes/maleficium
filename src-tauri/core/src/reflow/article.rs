@@ -140,20 +140,21 @@ pub struct Article {
 /// live widget reports its height, and the author's width as a fraction of
 /// the line it sat in (`--fw`).
 ///
-/// The aspect is the content's: the model's `size=` when it has one (4:3
-/// without, the box the package draws for it), else the pdf rect, which is
-/// the poster as placed. The height the author gave is the box on the page
+/// The aspect is the content's: for a runtime that renders at a pixel size
+/// (`fixed`, it declares a size option), its `size=` (4:3 without, the box
+/// the package draws for it), else the pdf rect, which is the poster as
+/// placed. The height the author gave is the box on the page
 /// only: on screen a widget's height is its content's. The fraction is the
 /// author's `width=` over the `\linewidth` where the widget sat, at most 1;
 /// none (the full column) without both, or at the full line.
 pub fn frame(
-    kind: &str,
+    fixed: bool,
     size: Option<(u32, u32)>,
     author_width: Option<f64>,
     line_width: Option<f64>,
     rect: (f64, f64),
 ) -> ((f64, f64), Option<f64>) {
-    let ar = if kind == "model" {
+    let ar = if fixed {
         size.map(|(w, h)| (f64::from(w), f64::from(h)))
             .filter(|(w, h)| *w > 0.0 && *h > 0.0)
             .unwrap_or((4.0, 3.0))

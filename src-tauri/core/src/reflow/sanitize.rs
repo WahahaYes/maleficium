@@ -272,9 +272,6 @@ pub const MATHML_ATTRS: &[&str] = &[
     "width",
 ];
 
-/// Widget kinds a mount unit's `data-type` may name.
-pub const MOUNT_KINDS: &[&str] = &["model", "video", "table", "chart", "html", "custom"];
-
 /// Element ids the reader page owns: its JSON islands and controls use the
 /// `mfw-` prefix, and `pdf-link` is the download link.
 pub fn reserved_id(id: &str) -> bool {
@@ -402,7 +399,7 @@ fn kept_attrs(
     let mount = name == "figure"
         && ns == HTML_NS
         && get("data-widget").is_some_and(|id| mounts.contains(id) && !mounted.contains(id))
-        && get("data-type").is_some_and(|t| MOUNT_KINDS.contains(&t));
+        && get("data-type").is_some_and(|t| crate::widgets::WidgetType::parse(t).is_some());
     if mount {
         if let Some(id) = get("data-widget") {
             mounted.insert(id.to_string());

@@ -558,7 +558,7 @@ pub fn typescript() -> String {
         TemplateImportFolderParams::decl(&cfg),
         TemplateWelcomeParams::decl(&cfg),
         WidgetsParams::decl(&cfg),
-        crate::widgets::WidgetType::decl(&cfg),
+        crate::widgets::WidgetTypeName::decl(&cfg),
         crate::widgets::WidgetRect::decl(&cfg),
         crate::widgets::WidgetSource::decl(&cfg),
         crate::widgets::WidgetOption::decl(&cfg),

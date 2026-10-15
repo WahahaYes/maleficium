@@ -29,6 +29,7 @@
 
 use super::{params, read, Widget, WidgetSource, WidgetType};
 use crate::bundle::{fold, role_keys, runtime_options, sha_of};
+use crate::runtimes::{OptionFormat, PosterStrategy};
 use crate::theme::{Mode, Theme};
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::Core;
@@ -262,19 +263,23 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
         })?;
     let id = &w.id;
     match w.kind {
-        WidgetType::Model | WidgetType::Chart => {}
         WidgetType::Html => return html_job(base, cx, req, w, &theme, out, timeout),
         WidgetType::Custom => return custom_job(base, cx, req, w, &theme, out, timeout),
-        WidgetType::Table => {
-            return Err(format!(
-                "widget {id}: a table's poster is its typeset rows, nothing to render"
-            ))
-        }
-        WidgetType::Video => {
-            return Err(format!(
-                "widget {id}: video posters are not rendered yet; give it poster="
-            ))
-        }
+        WidgetType::Builtin(b) => match b.manifest.poster {
+            PosterStrategy::Render => {}
+            PosterStrategy::Crop => {
+                return Err(format!(
+                    "widget {id}: {} posters are cropped from the PDF, nothing to render",
+                    b.reference
+                ))
+            }
+            PosterStrategy::Author => {
+                return Err(format!(
+                    "widget {id}: {} posters come from the document; give it poster=",
+                    b.reference
+                ))
+            }
+        },
     }
     if req.digest.is_some() {
         return Err(format!(
@@ -306,22 +311,26 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
 
     let mut options = runtime_options(w);
     let rect_css = rect_css(w);
-    let (frame, expect) = if w.kind == WidgetType::Model {
-        let size = match options.get("size").and_then(Value::as_str) {
+    // A runtime with a size option renders at that pixel size; any other
+    // renders the widget's box at a density its scale option carries.
+    let (frame, expect) = if let Some(key) = params::option_with(w.kind, OptionFormat::Size) {
+        let size = match options.get(key).and_then(Value::as_str) {
             Some(s) => params::size(s).map_err(|e| format!("widget {id}: {e}"))?,
             None => {
                 let s = (
                     clamp_side(rect_css.0 * f64::from(DEFAULT_DENSITY)),
                     clamp_side(rect_css.1 * f64::from(DEFAULT_DENSITY)),
                 );
-                options.insert("size".into(), format!("{}x{}", s.0, s.1).into());
+                options.insert(key.into(), format!("{}x{}", s.0, s.1).into());
                 s
             }
         };
         (size, Some(size))
     } else {
-        if !options.contains_key("scale") {
-            options.insert("scale".into(), DEFAULT_DENSITY.into());
+        if let Some(key) = params::option_with(w.kind, OptionFormat::Scale) {
+            if !options.contains_key(key) {
+                options.insert(key.into(), DEFAULT_DENSITY.into());
+            }
         }
         ((clamp_side(rect_css.0), clamp_side(rect_css.1)), None)
     };

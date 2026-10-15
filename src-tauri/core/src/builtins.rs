@@ -4,42 +4,41 @@
 //! built-in kinds derives from this table.
 
 use crate::runtimes::{self, RuntimeManifest};
-use crate::widgets::WidgetType;
 use std::sync::OnceLock;
 
 /// One embedded runtime.
-#[derive(Debug)]
 pub struct Builtin {
-    pub kind: WidgetType,
     /// `<name>@<major>`, as a widget names it.
     pub reference: &'static str,
     pub manifest: RuntimeManifest,
     pub host: &'static str,
 }
 
-/// Kind, ref, manifest and host of each built-in. Literal paths: the licence
+impl std::fmt::Debug for Builtin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.reference)
+    }
+}
+
+/// Ref, manifest and host of each built-in. Literal paths: the licence
 /// boundary test (`tests/embed_boundary.rs`) checks every one.
-const EMBEDDED: [(WidgetType, &str, &str, &str); 4] = [
+const EMBEDDED: [(&str, &str, &str); 4] = [
     (
-        WidgetType::Model,
         "model@1",
         include_str!("../../../embed-runtime/src/model/runtime.json"),
         include_str!("../../../embed-runtime/built/model/index.html"),
     ),
     (
-        WidgetType::Video,
         "video@1",
         include_str!("../../../embed-runtime/src/video/runtime.json"),
         include_str!("../../../embed-runtime/built/video/index.html"),
     ),
     (
-        WidgetType::Table,
         "table@1",
         include_str!("../../../embed-runtime/src/table/runtime.json"),
         include_str!("../../../embed-runtime/built/table/index.html"),
     ),
     (
-        WidgetType::Chart,
         "chart@1",
         include_str!("../../../embed-runtime/src/chart/runtime.json"),
         include_str!("../../../embed-runtime/built/chart/index.html"),
@@ -53,8 +52,7 @@ pub fn all() -> &'static [Builtin] {
     ALL.get_or_init(|| {
         EMBEDDED
             .iter()
-            .map(|&(kind, reference, manifest, host)| Builtin {
-                kind,
+            .map(|&(reference, manifest, host)| Builtin {
                 reference,
                 manifest: runtimes::parse_builtin(reference, manifest)
                     .unwrap_or_else(|e| panic!("{e}")),

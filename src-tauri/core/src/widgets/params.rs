@@ -19,6 +19,7 @@
 //!   `resourceDomains`. Canonical: sorted, deduplicated, space separated.
 
 use super::WidgetType;
+use crate::runtimes::OptionFormat;
 
 /// The smallest and largest poster side in pixels.
 pub const MIN_SIDE: u32 = 16;
@@ -206,39 +207,64 @@ pub fn scale(s: &str) -> Result<f64, String> {
     Ok(v)
 }
 
-/// The widget types a poster parameter applies to.
-fn applies(key: &str) -> Option<&'static [WidgetType]> {
-    match key {
-        "camera" | "size" | "background" => Some(&[WidgetType::Model]),
-        "scale" => Some(&[WidgetType::Chart]),
-        "framedomains" | "resourcedomains" => Some(&[WidgetType::Html]),
-        _ => None,
-    }
+/// Keys the package reads as poster parameters for every widget: a kind
+/// whose runtime declares none of them refuses them.
+const POSTER_KEYS: [&str; 6] = [
+    "camera",
+    "size",
+    "background",
+    "scale",
+    "framedomains",
+    "resourcedomains",
+];
+
+/// The format a built-in's runtime declares for option `key`.
+fn format_of(kind: WidgetType, key: &str) -> Option<OptionFormat> {
+    kind.builtin()?
+        .manifest
+        .options
+        .as_ref()?
+        .properties
+        .get(key)?
+        .format
 }
 
-/// Checks one recorded option and returns its canonical value. Options
-/// that are not poster parameters pass through unchanged.
+/// The option a built-in's runtime declares with `format`, by key.
+pub fn option_with(kind: WidgetType, format: OptionFormat) -> Option<&'static str> {
+    let props = &kind.builtin()?.manifest.options.as_ref()?.properties;
+    props
+        .iter()
+        .find(|(_, o)| o.format == Some(format))
+        .map(|(k, _)| k.as_str())
+}
+
+/// Checks one recorded option and returns its canonical value: by the
+/// format the kind's runtime declares for it, or as an html widget's
+/// origins. Options that are not poster parameters pass through unchanged.
 pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, String> {
-    let Some(types) = applies(key) else {
-        return Ok(value.to_string());
-    };
-    if !types.contains(&kind) {
+    if let Some(f) = format_of(kind, key) {
+        return Ok(match f {
+            OptionFormat::Camera => camera(value)?
+                .iter()
+                .map(|v| num(*v))
+                .collect::<Vec<_>>()
+                .join(" "),
+            OptionFormat::Size => {
+                let (w, h) = size(value)?;
+                format!("{w}x{h}")
+            }
+            OptionFormat::Background => background(value)?,
+            OptionFormat::Scale => num(scale(value)?),
+        });
+    }
+    let origins = matches!(key, "framedomains" | "resourcedomains");
+    if origins && kind == WidgetType::Html {
+        return super::canonical_origins(key, value);
+    }
+    if POSTER_KEYS.contains(&key) {
         return Err(format!("{key}= does not apply to this widget type"));
     }
-    Ok(match key {
-        "camera" => camera(value)?
-            .iter()
-            .map(|v| num(*v))
-            .collect::<Vec<_>>()
-            .join(" "),
-        "size" => {
-            let (w, h) = size(value)?;
-            format!("{w}x{h}")
-        }
-        "background" => background(value)?,
-        "framedomains" | "resourcedomains" => super::canonical_origins(key, value)?,
-        _ => num(scale(value)?),
-    })
+    Ok(value.to_string())
 }
 
 #[cfg(test)]
@@ -338,7 +364,7 @@ mod tests {
 
     #[test]
     fn canonical_forms_and_type_checks() {
-        let m = WidgetType::Model;
+        let m = WidgetType::parse("model").unwrap();
         assert_eq!(
             canonical(m, "camera", "pos=0,0,5 target=0,0,0").unwrap(),
             "1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1"
@@ -346,7 +372,7 @@ mod tests {
         assert_eq!(canonical(m, "size", "640x480").unwrap(), "640x480");
         assert_eq!(canonical(m, "background", "FFF").unwrap(), "#ffffff");
         assert_eq!(
-            canonical(WidgetType::Chart, "scale", "2.50").unwrap(),
+            canonical(WidgetType::parse("chart").unwrap(), "scale", "2.50").unwrap(),
             "2.5"
         );
         // Other options pass through verbatim.
@@ -355,10 +381,10 @@ mod tests {
             "170.71652pt"
         );
         for (k, kind) in [
-            ("camera", WidgetType::Chart),
-            ("size", WidgetType::Video),
+            ("camera", WidgetType::parse("chart").unwrap()),
+            ("size", WidgetType::parse("video").unwrap()),
             ("background", WidgetType::Html),
-            ("scale", WidgetType::Model),
+            ("scale", WidgetType::parse("model").unwrap()),
         ] {
             assert!(
                 canonical(kind, k, "1")

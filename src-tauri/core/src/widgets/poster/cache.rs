@@ -157,15 +157,12 @@ pub(crate) fn digest(
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Whether a widget's poster can come from the cache: first-party model and
-/// chart runtimes, html widgets (the latter only while approved, see
-/// [`keyed`]), and custom widgets (only while their runtime is approved),
-/// and never when the document gives its own poster.
+/// Whether a widget's poster can come from the cache: a kind that
+/// [renders posters](WidgetType::renders_posters) (html only while approved,
+/// see [`keyed`]; custom only while its runtime is approved), and never when
+/// the document gives its own poster.
 fn auto(w: &Widget) -> bool {
-    matches!(
-        w.kind,
-        WidgetType::Model | WidgetType::Chart | WidgetType::Html | WidgetType::Custom
-    ) && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+    w.kind.renders_posters() && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
 fn key_options(w: &Widget) -> Vec<(String, String)> {
@@ -197,10 +194,7 @@ pub fn poster_key(
     theme: &Theme,
 ) -> Result<String, String> {
     let kind = match w.kind {
-        WidgetType::Model => "model",
-        WidgetType::Chart => "chart",
-        WidgetType::Video => "video",
-        WidgetType::Table => "table",
+        WidgetType::Builtin(b) => b.manifest.name.as_str(),
         WidgetType::Html => {
             return Err(format!(
                 "widget {}: an html widget's poster is keyed by its approval digest",

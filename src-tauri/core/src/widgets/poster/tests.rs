@@ -126,8 +126,11 @@ fn table_and_video_widgets_are_never_rendered() {
     let cx = &Core::default();
     let (id, _root, out) = project(cx, "refused", "height=170.71652pt");
     for (w, want) in [
-        ("tab-results", "typeset rows"),
-        ("fig-clip", "video posters"),
+        ("tab-results", "table@1 posters are cropped from the PDF"),
+        (
+            "fig-clip",
+            "video@1 posters come from the document; give it poster=",
+        ),
         ("ghost", "no widget `ghost`"),
     ] {
         let e = prepare(cx, &req(&id, w, &out)).unwrap_err();
@@ -241,7 +244,7 @@ fn finish_checks_the_snapshot_and_writes_it_in_one_step() {
 fn widget(poster: Option<&str>) -> Widget {
     Widget {
         id: "w".into(),
-        kind: WidgetType::Model,
+        kind: WidgetType::parse("model").unwrap(),
         runtime: Some("model@1".into()),
         label: None,
         figure: None,
