@@ -6,6 +6,16 @@ Maleficium runs entirely on your machine. There is no account, no server, and no
 
 - Your projects stay in your own folders. The app never writes build files, history, or logs into them. The one exception is the poster cache: when a paper has interactive widgets without a poster of their own, a compile writes a `.maleficium/` folder of rendered posters beside the main file. It is safe to delete.
 - Everything else the app keeps lives in your system's app-data and cache folders, outside your projects: build outputs, revision history, the trash, the structured event log (rotated, so only recent lines remain), widget approvals, your own templates and widget runtimes, and the browser-preview copy of a paper bundle.
+- Those folders are named after the app id, `io.github.wahahayes.maleficium`:
+
+  | OS | App data (history, logs, approvals) | Cache (TeX support files, build outputs) |
+  | --- | --- | --- |
+  | Linux | `~/.local/share/<app id>` (or `$XDG_DATA_HOME`) | `~/.cache/<app id>` (or `$XDG_CACHE_HOME`) |
+  | macOS | `~/Library/Application Support/<app id>` | `~/Library/Caches/<app id>` |
+  | Windows | `%APPDATA%\<app id>` | `%LOCALAPPDATA%\<app id>` |
+
+  Uninstalling keeps both, so your history survives a reinstall. To remove everything, delete them after uninstalling. Deleting the cache is always safe: the TeX support files download again on the next online compile.
+
 - While the app runs it keeps one small file in app data, `maleficium-instances/<process id>.json`, naming its open project folder, main file, and the file in front. It is removed on exit and ignored once the app stops updating it. The MCP server reads it so an agent can join the project you have open.
 - There is no telemetry and no auto-updater. The app never reports usage, contents, or diagnostics anywhere.
 

@@ -42,16 +42,16 @@ export function useArticleSync({
   );
   // The Article tab's bytes: loaded on demand, reloaded by hand.
   const article = useArticle();
-  const { html, stamp, load, anchors, reload } = article;
+  const { src, stamp, load, anchors, reload } = article;
   // Auto-refresh: when the article shows bytes older than the preview,
   // reload it. Never loads on its own: the first visit stays manual (see
   // shouldRefreshArticle).
   useEffect(() => {
     if (!mainDoc) return;
-    if (shouldRefreshArticle(html, stamp, previewStamp, compiling, true)) {
+    if (shouldRefreshArticle(src, stamp, previewStamp, compiling, true)) {
       void load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
     }
-  }, [mainDoc, previewStamp, compiling, html, stamp, load]);
+  }, [mainDoc, previewStamp, compiling, src, stamp, load]);
   const loadNow = useCallback(() => {
     if (mainDoc) void load(mainDoc.rootId, mainDoc.mainRel, previewStamp ?? 0);
   }, [mainDoc, load, previewStamp]);

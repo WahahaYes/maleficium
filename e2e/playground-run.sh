@@ -5,7 +5,8 @@
 # builds cleanly (bibliography resolved, no undefined references) and that
 # the MCP `widgets` tool lists every widget the paper declares. Then exports
 # the single-file bundle and drives its article (folding proofs, citation
-# cards) in Chromium, Firefox and WebKit with e2e/article-run.mjs.
+# cards) in Chromium, Firefox and WebKit with e2e/article-run.mjs, and its
+# frame under the app window's CSP with e2e/article-frame-run.mjs.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -213,6 +214,15 @@ for browser in chromium firefox webkit; do
     --browser "$browser" || fail "article run failed in $browser"
 done
 pass "article proofs and citation cards in chromium, firefox and webkit"
+
+# The in-app Article tab's frame under the app window's CSP: loaded from its
+# own url every widget mounts; as srcdoc (the control) none does.
+for browser in chromium firefox webkit; do
+  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" \
+    timeout 300 node "$DEVROOT/e2e/article-frame-run.mjs" --single "$SCRATCH/out/single.html" \
+    --browser "$browser" || fail "article frame run failed in $browser"
+done
+pass "article frame mounts its widgets under the window csp in chromium, firefox and webkit"
 
 cd "$ROOT"
 # .maleficium/ is the poster cache: with a display the compile renders the

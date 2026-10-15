@@ -25,7 +25,7 @@ use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 /// The scheme the host page, the runtime document and the sources come from.
 pub const SCHEME: &str = "mfposter";
 /// Window labels of renders start with this.
-const LABEL_PREFIX: &str = "poster-";
+pub(crate) const LABEL_PREFIX: &str = "poster-";
 /// The largest result body accepted (a data URL under 8 MiB, or a message).
 const MAX_BODY: usize = 8 * 1024 * 1024;
 

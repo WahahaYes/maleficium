@@ -42,7 +42,7 @@ type PreviewTab = 'pdf' | 'article';
 export interface PreviewPaneProps extends Omit<ComponentProps<typeof Preview>, 'onZoom'> {
   /** True while a compile runs (article reload stays off). */
   compiling?: boolean;
-  articleHtml: string | null;
+  articleSrc: string | null;
   articleLoading: boolean;
   articleError: string | null;
   /** False with no compiled output to read. */
@@ -62,7 +62,7 @@ export interface PreviewPaneProps extends Omit<ComponentProps<typeof Preview>, '
 
 export default function PreviewPane({
   compiling = false,
-  articleHtml,
+  articleSrc,
   articleLoading,
   articleError,
   canLoadArticle,
@@ -86,7 +86,7 @@ export default function PreviewPane({
       next === 'article' &&
       canLoadArticle &&
       !compiling &&
-      !articleHtml &&
+      !articleSrc &&
       !articleLoading &&
       !articleError
     ) {
@@ -187,7 +187,7 @@ export default function PreviewPane({
         />
       ) : (
         <ArticleView
-          html={articleHtml}
+          src={articleSrc}
           loading={articleLoading}
           error={articleError}
           canLoad={canLoadArticle}

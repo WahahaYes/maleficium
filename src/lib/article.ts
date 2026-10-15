@@ -78,20 +78,20 @@ export function articleScrollMessage(id: string): { mfw: 1; type: 'article-scrol
 }
 
 /**
- * Whether a new compile stamp should reload the article: bytes shown, a
+ * Whether a new compile stamp should reload the article: a page shown, a
  * newer output stamp, no compile running, and something to load from.
- * Never loads on its own: with no bytes shown the first visit stays manual.
+ * Never loads on its own: with no page shown the first visit stays manual.
  */
 export function shouldRefreshArticle(
-  html: string | null,
+  shown: string | null,
   loadedStamp: number,
   docStamp: number | null,
   compiling: boolean,
   canLoad: boolean,
 ): boolean {
   return (
-    html != null &&
-    html !== '' &&
+    shown != null &&
+    shown !== '' &&
     canLoad &&
     !compiling &&
     docStamp != null &&
