@@ -157,12 +157,12 @@ pub(crate) fn digest(
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Whether a widget's poster can come from the cache: a kind that
-/// [renders posters](WidgetType::renders_posters) (html only while approved,
-/// see [`keyed`]; custom only while its runtime is approved), and never when
+/// Whether a widget's poster can come from the cache: one the app
+/// [renders](super::renders_poster) (html only while approved, see
+/// [`keyed`]; custom only while its runtime is approved), and never when
 /// the document gives its own poster.
 fn auto(w: &Widget) -> bool {
-    w.kind.renders_posters() && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+    super::renders_poster(w) && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
 fn key_options(w: &Widget) -> Vec<(String, String)> {
