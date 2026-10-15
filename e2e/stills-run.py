@@ -16,7 +16,8 @@ probes measure that case.
 Env: STILLS_OUT (stills dir), STILLS_HOME (contained home, reusable so the
 engine cache survives), STILLS_DISPLAY (:99), STILLS_PORT (vite, 1420),
 STILLS_STATES (default "1 2 3 4 5 6 7 8 9 10 11"; 12 is the opt-in
-worker-failure proof, 13 the opt-in article-tab proof), STILLS_MIRROR_PORT /
+worker-failure proof, 13 the opt-in article-tab proof, 14 the opt-in
+built-in widgets in the article tab), STILLS_MIRROR_PORT /
 STILLS_MIRROR_CACHE / STILLS_COLD_ONLINE (state 4's bundle host).
 """
 import atexit
@@ -1376,6 +1377,73 @@ def state13():
     print("stills: article tab loaded its reader bytes on first visit and forward sync scrolled it to the caret section")
 
 
+# The interactive fixture's figures: the built-ins run live in the Article
+# tab, the html widget (never approved here) keeps its poster.
+ARTICLE_LIVE = ("fig-mesh", "fig-clip", "tab-results", "fig-chart")
+ARTICLE_GATED = ("fig-demo",)
+
+
+def state14():
+    """Built-in widgets in the Article tab: the interactive fixture compiles
+    (its html widget's approval prompt is skipped), the Article tab loads
+    the reader (article.load), and the stills show its top and four scrolls
+    from the article margin (a wheel over the model frame zooms the model
+    instead). The reader reports where each figure settled: every built-in
+    live (article.widget ready) and the html widget held for approval
+    (article.widget approval-required), read from the event log, never the
+    pixels. Opt-in (STILLS_STATES=14)."""
+    proj = FIX + "/article-widgets"
+    shutil.copytree(ROOT + "/e2e/fixtures/interactive", proj)
+    for f in os.listdir(proj):
+        if f.endswith(".tex") and f != "main.tex":
+            os.remove(os.path.join(proj, f))
+    shutil.copy(ROOT + "/embed-runtime/tex/maleficium-interactive.sty", proj)
+    start_app(proj)
+    wait_window(300)
+    window_size(1600, 900)
+    m = now_ms()
+    open_project()
+    wait_event("compile.finish", m, 300)
+    time.sleep(2)
+    # The html widget asks on the first compile: Skip leaves it unapproved.
+    if seen("widget.approval-required", m):
+        key("Tab")
+        key("Return")
+        time.sleep(1)
+    shot("14-pdf")
+    # Two tab spots, as in state 13: the load event says which one landed.
+    m = now_ms()
+    click_at(1170, 68)
+    time.sleep(2)
+    if not seen("article.load", m):
+        click_at(1250, 68)
+        time.sleep(2)
+    wait_event("article.load", m, 120)
+    time.sleep(6)
+    shot("14-article-top")
+    for i in range(1, 5):
+        xdo(DISP, "mousemove", "1592", "450")
+        for _ in range(8):
+            xdo(DISP, "click", "5")
+        time.sleep(4)
+        shot("14-article-scroll-%d" % i)
+
+    def settled(wid, state):
+        return APPLOG.wait("article.widget", m, 60,
+                           lambda ev: ev.get("widget") == wid and ev.get("state") == state)
+
+    missing = [w for w in ARTICLE_LIVE if not settled(w, "ready")]
+    missing += [w + " gated" for w in ARTICLE_GATED if not settled(w, "approval-required")]
+    reported = sorted({(e["event"]["widget"], e["event"]["state"]) for e in since_events(m)
+                       if (e.get("event") or {}).get("action") == "article.widget"})
+    stop_app()
+    if missing:
+        die("the article did not settle as expected: missing %s; reported %s" % (missing, reported))
+    check_log("log.open compile.finish article.load article.widget")
+    print("stills: article tab ran %s live and held %s for approval, from the event log; reported %s"
+          % (", ".join(ARTICLE_LIVE), ", ".join(ARTICLE_GATED), reported))
+
+
 def compile_asking_none(since):
     """Ctrl+R on an approved widget: the compile asks nothing."""
     click_editor()
@@ -1434,7 +1502,7 @@ def main():
                        os.environ.get("VITE_CACHE_DIR", os.path.join(ROOT, "node_modules", ".vite")), log)
     log("vite serving on :%d" % PORT)
 
-    for n in range(1, 14):
+    for n in range(1, 15):
         if want(n):
             globals()["state%d" % n]()
     log("stills in %s:" % OUT)
