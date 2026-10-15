@@ -168,7 +168,7 @@ const atLoad = (page) =>
       const r = f.getBoundingClientRect();
       return {
         id: f.dataset.widget,
-        far: r.top > innerHeight * 1.6,
+        far: r.top > innerHeight * 2.0,
         inView: r.top < innerHeight * 0.9 && r.bottom > 0,
         state: f.dataset.state ?? '',
         frames: f.querySelectorAll('iframe').length,
