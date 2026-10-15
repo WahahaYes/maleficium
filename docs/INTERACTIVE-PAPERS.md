@@ -21,7 +21,7 @@ Each needs `alt=` text. The package's header comments show their options by exam
 
 ## Posters
 
-In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets; video needs `poster=`).
+In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets). A video needs `poster=` or `at=`: `\interactivevideo[at=2.5, alt={...}]{media/clip.mp4}` makes the frame 2.5 seconds in its poster, and the live video starts there too. A frame that renders blank is refused and leaves a placeholder; H.264 MP4 renders on every platform.
 
 Rendered posters are cached in `.maleficium/` beside your main file. It is safe to delete. Commit it if the paper should compile with its posters without Maleficium.
 

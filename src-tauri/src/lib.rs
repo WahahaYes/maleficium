@@ -107,7 +107,7 @@ pub fn render_posters(root: &str) -> anyhow::Result<i32> {
                             serde_json::from_value::<PosterRequest>(v)
                                 .map_err(|e| format!("bad request: {e}"))
                         })
-                        .and_then(|req| commands::poster::run(&handle, &cx, &req));
+                        .and_then(|req| commands::poster::run_here(&handle, &cx, &req));
                     if !matches!(
                         res,
                         Ok(maleficium_core::widgets::poster::PosterOutcome::Rendered(_))

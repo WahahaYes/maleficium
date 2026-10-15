@@ -247,13 +247,16 @@ pub enum OptionFormat {
     Size,
     Background,
     Scale,
+    /// A moment of the source media, in seconds: an `author` runtime's
+    /// widget that gives it has its poster rendered from that frame.
+    Time,
 }
 
 impl OptionFormat {
     /// The value type a format's canonical form has.
     fn kind(self) -> OptionType {
         match self {
-            Self::Scale => OptionType::Number,
+            Self::Scale | Self::Time => OptionType::Number,
             Self::Camera | Self::Size | Self::Background => OptionType::String,
         }
     }
@@ -261,7 +264,9 @@ impl OptionFormat {
 
 /// Contract 2: where a widget's poster comes from when the document gives
 /// none. `render` snapshots the live runtime, `crop` cuts the widget's
-/// typeset area from the PDF, `author` requires `poster=`.
+/// typeset area from the PDF, `author` requires `poster=`, or a moment of
+/// the media when the runtime declares a `time` option and the widget
+/// gives it (the frame there is rendered).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PosterStrategy {
@@ -526,7 +531,7 @@ fn convert(k: &str, o: &OptionSpec, raw: &str) -> Result<Value, String> {
     // A formatted option's rule is its canonicalizer, whose canonical form
     // may hold characters a plain string may not (a colour's `#`).
     if let Some(f) = o.format {
-        let canonical = crate::widgets::params::canonical_format(f, raw)?;
+        let canonical = crate::widgets::params::canonical_format(f, k, raw)?;
         return match o.kind {
             OptionType::String => Ok(Value::String(canonical)),
             _ => canonical
