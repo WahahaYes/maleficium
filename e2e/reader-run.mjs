@@ -1,6 +1,8 @@
 // Reader check: a headless browser (Firefox unless --browser says otherwise) loads the index.html of an exported
 // single-file bundle (over http and from file://) and of a folder bundle (over
-// http; from file:// it must say it is unsupported). Asserts every widget frame
+// http; from file:// it must say it is unsupported). Asserts widgets mount
+// lazily (a figure below the fold stays its poster, with no frame and, in a
+// folder, no request for its document, until scrolled to), every widget frame
 // is mounted once inside the reflowed article, sandbox="allow-scripts" exactly,
 // every widget reaches ready (its poster is then replaced), the poster is
 // shown with scripts off, the article itself (title, headings, one contents
@@ -144,6 +146,37 @@ async function until(fn, ms = 30_000) {
   return null;
 }
 
+// Widgets mount lazily, as they come near the screen: scroll each figure
+// into view in turn until it leaves `deferred`, then back to the top.
+async function scrollThrough(page) {
+  const figs = page.locator('figure[data-widget]');
+  const n = await figs.count();
+  for (let i = 0; i < n; i++) {
+    const f = figs.nth(i);
+    await f.scrollIntoViewIfNeeded();
+    await until(async () => (await f.getAttribute('data-state')) !== 'deferred', 10_000);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+}
+
+// Where each widget figure sits against the screen at load, and whether it
+// has mounted: a figure more than one and a half screens down is past the
+// reader's look-ahead (half a screen) and must still be its poster.
+const atLoad = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('figure[data-widget]')].map((f) => {
+      const r = f.getBoundingClientRect();
+      return {
+        id: f.dataset.widget,
+        far: r.top > innerHeight * 1.6,
+        inView: r.top < innerHeight * 0.9 && r.bottom > 0,
+        state: f.dataset.state ?? '',
+        frames: f.querySelectorAll('iframe').length,
+        posterShown: getComputedStyle(f.querySelector('.poster')).display !== 'none',
+      };
+    }),
+  );
+
 // What a loaded reader looks like, read from its live DOM.
 const inspect = (page) =>
   page.evaluate(() => {
@@ -217,7 +250,7 @@ const inspect = (page) =>
     };
   });
 
-async function reader(label, url, expectCsp) {
+async function reader(label, url, expectCsp, requests = null) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 700 } });
   await ctx.addInitScript(() => {
     window.__csp = [];
@@ -229,6 +262,30 @@ async function reader(label, url, expectCsp) {
   });
   const page = await ctx.newPage();
   await page.goto(url);
+  // Lazy mount: give a wrong eager mount time to happen first.
+  await page.waitForTimeout(1500);
+  const lazy = await atLoad(page);
+  const far = lazy.filter((f) => f.far);
+  check(
+    `${label}: widgets below the fold stay posters, with no frame, until scrolled to`,
+    far.length > 0 && far.every((f) => f.state === 'deferred' && f.frames === 0 && f.posterShown),
+    JSON.stringify(lazy),
+  );
+  const inView = lazy.filter((f) => f.inView);
+  check(
+    `${label}: a widget on screen at load mounts without a scroll`,
+    inView.every((f) => f.state !== 'deferred' && f.frames === 1),
+    JSON.stringify(inView),
+  );
+  if (requests) {
+    const early = far.filter((f) => requests.includes(`/widgets/${f.id}/index.html`));
+    check(
+      `${label}: an off-screen widget's document is not requested until it mounts`,
+      early.length === 0,
+      JSON.stringify(early.map((f) => f.id)),
+    );
+  }
+  await scrollThrough(page);
   const all = await until(async () => {
     const s = await inspect(page);
     return s.frames.length && s.frames.every((f) => f.live || f.state === 'error') ? s : null;
@@ -378,7 +435,7 @@ await sH.ctx.close();
 const sF = await reader('single-file from file://', pathToFileURL(singleFile).href, SINGLE_CSP);
 await sF.ctx.close();
 
-const fH = await reader('folder over http', `${folder.origin}/`, FOLDER_CSP);
+const fH = await reader('folder over http', `${folder.origin}/`, FOLDER_CSP, folder.requests);
 check(
   'folder over http: the pdf link points at paper.pdf',
   fH.s.pdfLink === 'paper.pdf',
@@ -443,6 +500,7 @@ if (customProof) {
   });
   const page = await ctx.newPage();
   await page.goto(`${proof.origin}/`);
+  await scrollThrough(page);
   // The proof carries the whole playground sidecar: only two widgets are
   // custom (heatmap@1 live, stl-viewer@1 fallback), the rest are built-ins.
   const heatW = proofManifest.widgets.find((w) => w.runtime === 'heatmap@1') ?? {};
@@ -528,6 +586,7 @@ if (customProofBad) {
   });
   const bpage = await bctx.newPage();
   await bpage.goto(`${bad.origin}/`);
+  await scrollThrough(bpage);
   const bs = await until(async () => {
     const s = await inspect(bpage);
     return s.frames.length > 0 && s.frames.every((f) => f.live || f.state === 'poster-only')
@@ -592,6 +651,7 @@ async function probes(origin, label, expectNavLeak) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto(`${origin}`);
+  await scrollThrough(page);
   await until(async () => (await inspect(page)).frames.every((f) => f.live));
   const readsParent = (sandbox) =>
     page.evaluate(async (sb) => {
@@ -769,6 +829,7 @@ if (embedSingle && embedFolder && embedPorts) {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
     await page.goto(url);
+    await scrollThrough(page);
     const mounted = await until(async () => {
       const n = await page.evaluate(
         () =>

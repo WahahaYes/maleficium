@@ -142,6 +142,13 @@ async function load(path) {
   });
   const page = await ctx.newPage();
   await page.goto(`${folded.origin}${path}`);
+  // Widgets mount lazily, as they come near the screen: bring each in view.
+  const figs = page.locator('figure[data-widget]');
+  for (let i = 0; i < (await figs.count()); i++) {
+    const f = figs.nth(i);
+    await f.scrollIntoViewIfNeeded();
+    await until(async () => (await f.getAttribute('data-state')) !== 'deferred', 10_000);
+  }
   const s = await until(async () => {
     const v = await inspect(page);
     return v.settled ? v : null;

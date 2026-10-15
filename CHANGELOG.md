@@ -5,6 +5,7 @@
 ### Changes
 
 - **Table and video options work from LaTeX.** `\interactivetable` takes `sort=`, `filter=`, `columns=`, `format=` and `maxrows=`, and `\interactivevideo` takes `loop=` and `muted=`. The runtimes read them, but the package refused them, so no paper could set them. Separate the items of a list with `;`. A key the widget's runtime does not declare fails the compile and names the widget type.
+- **Exported papers load widgets as you reach them.** Each interactive figure shows its poster until you scroll near it, and only then starts its widget, so a paper opens faster and a widget you never scroll to never runs. A folder bundle does not even download it. A widget also waits while its tab is in the background, and one held back for approval never starts. Once started, a widget stays live.
 
 ### For contributors
 
