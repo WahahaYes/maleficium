@@ -133,10 +133,31 @@ open_pr() {
 # Step 2: wait for the PR's required builds, then merge exactly that head.
 merge_pr() {
     say "waiting for the required builds on $PR"
-    i=0
-    until [ "$(gh pr checks "$PR" --required --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do
-        i=$((i + 1)); [ $i -le 60 ] || die "no required checks started on $PR after 10 minutes"
-        sleep 10
+    # The required check (ci) is an aggregate GitHub creates only after the
+    # platform builds finish, so wait as long as any check is running, and
+    # stop at the first failure. gh exits 8 while checks are pending.
+    i=0; idle=0
+    while :; do
+        checks=$(gh pr checks "$PR" --json name,bucket,link 2>/dev/null || true)
+        [ -n "$checks" ] || checks='[]'
+        failed=$(printf '%s' "$checks" | python3 -c 'import json,sys; print(next((c["link"] for c in json.load(sys.stdin) if c["bucket"] in ("fail", "cancel")), ""))')
+        if [ -n "$failed" ]; then
+            run=$(printf '%s\n' "$failed" | sed -n 's|.*/runs/\([0-9]*\)/.*|\1|p')
+            [ -n "$run" ] || die "a check failed on $PR: $failed"
+            explain_failed "$run" "fix it on branch release-$VER"
+        fi
+        [ "$(gh pr checks "$PR" --required --json name --jq length 2>/dev/null || echo 0)" -gt 0 ] && break
+        state=$(printf '%s' "$checks" | python3 -c 'import json,sys; c=json.load(sys.stdin); print("none" if not c else "pending" if any(x["bucket"] == "pending" for x in c) else "done")')
+        i=$((i + 1))
+        # Finished with no required check: allow GitHub a few minutes to
+        # queue ci after the last build.
+        if [ "$state" = pending ]; then idle=0; else idle=$((idle + 1)); fi
+        case "$state" in
+            none) [ $i -le 20 ] || die "no checks started on $PR after 10 minutes" ;;
+            done) [ $idle -le 10 ] || die "every check on $PR finished but no required check reported" ;;
+        esac
+        [ $i -le 360 ] || die "the checks on $PR are still running after 3 hours"
+        sleep 30
     done
     if ! gh pr checks "$PR" --required --watch --fail-fast --interval 60 >/dev/null; then
         run=$(gh pr checks "$PR" --required --json bucket,link \
