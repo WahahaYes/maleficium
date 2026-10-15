@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod article_shelf;
+pub mod builtins;
 pub mod bundle;
 pub mod compile;
 pub mod document;

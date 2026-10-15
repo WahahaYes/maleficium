@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// Every module that writes a bundle or scaffolds files into a project.
 const OUTPUT_MODULES: &[&str] = &[
+    "src/builtins.rs",
     "src/bundle.rs",
     "src/bundle/flags.rs",
     "src/bundle/fold.rs",

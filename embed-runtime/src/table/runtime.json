@@ -1,0 +1,46 @@
+{
+  "contract": 2,
+  "name": "table",
+  "version": "1.0.0",
+  "title": "Table",
+  "description": "A sortable, filterable view of a CSV file; the PDF shows its first rows typeset.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "poster": "crop",
+  "sources": {
+    "data": {
+      "primary": true,
+      "required": true,
+      "extensions": ["csv"],
+      "description": "The rows, comma separated, with a header row."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pdfrows": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 10,
+        "pdf": true,
+        "description": "Rows the PDF typesets."
+      },
+      "sort": { "type": "string", "description": "Column to sort by, then asc or desc." },
+      "filter": { "type": "string", "description": "The filter the view starts with." },
+      "columns": { "type": "string", "description": "Columns to show, in order." },
+      "format": {
+        "type": "string",
+        "description": "Per-column formats, column=kind:digits separated by ;."
+      },
+      "maxrows": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "Most rows shown; 0 shows all."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

@@ -3,7 +3,7 @@
 Everything Maleficium copies into an exported paper or into a user's project lives here, under one licence: [MIT No Attribution](LICENSE) (MIT-0). The rest of Maleficium is AGPL-3.0. Keeping this code separate means a paper you publish carries no licence obligations from the tool that made it.
 
 - `reader/`: the reader page script, styles and mark, inlined into every exported bundle and widget document.
-- `src/`: TypeScript sources of the widget bridge and the built-in runtimes, built into `built/`. The runtime scaffold also copies the model fork entry and its sample from here.
+- `src/`: TypeScript sources of the widget bridge and the built-in runtimes, built into `built/`. Each built-in's `runtime.json` sits beside its source; the app embeds it (`src-tauri/core/src/builtins.rs`). The runtime scaffold also copies the model fork entry and its sample from here.
 - `built/`: the generated runtimes and bridge, committed (`npm run build:runtimes`). Inlined into bundles or copied into a project by the runtime scaffold.
 - `tex/`: `maleficium-interactive.sty`, copied into every new project through the templates.
 - `samples/`: the custom-runtime samples documented in [docs/RUNTIMES.md](../docs/RUNTIMES.md). One of them seeds the runtime scaffold.
