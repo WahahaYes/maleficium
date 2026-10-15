@@ -1463,16 +1463,12 @@ fn mounts<'a>(
                 _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
             };
             let kind = w.kind.name();
-            let size = (kind == "model")
-                .then(|| {
-                    w.options
-                        .iter()
-                        .find(|o| o.key == "size")
-                        .map(|o| crate::widgets::params::size(&o.value))
-                })
-                .flatten()
-                .transpose()
-                .map_err(|e| format!("widget {}: {e}", w.id))?;
+            let size =
+                crate::widgets::params::option_with(w.kind, crate::runtimes::OptionFormat::Size)
+                    .and_then(|key| w.options.iter().find(|o| o.key == key))
+                    .map(|o| crate::widgets::params::size(&o.value))
+                    .transpose()
+                    .map_err(|e| format!("widget {}: {e}", w.id))?;
             let rect = (w.rect.x1 - w.rect.x0, w.rect.y1 - w.rect.y0);
             let (frame, fraction) = reflow::article::frame(
                 kind,
