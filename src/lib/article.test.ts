@@ -13,6 +13,7 @@ import {
   articleModeMessage,
   articleSandbox,
   articleScrollMessage,
+  articleWidgetState,
   articleZoomLabel,
   clampArticleZoom,
   hasTauriInternals,
@@ -88,6 +89,41 @@ describe('frame message gate', () => {
   ])('drops the hostile message: %s', (_label, args) => {
     const [data, origin, source, expected] = args as [unknown, string, unknown, unknown];
     expect(isArticleMessage(data, origin, source, expected)).toBe(false);
+  });
+});
+
+describe('figure state gate', () => {
+  const frame = { __frame: true };
+  const good = (state: unknown = 'ready') => ({
+    mfw: 1,
+    type: 'article-widget',
+    widgetId: 'fig-mesh',
+    state,
+  });
+  it.each(['ready', 'error', 'poster-only', 'approval-required'])(
+    'reads the %s state from the frame at origin null',
+    (state) => {
+      expect(articleWidgetState(good(state), 'null', frame, frame)).toEqual({
+        widgetId: 'fig-mesh',
+        state,
+      });
+    },
+  );
+  it.each([
+    ['foreign source', [good(), 'null', { __other: true }, frame]],
+    ['non-null origin', [good(), 'https://x.example', frame, frame]],
+    ['unknown state', [good('loading'), 'null', frame, frame]],
+    ['non-string state', [good(1), 'null', frame, frame]],
+    [
+      'approval ask',
+      [{ mfw: 1, type: 'approve-widget', widgetId: 'fig-mesh' }, 'null', frame, frame],
+    ],
+    ['empty widget', [{ ...good(), widgetId: '' }, 'null', frame, frame]],
+    ['long widget', [{ ...good(), widgetId: 'w'.repeat(64) }, 'null', frame, frame]],
+    ['null body', [null, 'null', frame, frame]],
+  ])('drops the hostile message: %s', (_label, args) => {
+    const [data, origin, source, expected] = args as [unknown, string, unknown, unknown];
+    expect(articleWidgetState(data, origin, source, expected)).toBeNull();
   });
 });
 
