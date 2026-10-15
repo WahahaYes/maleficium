@@ -378,7 +378,8 @@ pub fn write_bytes(cx: &Core, id: &str, rel: &str, bytes: &[u8]) -> Result<(), S
 
 /// Save a buffer in one call: refuse when the disk holds an outside edit
 /// the caller has not seen (`base`: what the buffer last synced), else
-/// write and snapshot a history revision. A missing file writes fresh; a
+/// write and snapshot a history revision (keeping the overwritten content
+/// first when history does not hold it yet). A missing file writes fresh; a
 /// disk that already holds the new bytes saves without complaint. Returns
 /// the revision outcome for the caller's event log.
 pub fn save(
@@ -398,7 +399,13 @@ pub fn save(
     }
     std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
     super::watch::mark_written(cx, &abs, bytes);
-    Ok(crate::history::record(cx, id, rel, bytes))
+    Ok(crate::history::record_over(
+        cx,
+        id,
+        rel,
+        current.as_deref(),
+        bytes,
+    ))
 }
 
 /// Rename within the project. Both sides stay confined.
@@ -706,6 +713,22 @@ mod tests {
         assert_eq!(read_bytes(cx, &id, "a.tex").unwrap(), b"mine2");
         // No base: overwrite, as the compile persist does.
         assert!(save(cx, &id, "a.tex", b"forced", None).is_ok());
+    }
+
+    #[test]
+    fn the_first_save_of_a_file_can_be_undone_from_history() {
+        let cx = &Core::default();
+        let (id, dir) = grant_tmp(cx, "save-first-revision");
+        std::fs::write(dir.join("a.tex"), "original").unwrap();
+        save(cx, &id, "a.tex", b"edited", Some(b"original")).unwrap();
+        let revs = crate::history::list(cx, &id, "a.tex");
+        assert_eq!(revs.len(), 2, "{revs:?}");
+        let rev = &revs[1].rev;
+        assert_eq!(
+            crate::history::restore(cx, &id, "a.tex", rev).unwrap(),
+            b"original"
+        );
+        assert_eq!(read_bytes(cx, &id, "a.tex").unwrap(), b"original");
     }
 
     #[test]

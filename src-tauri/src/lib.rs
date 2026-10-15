@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+mod article;
 mod commands;
 mod poster;
 mod speculative;
@@ -17,6 +18,7 @@ pub fn run() {
         .manage(maleficium_core::Core::default())
         .manage(poster::Renders::default())
         .register_asynchronous_uri_scheme_protocol(poster::SCHEME, poster::protocol)
+        .register_uri_scheme_protocol(article::SCHEME, article::protocol)
         .setup(|app| {
             // The editor window from the config: it loads no widget or
             // author content before setup, so the flags are set first.
