@@ -90,8 +90,11 @@ fn reserved_names_are_the_registry_and_its_two_kinds() {
 
 #[test]
 fn every_kind_list_matches_the_registry() {
-    let reader = quoted(capture(READER, r"var KINDS = \[([^\]]*)\]"));
-    assert_eq!(reader, kinds(), "embed-runtime/reader/reader.js KINDS");
+    // The reader mounts what a manifest's runtimes lists: no kind list.
+    assert!(
+        !READER.contains("KINDS"),
+        "embed-runtime/reader/reader.js keeps a kind list"
+    );
 
     let sty: BTreeSet<String> = capture(STY, r"\\A\(\?:([a-z|]+)\)\\Z")
         .split('|')
@@ -109,12 +112,50 @@ fn every_kind_list_matches_the_registry() {
     let vite = quoted(capture(VITE, r"export const RUNTIMES = \[([^\]]*)\]"));
     assert_eq!(vite, names(), "embed-runtime/vite.config.ts RUNTIMES");
 
+    // Format 2 leaves the widget type open: a pattern every kind fits.
     let schema: serde_json::Value = serde_json::from_str(crate::bundle::MANIFEST_SCHEMA).unwrap();
-    let types: BTreeSet<String> = schema["$defs"]["widget"]["properties"]["type"]["enum"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(types, kinds(), "bundle schema widget types");
+    let ty = &schema["$defs"]["widget"]["properties"]["type"];
+    assert!(
+        ty.get("enum").is_none(),
+        "bundle schema widget type is open"
+    );
+    let pattern = regex::Regex::new(ty["pattern"].as_str().unwrap()).unwrap();
+    for k in kinds() {
+        assert!(pattern.is_match(&k), "bundle schema widget type admits {k}");
+    }
+}
+
+#[test]
+fn each_macro_passes_through_the_options_its_runtime_declares() {
+    // \mfw@bi@options{<keys>}{<kind>}: every option the runtime.json declares
+    // without a format or the pdf flag (those have keys of their own).
+    let sty: std::collections::BTreeMap<String, BTreeSet<String>> =
+        Regex::new(r"\\mfw@bi@options\{([a-z,]*)\}\{([a-z]+)\}")
+            .unwrap()
+            .captures_iter(STY)
+            .map(|c| {
+                let keys = c[1]
+                    .split(',')
+                    .filter(|k| !k.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                (c[2].to_string(), keys)
+            })
+            .collect();
+    for b in all() {
+        let want: BTreeSet<String> = b
+            .manifest
+            .options
+            .iter()
+            .flat_map(|o| &o.properties)
+            .filter(|(_, o)| o.format.is_none() && !o.pdf)
+            .map(|(k, _)| k.clone())
+            .collect();
+        assert_eq!(
+            sty.get(&b.manifest.name),
+            Some(&want),
+            "\\interactive{} passes through",
+            b.manifest.name
+        );
+    }
 }

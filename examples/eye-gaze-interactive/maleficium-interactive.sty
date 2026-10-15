@@ -30,7 +30,9 @@
 %     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
 %   \interactivevideo[poster=figures/clip.png,
 %     remote=https://cdn.example.org/clip.mp4, sha256=<hex>]{media/clip.mp4}
+%   \interactivevideo[poster=figures/clip.png, loop=true, muted=true]{media/clip.mp4}
 %   \interactivetable[pdfrows=10]{data/results.csv}
+%   \interactivetable[sort={score desc}, columns={name;score}, maxrows=20]{data/results.csv}
 %   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %   \interactive[height=6cm, alt={...},
@@ -63,6 +65,13 @@
 % pixels, background= (transparent or a hex colour without #, e.g. ffffff).
 % Chart: scale= (poster pixels per CSS pixel). Each is an error on any other
 % widget type.
+%
+% Runtime options: each built-in macro also takes the options its runtime
+% declares in runtime.json beyond the keys above, recorded as written for the
+% app to check and type (see \mfw@bi@options). Video: loop= and muted= (true
+% or false). Table: sort= (a column, then asc or desc), filter=, columns= and
+% format= (lists separated by ;, since a recorded value holds no comma) and
+% maxrows=. Any other key is an error.
 %
 % Origins (html only): framedomains= and resourcedomains= name the https
 % origins the widget may frame or load from, separated by spaces (commas are
@@ -851,16 +860,46 @@
   \if1\mfw@found #3\else #4\fi
 }
 
+% -- runtime options ------------------------------------------------------------
+% A built-in macro reads its keys with \setkeys*, which leaves every other key
+% in \XKV@rm. \mfw@bi@options{<declared>}{<type>} records each of those that
+% the type's runtime.json declares (its options without a format or pdf flag,
+% which have keys above) into \mfw@xopts as ,key=value, as
+% \interactiveruntime records an author option; any other key is an error.
+% The app checks and types the values against the runtime.
+\newcommand{\mfw@bi@options}[2]{%
+  \def\mfw@xopts{}\def\mfw@bi@declared{#1}%
+  \mfw@rt@map\mfw@bi@option\XKV@rm
+}
+\newcommand{\mfw@bi@option}[1]{%
+  \mfw@rt@kv{#1}%
+  \mfw@ifin{\mfw@rt@k}{\mfw@bi@declared}{%
+    \ifmfw@rt@eq
+      \mfw@rt@checkcomma{\mfw@rt@k}%
+      \mfw@rt@add\mfw@xopts
+    \else
+      \PackageError{maleficium-interactive}%
+        {option `\mfw@rt@k' needs a value: write \mfw@rt@k=...}%
+        {An option is written key=value; key= alone uses the runtime's default.}%
+    \fi
+  }{%
+    \PackageError{maleficium-interactive}%
+      {\mfw@type\space widgets take no option `\mfw@rt@k'}%
+      {Remove it, or use an option the \mfw@type\space runtime declares.}%
+  }%
+}
+
 % -- the macros --------------------------------------------------------------
 \newcommand{\interactivemodel}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
   \mfw@params{camera,size,background}{model}%
+  \mfw@bi@options{}{model}%
   \mfw@needposter\mfw@needfile{#2}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
+  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background\mfw@xopts}%
   \mfw@posterbox{\mfw@runtime}{model=#2}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{model=#2}{\mfw@opts}%
@@ -868,10 +907,11 @@
 }
 
 \newcommand{\interactivevideo}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{video}\ifx\mfw@runtime\empty\def\mfw@runtime{video@1}\fi
   \mfw@params{}{video}%
+  \mfw@bi@options{loop,muted}{video}%
   \mfw@needfile{\mfw@poster}%
   \IfFileExists{#2}{%
     \def\mfw@vidsrc{#2}%
@@ -891,16 +931,17 @@
   \mfw@sbox@graphic{\mfw@poster}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{video=\mfw@vidsrc}%
-    {\mfw@dims@opt,remote=\mfw@remote,sha256=\mfw@sha}%
+    {\mfw@dims@opt,remote=\mfw@remote,sha256=\mfw@sha\mfw@xopts}%
   \mfw@emit
 }
 
 % The poster is the typeset rows; the exporter crops it from the PDF.
 \newcommand{\interactivetable}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{table}\ifx\mfw@runtime\empty\def\mfw@runtime{table@1}\fi
   \mfw@params{}{table}%
+  \mfw@bi@options{sort,filter,columns,format,maxrows}{table}%
   \ifx\mfw@poster\empty\else
     \PackageWarning{maleficium-interactive}%
       {poster= is ignored for tables; the typeset rows are the poster}%
@@ -927,15 +968,16 @@
     every last row/.style={after row=\hline}]%
     {#2}}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {}{data=#2}{pdfrows=\mfw@pdfrows}%
+    {}{data=#2}{pdfrows=\mfw@pdfrows\mfw@xopts}%
   \mfw@emit
 }
 
 \newcommand{\interactivechart}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
   \mfw@params{scale}{chart}%
+  \mfw@bi@options{}{chart}%
   \mfw@needposter\mfw@needfile{#2}%
   \def\mfw@srcs{spec=#2}%
   \ifx\mfw@data\empty\else
@@ -946,7 +988,7 @@
   \fi
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale}%
+  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale\mfw@xopts}%
   \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{\mfw@srcs}{\mfw@opts}%

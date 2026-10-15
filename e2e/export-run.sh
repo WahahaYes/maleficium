@@ -92,7 +92,7 @@ def flat(result):
 
 def sha(b): return hashlib.sha256(b).hexdigest()
 
-schema_path = os.path.join(os.environ["DEVROOT"], "src-tauri/core/schemas/paper-bundle-1.schema.json")
+schema_path = os.path.join(os.environ["DEVROOT"], "src-tauri/core/schemas/paper-bundle-2.schema.json")
 schema = json.load(open(schema_path))
 validator = jsonschema.Draft202012Validator(schema)
 def schema_errors(m):
@@ -168,6 +168,18 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
     # The manifest orders widgets by PDF float placement while the article
     # follows document order, so the e2e compares sets, not order.
     check(f"{profile}: widgets are the fixture five", sorted(w["id"] for w in m["widgets"]) == sorted(WIDGETS), str([w["id"] for w in m["widgets"]]))
+    # Format 2: built-ins bind through runtime.json like custom runtimes,
+    # and runtimes lists every runtime a live widget runs, built-ins flagged.
+    by = {w["id"]: w for w in m["widgets"]}
+    check(f"{profile}: format 2 lists every built-in runtime, flagged",
+          m["formatVersion"] == 2
+          and sorted(m.get("runtimes", {})) == ["chart@1", "model@1", "table@1", "video@1"]
+          and all(e["builtin"] is True for e in m["runtimes"].values()),
+          str(m.get("runtimes"))[:300])
+    check(f"{profile}: built-in options are bound: typed, defaulted, pdf-only left out",
+          by["tab-results"].get("options") == {"maxrows": 0}
+          and by["fig-clip"].get("options") == {"loop": False, "muted": False},
+          str({i: by[i].get("options") for i in ("tab-results", "fig-clip")}))
     check(f"{profile}: pdf sha256 is the compiled pdf's", m["pdf"]["sha256"] == sha(pdf_bytes) and m["pdf"]["bytes"] == len(pdf_bytes))
     bad = []
     for key, a in m["assets"].items():

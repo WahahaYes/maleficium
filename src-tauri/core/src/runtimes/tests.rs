@@ -791,3 +791,114 @@ fn a_runtime_without_options_takes_none() {
     let w = widget(&[("primary", "g.csv")], &[("height", "1pt")]);
     assert!(bind(&w, &m).unwrap().options.is_empty());
 }
+
+/// A built-in's widget as its macro records it: roles by name.
+fn builtin_widget(kind: &str, sources: &[(&str, &str)], options: &[(&str, &str)]) -> Widget {
+    let b = crate::builtins::by_name(kind).unwrap();
+    Widget {
+        kind: WidgetType::Builtin(b),
+        runtime: Some(b.reference.into()),
+        ..widget(sources, options)
+    }
+}
+
+fn bind_builtin(
+    kind: &str,
+    sources: &[(&str, &str)],
+    options: &[(&str, &str)],
+) -> Result<Bound, String> {
+    let w = builtin_widget(kind, sources, options);
+    bind(&w, &crate::builtins::by_name(kind).unwrap().manifest)
+}
+
+#[test]
+fn a_builtin_binds_through_its_runtime_json() {
+    // Roles by name; a repeatable role keys its later files -2, -3.
+    let b = bind_builtin(
+        "chart",
+        &[("spec", "c.vl.json"), ("data", "a.csv"), ("data", "b.tsv")],
+        &[("height", "100pt"), ("scale", "2.50")],
+    )
+    .unwrap();
+    let keys: Vec<&str> = b.sources.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(keys, ["spec", "data", "data-2"]);
+    assert_eq!(b.sources[2].1.role, "data");
+    // A formatted option takes its canonical form and type.
+    assert_eq!(Value::Object(b.options), json!({"scale": 2.5}));
+    let b = bind_builtin(
+        "model",
+        &[("model", "m.glb")],
+        &[("background", "FFF"), ("camera", "pos=0,0,5 target=0,0,0")],
+    )
+    .unwrap();
+    assert_eq!(
+        Value::Object(b.options),
+        json!({"background": "#ffffff", "camera": "1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1"})
+    );
+    // PDF-only options are checked, never passed; declared defaults are.
+    let b = bind_builtin(
+        "table",
+        &[("data", "r.csv")],
+        &[("pdfrows", "2"), ("sort", "score desc"), ("columns", "a;b")],
+    )
+    .unwrap();
+    assert_eq!(
+        Value::Object(b.options),
+        json!({"sort": "score desc", "columns": "a;b", "maxrows": 0})
+    );
+    assert_eq!(
+        bind_builtin("table", &[("data", "r.csv")], &[("pdfrows", "x")]).unwrap_err(),
+        "widget fig-h: option pdfrows=`x` is not an integer"
+    );
+    let b = bind_builtin("video", &[("video", "v.mp4")], &[("loop", "true")]).unwrap();
+    assert_eq!(
+        Value::Object(b.options),
+        json!({"loop": true, "muted": false})
+    );
+}
+
+#[test]
+fn a_builtin_refuses_what_its_runtime_json_does_not_declare() {
+    let e =
+        |kind: &str, s: &[(&str, &str)], o: &[(&str, &str)]| bind_builtin(kind, s, o).unwrap_err();
+    assert_eq!(
+        e("model", &[("model", "m.glb")], &[("zoom", "2")]),
+        "widget fig-h: runtime model@1 has no option `zoom`"
+    );
+    assert_eq!(
+        e("video", &[("video", "v.mp4")], &[("loop", "yes")]),
+        "widget fig-h: option loop=`yes` is not a boolean"
+    );
+    assert_eq!(
+        e("model", &[("model", "a.glb"), ("model", "b.glb")], &[]),
+        "widget fig-h: source role `model` is given twice"
+    );
+    assert_eq!(
+        e("model", &[("primary", "a.glb")], &[]),
+        "widget fig-h: runtime model@1 has no source role `primary`"
+    );
+    assert_eq!(
+        e("chart", &[("data", "a.csv")], &[]),
+        "widget fig-h: runtime chart@1 requires source spec"
+    );
+    assert_eq!(
+        e(
+            "table",
+            &[("data", "r.csv")],
+            &[("remote", "https://x.org/r.csv")]
+        ),
+        "widget fig-h: runtime table@1 has no option `remote`"
+    );
+    // A remote role may come as remote= instead of a local file.
+    let b = bind_builtin(
+        "video",
+        &[],
+        &[("remote", "https://x.org/v.mp4"), ("sha256", "ab")],
+    )
+    .unwrap();
+    assert!(b.sources.is_empty());
+    assert_eq!(
+        e("video", &[], &[]),
+        "widget fig-h: runtime video@1 requires source video"
+    );
+}

@@ -417,10 +417,19 @@ if (customProof) {
     /<script type="application\/json" id="mfw-manifest">(.*?)<\/script>/s.exec(proofHtml)[1],
   );
   check(
-    'custom proof: the manifest carries the approved runtime entry',
+    'custom proof: the manifest carries the approved runtime entry, flagged a package',
     !!proofManifest.runtimes?.['heatmap@1']?.digest &&
-      proofManifest.runtimes['heatmap@1'].license === 'MIT-0',
+      proofManifest.runtimes['heatmap@1'].license === 'MIT-0' &&
+      proofManifest.runtimes['heatmap@1'].builtin === false,
     Object.keys(proofManifest.runtimes ?? {}).join(','),
+  );
+  check(
+    'custom proof: format 2 lists the built-ins it runs, flagged built-in',
+    proofManifest.formatVersion === 2 &&
+      proofManifest.widgets
+        .filter((w) => w.type !== 'html' && w.type !== 'custom')
+        .every((w) => proofManifest.runtimes?.[w.runtime]?.builtin === true),
+    JSON.stringify(proofManifest.runtimes ?? {}).slice(0, 300),
   );
   const proof = await host(join(customProof, '..'), customProof);
   const ctx = await browser.newContext();
@@ -491,8 +500,8 @@ if (customProof) {
 // ---- custom runtimes, red: a scan-failed runtime is poster-only ----
 // --custom-proof-bad points at a proof bundle (bundle/tests.rs regenerates
 // it with MALEFICIUM_RUNTIME_PROOF_BAD set): bad-cdn@1 invalid and
-// poster-only, stl-viewer@1 missing and poster-only, no runtimes map at
-// all. The scan error can never be approved: the page mounts no frame for
+// poster-only, stl-viewer@1 missing and poster-only, no custom runtime
+// listed (only the built-ins). The scan error can never be approved: the page mounts no frame for
 // it, shows the note, and reports no CSP violation.
 if (customProofBad) {
   const badHtml = readFileSync(customProofBad, 'utf8');
@@ -501,8 +510,9 @@ if (customProofBad) {
   );
   const badW = badManifest.widgets.find((w) => w.runtime === 'bad-cdn@1') ?? {};
   check(
-    'bad-cdn proof: no runtimes map, the scan-failed widget falls back to runtime-invalid',
-    badManifest.runtimes == null && badW.fallback === 'runtime-invalid',
+    'bad-cdn proof: no custom runtime listed, the scan-failed widget falls back to runtime-invalid',
+    Object.values(badManifest.runtimes ?? {}).every((e) => e.builtin === true) &&
+      badW.fallback === 'runtime-invalid',
     badManifest.widgets
       .map((w) => `${w.id}:${w.runtime ?? w.type}=${w.fallback ?? 'live'}`)
       .join(','),

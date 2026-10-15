@@ -92,22 +92,24 @@ describe('the fixture table', () => {
 });
 
 describe('options', () => {
-  it('reads sort, filter, columns, format and maxrows', () => {
+  it('reads sort, filter, columns, format and maxrows, typed as the export binds them', () => {
     const o = opts({
       sort: 'score desc',
       filter: 'a',
-      columns: 'score, name',
+      columns: 'score; name',
       format: 'score=fixed:1;name=text',
-      maxrows: '3',
+      maxrows: 3,
     });
     expect(o.sort).toEqual({ column: 'score', descending: true });
     expect(o.columns).toEqual(['score', 'name']);
     expect(o.format.score).toEqual({ kind: 'fixed', digits: 1 });
     expect(o.maxRows).toBe(3);
+    // Columns written with commas (a value no document can record) still read.
+    expect(opts({ columns: 'score, name' }).columns).toEqual(['score', 'name']);
   });
 
-  it('defaults to nothing, and ignores the exporter-only pdfrows', () => {
-    expect(opts({ pdfrows: 10 })).toEqual({
+  it('defaults to nothing', () => {
+    expect(opts({ filter: '', maxrows: 0 })).toEqual({
       sort: null,
       filter: '',
       columns: null,
@@ -119,6 +121,7 @@ describe('options', () => {
   it('rejects unknown options and malformed values with a message', () => {
     for (const bad of [
       { colour: 'red' },
+      { pdfrows: 10 },
       { format: 'score=bogus' },
       { format: 'score=fixed:99' },
       { format: 'score' },

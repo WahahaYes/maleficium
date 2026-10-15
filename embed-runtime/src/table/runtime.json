@@ -28,7 +28,7 @@
       },
       "sort": { "type": "string", "description": "Column to sort by, then asc or desc." },
       "filter": { "type": "string", "description": "The filter the view starts with." },
-      "columns": { "type": "string", "description": "Columns to show, in order." },
+      "columns": { "type": "string", "description": "Columns to show, in order, separated by ;." },
       "format": {
         "type": "string",
         "description": "Per-column formats, column=kind:digits separated by ;."
