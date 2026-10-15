@@ -1,0 +1,48 @@
+{
+  "contract": 2,
+  "name": "model",
+  "version": "1.0.0",
+  "title": "3D model",
+  "description": "Shows a glTF binary model with orbit controls.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "poster": "render",
+  "sources": {
+    "model": {
+      "primary": true,
+      "required": true,
+      "extensions": ["glb"],
+      "description": "The model, as glTF binary."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "camera": {
+        "type": "string",
+        "format": "camera",
+        "description": "Where the view starts: 16 numbers, or pos=x,y,z target=x,y,z up=x,y,z."
+      },
+      "size": {
+        "type": "string",
+        "format": "size",
+        "description": "The poster's pixel size, WxH."
+      },
+      "background": {
+        "type": "string",
+        "format": "background",
+        "description": "transparent, or a hex colour without #."
+      }
+    }
+  },
+  "capabilities": { "webgl": true },
+  "vendored": [
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "license": "MIT",
+      "source": "https://www.npmjs.com/package/three"
+    }
+  ]
+}
