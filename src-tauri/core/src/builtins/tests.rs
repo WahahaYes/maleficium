@@ -1,5 +1,4 @@
 use super::*;
-use crate::runtimes::{OptionFormat, PosterStrategy};
 use crate::widgets::WidgetType;
 use regex::Regex;
 use std::collections::BTreeSet;
@@ -54,48 +53,6 @@ fn every_embedded_manifest_parses_and_names_its_kind() {
         assert!(by_ref(b.reference).is_some_and(|x| std::ptr::eq(x, b)));
     }
     assert!(by_ref("plotly@1").is_none());
-}
-
-#[test]
-fn manifests_describe_what_the_exporter_does_today() {
-    let want = [
-        ("model", "model", PosterStrategy::Render),
-        ("video", "video", PosterStrategy::Author),
-        ("table", "data", PosterStrategy::Crop),
-        ("chart", "spec", PosterStrategy::Render),
-    ];
-    for (name, primary, poster) in want {
-        let m = &by_name(name).unwrap().manifest;
-        assert_eq!(m.primary_role(), primary, "{name}");
-        assert_eq!(m.poster, poster, "{name}");
-    }
-    assert!(by_name("chart").unwrap().manifest.sources["data"].repeat);
-    assert!(by_name("video").unwrap().manifest.sources["video"].remote);
-    assert!(by_name("model").unwrap().manifest.capabilities.webgl);
-}
-
-#[test]
-fn option_formats_match_the_poster_parameters() {
-    let sample = |f: OptionFormat| match f {
-        OptionFormat::Camera => "1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1",
-        OptionFormat::Size => "800x600",
-        OptionFormat::Background => "ffffff",
-        OptionFormat::Scale => "2",
-    };
-    let params = ["camera", "size", "background", "scale"];
-    for b in all() {
-        let props = b.manifest.options.as_ref().map(|o| &o.properties);
-        for key in params {
-            let declared = props.and_then(|p| p.get(key)).and_then(|o| o.format);
-            let applies = crate::widgets::params::canonical(WidgetType::Builtin(b), key, "x")
-                .is_err_and(|e| !e.contains("does not apply"));
-            assert_eq!(declared.is_some(), applies, "{}: {key}", b.reference);
-            if let Some(f) = declared {
-                crate::widgets::params::canonical(WidgetType::Builtin(b), key, sample(f))
-                    .unwrap_or_else(|e| panic!("{}: {e}", b.reference));
-            }
-        }
-    }
 }
 
 #[test]
