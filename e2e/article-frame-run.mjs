@@ -99,7 +99,8 @@ async function run(how) {
     ([how, v]) => window.mount(how, v),
     [how, how === 'src' ? `${ARTICLE}/0123456789abcdef0123456789abcdef` : html],
   );
-  // The reader frame is the one holding the figures.
+  // The reader frame is the one holding the figures. Widgets mount lazily,
+  // as they come near the screen, so each figure is scrolled into view.
   let states = [];
   for (let i = 0; i < 40; i++) {
     await sleep(250);
@@ -114,8 +115,17 @@ async function run(how) {
         )
         .catch(() => []);
       if (s.length) states = s;
+      const next = s.findIndex(([, st]) => st === 'deferred');
+      if (next >= 0) {
+        await f
+          .locator('figure[data-widget]')
+          .nth(next)
+          .scrollIntoViewIfNeeded()
+          .catch(() => {});
+      }
     }
-    const settled = states.length && states.every(([, st]) => st && st !== 'loading');
+    const settled =
+      states.length && states.every(([, st]) => st && st !== 'loading' && st !== 'deferred');
     if (settled || (how === 'srcdoc' && i >= 12)) break;
   }
   await ctx.close();
@@ -124,7 +134,7 @@ async function run(how) {
 
 const url = await run('src');
 check('the reader page has widget figures', url.states.length > 0, 'no figure[data-widget] found');
-const unmounted = url.states.filter(([, st]) => !st);
+const unmounted = url.states.filter(([, st]) => !st || st === 'deferred');
 check(
   'every figure mounts in a frame loaded from its own url',
   url.states.length > 0 && unmounted.length === 0,
