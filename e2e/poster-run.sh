@@ -328,7 +328,7 @@ def frame_of(path):
     f = min(ranges, key=fit)
     return round(f(reds[0])) + 20 * round(f(reds[1])), (w, h)
 
-for widget, want in [("vid-h264", 60), ("vid-gop", 105), ("vid-vp9", 30), ("vid-end", 119)]:
+for widget, want in [("vid-h264", 60), ("vid-gop", 100), ("vid-vp9", 30), ("vid-end", 119)]:
     r, took = render(widget, widget + ".png")
     check(f"{widget}: an at= video renders", r["ok"] and r["result"].get("status") == "rendered", str(r)[:300])
     got = frame_of(os.path.join(OUT, widget + ".png")) if r["ok"] else None
@@ -492,12 +492,12 @@ check("compile: an edited probe gets an approval_required line, not a render",
       and not any(l.startswith("poster html-probe: rendered") for l in lines),
       str([l for l in lines if "poster" in l])[:400])
 check("...and no map entry: its cached poster does not stand in for the approval", not mapped())
-# An at= video with no poster=: the compile renders frame 105 into the cache
+# An at= video with no poster=: the compile renders frame 100 into the cache
 # through the subprocess renderer and maps it.
 tex = os.path.join(ROOT, "posters.tex")
 text = open(tex).read().replace(
     "\\interactivetable",
-    "\\interactivevideo[height=2cm, id=vid-auto, at=3.5167, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactivetable", 1)
+    "\\interactivevideo[height=2cm, id=vid-auto, at=3.35, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactivetable", 1)
 open(tex, "w").write(text)
 rec = compile_lines()
 lines = rec.get("lines") or []
@@ -507,7 +507,7 @@ check("compile: an at= video with no poster= is rendered",
 entry = next((l for l in open(MAP).read().splitlines() if "{vid-auto}" in l), "") if os.path.isfile(MAP) else ""
 key = re.search(r"[0-9a-f]{64}", entry)
 png = os.path.join(os.path.dirname(MAP), key.group(0) + ".png") if key else ""
-check("...mapped, with the frame asked for", bool(key) and os.path.isfile(png) and frame_of(png) == (105, (96, 54)),
+check("...mapped, with the frame asked for", bool(key) and os.path.isfile(png) and frame_of(png) == (100, (96, 54)),
       entry[:300])
 # The finished compile also asked the app: a typed event in the log, which the
 # window turns into its Approve | Skip prompt.
