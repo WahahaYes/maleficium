@@ -44,13 +44,16 @@ use ts_rs::TS;
 
 /// The committed manifest schema (JSON Schema 2020-12); the bundle spec
 /// points here.
-pub const MANIFEST_SCHEMA: &str = include_str!("../schemas/paper-bundle-1.schema.json");
+pub const MANIFEST_SCHEMA: &str = include_str!("../schemas/paper-bundle-2.schema.json");
 
 /// The single-file profile warns above this many bytes unless the caller
 /// configures another cap.
 pub const DEFAULT_SIZE_CAP_BYTES: u64 = 50 * 1024 * 1024;
 
 const FORMAT: &str = "maleficium-paper-bundle";
+/// The manifest format this build writes: 2 binds built-ins through their
+/// `runtime.json` and lists them in `runtimes`.
+const FORMAT_VERSION: u32 = 2;
 const CONTRACT_VERSION: u32 = 1;
 
 /// Downloads one url for an approved export. Core has no implementation: the
@@ -936,46 +939,18 @@ fn stale_custom_poster(p: &Plan, w: &Widget) -> Option<String> {
     })
 }
 
-/// A custom widget: its runtime read and judged once per export, bound
-/// (an error refuses the export), then folded live with its sources, or
-/// left to its poster with a note. Returns the document and the bound
-/// options when live.
-fn plan_custom(
+/// A runtime's widget document: a built-in's host under the widget policy,
+/// or a custom package's judged snapshot folded with its own policy (only a
+/// runtime that declared capabilities.wasm carries 'wasm-unsafe-eval') and
+/// its licences. The snapshot's files are folded, never a second read of
+/// the folder.
+fn custom_document(
     p: &mut Plan,
-    w: &Widget,
-    sources: &mut Map<String, Value>,
-) -> Result<CustomPlan, String> {
-    let id = w.id.clone();
-    let r = w.runtime.clone().unwrap_or_default();
-    let used = p.runtime(&r)?;
-    let (snap, m, verdict) = match &*used {
-        RuntimeUse::Unusable(why) => {
-            p.fall_back(&r, &id, why.clone());
-            return Ok((None, None));
-        }
-        RuntimeUse::Valid(v) => (&v.snap, &v.manifest, &v.verdict),
-    };
-    let bound = crate::runtimes::bind(w, m)?;
-    if let Some(why) = verdict {
-        p.fall_back(&r, &id, why.clone());
-        return Ok((None, None));
-    }
-    // A live declaring widget runs srcdoc'd under the single-file reader
-    // page: the page's own policy must carry the token, or the inherited
-    // one blocks the compile. Folder widgets are documents of their own.
-    if m.capabilities.wasm {
-        p.wasm_live = true;
-    }
-    for (role, s) in &bound.sources {
-        let key = format!("{id}-{role}");
-        p.add_local(key.clone(), &id, &s.path, false)?;
-        let bytes = p.assets.get(&key).map_or(0, |a| a.bytes);
-        crate::runtimes::check_size(w, m, role, bytes)?;
-        sources.insert(role.clone(), key.into());
-    }
-    // The judged snapshot's files, never a second read of the folder,
-    // folded with the runtime's own policy: only a runtime that declared
-    // capabilities.wasm carries 'wasm-unsafe-eval'.
+    id: &str,
+    r: &str,
+    snap: &crate::widget_approval::RuntimeSnapshot,
+    m: &crate::runtimes::RuntimeManifest,
+) -> Result<String, String> {
     let fold_input: BTreeMap<String, Vec<u8>> = snap
         .files
         .iter()
@@ -1011,13 +986,108 @@ fn plan_custom(
             format!("widget {id}: runtime {r}: {n}"),
         );
     }
-    let doc = folded.html + &licence_block(m, &snap.files);
+    Ok(folded.html + &licence_block(m, &snap.files))
+}
+
+/// A widget a runtime runs, built-in or custom, on one path: the runtime
+/// resolved (a built-in from this build; a custom one read and judged once
+/// per export), the widget bound to its `runtime.json` (an error refuses
+/// the export), its sources added, its document folded and its runtime
+/// listed. A custom widget whose runtime cannot run is left to its poster
+/// with a note. Returns the document and the bound options when live.
+fn plan_runtime(
+    p: &mut Plan,
+    w: &Widget,
+    sources: &mut Map<String, Value>,
+    inline_opt: bool,
+) -> Result<CustomPlan, String> {
+    let id = w.id.clone();
+    let r = w.runtime.clone().unwrap_or_default();
+    let builtin = match w.kind.builtin() {
+        Some(kind) => Some(
+            crate::builtins::by_ref(&r)
+                .filter(|b| b.manifest.name == kind.manifest.name)
+                .ok_or_else(|| format!("widget {id}: no {r} runtime in this build"))?,
+        ),
+        None => None,
+    };
+    let used = match builtin {
+        Some(_) => None,
+        None => Some(p.runtime(&r)?),
+    };
+    let (m, custom) = match (builtin, used.as_deref()) {
+        (Some(b), _) => (&b.manifest, None),
+        (None, Some(RuntimeUse::Valid(v))) => (&v.manifest, Some(&**v)),
+        (None, Some(RuntimeUse::Unusable(why))) => {
+            p.fall_back(&r, &id, why.clone());
+            return Ok((None, None));
+        }
+        (None, None) => unreachable!("a custom runtime is always read"),
+    };
+    let bound = crate::runtimes::bind(w, m)?;
+    if let Some(why) = custom.and_then(|v| v.verdict.as_ref()) {
+        p.fall_back(&r, &id, why.clone());
+        return Ok((None, None));
+    }
+    // A live declaring widget runs srcdoc'd under the single-file reader
+    // page: the page's own policy must carry the token, or the inherited
+    // one blocks the compile. Folder widgets are documents of their own.
+    if m.capabilities.wasm {
+        p.wasm_live = true;
+    }
+    // A remote role (a built-in's) may come as remote= with its sha256=;
+    // its local file, if given, is then the copy that is hashed.
+    let remote = option(w, "remote").filter(|u| builtin.is_some() && !u.is_empty());
+    let remote_role = m
+        .sources
+        .iter()
+        .find(|(_, s)| s.remote)
+        .map(|(role, _)| role.as_str());
+    let mut remote_local: Option<&str> = None;
+    for (key, s) in &bound.sources {
+        if remote.is_some() && remote_role == Some(s.role.as_str()) {
+            remote_local = Some(&s.path);
+            continue;
+        }
+        let asset = format!("{id}-{key}");
+        p.add_local(asset.clone(), &id, &s.path, inline_opt)?;
+        // A package's caps hold its sources; a built-in is trusted.
+        if builtin.is_none() {
+            let bytes = p.assets.get(&asset).map_or(0, |a| a.bytes);
+            crate::runtimes::check_size(w, m, key, bytes)?;
+        }
+        sources.insert(key.clone(), asset.into());
+    }
+    if let (Some(url), Some(role)) = (remote, remote_role) {
+        let asset = format!("{id}-{role}");
+        p.add_remote(
+            asset.clone(),
+            &id,
+            role,
+            url,
+            remote_local,
+            option(w, "sha256").filter(|s| !s.is_empty()),
+        )?;
+        sources.insert(role.into(), asset.into());
+    }
+    let (doc, digest) = match (builtin, custom) {
+        (Some(b), _) => (
+            fold::widget_document(b.host, &fold::widget_policy(None)),
+            sha_of(b.host.as_bytes()),
+        ),
+        (None, Some(v)) => (
+            custom_document(p, &id, &r, &v.snap, m)?,
+            v.snap.digest.clone(),
+        ),
+        (None, None) => unreachable!("a live widget has a runtime"),
+    };
     p.runtime_entries.insert(
         r.clone(),
         json!({
             "name": m.name,
             "version": m.version,
-            "digest": snap.digest,
+            "builtin": builtin.is_some(),
+            "digest": digest,
             "license": m.license,
             "capabilities": { "webgl": m.capabilities.webgl, "wasm": m.capabilities.wasm },
             "vendored": m.vendored.iter().map(|v| json!({
@@ -1064,19 +1134,6 @@ fn plan_widget(
         ));
     }
     let inline_opt = option(w, "inline").is_some_and(truthy);
-    let remote = option(w, "remote").filter(|r| !r.is_empty());
-    // The role a remote URL may stand in for, if the kind's runtime has one.
-    let remote_role = w
-        .kind
-        .builtin()
-        .and_then(|b| b.manifest.sources.iter().find(|(_, r)| r.remote))
-        .map(|(role, _)| role.as_str());
-    if remote.is_some() && remote_role.is_none() {
-        return Err(format!(
-            "widget {id}: {} widgets take no remote= source",
-            w.kind.name()
-        ));
-    }
 
     // The poster is what the pdf shows: the document's own, else the
     // cached auto-poster, else (a table's typeset rows, a placeholder)
@@ -1121,8 +1178,8 @@ fn plan_widget(
     // A widget's declared origins come from the snapshot whose files are
     // folded, never from an earlier read: the policy and the code match.
     let mut csp: Option<crate::widgets::WidgetCsp> = None;
-    // A live custom widget's bound options.
-    let mut custom_options: Option<Map<String, Value>> = None;
+    // A live runtime widget's bound options.
+    let mut bound_options: Option<Map<String, Value>> = None;
 
     let doc: Option<String> = if w.kind == WidgetType::Html {
         let target = crate::widget_approval::WidgetTarget::of(p.main_rel, w)?
@@ -1172,42 +1229,10 @@ fn plan_widget(
         } else {
             Some(folded.html)
         }
-    } else if w.kind == WidgetType::Custom {
-        let (doc, options) = plan_custom(p, w, &mut sources)?;
-        custom_options = options;
-        doc
     } else {
-        let mut remote_local: Option<&str> = None;
-        for (role_key, s) in role_keys(w)? {
-            if remote.is_some() && remote_role == Some(s.role.as_str()) {
-                remote_local = Some(&s.path);
-                continue;
-            }
-            let key = format!("{id}-{role_key}");
-            p.add_local(key.clone(), &id, &s.path, inline_opt)?;
-            sources.insert(role_key, key.into());
-        }
-        if let (Some(url), Some(role)) = (remote, remote_role) {
-            let key = format!("{id}-{role}");
-            p.add_remote(
-                key.clone(),
-                &id,
-                role,
-                url,
-                remote_local,
-                option(w, "sha256").filter(|s| !s.is_empty()),
-            )?;
-            sources.insert(role.into(), key.into());
-        }
-        if let Some(role) = w.kind.builtin().map(|b| b.manifest.primary_role()) {
-            if !sources.contains_key(role) {
-                return Err(format!("widget {id}: it records no {role} source"));
-            }
-        }
-        let runtime = w.runtime.as_deref().unwrap_or("");
-        let host = crate::builtins::host(runtime)
-            .ok_or_else(|| format!("widget {id}: no {runtime} runtime in this build"))?;
-        Some(fold::widget_document(host, &fold::widget_policy(None)))
+        let (doc, options) = plan_runtime(p, w, &mut sources, inline_opt)?;
+        bound_options = options;
+        doc
     };
     let entry = (p.profile != BundleProfile::SingleFile && doc.is_some())
         .then(|| format!("widgets/{id}/index.html"));
@@ -1240,8 +1265,8 @@ fn plan_widget(
     if w.kind != WidgetType::Html {
         j.insert("sources".into(), Value::Object(sources));
     }
-    if w.kind == WidgetType::Custom {
-        match custom_options {
+    if w.kind != WidgetType::Html {
+        match bound_options {
             Some(o) => {
                 j.insert("options".into(), Value::Object(o));
             }
@@ -1252,6 +1277,7 @@ fn plan_widget(
             }
         }
     } else {
+        // Author HTML binds to no runtime.json: its options pass as written.
         let opts = runtime_options(w);
         if !opts.is_empty() {
             j.insert("options".into(), Value::Object(opts));
@@ -1376,16 +1402,20 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
             return Err(format!("widget {id} has an entry in a single-file bundle"));
         }
     }
-    // Custom runtimes: every live widget's runtime is listed and every
+    // Runtimes: every live runtime widget's runtime is listed and every
     // listed runtime is run by a live widget; a listed runtime's name and
-    // major match its ref; a fallback widget carries nothing to run; no
+    // major match its ref; a built-in is flagged, known to this build and
+    // runs widgets of its own kind, a package runs custom widgets under a
+    // name no built-in takes; a fallback widget carries nothing to run; no
     // custom widget declares origins.
     let runtimes = m["runtimes"].as_object().cloned().unwrap_or_default();
     let mut used = BTreeSet::new();
-    for w in widgets.iter().filter(|w| w["type"] == "custom") {
+    for w in widgets.iter().filter(|w| w["type"] != "html") {
         let id = w["id"].as_str().unwrap_or("");
+        let kind = w["type"].as_str().unwrap_or("");
         let r = w["runtime"].as_str().unwrap_or("");
-        if w.get("csp").is_some() {
+        let custom = kind == "custom";
+        if custom && w.get("csp").is_some() {
             return Err(format!("custom widget {id} declares a csp"));
         }
         if w.get("fallback").is_some() {
@@ -1395,13 +1425,24 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
                     "widget {id} falls back to its poster but carries sources, an entry or options"
                 ));
             }
-        } else if !runtimes.contains_key(r) {
+            continue;
+        }
+        let Some(e) = runtimes.get(r) else {
             return Err(format!(
                 "widget {id} runs runtime {r}, which the manifest does not list"
             ));
+        };
+        let runs_its_kind = if custom {
+            e["builtin"] == false
         } else {
-            used.insert(r.to_string());
+            e["builtin"] == true && e["name"] == kind
+        };
+        if !runs_its_kind {
+            return Err(format!(
+                "widget {id} is a {kind} widget, which runtime {r} does not run"
+            ));
         }
+        used.insert(r.to_string());
     }
     for (r, e) in &runtimes {
         if !used.contains(r) {
@@ -1412,9 +1453,14 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
             .and_then(|v| v.split('.').next())
             .unwrap_or("");
         let named = format!("{}@{major}", e["name"].as_str().unwrap_or(""));
-        if !crate::runtimes::valid_ref(r) || named != *r {
+        let known = if e["builtin"] == true {
+            crate::builtins::by_ref(r).is_some()
+        } else {
+            crate::runtimes::valid_ref(r)
+        };
+        if !known || named != *r {
             return Err(format!(
-                "runtime {r} is listed as {named}, or names a reserved runtime"
+                "runtime {r} is listed as {named}, or is not the built-in or package it is flagged as"
             ));
         }
     }
@@ -2197,7 +2243,7 @@ fn export_inner(
     let cap = opts.size_cap_bytes.unwrap_or(DEFAULT_SIZE_CAP_BYTES);
     let mut manifest = Map::new();
     manifest.insert("format".into(), FORMAT.into());
-    manifest.insert("formatVersion".into(), 1.into());
+    manifest.insert("formatVersion".into(), FORMAT_VERSION.into());
     manifest.insert(
         "generator".into(),
         json!({ "name": "maleficium", "version": env!("CARGO_PKG_VERSION") }),

@@ -1,0 +1,9 @@
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\begin{document}
+\interactivevideo[poster=figures/clip.png, height=3cm, id=fig-loop, alt={Looping clip},
+  loop=true, muted=true]{media/clip.mp4}
+
+\interactivetable[pdfrows=2, id=tab-sorted, alt={Sorted scores},
+  sort={score desc}, columns={name;score}, format={score=fixed:1}, maxrows=3]{data/results.csv}
+\end{document}
