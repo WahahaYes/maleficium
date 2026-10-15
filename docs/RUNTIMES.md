@@ -31,8 +31,10 @@ The manifest names the runtime, its licence, the source files it accepts, its op
 - `title`, `description`, `authors`, `license` (from the allowlist).
 - `sources`: the roles the widget binds files to. Each role is `{required, extensions, primary?, maxBytes?, description?}`. Exactly one role is `primary: true`, and it must be required.
 - `options`: an optional closed schema of string, number, integer and boolean properties, each with a default. The host sends them typed and defaulted.
-- `capabilities`: `{webgl, wasm?}`. `wasm` defaults to false; see [Contract 2: WebAssembly](#contract-2-webassembly).
+- `capabilities`: `{webgl, wasm?}`. `wasm` defaults to false; see [WebAssembly](#webassembly).
 - `vendored`: each third-party library's name, version, allowlist licence, `source` (a claim, never fetched), its `files` under `vendor/`, and its `licenseFile`.
+
+`kit`, `params` and `extends` are reserved for a later contract. The built-in runtimes' manifests (`embed-runtime/src/<name>/runtime.json`) are contract 2, which only built-ins may use yet: roles may `repeat` or take a `remote` URL, options may name a `format` or be `pdf`-only, and `poster` is `render`, `crop` or `author`.
 
 ## Bridge messages
 
@@ -108,7 +110,7 @@ Vendored files are checked only for remote URLs. Metadata is not scanned. The ch
 
 `bad-cdn@1` beside it is the negative example: one CDN `<script src>`, which fails the scan with `url-load`.
 
-## Contract 2: WebAssembly
+## WebAssembly
 
 WebAssembly is opt-in. A runtime that compiles a module declares `"wasm": true` under `capabilities`. Undeclared use (the `WebAssembly` identifier, or a `.wasm` string or file reference) is a scan error. Vendored files are not checked for it; the policy catches what the scan misses.
 
