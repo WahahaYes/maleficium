@@ -25,15 +25,23 @@ pub const MANIFEST: &str = "runtime.json";
 /// The sidecar role the macro's mandatory argument is recorded under; bind
 /// maps it to the runtime's primary role.
 pub const PRIMARY: &str = "primary";
-/// The only `runtime.json` contract this build reads.
+/// The only `runtime.json` contract this build reads from a package.
 pub const CONTRACT: u64 = 1;
-
-/// Runtime names a package may not take: the built-in kinds and `custom`.
-pub const RESERVED_NAMES: [&str; 6] = ["model", "video", "table", "chart", "html", "custom"];
+/// The contract of the built-in runtimes this build embeds
+/// ([`crate::builtins`]): contract 1 plus repeatable and remote roles,
+/// option formats, PDF-only options and a poster strategy.
+pub const BUILTIN_CONTRACT: u64 = 2;
+/// Top-level keys kept for the composable-widgets contract, refused until then.
+const RESERVED_KEYS: [&str; 3] = ["kit", "params", "extends"];
 /// Name prefixes the package keeps for itself.
 pub const RESERVED_PREFIXES: [&str; 2] = ["m-", "maleficium"];
-/// Option keys a runtime may not declare: every key the macros take, the
-/// sidecar's own `sources` and `primary`, and the poster parameters.
+/// Option keys no runtime may declare, built-ins included: the keys every
+/// macro takes and the sidecar's own `sources` and `primary`.
+const MACRO_KEYS: [&str; 9] = [
+    "runtime", "poster", "height", "width", "id", "alt", "sources", "primary", "inline",
+];
+/// Option keys a package may not declare: [`MACRO_KEYS`], the built-ins'
+/// own keys and the poster parameters.
 pub const RESERVED_OPTIONS: [&str; 19] = [
     "runtime",
     "poster",
@@ -123,10 +131,15 @@ pattern!(
     r"^-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,15})?([eE][+-]?[0-9]{1,3})?$"
 );
 
+/// A name a package may not take: a built-in's, `html` or `custom`.
+pub fn reserved_name(n: &str) -> bool {
+    matches!(n, "html" | "custom") || crate::builtins::by_name(n).is_some()
+}
+
 /// A runtime name: the name pattern, not reserved.
 pub fn valid_name(n: &str) -> bool {
     name_re().is_match(n)
-        && !RESERVED_NAMES.contains(&n)
+        && !reserved_name(n)
         && !RESERVED_PREFIXES.iter().any(|p| n.starts_with(p))
 }
 
@@ -137,10 +150,13 @@ pub fn valid_ref(r: &str) -> bool {
 
 /// The name and major of a valid ref.
 pub fn split_ref(r: &str) -> Option<(&str, u32)> {
+    split_any_ref(r).filter(|(name, _)| valid_name(name))
+}
+
+/// [`split_ref`] without the reserved-name rule: a built-in's ref passes.
+fn split_any_ref(r: &str) -> Option<(&str, u32)> {
     let c = ref_re().captures(r)?;
-    let name = c.get(1)?.as_str();
-    let major = c.get(2)?.as_str().parse().ok()?;
-    valid_name(name).then_some((name, major))
+    Some((c.get(1)?.as_str(), c.get(2)?.as_str().parse().ok()?))
 }
 
 /// A source role name: plain, and not the sidecar's reserved `primary`.
@@ -185,6 +201,17 @@ pub struct SourceRole {
     pub max_bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Contract 2: the role may be given more than once.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub repeat: bool,
+    /// Contract 2: a `remote=` https URL with its `sha256=` may stand in
+    /// for the local file.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub remote: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_max_bytes() -> u64 {
@@ -211,6 +238,39 @@ impl OptionType {
     }
 }
 
+/// Contract 2: the canonical form an option's value is checked and
+/// rewritten to, by the poster parameters' rules ([`crate::widgets::params`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OptionFormat {
+    Camera,
+    Size,
+    Background,
+    Scale,
+}
+
+impl OptionFormat {
+    /// The value type a format's canonical form has.
+    fn kind(self) -> OptionType {
+        match self {
+            Self::Scale => OptionType::Number,
+            Self::Camera | Self::Size | Self::Background => OptionType::String,
+        }
+    }
+}
+
+/// Contract 2: where a widget's poster comes from when the document gives
+/// none. `render` snapshots the live runtime, `crop` cuts the widget's
+/// typeset area from the PDF, `author` requires `poster=`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PosterStrategy {
+    #[default]
+    Render,
+    Crop,
+    Author,
+}
+
 /// One option a runtime declares.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -229,6 +289,13 @@ pub struct OptionSpec {
     pub maximum: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_length: Option<usize>,
+    /// Contract 2: the value's canonical form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<OptionFormat>,
+    /// Contract 2: for the PDF only (the LaTeX package and the exporter
+    /// read it), never the runtime.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub pdf: bool,
 }
 
 /// The `options` object: a closed JSON-Schema-shaped object.
@@ -260,7 +327,11 @@ pub struct Vendored {
     pub license: String,
     /// Where the copy came from: a claim shown to the user, never fetched.
     pub source: String,
+    /// The copy's files and licence; empty for a built-in, whose build
+    /// bundles the library.
+    #[serde(default)]
     pub files: Vec<String>,
+    #[serde(default)]
     pub license_file: String,
 }
 
@@ -278,6 +349,12 @@ pub struct RuntimeManifest {
     pub options: Option<OptionsSchema>,
     pub capabilities: Capabilities,
     pub vendored: Vec<Vendored>,
+    #[serde(skip_serializing_if = "is_default_poster")]
+    pub poster: PosterStrategy,
+}
+
+fn is_default_poster(p: &PosterStrategy) -> bool {
+    *p == PosterStrategy::Render
 }
 
 #[derive(Deserialize)]
@@ -296,6 +373,16 @@ struct ManifestFile {
     options: Option<OptionsSchema>,
     capabilities: Capabilities,
     vendored: Vec<Vendored>,
+    #[serde(default)]
+    poster: Option<PosterStrategy>,
+}
+
+/// Who wrote a manifest: a project's package (contract 1) or this build
+/// (a built-in, contract 2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Package,
+    Builtin,
 }
 
 impl RuntimeManifest {
@@ -330,6 +417,13 @@ fn check_option(k: &str, o: &OptionSpec) -> Result<(), String> {
         if !plain_text(d, 0, MAX_STRING) {
             return bad("description must be at most 200 characters, no control characters");
         }
+    }
+    if let Some(f) = o.format.filter(|f| f.kind() != o.kind) {
+        let applies = match f.kind() {
+            OptionType::Number => "format applies to number options only",
+            _ => "format applies to string options only",
+        };
+        return bad(applies);
     }
     let numeric = matches!(o.kind, OptionType::Number | OptionType::Integer);
     if o.choices.is_some() && o.kind != OptionType::String {
@@ -463,23 +557,44 @@ fn convert(k: &str, o: &OptionSpec, raw: &str) -> Result<Value, String> {
 /// (`<name>@<major>`, its folder name). Every message is prefixed
 /// `runtime <ref>: `.
 pub fn parse_manifest(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
-    parse_inner(reference, text).map_err(|e| format!("runtime {reference}: {e}"))
+    parse_inner(reference, text, Origin::Package).map_err(|e| format!("runtime {reference}: {e}"))
 }
 
-fn parse_inner(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
+/// Parse and check a built-in's embedded `runtime.json` (contract 2): its
+/// name is a reserved one, and its vendored libraries list no files.
+pub(crate) fn parse_builtin(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
+    parse_inner(reference, text, Origin::Builtin)
+        .map_err(|e| format!("built-in runtime {reference}: {e}"))
+}
+
+fn parse_inner(reference: &str, text: &str, origin: Origin) -> Result<RuntimeManifest, String> {
     if text.len() > crate::widgets::MAX_MANIFEST_BYTES {
         return Err(format!("{MANIFEST} is larger than 64 KiB"));
     }
+    let split = match origin {
+        Origin::Package => split_ref(reference),
+        Origin::Builtin => split_any_ref(reference).filter(|(n, _)| name_re().is_match(n)),
+    };
     let (folder_name, major) =
-        split_ref(reference).ok_or_else(|| format!("`{reference}` is not <name>@<major>"))?;
+        split.ok_or_else(|| format!("`{reference}` is not <name>@<major>"))?;
     let raw: Value =
         serde_json::from_str(text).map_err(|e| format!("{MANIFEST} is not valid JSON: {e}"))?;
+    if let Some(k) = RESERVED_KEYS.iter().find(|k| raw.get(**k).is_some()) {
+        return Err(format!("`{k}` is reserved for a later contract"));
+    }
+    let contract = match origin {
+        Origin::Package => CONTRACT,
+        Origin::Builtin => BUILTIN_CONTRACT,
+    };
     if let Some(c) = raw.get("contract") {
-        if c.as_u64() != Some(CONTRACT) {
-            return Err(format!("contract must be 1, found {c}"));
+        if c.as_u64() != Some(contract) {
+            return Err(format!("contract must be {contract}, found {c}"));
         }
     }
     let f: ManifestFile = serde_json::from_value(raw).map_err(|e| format!("{MANIFEST}: {e}"))?;
+    if origin == Origin::Package {
+        check_contract_1(&f)?;
+    }
     if f.name != folder_name {
         return Err(format!("name `{}` does not match its folder", f.name));
     }
@@ -561,6 +676,12 @@ fn parse_inner(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
             primaries[0]
         ));
     }
+    if f.sources[primaries[0]].repeat {
+        return Err(format!(
+            "sources: the primary role {} cannot repeat",
+            primaries[0]
+        ));
+    }
     if let Some(o) = &f.options {
         if o.kind != "object" {
             return Err("options: type must be \"object\"".to_string());
@@ -572,7 +693,11 @@ fn parse_inner(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
             return Err("options: at most 32 properties".to_string());
         }
         for (k, spec) in &o.properties {
-            if !valid_option_key(k) || RESERVED_OPTIONS.contains(&k.as_str()) {
+            let reserved = match origin {
+                Origin::Package => RESERVED_OPTIONS.contains(&k.as_str()),
+                Origin::Builtin => MACRO_KEYS.contains(&k.as_str()),
+            };
+            if !valid_option_key(k) || reserved {
                 return Err(format!("options: `{k}` is not an allowed option name"));
             }
             check_option(k, spec)?;
@@ -603,6 +728,17 @@ fn parse_inner(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
                 "vendored {n}: source is longer than 2048 characters"
             ));
         }
+        if origin == Origin::Builtin {
+            if !v.files.is_empty() || !v.license_file.is_empty() {
+                return Err(format!(
+                    "vendored {n}: a built-in lists no files, its build bundles the library"
+                ));
+            }
+            continue;
+        }
+        if v.license_file.is_empty() {
+            return Err(format!("vendored {n}: licenseFile is missing"));
+        }
         if v.files.is_empty() || v.files.len() > MAX_VENDORED_FILES {
             return Err(format!("vendored {n}: files must list 1 to 256 paths"));
         }
@@ -626,7 +762,34 @@ fn parse_inner(reference: &str, text: &str) -> Result<RuntimeManifest, String> {
         options: f.options,
         capabilities: f.capabilities,
         vendored: f.vendored,
+        poster: f.poster.unwrap_or_default(),
     })
+}
+
+/// A package's manifest uses none of contract 2's additions.
+fn check_contract_1(f: &ManifestFile) -> Result<(), String> {
+    let only = |what: String| Err(format!("{what} needs contract 2, which only built-ins use"));
+    if f.poster.is_some() {
+        return only("poster".to_string());
+    }
+    for (r, s) in &f.sources {
+        if s.repeat {
+            return only(format!("sources.{r}.repeat"));
+        }
+        if s.remote {
+            return only(format!("sources.{r}.remote"));
+        }
+    }
+    let empty = BTreeMap::new();
+    for (k, o) in f.options.as_ref().map_or(&empty, |o| &o.properties) {
+        if o.format.is_some() {
+            return only(format!("options.{k}.format"));
+        }
+        if o.pdf {
+            return only(format!("options.{k}.pdf"));
+        }
+    }
+    Ok(())
 }
 
 fn extension(path: &str) -> Option<String> {

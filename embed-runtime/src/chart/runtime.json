@@ -1,0 +1,56 @@
+{
+  "contract": 2,
+  "name": "chart",
+  "version": "1.0.0",
+  "title": "Chart",
+  "description": "Renders a Vega-Lite or Vega spec, its data given as files.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "poster": "render",
+  "sources": {
+    "spec": {
+      "primary": true,
+      "required": true,
+      "extensions": ["json"],
+      "description": "The Vega-Lite or Vega spec."
+    },
+    "data": {
+      "required": false,
+      "repeat": true,
+      "extensions": ["csv", "tsv", "json"],
+      "description": "A data file the spec names by file name."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "scale": {
+        "type": "number",
+        "format": "scale",
+        "description": "The poster's pixels per CSS pixel, above 0 and at most 8."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": [
+    {
+      "name": "vega",
+      "version": "6.4.0",
+      "license": "BSD-3-Clause",
+      "source": "https://www.npmjs.com/package/vega"
+    },
+    {
+      "name": "vega-lite",
+      "version": "6.4.3",
+      "license": "BSD-3-Clause",
+      "source": "https://www.npmjs.com/package/vega-lite"
+    },
+    {
+      "name": "vega-interpreter",
+      "version": "2.3.2",
+      "license": "BSD-3-Clause",
+      "source": "https://www.npmjs.com/package/vega-interpreter"
+    }
+  ]
+}

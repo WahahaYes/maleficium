@@ -1,0 +1,33 @@
+{
+  "contract": 2,
+  "name": "video",
+  "version": "1.0.0",
+  "title": "Video",
+  "description": "Plays a video file with native controls.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "poster": "author",
+  "sources": {
+    "video": {
+      "primary": true,
+      "required": true,
+      "remote": true,
+      "extensions": ["mp4", "m4v", "webm", "ogv", "ogg", "mov"],
+      "description": "The video; remote= with sha256= may stand in for a local copy."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "loop": {
+        "type": "boolean",
+        "default": false,
+        "description": "Play again from the start at the end."
+      },
+      "muted": { "type": "boolean", "default": false, "description": "Start with the sound off." }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}
