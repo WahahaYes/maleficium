@@ -10,7 +10,9 @@
 //! `allow-same-origin` (the 2026-09-30 browser export spike). A single-file
 //! bundle mounts each folded widget document as `srcdoc`; a folder bundle
 //! points the frame at `widgets/<id>/index.html` (http or https only: over
-//! file:// the page says so instead of showing a broken view).
+//! file:// the page says so instead of showing a broken view). A widget
+//! mounts lazily: its poster stands until the figure nears the screen while
+//! the page is visible, and only then does its frame get its document.
 
 use super::flags::Measure;
 use super::fold;
@@ -368,6 +370,18 @@ mod tests {
             !h.contains("rec.fig.classList.add('live')"),
             "live is set on the loaded report, never on the init send"
         );
+    }
+
+    #[test]
+    fn widgets_mount_when_near_the_screen_and_visible_never_when_held_back() {
+        let h = page(false);
+        assert!(h.contains("new IntersectionObserver("));
+        assert!(h.contains("document.visibilityState === 'hidden'"));
+        assert!(h.contains("fig.getAttribute('data-approval') === 'required'"));
+        assert!(h.contains("fig.setAttribute('data-state', 'deferred')"));
+        // The widget documents are read at the first mount, not at load.
+        assert!(h.contains("var docs = null;"));
+        assert!(!h.contains("var docs = island("));
     }
 
     #[test]

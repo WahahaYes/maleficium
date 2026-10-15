@@ -25,7 +25,9 @@
     return;
   }
   var manifest = island('mfw-manifest');
-  var docs = island('mfw-widgets');
+  // The single-file widget documents are read on the first mount, not at
+  // load: a page whose widgets stay off screen never parses them.
+  var docs = null;
   var blobs = island('mfw-assets');
   // The paper's theme record, the one the page's CSS was written from:
   // every widget gets the same values the chrome is styled with.
@@ -328,16 +330,71 @@
       !Object.prototype.hasOwnProperty.call(manifest.runtimes || {}, w.runtime)
     )
       return false;
-    return FOLDER || typeof docs[w.id] === 'string';
+    return true;
   }
+  // The document a widget's frame gets: the folded document of a
+  // single-file bundle (null when it carries none), or the folder's own
+  // file. Read only here, at mount, so work done per widget when it is
+  // shown (splicing shared modules into its document) has one place to go.
+  function documentOf(w) {
+    if (FOLDER) return w.entry;
+    if (docs === null) docs = island('mfw-widgets');
+    return typeof docs[w.id] === 'string' ? docs[w.id] : null;
+  }
+  // Widgets mount lazily: each figure shows its poster until it comes near
+  // the screen (half a screen ahead) while the page is visible, and only
+  // then gets its frame and its runtime. A figure held back for approval
+  // never mounts. Once mounted a widget stays mounted.
+  var waiting = [];
+  function start(item) {
+    var i = waiting.indexOf(item);
+    if (i < 0) return;
+    waiting.splice(i, 1);
+    if (io) io.unobserve(item.fig);
+    try {
+      mount(item.fig, item.w);
+    } catch (_) {
+      try {
+        posterOnly(item.fig, item.w);
+      } catch (_e) {
+        /* the poster stays as it is */
+      }
+    }
+  }
+  function flush() {
+    if (document.visibilityState === 'hidden') return;
+    waiting
+      .filter(function (item) {
+        return item.near || !io;
+      })
+      .forEach(start);
+  }
+  var io =
+    typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              for (var i = 0; i < waiting.length; i++) {
+                if (waiting[i].fig === e.target) waiting[i].near = e.isIntersecting;
+              }
+            });
+            flush();
+          },
+          { rootMargin: '50% 0px' },
+        )
+      : null;
+  document.addEventListener('visibilitychange', flush);
   Array.prototype.forEach.call(document.querySelectorAll('figure[data-widget]'), function (fig) {
     var w = widgets[fig.getAttribute('data-widget')];
     try {
-      if (!runnable(w)) {
+      if (!runnable(w) || fig.getAttribute('data-approval') === 'required') {
         posterOnly(fig, w);
         return;
       }
-      mount(fig, w);
+      fig.setAttribute('data-state', 'deferred');
+      var item = { fig: fig, w: w, near: false };
+      waiting.push(item);
+      if (io) io.observe(fig);
     } catch (_) {
       try {
         posterOnly(fig, w);
@@ -346,7 +403,14 @@
       }
     }
   });
+  flush();
   function mount(fig, w) {
+    var doc = documentOf(w);
+    if (doc === null) {
+      posterOnly(fig, w);
+      return;
+    }
+    fig.removeAttribute('data-state');
     var f = document.createElement('iframe');
     f.setAttribute('sandbox', 'allow-scripts');
     f.setAttribute('title', w.alt || w.id);
@@ -363,8 +427,8 @@
         applySize(rec);
       });
     }
-    if (FOLDER) f.src = w.entry;
-    else f.srcdoc = wrap(w, docs[w.id]);
+    if (FOLDER) f.src = doc;
+    else f.srcdoc = wrap(w, doc);
   }
 })();
 
