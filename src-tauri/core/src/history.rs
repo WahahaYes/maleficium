@@ -278,6 +278,14 @@ impl Store {
 
     /// Snapshot one file's content.
     pub fn record(&self, rel: &str, bytes: &[u8]) -> RecordOutcome {
+        self.record_over(rel, None, bytes)
+    }
+
+    /// Snapshot `bytes` saved over `prior`, the content on disk before the
+    /// write. `prior` is kept first when it is not the latest revision (a
+    /// file's first save, an external edit since), so every save can be
+    /// undone; the outcome is the saved content's.
+    pub fn record_over(&self, rel: &str, prior: Option<&[u8]>, bytes: &[u8]) -> RecordOutcome {
         if let Some(r) = ineligible(rel, bytes.len() as u64) {
             return skipped(r);
         }
@@ -287,7 +295,19 @@ impl Store {
         let Ok(mut index) = self.read_index() else {
             return skipped(RevisionSkipReason::IndexUnreadable);
         };
-        match self.add(&mut index, rel, bytes, None) {
+        let kept = match prior.filter(|p| ineligible(rel, p.len() as u64).is_none()) {
+            Some(p) => match self.add(&mut index, rel, p, None) {
+                Ok(k) => k,
+                Err(_) => return skipped(RevisionSkipReason::Unavailable),
+            },
+            None => None,
+        };
+        // Saving the bytes already on disk: the prior's revision holds them.
+        let added = match self.add(&mut index, rel, bytes, None) {
+            Ok(None) if prior == Some(bytes) => Ok(kept),
+            r => r,
+        };
+        match added {
             Ok(None) => skipped(RevisionSkipReason::Unchanged),
             Ok(Some((rev, deduped))) => match self.commit(index) {
                 Ok(()) => RecordOutcome {
@@ -419,6 +439,20 @@ pub fn record(cx: &Core, root_id: &str, rel: &str, bytes: &[u8]) -> RecordOutcom
     }
 }
 
+/// `Store::record_over` for a session root.
+pub fn record_over(
+    cx: &Core,
+    root_id: &str,
+    rel: &str,
+    prior: Option<&[u8]>,
+    bytes: &[u8],
+) -> RecordOutcome {
+    match store_of(cx, root_id) {
+        Ok(s) => s.record_over(rel, prior, bytes),
+        Err(_) => skipped(RevisionSkipReason::Unavailable),
+    }
+}
+
 pub fn record_batch(
     cx: &Core,
     root_id: &str,
@@ -521,6 +555,34 @@ mod tests {
         let other = s.record("b.tex", b"x");
         assert_eq!(other.deduped, Some(true));
         assert_eq!(s.retention().bytes, 2);
+    }
+
+    #[test]
+    fn a_save_keeps_the_content_it_overwrites_unless_already_kept() {
+        let (s, _) = tmp_store("over");
+        // First save of a file with no history: the original is kept too.
+        let o = s.record_over("a.tex", Some(b"orig"), b"one");
+        assert_eq!((o.stored, o.rev.as_deref()), (true, Some("2")));
+        assert_eq!(s.get("a.tex", "1").unwrap(), b"orig");
+        // The disk matches the latest revision: only the save is added.
+        s.record_over("a.tex", Some(b"one"), b"two");
+        assert_eq!(s.list("a.tex").len(), 3);
+        // An outside edit since the last revision is kept before the save.
+        s.record_over("a.tex", Some(b"outside"), b"three");
+        let revs: Vec<_> = s.list("a.tex").into_iter().map(|r| r.rev).collect();
+        assert_eq!(revs, ["5", "4", "3", "2", "1"]);
+        assert_eq!(s.get("a.tex", "4").unwrap(), b"outside");
+        // Saving what is on disk over a file with no history keeps it once.
+        let same = s.record_over("b.tex", Some(b"x"), b"x");
+        assert!(same.stored, "{same:?}");
+        assert_eq!(s.list("b.tex").len(), 1);
+        assert_eq!(
+            s.record_over("b.tex", Some(b"x"), b"x").reason,
+            Some(RevisionSkipReason::Unchanged)
+        );
+        // A new file has no prior.
+        s.record_over("c.tex", None, b"new");
+        assert_eq!(s.list("c.tex").len(), 1);
     }
 
     #[test]
