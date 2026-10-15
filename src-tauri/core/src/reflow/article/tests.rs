@@ -72,39 +72,39 @@ fn the_mount_unit_is_the_markup_the_page_script_mounts() {
 fn frames_keep_the_content_aspect_and_give_the_author_width_as_a_fraction() {
     // The aspect is the poster as placed; the author's height never enters.
     assert_eq!(
-        frame("chart", None, Some(100.0), Some(200.0), (60.0, 30.0)),
+        frame(false, None, Some(100.0), Some(200.0), (60.0, 30.0)),
         ((60.0, 30.0), Some(0.5))
     );
-    // A model is its size=, else 4:3.
+    // A fixed-size runtime (model) is its size=, else 4:3.
     assert_eq!(
-        frame("model", Some((800, 600)), None, Some(200.0), (9.0, 9.0)),
+        frame(true, Some((800, 600)), None, Some(200.0), (9.0, 9.0)),
         ((800.0, 600.0), None)
     );
     assert_eq!(
-        frame("model", None, None, None, (9.0, 9.0)),
+        frame(true, None, None, None, (9.0, 9.0)),
         ((4.0, 3.0), None)
     );
     // The full line, or wider, is the full column: no fraction.
     assert_eq!(
-        frame("video", None, Some(200.0), Some(200.0), (9.0, 9.0)),
+        frame(false, None, Some(200.0), Some(200.0), (9.0, 9.0)),
         ((9.0, 9.0), None)
     );
     assert_eq!(
-        frame("video", None, Some(300.0), Some(200.0), (9.0, 9.0)),
+        frame(false, None, Some(300.0), Some(200.0), (9.0, 9.0)),
         ((9.0, 9.0), None)
     );
     // Without the line (an older sidecar) or a width, no fraction.
     assert_eq!(
-        frame("chart", None, Some(100.0), None, (60.0, 30.0)),
+        frame(false, None, Some(100.0), None, (60.0, 30.0)),
         ((60.0, 30.0), None)
     );
     assert_eq!(
-        frame("chart", None, None, Some(200.0), (60.0, 30.0)),
+        frame(false, None, None, Some(200.0), (60.0, 30.0)),
         ((60.0, 30.0), None)
     );
     // A degenerate rect falls back to 4:3, never a zero aspect.
     assert_eq!(
-        frame("chart", None, None, None, (0.0, 0.0)),
+        frame(false, None, None, None, (0.0, 0.0)),
         ((4.0, 3.0), None)
     );
 }
