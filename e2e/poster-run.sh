@@ -9,6 +9,13 @@
 # works; a table widget is refused; the project, explicit posters
 # included, is never written.
 #
+# Video posters from at= (seconds): frame-indexed H.264 and VP9 clips render
+# the exact frame asked for (mid-GOP and past the end included), each in a
+# window with hardware acceleration off; a video with no at= is refused; a
+# hanging runtime on a video with at= is killed at its time limit. The
+# two-pass compile then renders an at= video with no poster= into the cache
+# through the subprocess renderer.
+#
 # The html gate, with a probe widget (no poster=) whose script, if it ever
 # runs, paints the poster magenta (its marker): unapproved it returns
 # approval_required and writes nothing; approved in the app data store (as
@@ -285,6 +292,73 @@ check("the renderer still works after a kill", again["ok"], str(again)[:300])
 r, _ = render("tab", "tab.png")
 check("tab is refused", not r["ok"] and "cropped from the PDF" in r.get("error", ""), str(r)[:300])
 
+# --- video posters from at= ------------------------------------------------------
+def frame_of(path):
+    """The frame index a frames.* poster shows (left half N mod 20, right half
+    N div 20, as luma codes 12k+8 read back as grey), and its size."""
+    b = open(path, "rb").read()
+    w, h, bpp = int.from_bytes(b[16:20], "big"), int.from_bytes(b[20:24], "big"), {2: 3, 6: 4}[b[25]]
+    idat, i = b"", 8
+    while i < len(b):
+        n = int.from_bytes(b[i:i + 4], "big")
+        if b[i + 4:i + 8] == b"IDAT":
+            idat += b[i + 8:i + 8 + n]
+        i += 12 + n
+    raw, stride, prev, rows = zlib.decompress(idat), w * bpp, bytearray(w * bpp), []
+    for y in range(h):
+        f, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for x in range(stride):
+            a = line[x - bpp] if x >= bpp else 0
+            c = prev[x - bpp] if x >= bpp else 0
+            up = prev[x]
+            if f == 1: line[x] = (line[x] + a) & 255
+            elif f == 2: line[x] = (line[x] + up) & 255
+            elif f == 3: line[x] = (line[x] + (a + up) // 2) & 255
+            elif f == 4:
+                p = a + up - c
+                pa, pb, pc = abs(p - a), abs(p - up), abs(p - c)
+                line[x] = (line[x] + (a if pa <= pb and pa <= pc else up if pb <= pc else c)) & 255
+        rows.append(bytes(line))
+        prev = line
+    row = rows[h // 2]
+    reds = [row[(w // 4) * bpp], row[(3 * w // 4) * bpp]]
+    # Full or limited range: the one whose codes land closest to whole steps.
+    ranges = [lambda v: (v - 8) / 12, lambda v: (v * 219 / 255 + 8) / 12]
+    fit = lambda f: sum(abs(f(v) - round(f(v))) for v in reds)
+    f = min(ranges, key=fit)
+    return round(f(reds[0])) + 20 * round(f(reds[1])), (w, h)
+
+for widget, want in [("vid-h264", 60), ("vid-gop", 105), ("vid-vp9", 30), ("vid-end", 119)]:
+    r, took = render(widget, widget + ".png")
+    check(f"{widget}: an at= video renders", r["ok"] and r["result"].get("status") == "rendered", str(r)[:300])
+    got = frame_of(os.path.join(OUT, widget + ".png")) if r["ok"] else None
+    check(f"{widget}: the poster is frame {want} at the video's own 96x54", got == (want, (96, 54)),
+          str((got, round(took, 2))))
+r, _ = render("vid-still", "vid-still.png")
+check("a video with no at= is refused: its poster comes from the document",
+      not r["ok"] and "give it poster= or at=" in r.get("error", ""), str(r)[:300])
+check("...and writes nothing", not os.path.exists(os.path.join(OUT, "vid-still.png")))
+hang, took = render("vid-hang", "vid-hang.png", timeout_ms=3000)
+check("a hanging render of an at= video is stopped at its time limit",
+      not hang["ok"] and "within 3000 ms" in hang.get("error", "") and 2.9 <= took < 10,
+      str((hang, round(took, 2))))
+check("...and writes no poster", not os.path.exists(os.path.join(OUT, "vid-hang.png")))
+end, left = time.time() + 5, None
+while time.time() < end:
+    left = web_processes(app.pid)
+    if not left:
+        break
+    time.sleep(0.2)
+check("...its web process is gone", not left, str(left))
+again, _ = render("vid-h264", "vid-again.png")
+check("...and the next video render still works",
+      again["ok"] and frame_of(os.path.join(OUT, "vid-again.png"))[0] == 60, str(again)[:300])
+log_lines = open(os.path.join(OUT, "app.log")).read().splitlines()
+hw = [l for l in log_lines if l.startswith("hardware acceleration off in poster-")]
+windows = [l for l in log_lines if l.startswith("speculative loading off in poster-")]
+check("hardware acceleration is off in each at= video's window and no other",
+      len(hw) == 6 and len(windows) > len(hw), str((len(hw), len(windows))))
+
 # --- the html gate -----------------------------------------------------------
 REAL = os.path.realpath(ROOT)
 DATA = os.environ["XDG_DATA_HOME"]
@@ -418,6 +492,23 @@ check("compile: an edited probe gets an approval_required line, not a render",
       and not any(l.startswith("poster html-probe: rendered") for l in lines),
       str([l for l in lines if "poster" in l])[:400])
 check("...and no map entry: its cached poster does not stand in for the approval", not mapped())
+# An at= video with no poster=: the compile renders frame 105 into the cache
+# through the subprocess renderer and maps it.
+tex = os.path.join(ROOT, "posters.tex")
+text = open(tex).read().replace(
+    "\\interactivetable",
+    "\\interactivevideo[height=2cm, id=vid-auto, at=3.5167, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactivetable", 1)
+open(tex, "w").write(text)
+rec = compile_lines()
+lines = rec.get("lines") or []
+check("compile: an at= video with no poster= is rendered",
+      rec.get("status") == "success" and any(l == "poster vid-auto: rendered 96x54" for l in lines),
+      str([l for l in lines if "poster" in l])[:400])
+entry = next((l for l in open(MAP).read().splitlines() if "{vid-auto}" in l), "") if os.path.isfile(MAP) else ""
+key = re.search(r"[0-9a-f]{64}", entry)
+png = os.path.join(os.path.dirname(MAP), key.group(0) + ".png") if key else ""
+check("...mapped, with the frame asked for", bool(key) and os.path.isfile(png) and frame_of(png) == (105, (96, 54)),
+      entry[:300])
 # The finished compile also asked the app: a typed event in the log, which the
 # window turns into its Approve | Skip prompt.
 log = os.path.join(DATA, "io.github.wahahayes.maleficium", "maleficium-log", "events.jsonl")
