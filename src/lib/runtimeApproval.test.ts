@@ -150,6 +150,18 @@ describe('runtime model', () => {
     return { io, set: (s: WidgetsStatus) => (current = s) };
   }
 
+  it('drops a read failure once a read succeeds, as after the first compile', async () => {
+    const f = fakeIo();
+    const status0 = f.io.status;
+    f.io.status = vi.fn().mockRejectedValueOnce(new Error('main.tex has no compiled pdf'));
+    (f.io.status as ReturnType<typeof vi.fn>).mockImplementation(status0);
+    const m = createRuntimeModel(f.io, 'r', 'main.tex');
+    await m.refresh();
+    expect(m.get().notice).toContain('no compiled pdf');
+    await m.refresh();
+    expect(m.get().notice).toBeNull();
+  });
+
   it('decides the digest that was reviewed, then refreshes', async () => {
     const f = fakeIo();
     const m = createRuntimeModel(f.io, 'r', 'main.tex');

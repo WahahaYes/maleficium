@@ -62,6 +62,30 @@ describe('widgets model', () => {
     expect(m2.get().notice).toContain('never compiled');
   });
 
+  it('drops a read failure once a read succeeds, as after the first compile', async () => {
+    const f = fakeIo();
+    const status0 = f.io.status;
+    f.io.status = vi.fn().mockRejectedValueOnce(new Error('main.tex has no compiled pdf'));
+    (f.io.status as ReturnType<typeof vi.fn>).mockImplementation(status0);
+    const m = createWidgetsModel(f.io, 'r', 'main.tex');
+    await m.refresh();
+    expect(m.get().notice).toContain('no compiled pdf');
+    await m.refresh();
+    expect(m.get().notice).toBeNull();
+    expect(m.get().status?.widgets).toHaveLength(1);
+  });
+
+  it('replaces an unreadable store notice with the next read', async () => {
+    const f = fakeIo();
+    f.set({ ...status([REQ()]), storeError: 'approval store unreadable' });
+    const m = createWidgetsModel(f.io, 'r', 'main.tex');
+    await m.refresh();
+    expect(m.get().notice).toBe('approval store unreadable');
+    f.set(status([REQ()]));
+    await m.refresh();
+    expect(m.get().notice).toBeNull();
+  });
+
   it('approves the digest that was reviewed, then refreshes', async () => {
     const f = fakeIo();
     const m = createWidgetsModel(f.io, 'r', 'main.tex');
