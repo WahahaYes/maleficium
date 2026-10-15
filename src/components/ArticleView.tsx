@@ -1,8 +1,11 @@
 // ArticleView.tsx — the Article tab body.
 //
-// The bundle bytes render in a sandboxed frame: sandbox="allow-scripts"
+// The reader page renders in a sandboxed frame: sandbox="allow-scripts"
 // exactly (the reader e2e probes pin this shape), opaque origin, no bridge
-// inside. The bytes keep the reader's own CSP meta. An unapproved widget
+// inside. The frame loads the page from its own URL (the core's shelf, via
+// the `maleficium-article` scheme), never as srcdoc: a srcdoc inherits the
+// window's CSP, which refuses the reader's inline script, so nothing would
+// mount. From its URL the page runs under the reader's own CSP meta. An unapproved widget
 // shows its poster with an Approve button from the bytes themselves; the
 // button only asks the app (the Widgets panel opens so the user reviews
 // and approves there, then the article re-exports and re-renders).
@@ -22,13 +25,13 @@ import {
 import ArticleApprovalBanner from './ArticleApprovalBanner';
 
 export interface ArticleViewProps {
-  /** The bundle bytes, or null before the first load. */
-  html: string | null;
+  /** The reader page's URL, or null before the first load. */
+  src: string | null;
   loading: boolean;
   error: string | null;
   /** False with no compiled output to read (nothing to load yet). */
   canLoad: boolean;
-  /** True while a compile runs (the bytes would describe the old document). */
+  /** True while a compile runs (the page would describe the old document). */
   compiling: boolean;
   zoomPercent: number;
   onLoad: () => void;
@@ -36,7 +39,7 @@ export interface ArticleViewProps {
   anchorId: string | null;
   /** Fires when the caret section is posted into the frame. */
   onSync?: (anchorId: string) => void;
-  /** Fires when the bytes' Approve button asks for a widget. */
+  /** Fires when the page's Approve button asks for a widget. */
   onApproveRequest?: (widgetId: string) => void;
   /** Pending-approval sentence naming the held items, or null when none. */
   approvalText: string | null;
@@ -47,7 +50,7 @@ export interface ArticleViewProps {
 }
 
 export default function ArticleView({
-  html,
+  src,
   loading,
   error,
   canLoad,
@@ -66,24 +69,29 @@ export default function ArticleView({
   syncRef.current = onSync;
   const approveRef = useRef(onApproveRequest);
   approveRef.current = onApproveRequest;
+  const anchorRef = useRef(anchorId);
+  anchorRef.current = anchorId;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // Denial point for frame messages. Validates origin, source and shape,
   // then hands the approval ask to the Widgets panel round-trip.
   useEffect(() => {
-    if (!html) return;
+    if (!src) return;
     const onMessage = (e: MessageEvent) => {
       if (!isArticleMessage(e.data, e.origin, e.source, frameRef.current?.contentWindow)) return;
       approveRef.current?.(e.data.widgetId);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [html]);
+  }, [src]);
 
   // Forward-only sync: post the caret's anchor into the frame, where the
-  // bytes scroll to it. The post repeats twice: a fresh srcDoc frame may
-  // not have its listener yet on the first one. The article never replies.
+  // page scrolls to it. The post repeats twice, and the frame's load posts
+  // again: a fresh page may not have its listener yet. The article never
+  // replies.
   useEffect(() => {
-    if (!html || !anchorId) return;
+    if (!src || !anchorId) return;
     const msg = articleScrollMessage(anchorId);
     const post = () => frameRef.current?.contentWindow?.postMessage(msg, '*');
     post();
@@ -94,12 +102,12 @@ export default function ArticleView({
       clearInterval(t);
       clearTimeout(stop);
     };
-  }, [html, anchorId]);
+  }, [src, anchorId]);
 
   // The app sets the article's colour mode; like the scroll, the post
-  // repeats briefly so a fresh srcDoc frame hears it.
+  // repeats briefly (and again on load) so a fresh page hears it.
   useEffect(() => {
-    if (!html) return;
+    if (!src) return;
     const msg = articleModeMessage(mode);
     const post = () => frameRef.current?.contentWindow?.postMessage(msg, '*');
     post();
@@ -109,7 +117,16 @@ export default function ArticleView({
       clearInterval(t);
       clearTimeout(stop);
     };
-  }, [html, mode]);
+  }, [src, mode]);
+
+  // Once the page has loaded its listener is there: post the current mode
+  // and caret anchor, whatever the repeats above missed.
+  const onFrameLoad = () => {
+    const win = frameRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(articleModeMessage(modeRef.current), '*');
+    if (anchorRef.current) win.postMessage(articleScrollMessage(anchorRef.current), '*');
+  };
 
   // The pending-approval banner wraps every article state, so the held
   // items are named even before the first load or beside a load error.
@@ -129,7 +146,7 @@ export default function ArticleView({
       </Box>
     );
 
-  if (!body && !html) {
+  if (!body && !src) {
     if (compiling) body = <Typography variant="body1">Compiling…</Typography>;
     else if (!canLoad)
       body = <Typography variant="body1">No article yet — compile the paper first</Typography>;
@@ -146,7 +163,7 @@ export default function ArticleView({
       );
   }
 
-  if (!body && html) {
+  if (!body && src) {
     body = (
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <iframe
@@ -154,7 +171,8 @@ export default function ArticleView({
           title="Article"
           sandbox={articleSandbox()}
           referrerPolicy="no-referrer"
-          srcDoc={html}
+          src={src}
+          onLoad={onFrameLoad}
           style={
             {
               width: '100%',

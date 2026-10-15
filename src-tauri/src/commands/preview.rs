@@ -3,7 +3,8 @@
 //! only sandbox. The webview never names the file to open: it names a project
 //! and a main file, and the path opened is the one the core just wrote.
 
-use maleficium_core::bundle::{self, ArticleView, BundleExported};
+use maleficium_core::article_shelf::{self, ArticleServed};
+use maleficium_core::bundle::{self, BundleExported};
 use maleficium_core::Core;
 use tauri::State;
 
@@ -19,20 +20,21 @@ pub fn preview_in_browser(
     Ok(exported)
 }
 
-/// The in-app article: the reader bytes with their heading anchors for the
-/// tab view. The webview names a project and a main file only; the returned
-/// view carries no path.
+/// The in-app article: exported and shelved for the `maleficium-article`
+/// scheme (`crate::article`), returning the token the tab's frame loads and
+/// the heading anchors. The webview names a project and a main file only;
+/// nothing returned carries a path.
 #[tauri::command]
 pub fn article_bundle(
     cx: State<'_, Core>,
     root_id: String,
     main_rel: String,
-) -> Result<ArticleView, String> {
+) -> Result<ArticleServed, String> {
     article_view(&cx, &root_id, &main_rel)
 }
 
-fn article_view(cx: &Core, root_id: &str, main_rel: &str) -> Result<ArticleView, String> {
-    bundle::article_bundle(cx, root_id, main_rel)
+fn article_view(cx: &Core, root_id: &str, main_rel: &str) -> Result<ArticleServed, String> {
+    article_shelf::serve(cx, root_id, main_rel)
 }
 
 #[cfg(test)]
@@ -48,9 +50,9 @@ mod tests {
     }
 
     #[test]
-    fn the_view_reaches_the_tab_as_html_and_anchors() {
-        let view = ArticleView {
-            html: "<article></article>".into(),
+    fn the_view_reaches_the_tab_as_a_token_and_anchors() {
+        let view = ArticleServed {
+            token: "0123abcd".into(),
             anchors: vec![ArticleAnchor {
                 id: "S1".into(),
                 text: "1 One".into(),
@@ -58,7 +60,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_value(&view).unwrap(),
-            serde_json::json!({"html": "<article></article>", "anchors": [{"id": "S1", "text": "1 One"}]})
+            serde_json::json!({"token": "0123abcd", "anchors": [{"id": "S1", "text": "1 One"}]})
         );
     }
 }

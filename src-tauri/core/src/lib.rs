@@ -4,6 +4,7 @@
 //! dependency.
 
 pub mod api;
+pub mod article_shelf;
 pub mod bundle;
 pub mod compile;
 pub mod document;
@@ -58,6 +59,7 @@ pub struct Core(Arc<State>);
 #[derive(Default)]
 struct State {
     sessions: fs::Sessions,
+    articles: article_shelf::Shelf,
     jobs: compile::Jobs,
     indexes: index::Indexes,
     plans: replace::Plans,
@@ -72,6 +74,9 @@ struct State {
 impl Core {
     pub(crate) fn sessions(&self) -> &fs::Sessions {
         &self.0.sessions
+    }
+    pub(crate) fn articles(&self) -> &article_shelf::Shelf {
+        &self.0.articles
     }
     pub(crate) fn jobs(&self) -> &compile::Jobs {
         &self.0.jobs

@@ -650,7 +650,7 @@ export default function App({
             syncDisabled={compilePhase === 'compiling'}
             zoomActionRef={zoomActionRef}
             compiling={compilePhase === 'compiling'}
-            articleHtml={article.html}
+            articleSrc={article.src}
             articleLoading={article.loading}
             articleError={article.error}
             canLoadArticle={mainDoc != null && pdfUrl != null}
