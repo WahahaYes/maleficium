@@ -28,7 +28,7 @@
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
 use super::{params, read, Widget, WidgetSource, WidgetType};
-use crate::bundle::{fold, role_keys, runtime_host, runtime_options, sha_of};
+use crate::bundle::{fold, role_keys, runtime_options, sha_of};
 use crate::theme::{Mode, Theme};
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::Core;
@@ -171,7 +171,7 @@ fn host_document(runtime: &str) -> Option<&'static str> {
     if runtime == TEST_HANG_RUNTIME {
         return Some(TEST_HANG_HOST);
     }
-    runtime_host(runtime)
+    crate::builtins::host(runtime)
 }
 
 /// The tokens a poster renders with: the paper's light set. Posters are

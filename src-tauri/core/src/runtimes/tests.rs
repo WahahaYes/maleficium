@@ -325,6 +325,154 @@ fn every_manifest_rule_has_its_message() {
 }
 
 #[test]
+fn a_package_stays_on_contract_1() {
+    let v = good();
+    for (path, x, msg) in [
+        (&["poster"][..], json!("crop"), "poster needs contract 2"),
+        (
+            &["sources", "labels", "repeat"][..],
+            json!(true),
+            "sources.labels.repeat needs contract 2",
+        ),
+        (
+            &["sources", "data", "remote"][..],
+            json!(true),
+            "sources.data.remote needs contract 2",
+        ),
+        (
+            &["options", "properties", "gain", "format"][..],
+            json!("scale"),
+            "options.gain.format needs contract 2",
+        ),
+        (
+            &["options", "properties", "rows", "pdf"][..],
+            json!(true),
+            "options.rows.pdf needs contract 2",
+        ),
+    ] {
+        let e = err(with(v.clone(), path, x));
+        assert!(e.contains(msg), "{e}");
+    }
+    assert!(err(with(v, &["contract"], json!(2))).contains("contract must be 1, found 2"));
+}
+
+#[test]
+fn a_package_names_each_vendored_licence() {
+    let v = good();
+    let lib = without(v["vendored"][0].clone(), &["licenseFile"]);
+    let e = err(with(v, &["vendored"], json!([lib])));
+    assert!(
+        e.ends_with("vendored tiny-lib: licenseFile is missing"),
+        "{e}"
+    );
+}
+
+#[test]
+fn composable_keys_are_reserved() {
+    for k in ["kit", "params", "extends"] {
+        let e = err(with(good(), &[k], json!({})));
+        assert!(
+            e.ends_with(&format!("`{k}` is reserved for a later contract")),
+            "{e}"
+        );
+    }
+}
+
+fn builtin() -> Value {
+    let v = with(good(), &["contract"], json!(2));
+    let v = with(v, &["name"], json!("chart"));
+    let v = with(v, &["version"], json!("1.0.0"));
+    with(
+        v,
+        &["vendored"],
+        json!([{"name": "vega", "version": "6.4.0", "license": "BSD-3-Clause", "source": "npm"}]),
+    )
+}
+
+fn builtin_err(v: Value) -> String {
+    parse_builtin("chart@1", &v.to_string()).unwrap_err()
+}
+
+#[test]
+fn a_builtin_takes_contract_2_and_a_reserved_name() {
+    let v = with(builtin(), &["poster"], json!("crop"));
+    let v = with(v, &["sources", "labels", "repeat"], json!(true));
+    let v = with(
+        v,
+        &["options", "properties", "gain", "format"],
+        json!("scale"),
+    );
+    let m = parse_builtin("chart@1", &v.to_string()).unwrap();
+    assert_eq!(m.poster, PosterStrategy::Crop);
+    assert!(m.sources["labels"].repeat);
+    assert_eq!(
+        m.options.unwrap().properties["gain"].format,
+        Some(OptionFormat::Scale)
+    );
+    assert_eq!(
+        parse_builtin("chart@1", &builtin().to_string())
+            .unwrap()
+            .poster,
+        PosterStrategy::Render
+    );
+    assert!(parse_manifest("chart@1", &builtin().to_string()).is_err());
+}
+
+#[test]
+fn every_builtin_rule_has_its_message() {
+    let v = builtin();
+    let cases = [
+        (
+            with(v.clone(), &["contract"], json!(1)),
+            "contract must be 2, found 1",
+        ),
+        (
+            with(v.clone(), &["sources", "data", "repeat"], json!(true)),
+            "the primary role data cannot repeat",
+        ),
+        (
+            with(
+                v.clone(),
+                &["options", "properties", "caption", "format"],
+                json!("scale"),
+            ),
+            "options.caption: format applies to number options only",
+        ),
+        (
+            with(
+                v.clone(),
+                &["options", "properties", "gain", "format"],
+                json!("camera"),
+            ),
+            "options.gain: format applies to string options only",
+        ),
+        (
+            with(
+                v.clone(),
+                &["options", "properties", "poster"],
+                json!({"type": "string"}),
+            ),
+            "`poster` is not an allowed option name",
+        ),
+        (
+            with(
+                v.clone(),
+                &["vendored"],
+                json!([{"name": "vega", "version": "6.4.0", "license": "BSD-3-Clause",
+                        "source": "npm", "files": ["vendor/v.js"]}]),
+            ),
+            "vendored vega: a built-in lists no files",
+        ),
+        (with(v, &["kit"], json!("m-kit@1")), "`kit` is reserved"),
+    ];
+    for (v, msg) in cases {
+        let e = builtin_err(v);
+        assert!(e.starts_with("built-in runtime chart@1: "), "{e}");
+        assert!(e.contains(msg), "{msg}: {e}");
+    }
+}
+
+#[test]
 fn every_package_rule_has_its_message() {
     let m = good();
     assert_eq!(check_package("heat@1", &package(&m)).unwrap().name, "heat");
