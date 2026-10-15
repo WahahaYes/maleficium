@@ -207,11 +207,11 @@ pub fn scale(s: &str) -> Result<f64, String> {
 }
 
 /// The widget types a poster parameter applies to.
-fn applies(key: &str) -> Option<&'static [WidgetType]> {
+fn applies(key: &str) -> Option<&'static [&'static str]> {
     match key {
-        "camera" | "size" | "background" => Some(&[WidgetType::Model]),
-        "scale" => Some(&[WidgetType::Chart]),
-        "framedomains" | "resourcedomains" => Some(&[WidgetType::Html]),
+        "camera" | "size" | "background" => Some(&["model"]),
+        "scale" => Some(&["chart"]),
+        "framedomains" | "resourcedomains" => Some(&["html"]),
         _ => None,
     }
 }
@@ -222,7 +222,7 @@ pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, Str
     let Some(types) = applies(key) else {
         return Ok(value.to_string());
     };
-    if !types.contains(&kind) {
+    if !types.contains(&kind.name()) {
         return Err(format!("{key}= does not apply to this widget type"));
     }
     Ok(match key {
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn canonical_forms_and_type_checks() {
-        let m = WidgetType::Model;
+        let m = WidgetType::parse("model").unwrap();
         assert_eq!(
             canonical(m, "camera", "pos=0,0,5 target=0,0,0").unwrap(),
             "1 0 0 0 0 1 0 0 0 0 1 0 0 0 5 1"
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(canonical(m, "size", "640x480").unwrap(), "640x480");
         assert_eq!(canonical(m, "background", "FFF").unwrap(), "#ffffff");
         assert_eq!(
-            canonical(WidgetType::Chart, "scale", "2.50").unwrap(),
+            canonical(WidgetType::parse("chart").unwrap(), "scale", "2.50").unwrap(),
             "2.5"
         );
         // Other options pass through verbatim.
@@ -355,10 +355,10 @@ mod tests {
             "170.71652pt"
         );
         for (k, kind) in [
-            ("camera", WidgetType::Chart),
-            ("size", WidgetType::Video),
+            ("camera", WidgetType::parse("chart").unwrap()),
+            ("size", WidgetType::parse("video").unwrap()),
             ("background", WidgetType::Html),
-            ("scale", WidgetType::Model),
+            ("scale", WidgetType::parse("model").unwrap()),
         ] {
             assert!(
                 canonical(kind, k, "1")

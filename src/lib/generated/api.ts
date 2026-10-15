@@ -103,7 +103,7 @@ export type TemplateWelcomeParams = Record<symbol, never>;
 
 export type WidgetsParams = { rootId: string, mainRel: string, };
 
-export type WidgetType = "model" | "video" | "table" | "chart" | "html" | "custom";
+export type WidgetType = string;
 
 export type WidgetRect = { x0: number, y0: number, x1: number, y1: number, };
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtimes::{OptionFormat, PosterStrategy};
+use crate::widgets::WidgetType;
 use regex::Regex;
 use std::collections::BTreeSet;
 
@@ -45,10 +46,12 @@ fn every_embedded_manifest_parses_and_names_its_kind() {
         let name = &b.manifest.name;
         assert_eq!(b.reference, format!("{name}@1"));
         assert!(b.manifest.version.starts_with("1."), "{name}");
-        assert_eq!(serde_json::to_value(b.kind).unwrap(), name.as_str());
-        assert_eq!(WidgetType::parse(name), Some(b.kind));
+        let kind = WidgetType::Builtin(b);
+        assert_eq!(serde_json::to_value(kind).unwrap(), name.as_str());
+        assert_eq!(WidgetType::parse(name), Some(kind));
+        assert_eq!(kind.name(), name);
         assert!(b.host.contains("<html"), "{name}: host is not a document");
-        assert_eq!(by_ref(b.reference).map(|x| x.kind), Some(b.kind));
+        assert!(by_ref(b.reference).is_some_and(|x| std::ptr::eq(x, b)));
     }
     assert!(by_ref("plotly@1").is_none());
 }
@@ -84,11 +87,11 @@ fn option_formats_match_the_poster_parameters() {
         let props = b.manifest.options.as_ref().map(|o| &o.properties);
         for key in params {
             let declared = props.and_then(|p| p.get(key)).and_then(|o| o.format);
-            let applies = crate::widgets::params::canonical(b.kind, key, "x")
+            let applies = crate::widgets::params::canonical(WidgetType::Builtin(b), key, "x")
                 .is_err_and(|e| !e.contains("does not apply"));
             assert_eq!(declared.is_some(), applies, "{}: {key}", b.reference);
             if let Some(f) = declared {
-                crate::widgets::params::canonical(b.kind, key, sample(f))
+                crate::widgets::params::canonical(WidgetType::Builtin(b), key, sample(f))
                     .unwrap_or_else(|e| panic!("{}: {e}", b.reference));
             }
         }

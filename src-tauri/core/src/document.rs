@@ -98,6 +98,7 @@ pub struct Figure {
 #[serde(rename_all = "camelCase")]
 pub struct WidgetRef {
     pub index: u32,
+    #[ts(as = "crate::widgets::WidgetTypeName")]
     pub kind: crate::widgets::WidgetType,
 }
 
@@ -564,8 +565,8 @@ mod tests {
         let p = parse(CONVERTED);
         // Placeholders name kinds only; the widgets tool owns ids and rects.
         assert_eq!(p.widgets.len(), 5);
-        let kinds: Vec<String> = p.widgets.iter().map(|w| format!("{:?}", w.kind)).collect();
-        assert_eq!(kinds, ["Model", "Video", "Table", "Chart", "Html"]);
+        let kinds: Vec<&str> = p.widgets.iter().map(|w| w.kind.name()).collect();
+        assert_eq!(kinds, ["model", "video", "table", "chart", "html"]);
         for (i, w) in p.widgets.iter().enumerate() {
             assert_eq!(w.index, i as u32);
         }

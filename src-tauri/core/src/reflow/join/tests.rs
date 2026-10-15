@@ -47,7 +47,7 @@ fn one_widget_joins_and_is_replaced() {
     ));
     let j = join_sidecar(&html, &sidecar(&[("fig-model", "model")])).unwrap();
     assert_eq!(ids(&j), ["fig-model"]);
-    assert_eq!(j[0].placeholder.kind, WidgetType::Model);
+    assert_eq!(j[0].placeholder.kind, WidgetType::parse("model").unwrap());
     assert_eq!(j[0].placeholder.index, 0);
     let out = apply(&html, &j).unwrap();
     assert!(out.contains("<p class=\"ltx_p ltx_align_center\"><!--mount:fig-model--></p>"));
@@ -129,8 +129,8 @@ fn equal_counts_with_a_swapped_type_is_refused() {
         JoinError::KindMismatch {
             index: 1,
             id: "v".into(),
-            placeholder: WidgetType::Video,
-            record: WidgetType::Chart
+            placeholder: WidgetType::parse("video").unwrap(),
+            record: WidgetType::parse("chart").unwrap()
         }
     );
 }
@@ -190,7 +190,7 @@ fn placeholder_lookalikes_in_text_code_comments_and_attributes_do_not_count() {
     ));
     let p = extract_placeholders(&html).unwrap();
     assert_eq!(p.len(), 1);
-    assert_eq!(p[0].kind, WidgetType::Chart);
+    assert_eq!(p[0].kind, WidgetType::parse("chart").unwrap());
     assert_eq!(&html[p[0].start..p[0].end], span("chart"));
 }
 
@@ -204,7 +204,7 @@ fn class_tokens_and_quoting_variants_are_read() {
     ] {
         let p = extract_placeholders(&format!("<p>{tag}</p>")).unwrap();
         assert_eq!(p.len(), 1, "{tag}");
-        assert_eq!(p[0].kind, WidgetType::Video, "{tag}");
+        assert_eq!(p[0].kind, WidgetType::parse("video").unwrap(), "{tag}");
     }
 }
 
