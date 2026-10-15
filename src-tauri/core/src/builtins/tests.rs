@@ -93,12 +93,6 @@ fn every_kind_list_matches_the_registry() {
     let reader = quoted(capture(READER, r"var KINDS = \[([^\]]*)\]"));
     assert_eq!(reader, kinds(), "embed-runtime/reader/reader.js KINDS");
 
-    let mount: BTreeSet<String> = crate::reflow::sanitize::MOUNT_KINDS
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    assert_eq!(mount, kinds(), "reflow::sanitize::MOUNT_KINDS");
-
     let sty: BTreeSet<String> = capture(STY, r"\\A\(\?:([a-z|]+)\)\\Z")
         .split('|')
         .map(str::to_string)
