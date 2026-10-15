@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-15
+
 ### License
 
 - **Maleficium is now AGPL-3.0.** New versions are licensed under the GNU Affero General Public License v3.0 instead of Apache 2.0. Using, modifying and sharing the app is unchanged; running a modified version as a network service now requires offering its source to that service's users. Releases up to 0.3.0 stay under Apache 2.0. The built-in templates remain CC0.
