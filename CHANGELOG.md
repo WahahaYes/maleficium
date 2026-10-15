@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- **Exported papers load widgets as you reach them.** Each interactive figure shows its poster until you scroll near it, and only then starts its widget, so a paper opens faster and a widget you never scroll to never runs. A folder bundle does not even download it. A widget also waits while its tab is in the background, and one held back for approval never starts. Once started, a widget stays live.
+
 ### For contributors
 
 - **Built-in runtimes have manifests.** Model, video, table and chart each declare a `runtime.json` beside their source, read from one registry in the app; a test fails when any list of widget kinds drifts from it. A custom runtime's `runtime.json` that uses `kit`, `params` or `extends` is refused as reserved for a later contract.
