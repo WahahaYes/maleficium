@@ -19,7 +19,7 @@ const OUTPUT_MODULES: &[&str] = &[
 /// Embedded but never copied out, from the repo root: read by the app itself.
 const READ_ONLY: &[(&str, &str)] = &[
     (
-        "src-tauri/core/schemas/paper-bundle-1.schema.json",
+        "src-tauri/core/schemas/paper-bundle-2.schema.json",
         "validates the manifest",
     ),
     ("package.json", "the vendored three.js version"),
