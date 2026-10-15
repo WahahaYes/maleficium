@@ -12,7 +12,10 @@
 //
 // Editor-to-article sync is forward-only: the caret's section maps to an
 // anchor (below) and the frame scrolls there. There is no inverse sync:
-// the article never reports back (no tex-line granularity either).
+// the article never reports back (no tex-line granularity either). The
+// frame only reports where each figure settled, which the app logs.
+
+import type { ArticleWidgetState } from './generated/events';
 
 /** One editor section that can own the caret, with its buffer line. */
 export interface SectionLine {
@@ -161,6 +164,35 @@ export function isArticleMessage(
     typeof d['widgetId'] === 'string' &&
     (d['widgetId'] as string).length > 0
   );
+}
+
+const WIDGET_STATES: readonly ArticleWidgetState[] = [
+  'ready',
+  'error',
+  'poster-only',
+  'approval-required',
+];
+
+/**
+ * A figure state the article frame reports, `{ mfw: 1, type:
+ * 'article-widget', widgetId, state }`, from the frame itself (origin
+ * "null"); null for anything else. The app only logs it.
+ */
+export function articleWidgetState(
+  data: unknown,
+  origin: string,
+  source: unknown,
+  frame: unknown,
+): { widgetId: string; state: ArticleWidgetState } | null {
+  if (source == null || source !== frame || origin !== 'null') return null;
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+  const id = d['widgetId'];
+  const state = d['state'];
+  if (d['mfw'] !== 1 || d['type'] !== 'article-widget') return null;
+  if (typeof id !== 'string' || id.length === 0 || id.length > 63) return null;
+  if (!WIDGET_STATES.includes(state as ArticleWidgetState)) return null;
+  return { widgetId: id, state: state as ArticleWidgetState };
 }
 
 /**

@@ -17,7 +17,7 @@ Projects made from a template already hold `maleficium-interactive.sty`. It is a
 | `\interactive`        | a folder of your own HTML                     |
 | `\interactiveruntime` | a custom runtime ([RUNTIMES.md](RUNTIMES.md)) |
 
-Each needs `alt=` text. The package's header comments show their options by example.
+Each needs `alt=` text. The package's header comments show their options by example. A built-in widget also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`.
 
 ## Posters
 

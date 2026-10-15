@@ -136,6 +136,18 @@ pub enum SyncDirection {
     Inverse,
 }
 
+/// Where a figure of the Article tab's reader settled: its widget painted
+/// (`ready`), failed (`error`), cannot run in this copy (`poster-only`), or
+/// is held back until the user approves it (`approval-required`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ArticleWidgetState {
+    Ready,
+    Error,
+    PosterOnly,
+    ApprovalRequired,
+}
+
 /// Where a compile line came from: the engine's two streams, or the app's
 /// own status line about the run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -655,6 +667,13 @@ pub enum AppEvent {
     /// compile first; unknown project).
     #[serde(rename = "article.load-failed")]
     ArticleLoadFailed { error: String },
+    /// A figure of the Article tab's reader settled, as the reader reports
+    /// it: the widget runs, failed, or keeps its poster.
+    #[serde(rename = "article.widget")]
+    ArticleWidget {
+        widget: String,
+        state: ArticleWidgetState,
+    },
 
     #[serde(rename = "revision.record")]
     RevisionRecord {
@@ -843,6 +862,7 @@ pub fn typescript() -> String {
         SaveTrigger::decl(&cfg),
         WatchChange::decl(&cfg),
         SyncDirection::decl(&cfg),
+        ArticleWidgetState::decl(&cfg),
         CompileStream::decl(&cfg),
         CompileLine::decl(&cfg),
         CompileReport::decl(&cfg),

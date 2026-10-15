@@ -236,7 +236,27 @@ fn the_folder_profile_writes_the_layout_and_the_manifest_validates() {
     );
     let chart = m["widgets"][3].clone();
     assert_eq!(chart["sources"]["spec"], "fig-chart-spec");
-    assert_eq!(m["widgets"][1]["options"]["pdfrows"], 2);
+    // Format 2: every widget a runtime runs binds through its runtime.json.
+    // The table's pdfrows is the PDF's only; its declared defaults ride.
+    assert_eq!(m["formatVersion"], 2);
+    assert_eq!(m["widgets"][1]["options"], json!({"maxrows": 0}));
+    assert_eq!(
+        m["widgets"][2]["options"],
+        json!({"loop": false, "muted": false})
+    );
+    let runtimes = m["runtimes"].as_object().unwrap();
+    assert_eq!(
+        runtimes.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["chart@1", "model@1", "table@1", "video@1"]
+    );
+    for (r, e) in runtimes {
+        let b = crate::builtins::by_ref(r).unwrap();
+        assert_eq!(e["builtin"], true, "{r}");
+        assert_eq!(e["digest"], sha_of(b.host.as_bytes()), "{r}");
+        assert_eq!(e["license"], "MIT-0", "{r}");
+    }
+    assert_eq!(runtimes["model@1"]["capabilities"]["webgl"], true);
+    assert_eq!(runtimes["chart@1"]["vendored"][0]["name"], "vega");
     assert_eq!(m["widgets"][0]["rect"].as_array().unwrap().len(), 4);
 
     // Nothing was written into the project, and no staging folder is left.
@@ -643,7 +663,7 @@ fn a_remote_asset_with_a_local_copy_is_hashed_locally_and_not_stored() {
     let p = project("remote-table", &table);
     let e = export(&p, &dest(&p, "t"), BundleProfile::Folder).unwrap_err();
     assert!(
-        e.ends_with("tab-results: table widgets take no remote= source"),
+        e.ends_with("tab-results: runtime table@1 has no option `remote`"),
         "{e}"
     );
 }
@@ -795,7 +815,7 @@ fn the_schema_rejects_what_the_note_forbids() {
         m.as_object_mut().unwrap().remove("theme");
     })
     .contains("schema"));
-    assert!(bad(&|m| m["formatVersion"] = 2.into()).contains("schema"));
+    assert!(bad(&|m| m["formatVersion"] = 1.into()).contains("schema"));
     assert!(bad(&|m| m["extra"] = true.into()).contains("schema"));
     assert!(bad(&|m| m["pdf"]["sha256"] = "XYZ".into()).contains("schema"));
     assert!(bad(&|m| m["widgets"][0]["id"] = "Bad_Id".into()).contains("schema"));
@@ -821,16 +841,21 @@ fn the_schema_rejects_what_the_note_forbids() {
 fn the_committed_schema_is_the_one_the_note_describes() {
     let s: Value = serde_json::from_str(MANIFEST_SCHEMA).unwrap();
     assert_eq!(s["$schema"], "https://json-schema.org/draft/2020-12/schema");
-    assert_eq!(s["$id"], "maleficium-paper-bundle/1");
+    assert_eq!(s["$id"], "maleficium-paper-bundle/2");
     assert_eq!(s["properties"]["format"]["const"], FORMAT);
-    assert_eq!(s["properties"]["formatVersion"]["const"], 1);
+    assert_eq!(s["properties"]["formatVersion"]["const"], FORMAT_VERSION);
     assert_eq!(
         s["properties"]["profile"]["enum"],
         json!(["folder", "single-file", "hosted"])
     );
+    // The widget type is open: html, custom or a built-in runtime's name.
     assert_eq!(
-        s["$defs"]["widget"]["properties"]["type"]["enum"],
-        json!(["model", "video", "table", "chart", "html", "custom"])
+        s["$defs"]["widget"]["properties"]["type"]["pattern"],
+        "^[a-z][a-z0-9-]{1,39}$"
+    );
+    assert_eq!(
+        s["$defs"]["runtime"]["properties"]["builtin"]["type"],
+        "boolean"
     );
     assert_eq!(
         s["properties"]["paper"]["properties"]["reader"]["properties"]["measure"]["enum"],
@@ -1818,10 +1843,13 @@ fn an_approved_custom_runtime_exports_live_and_a_missing_one_as_its_poster() {
     // The runtimes entry carries the digest the approval judged.
     let judged = c.check().snapshot.digest;
     assert_eq!(
-        m["runtimes"],
-        json!({"heatmap@1": {"name": "heatmap", "version": "1.0.0", "digest": judged,
-            "license": "MIT-0", "capabilities": {"webgl": false, "wasm": false}, "vendored": []}})
+        m["runtimes"]["heatmap@1"],
+        json!({"name": "heatmap", "version": "1.0.0", "builtin": false, "digest": judged,
+            "license": "MIT-0", "capabilities": {"webgl": false, "wasm": false}, "vendored": []})
     );
+    // The missing runtime is not listed; the built-ins the paper runs are.
+    assert!(m["runtimes"].get("stl-viewer@1").is_none());
+    assert_eq!(m["runtimes"]["model@1"]["builtin"], true);
 
     // The folded document: policy first, the package's own page inlined,
     // its metadata left out, the licence block last.
@@ -1973,8 +2001,12 @@ fn a_denied_or_invalid_runtime_exports_as_its_poster_and_an_unapproved_one_runs(
         let m = manifest_of(Path::new(&d));
         validate_manifest(&m).unwrap();
         assert!(
-            m.get("runtimes").is_none(),
-            "no live widget, no runtimes map"
+            m["runtimes"]
+                .as_object()
+                .unwrap()
+                .values()
+                .all(|e| e["builtin"] == true),
+            "no live custom widget, no custom runtime listed"
         );
         assert!(!PathBuf::from(&d).join("widgets/fig-chart").exists());
         assert!(m["assets"].get("fig-chart-data").is_none());
@@ -2200,6 +2232,26 @@ fn the_manifest_invariants_for_custom_runtimes_hold_and_their_breaks_are_named()
     );
     assert!(bad(&|m| m["runtimes"]["heatmap@1"]["license"] = "GPL-3.0".into()).contains("schema"));
     assert!(bad(&|m| m["runtimes"]["heatmap@1"]["path"] = "runtimes/x".into()).contains("schema"));
+    // Built-ins are flagged and run their own kind; a package is not one.
+    assert!(bad(&|m| {
+        m["runtimes"]["heatmap@1"]
+            .as_object_mut()
+            .unwrap()
+            .remove("builtin");
+    })
+    .contains("schema"));
+    assert!(
+        bad(&|m| m["runtimes"]["heatmap@1"]["builtin"] = true.into())
+            .contains("which runtime heatmap@1 does not run")
+    );
+    assert!(bad(&|m| m["runtimes"]["model@1"]["builtin"] = false.into())
+        .contains("which runtime model@1 does not run"));
+    assert!(bad(&|m| m["widgets"][0]["runtime"] = "table@1".into())
+        .contains("is a model widget, which runtime table@1 does not run"));
+    assert!(bad(&|m| {
+        m["runtimes"].as_object_mut().unwrap().remove("model@1");
+    })
+    .contains("runs runtime model@1, which the manifest does not list"));
 }
 
 /// Writes the single-file WASM proof bundle (the WASM-declaring runtime
@@ -2303,10 +2355,10 @@ fn custom_widgets_mount_in_the_article_and_a_fallback_carries_its_note() {
     );
     // The ref never reaches a sanitized attribute.
     assert!(!main.contains("heatmap@1") && !main.contains("data-runtime"));
-    // The reader knows the six kinds, needs a runtimes entry for a custom
-    // widget, and guards every figure.
+    // The reader keeps no kind list: a widget other than html needs its
+    // runtime in the manifest's runtimes, and every figure is guarded.
     let script = &html[html.find("</main>").unwrap()..];
-    assert!(script.contains("var KINDS = ['model', 'video', 'table', 'chart', 'html', 'custom'];"));
+    assert!(!script.contains("KINDS"));
     assert!(script.contains("manifest.runtimes || {}"));
     assert!(script.contains("Interactive version unavailable: this reader does not know runtime "));
 }
@@ -2622,8 +2674,12 @@ fn a_scan_failed_runtime_is_poster_only_with_red_warnings() {
     let m = manifest_of(Path::new(&d));
     validate_manifest(&m).unwrap();
     assert!(
-        m.get("runtimes").is_none(),
-        "no live widget, no runtimes map"
+        m["runtimes"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|e| e["builtin"] == true),
+        "no live custom widget, no custom runtime listed"
     );
     assert_eq!(widget_json(&m, "fig-chart")["fallback"], "runtime-invalid");
     let warns: Vec<&str> = r.warnings.iter().map(|w| w.message.as_str()).collect();

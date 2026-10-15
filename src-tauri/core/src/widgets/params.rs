@@ -207,6 +207,23 @@ pub fn scale(s: &str) -> Result<f64, String> {
     Ok(v)
 }
 
+/// A value checked and put in the canonical form of `format`.
+pub fn canonical_format(format: OptionFormat, value: &str) -> Result<String, String> {
+    Ok(match format {
+        OptionFormat::Camera => camera(value)?
+            .iter()
+            .map(|v| num(*v))
+            .collect::<Vec<_>>()
+            .join(" "),
+        OptionFormat::Size => {
+            let (w, h) = size(value)?;
+            format!("{w}x{h}")
+        }
+        OptionFormat::Background => background(value)?,
+        OptionFormat::Scale => num(scale(value)?),
+    })
+}
+
 /// Keys the package reads as poster parameters for every widget: a kind
 /// whose runtime declares none of them refuses them.
 const POSTER_KEYS: [&str; 6] = [
@@ -243,19 +260,7 @@ pub fn option_with(kind: WidgetType, format: OptionFormat) -> Option<&'static st
 /// origins. Options that are not poster parameters pass through unchanged.
 pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, String> {
     if let Some(f) = format_of(kind, key) {
-        return Ok(match f {
-            OptionFormat::Camera => camera(value)?
-                .iter()
-                .map(|v| num(*v))
-                .collect::<Vec<_>>()
-                .join(" "),
-            OptionFormat::Size => {
-                let (w, h) = size(value)?;
-                format!("{w}x{h}")
-            }
-            OptionFormat::Background => background(value)?,
-            OptionFormat::Scale => num(scale(value)?),
-        });
+        return canonical_format(f, value);
     }
     let origins = matches!(key, "framedomains" | "resourcedomains");
     if origins && kind == WidgetType::Html {

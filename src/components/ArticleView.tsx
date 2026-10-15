@@ -10,7 +10,8 @@
 // button only asks the app (the Widgets panel opens so the user reviews
 // and approves there, then the article re-exports and re-renders).
 // Editor-to-article sync is forward-only: the caret's anchor posts into the
-// frame and the bytes scroll to it; the article never reports back.
+// frame and the bytes scroll to it; the article reports back only where
+// each figure settled, which the app logs (article.widget).
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -20,8 +21,10 @@ import {
   articleModeMessage,
   articleSandbox,
   articleScrollMessage,
+  articleWidgetState,
   isArticleMessage,
 } from '../lib/article';
+import { emit } from '../lib/events';
 import ArticleApprovalBanner from './ArticleApprovalBanner';
 
 export interface ArticleViewProps {
@@ -75,11 +78,24 @@ export default function ArticleView({
   modeRef.current = mode;
 
   // Denial point for frame messages. Validates origin, source and shape,
-  // then hands the approval ask to the Widgets panel round-trip.
+  // then logs a figure's settled state, or hands the approval ask to the
+  // Widgets panel round-trip.
   useEffect(() => {
     if (!src) return;
     const onMessage = (e: MessageEvent) => {
-      if (!isArticleMessage(e.data, e.origin, e.source, frameRef.current?.contentWindow)) return;
+      const frame = frameRef.current?.contentWindow;
+      const settled = articleWidgetState(e.data, e.origin, e.source, frame);
+      if (settled) {
+        emit({
+          scope: 'preview',
+          kind: settled.state === 'error' ? 'warn' : 'info',
+          actor: 'system',
+          message: `article figure ${settled.widgetId}: ${settled.state}`,
+          event: { action: 'article.widget', widget: settled.widgetId, state: settled.state },
+        });
+        return;
+      }
+      if (!isArticleMessage(e.data, e.origin, e.source, frame)) return;
       approveRef.current?.(e.data.widgetId);
     };
     window.addEventListener('message', onMessage);
