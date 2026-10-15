@@ -103,7 +103,7 @@ fn the_fixture_joins_into_a_typed_list_in_document_order() {
         ]
     );
     let mesh = by_id(&l, "fig-mesh");
-    assert_eq!(mesh.kind, WidgetType::Model);
+    assert_eq!(mesh.kind, WidgetType::parse("model").unwrap());
     assert_eq!(mesh.runtime.as_deref(), Some("model@1"));
     assert_eq!(
         (mesh.page, mesh.label.as_deref(), mesh.figure.as_deref()),
@@ -146,7 +146,7 @@ fn the_fixture_joins_into_a_typed_list_in_document_order() {
     let table = by_id(&l, "tab-results");
     assert_eq!(
         (table.kind, table.poster.clone()),
-        (WidgetType::Table, None)
+        (WidgetType::parse("table").unwrap(), None)
     );
     assert_eq!(
         table.options,
@@ -782,7 +782,12 @@ fn bad_origin_options_and_too_many_origins_fail_the_list() {
 
 #[test]
 fn origin_options_apply_only_to_html_widgets() {
-    let e = params::canonical(WidgetType::Model, "framedomains", "https://a.org").unwrap_err();
+    let e = params::canonical(
+        WidgetType::parse("model").unwrap(),
+        "framedomains",
+        "https://a.org",
+    )
+    .unwrap_err();
     assert!(e.contains("does not apply"), "{e}");
     assert_eq!(
         params::canonical(

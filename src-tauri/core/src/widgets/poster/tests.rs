@@ -241,7 +241,7 @@ fn finish_checks_the_snapshot_and_writes_it_in_one_step() {
 fn widget(poster: Option<&str>) -> Widget {
     Widget {
         id: "w".into(),
-        kind: WidgetType::Model,
+        kind: WidgetType::parse("model").unwrap(),
         runtime: Some("model@1".into()),
         label: None,
         figure: None,

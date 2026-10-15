@@ -30,32 +30,93 @@ pub(crate) const BUNDLE_MANIFEST: &str = "widget.json";
 /// The largest `widget.json` read: it declares a few origins, nothing more.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
-#[serde(rename_all = "lowercase")]
+/// What runs a widget: a built-in runtime this build embeds
+/// ([`crate::builtins`]), an author's html bundle, or a custom runtime the
+/// project installs (`runtimes/<name>@<major>/`). Written as its name
+/// (`model`, `html`, `custom`) everywhere it is serialized.
+#[derive(Clone, Copy)]
 pub enum WidgetType {
-    Model,
-    Video,
-    Table,
-    Chart,
+    Builtin(&'static crate::builtins::Builtin),
     Html,
-    /// A widget run by a custom runtime the project installs
-    /// (`runtimes/<name>@<major>/`).
     Custom,
 }
 
 impl WidgetType {
     pub(crate) fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "model" => Self::Model,
-            "video" => Self::Video,
-            "table" => Self::Table,
-            "chart" => Self::Chart,
-            "html" => Self::Html,
-            "custom" => Self::Custom,
-            _ => return None,
-        })
+        match s {
+            "html" => Some(Self::Html),
+            "custom" => Some(Self::Custom),
+            _ => crate::builtins::by_name(s).map(Self::Builtin),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Builtin(b) => &b.manifest.name,
+            Self::Html => "html",
+            Self::Custom => "custom",
+        }
+    }
+
+    /// The embedded runtime of a built-in kind.
+    pub fn builtin(self) -> Option<&'static crate::builtins::Builtin> {
+        match self {
+            Self::Builtin(b) => Some(b),
+            _ => None,
+        }
     }
 }
+
+impl std::fmt::Debug for WidgetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl PartialEq for WidgetType {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl Eq for WidgetType {}
+
+impl Serialize for WidgetType {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
+}
+
+impl<'de> Deserialize<'de> for WidgetType {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Self::parse(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown widget type `{s}`")))
+    }
+}
+
+/// The kinds as a closed list, built-ins first, as the schema has always
+/// listed them.
+impl schemars::JsonSchema for WidgetType {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "WidgetType".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut names: Vec<&str> = crate::builtins::all()
+            .iter()
+            .map(|b| b.manifest.name.as_str())
+            .collect();
+        names.extend(["html", "custom"]);
+        schemars::json_schema!({ "type": "string", "enum": names })
+    }
+}
+
+/// [`WidgetType`] as TypeScript sees it: a string, since the kinds come
+/// from the registry, not the type system.
+#[derive(TS)]
+#[ts(rename = "WidgetType")]
+pub struct WidgetTypeName(#[allow(dead_code)] String);
 
 /// An axis-aligned rectangle in PDF user units, origin bottom-left,
 /// `x0 < x1` and `y0 < y1`.
@@ -112,7 +173,7 @@ impl WidgetCsp {
 pub struct Widget {
     pub id: String,
     #[serde(rename = "type")]
-    #[ts(rename = "type")]
+    #[ts(rename = "type", as = "WidgetTypeName")]
     pub kind: WidgetType,
     /// Runtime and major version: built-in (`model@1`) or, for `custom`,
     /// the project's `<name>@<major>`; absent for `html`.

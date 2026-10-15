@@ -262,19 +262,21 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
         })?;
     let id = &w.id;
     match w.kind {
-        WidgetType::Model | WidgetType::Chart => {}
         WidgetType::Html => return html_job(base, cx, req, w, &theme, out, timeout),
         WidgetType::Custom => return custom_job(base, cx, req, w, &theme, out, timeout),
-        WidgetType::Table => {
-            return Err(format!(
-                "widget {id}: a table's poster is its typeset rows, nothing to render"
-            ))
-        }
-        WidgetType::Video => {
-            return Err(format!(
-                "widget {id}: video posters are not rendered yet; give it poster="
-            ))
-        }
+        WidgetType::Builtin(b) => match b.manifest.name.as_str() {
+            "table" => {
+                return Err(format!(
+                    "widget {id}: a table's poster is its typeset rows, nothing to render"
+                ))
+            }
+            "video" => {
+                return Err(format!(
+                    "widget {id}: video posters are not rendered yet; give it poster="
+                ))
+            }
+            _ => {}
+        },
     }
     if req.digest.is_some() {
         return Err(format!(
@@ -306,7 +308,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
 
     let mut options = runtime_options(w);
     let rect_css = rect_css(w);
-    let (frame, expect) = if w.kind == WidgetType::Model {
+    let (frame, expect) = if w.kind.name() == "model" {
         let size = match options.get("size").and_then(Value::as_str) {
             Some(s) => params::size(s).map_err(|e| format!("widget {id}: {e}"))?,
             None => {

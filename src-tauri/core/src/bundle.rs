@@ -1057,7 +1057,7 @@ fn plan_widget(
     }
     let inline_opt = option(w, "inline").is_some_and(truthy);
     let remote = option(w, "remote").filter(|r| !r.is_empty());
-    if remote.is_some() && w.kind != WidgetType::Video {
+    if remote.is_some() && w.kind.name() != "video" {
         return Err(format!(
             "widget {id}: remote= is only supported on video widgets"
         ));
@@ -1081,7 +1081,7 @@ fn plan_widget(
     };
     let source = crate::widgets::poster::poster_source(w, cached.as_deref());
     match source {
-        PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {
+        PosterSource::Explicit(rel) if w.kind.name() != "table" => {
             p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
         }
         PosterSource::Cached(png) => {
@@ -1164,7 +1164,7 @@ fn plan_widget(
     } else {
         let mut video_local: Option<&str> = None;
         for (role_key, s) in role_keys(w)? {
-            if w.kind == WidgetType::Video && s.role == "video" && remote.is_some() {
+            if w.kind.name() == "video" && s.role == "video" && remote.is_some() {
                 video_local = Some(&s.path);
                 continue;
             }
@@ -1184,12 +1184,12 @@ fn plan_widget(
             )?;
             sources.insert("video".into(), key.into());
         }
-        let required = match w.kind {
-            WidgetType::Model => Some("model"),
-            WidgetType::Video => Some("video"),
-            WidgetType::Table => Some("data"),
-            WidgetType::Chart => Some("spec"),
-            WidgetType::Html | WidgetType::Custom => None,
+        let required = match w.kind.name() {
+            "model" => Some("model"),
+            "video" => Some("video"),
+            "table" => Some("data"),
+            "chart" => Some("spec"),
+            _ => None,
         };
         if let Some(role) = required {
             if !sources.contains_key(role) {
@@ -1454,15 +1454,8 @@ fn mounts<'a>(
                 (_, Bytes::Mem(b)) => data_url(&a.mime, b),
                 _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
             };
-            let kind = match w.kind {
-                WidgetType::Model => "model",
-                WidgetType::Video => "video",
-                WidgetType::Table => "table",
-                WidgetType::Chart => "chart",
-                WidgetType::Html => "html",
-                WidgetType::Custom => "custom",
-            };
-            let size = (w.kind == WidgetType::Model)
+            let kind = w.kind.name();
+            let size = (kind == "model")
                 .then(|| {
                     w.options
                         .iter()

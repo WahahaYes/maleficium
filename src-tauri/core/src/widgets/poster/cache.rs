@@ -162,10 +162,8 @@ pub(crate) fn digest(
 /// [`keyed`]), and custom widgets (only while their runtime is approved),
 /// and never when the document gives its own poster.
 fn auto(w: &Widget) -> bool {
-    matches!(
-        w.kind,
-        WidgetType::Model | WidgetType::Chart | WidgetType::Html | WidgetType::Custom
-    ) && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+    matches!(w.kind.name(), "model" | "chart" | "html" | "custom")
+        && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
 fn key_options(w: &Widget) -> Vec<(String, String)> {
@@ -197,10 +195,7 @@ pub fn poster_key(
     theme: &Theme,
 ) -> Result<String, String> {
     let kind = match w.kind {
-        WidgetType::Model => "model",
-        WidgetType::Chart => "chart",
-        WidgetType::Video => "video",
-        WidgetType::Table => "table",
+        WidgetType::Builtin(b) => b.manifest.name.as_str(),
         WidgetType::Html => {
             return Err(format!(
                 "widget {}: an html widget's poster is keyed by its approval digest",
