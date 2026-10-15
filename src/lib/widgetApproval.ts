@@ -46,9 +46,25 @@ function msg(e: unknown): string {
   return String(e instanceof Error ? e.message : e).slice(0, 300);
 }
 
+/**
+ * The notice after a refresh. What the last refresh reported (a read
+ * failure, an unreadable store) is replaced by what this one reports, so a
+ * failure that has since cleared goes away; an action's refusal is kept.
+ */
+function readNotices(current: () => string | null) {
+  let last: string | null = null;
+  return (fresh: string | null): string | null => {
+    const shown = current();
+    const kept = shown === last ? null : shown;
+    last = fresh;
+    return fresh ?? kept;
+  };
+}
+
 /** Panel state for one project and main file. */
 export function createWidgetsModel(io: WidgetsIo, rootId: string, mainRel: string) {
   let state: WidgetsState = EMPTY;
+  const readNotice = readNotices(() => state.notice);
   const subs = new Set<() => void>();
   const set = (patch: Partial<WidgetsState>) => {
     state = { ...state, ...patch };
@@ -76,9 +92,9 @@ export function createWidgetsModel(io: WidgetsIo, rootId: string, mainRel: strin
           status.widgets.some((w) => w.widget === id && w.digest === r.status.digest),
         ),
       );
-      set({ status, loading: false, notice: status.storeError ?? state.notice, reviews });
+      set({ status, loading: false, notice: readNotice(status.storeError ?? null), reviews });
     } catch (e) {
-      set({ loading: false, notice: `Could not read the widgets: ${msg(e)}` });
+      set({ loading: false, notice: readNotice(`Could not read the widgets: ${msg(e)}`) });
     }
   }
 
@@ -296,6 +312,7 @@ const EMPTY_RUNTIME: RuntimeState = {
 /** Panel state for the document's custom runtimes, one entry per ref. */
 export function createRuntimeModel(io: WidgetsIo, rootId: string, mainRel: string) {
   let state: RuntimeState = EMPTY_RUNTIME;
+  const readNotice = readNotices(() => state.notice);
   const subs = new Set<() => void>();
   const set = (patch: Partial<RuntimeState>) => {
     state = { ...state, ...patch };
@@ -330,9 +347,9 @@ export function createRuntimeModel(io: WidgetsIo, rootId: string, mainRel: strin
       const reviews = Object.fromEntries(
         Object.entries(state.reviews).filter(([ref, r]) => digests.get(ref) === r.status.digest),
       );
-      set({ status, loading: false, notice: status.storeError ?? state.notice, reviews });
+      set({ status, loading: false, notice: readNotice(status.storeError ?? null), reviews });
     } catch (e) {
-      set({ loading: false, notice: `Could not read the runtimes: ${msg(e)}` });
+      set({ loading: false, notice: readNotice(`Could not read the runtimes: ${msg(e)}`) });
     }
   }
 
