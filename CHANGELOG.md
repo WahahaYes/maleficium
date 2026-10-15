@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### For contributors
+
+- **Built-in runtimes have manifests.** Model, video, table and chart each declare a `runtime.json` beside their source, read from one registry in the app; a test fails when any list of widget kinds drifts from it. A custom runtime's `runtime.json` that uses `kit`, `params` or `extends` is refused as reserved for a later contract.
+
 ## 0.4.1 - 2026-10-15
 
 0.4.0 was tagged but never published: its release build was rejected before it started. 0.4.1 is the first release with those changes; see the 0.4.0 changelog below for what's new.
