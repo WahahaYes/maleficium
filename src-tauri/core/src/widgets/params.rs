@@ -14,6 +14,8 @@
 //! - `background` (model): `transparent` or an HTML hex colour without `#`
 //!   (the package cannot carry `#`). Canonical: `transparent` or `#rrggbb`.
 //! - `scale` (chart): the poster's pixels per CSS pixel.
+//! - `at` (video): the moment, in seconds, the view starts on and the
+//!   poster is taken from. Canonical: a short decimal.
 //! - `framedomains`, `resourcedomains` (html): origins the widget declares,
 //!   space separated, as `widget.json`'s `frameDomains` and
 //!   `resourceDomains`. Canonical: sorted, deduplicated, space separated.
@@ -207,8 +209,20 @@ pub fn scale(s: &str) -> Result<f64, String> {
     Ok(v)
 }
 
+/// A moment of the media in seconds (`key=`), 0 or more.
+pub fn seconds(key: &str, s: &str) -> Result<f64, String> {
+    let v: f64 = s
+        .trim()
+        .parse()
+        .map_err(|_| format!("{key}= is a time in seconds like 2.5, not `{s}`"))?;
+    if !(v.is_finite() && v >= 0.0) {
+        return Err(format!("{key}= must be 0 seconds or more, not {s}"));
+    }
+    Ok(v)
+}
+
 /// A value checked and put in the canonical form of `format`.
-pub fn canonical_format(format: OptionFormat, value: &str) -> Result<String, String> {
+pub fn canonical_format(format: OptionFormat, key: &str, value: &str) -> Result<String, String> {
     Ok(match format {
         OptionFormat::Camera => camera(value)?
             .iter()
@@ -221,6 +235,7 @@ pub fn canonical_format(format: OptionFormat, value: &str) -> Result<String, Str
         }
         OptionFormat::Background => background(value)?,
         OptionFormat::Scale => num(scale(value)?),
+        OptionFormat::Time => num(seconds(key, value)?),
     })
 }
 
@@ -260,7 +275,7 @@ pub fn option_with(kind: WidgetType, format: OptionFormat) -> Option<&'static st
 /// origins. Options that are not poster parameters pass through unchanged.
 pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, String> {
     if let Some(f) = format_of(kind, key) {
-        return canonical_format(f, value);
+        return canonical_format(f, key, value);
     }
     let origins = matches!(key, "framedomains" | "resourcedomains");
     if origins && kind == WidgetType::Html {
@@ -365,6 +380,11 @@ mod tests {
         for bad in ["0", "-1", "9", "two", "inf"] {
             assert!(scale(bad).is_err(), "{bad}");
         }
+        assert_eq!(seconds("at", "0").unwrap(), 0.0);
+        assert_eq!(seconds("at", " 2.0167 ").unwrap(), 2.0167);
+        for bad in ["-0.5", "two", "inf", "NaN", ""] {
+            assert!(seconds("at", bad).unwrap_err().starts_with("at="), "{bad}");
+        }
     }
 
     #[test]
@@ -379,6 +399,10 @@ mod tests {
         assert_eq!(
             canonical(WidgetType::parse("chart").unwrap(), "scale", "2.50").unwrap(),
             "2.5"
+        );
+        assert_eq!(
+            canonical(WidgetType::parse("video").unwrap(), "at", "1.50").unwrap(),
+            "1.5"
         );
         // Other options pass through verbatim.
         assert_eq!(

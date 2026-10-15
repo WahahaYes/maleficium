@@ -10,8 +10,12 @@ dedicated to the public domain under CC0 1.0.
   media/clip.mp4   a 2 s, 160x90 H.264 test pattern from ffmpeg's built-in
                    `testsrc2` generator (needs ffmpeg with libx264).
   playground/figures/clip.png  frame 1 s into clip.mp4, scaled to 640x360: the
-                   video's poster, a picture of the real clip (video posters
-                   are not rendered by the app yet).
+                   video's poster, a picture of the real clip.
+  media/frames.mp4, media/frames.webm  frame-indexed clips for at= posters:
+                   96x54, 30 fps, 4 s, a keyframe every 60 frames (H.264 and
+                   VP9). Frame N is flat grey in two halves, left
+                   (N mod 20)*12+8 and right floor(N/20)*12+8 (luma), so one
+                   sample per half reads N back.
 Never write these through a text tool: the bytes are binary.
 """
 import json
@@ -105,6 +109,18 @@ def main() -> None:
          "-movflags", "+faststart", "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact", str(clip)],
         check=True,
     )
+    lum = "if(lt(X\\,48)\\,mod(N\\,20)*12+8\\,floor(N/20)*12+8)"
+    src = f"color=c=black:s=96x54:r=30:d=4,format=gray,geq=lum='{lum}',format=yuv420p"
+    for name, codec in [
+        ("frames.mp4", ["-c:v", "libx264", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+                        "-crf", "10", "-movflags", "+faststart"]),
+        ("frames.webm", ["-c:v", "libvpx-vp9", "-g", "60", "-crf", "10", "-b:v", "0"]),
+    ]:
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", src, *codec, "-map_metadata", "-1",
+             "-fflags", "+bitexact", "-flags:v", "+bitexact", str(clip.parent / name)],
+            check=True,
+        )
     for t in TARGETS[1:]:
         (t / "media").mkdir(exist_ok=True)
         (t / "media" / "clip.mp4").write_bytes(clip.read_bytes())
