@@ -1,21 +1,22 @@
-// useArticle.ts — the Article tab's bytes.
+// useArticle.ts — the Article tab's page.
 //
-// Loads the reader bundle for the open main file on demand. The approve
+// Loads the reader bundle for the open main file on demand, as the URL of
+// the page the core shelved (a fresh one per load). The approve
 // round-trip reloads through the same loader: every export re-judges the
 // approval gate, so an approval settled in the Widgets panel shows on the
 // next load. A finished compile auto-refreshes through the preview stamp.
 
 import { useCallback, useRef, useState } from 'react';
-import { fetchArticle } from '../lib/article.tauri';
+import { articleSrc, fetchArticle } from '../lib/article.tauri';
 import { emit } from '../lib/events';
 import type { ArticleAnchor } from '../lib/generated/api';
 
 export function useArticle() {
-  const [html, setHtml] = useState<string | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
   const [anchors, setAnchors] = useState<ArticleAnchor[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The preview stamp the shown bytes were exported from (0: never loaded). */
+  /** The preview stamp the shown page was exported from (0: never loaded). */
   const [stamp, setStamp] = useState(0);
   const argsRef = useRef<{ rootId: string; mainRel: string; stamp: number } | null>(null);
 
@@ -26,7 +27,7 @@ export function useArticle() {
     setError(null);
     try {
       const view = await fetchArticle(rootId, mainRel);
-      setHtml(view.html);
+      setSrc(articleSrc(view.token));
       setAnchors(view.anchors);
       emit({
         scope: 'preview',
@@ -57,5 +58,5 @@ export function useArticle() {
     if (a) void load(a.rootId, a.mainRel, a.stamp);
   }, [load]);
 
-  return { html, anchors, loading, error, stamp, load, reload };
+  return { src, anchors, loading, error, stamp, load, reload };
 }

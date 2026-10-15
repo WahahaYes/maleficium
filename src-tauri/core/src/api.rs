@@ -593,6 +593,7 @@ pub fn typescript() -> String {
         BundleExported::decl(&cfg),
         crate::bundle::ArticleAnchor::decl(&cfg),
         crate::bundle::ArticleView::decl(&cfg),
+        crate::article_shelf::ArticleServed::decl(&cfg),
         ForwardSyncParams::decl(&cfg),
         InverseSyncParams::decl(&cfg),
         StructureOutlineParams::decl(&cfg),
