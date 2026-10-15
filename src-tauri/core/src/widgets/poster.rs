@@ -6,12 +6,17 @@
 //! destroyed afterwards, and [`finish`] checks the snapshot and writes the
 //! PNG to the caller's path.
 //!
-//! First-party runtimes render without approval: `model@1` and `chart@1`
-//! (a table's poster is its typeset rows, and video posters are a separate
-//! question). An `html` widget is author code: it renders only when
-//! [`crate::widget_approval`] approves its folder, and the check is made
-//! here, at execution time, on one snapshot of the folder whose bytes are
-//! folded into the job's document; nothing reads the folder again. Not
+//! First-party runtimes render without approval: those whose poster
+//! strategy is `render` (`model@1`, `chart@1`), and an `author` one whose
+//! widget names a moment of its media ([`poster_moment`]: `video@1`'s
+//! `at=`); a table's poster is its typeset rows. A moment's job seeks
+//! there and snapshots the frame ([`PosterJob::seek`]): the app runs it in
+//! the `--render-posters` subprocess with hardware acceleration off in the
+//! view, and [`finish`] refuses a blank frame. An `html` widget is author
+//! code: it renders only when [`crate::widget_approval`] approves its
+//! folder, and the check is made here, at execution time, on one snapshot
+//! of the folder whose bytes are folded into the job's document; nothing
+//! reads the folder again. Not
 //! approved, the request comes back as `approval_required` and nothing
 //! runs. An approved html widget runs under the strict widget policy: its
 //! declared origins are not reachable from a poster render.
@@ -140,6 +145,11 @@ pub struct PosterJob {
     pub frame: (u32, u32),
     /// The exact PNG size the runtime must return, when it is fixed.
     pub expect: Option<(u32, u32)>,
+    /// The poster is a frame of the widget's media after a seek
+    /// ([`poster_moment`]). On Linux the renderer turns hardware
+    /// acceleration off in the view (WebKitGTK's GL video sink reads back
+    /// a transparent frame), and [`finish`] refuses a blank snapshot.
+    pub seek: bool,
     pub timeout: Duration,
     pub out: PathBuf,
 }
@@ -165,6 +175,39 @@ pub fn poster_source(w: &Widget, cached: Option<&Path>) -> PosterSource {
         Some(c) if c.is_file() => PosterSource::Cached(c.to_path_buf()),
         _ => PosterSource::Placeholder,
     }
+}
+
+/// The moment of its media an `author` runtime's widget takes its poster
+/// from: the value of the option its runtime declares in the `time`
+/// format, when the widget gives one (`video@1`'s `at=`).
+pub fn poster_moment(w: &Widget) -> Option<f64> {
+    let b = w.kind.builtin()?;
+    if b.manifest.poster != PosterStrategy::Author {
+        return None;
+    }
+    let key = params::option_with(w.kind, OptionFormat::Time)?;
+    let o = w.options.iter().find(|o| o.key == key)?;
+    params::seconds(key, &o.value).ok()
+}
+
+/// Whether the app renders this widget's poster when the document gives
+/// none: its kind [renders posters](WidgetType::renders_posters), or it
+/// names a [moment](poster_moment) of its media.
+pub fn renders_poster(w: &Widget) -> bool {
+    w.kind.renders_posters() || poster_moment(w).is_some()
+}
+
+/// Whether a request's poster renders in the `--render-posters`
+/// subprocess even where the app could render in-process: a seek into
+/// media can wedge the webview's main thread (seen once on Wayland), and
+/// only killing the process recovers from that. False when the request
+/// does not name a widget of the last compile.
+pub fn needs_process(cx: &Core, req: &PosterRequest) -> bool {
+    read(cx, &req.root_id, &req.main_rel).is_ok_and(|(list, _)| {
+        list.widgets
+            .iter()
+            .any(|w| w.id == req.widget_id && poster_moment(w).is_some())
+    })
 }
 
 fn host_document(runtime: &str) -> Option<&'static str> {
@@ -273,11 +316,15 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
                     b.reference
                 ))
             }
+            PosterStrategy::Author if poster_moment(w).is_some() => {}
             PosterStrategy::Author => {
+                let or = params::option_with(w.kind, OptionFormat::Time)
+                    .map(|k| format!(" or {k}="))
+                    .unwrap_or_default();
                 return Err(format!(
-                    "widget {id}: {} posters come from the document; give it poster=",
+                    "widget {id}: {} posters come from the document; give it poster={or}",
                     b.reference
-                ))
+                ));
             }
         },
     }
@@ -343,6 +390,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
         sources,
         frame,
         expect,
+        seek: poster_moment(w).is_some(),
         timeout,
         out,
     }))
@@ -435,6 +483,7 @@ fn html_job(
                 sources: Vec::new(),
                 frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
                 expect: None,
+                seek: false,
                 timeout,
                 out,
             }))
@@ -573,6 +622,7 @@ fn custom_job(
                 sources,
                 frame: (clamp_side(rect_css.0), clamp_side(rect_css.1)),
                 expect: None,
+                seek: false,
                 timeout,
                 out,
             }))
@@ -643,6 +693,17 @@ pub fn finish(job: &PosterJob, data_url: &str) -> Result<PosterRendered, String>
         if (width, height) != (ew, eh) {
             return Err(format!(
                 "widget {}: the snapshot is {width}x{height}, expected {ew}x{eh}",
+                job.widget_id
+            ));
+        }
+    }
+    if job.seek {
+        // A frame read back blank (transparent, or one flat colour) is a
+        // failed render, never a poster.
+        let px = decode_png(&png).map(|(_, _, px)| px);
+        if px.as_deref().is_none_or(is_blank) {
+            return Err(format!(
+                "widget {}: the media frame came back blank; try another moment, or give it poster=",
                 job.widget_id
             ));
         }
