@@ -85,6 +85,7 @@ execFileSync(
 const b64 = (path) => readFileSync(path).toString('base64');
 const glb = b64(join(dev, 'e2e/fixtures/interactive/models/mesh.glb'));
 const mp4 = b64(join(dev, 'e2e/fixtures/interactive/media/clip.mp4'));
+const frames = b64(join(dev, 'e2e/fixtures/interactive/media/frames.webm'));
 const webmB64 = b64(webm);
 const stub = Buffer.from('GLB-STUB-NOT-A-MODEL\n').toString('base64');
 
@@ -200,6 +201,18 @@ await page.evaluate(() => {
     };
   };
   window.__hash = (png) => png.length + ':' + png.slice(-64);
+  // The red channel at (x, y) of a PNG data URL.
+  window.__red = async (png, x, y) => {
+    const img = new Image();
+    img.src = png;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return ctx.getImageData(x, y, 1, 1).data[0];
+  };
 });
 
 const events = (id) => page.evaluate((i) => window.__events.filter((e) => e.id === i), id);
@@ -439,6 +452,35 @@ console.log(
 );
 check('video: the fixture mp4 reaches a terminal status', !!v3);
 await page.evaluate(() => window.__unmount('v3'));
+
+// at=: the view starts on that frame. frames.webm codes frame N as grey halves
+// (N mod 20, N div 20, as luma 12k+8), read back in full or limited range;
+// 2.0167 s is frame 60.
+await page.evaluate((h) => window.__mount('v4', h), runtime('video'));
+await until(async () => (await events('v4')).find((e) => e.data.type === 'ready'));
+await page.evaluate(
+  (b) => window.__init('v4', 'video', 'frames.webm', 'video/webm', b, 'light', { at: '2.0167' }),
+  frames,
+);
+const v4 = await terminal('v4');
+check('video: at= reports loaded after its seek', v4?.data.state === 'loaded', JSON.stringify(v4));
+const at = await until(() => snapshot('v4'));
+const reds = at
+  ? [
+      await page.evaluate((p) => window.__red(p, 24, 27), at),
+      await page.evaluate((p) => window.__red(p, 72, 27), at),
+    ]
+  : [];
+const frameAt = (() => {
+  if (reds.length < 2) return null;
+  // The range whose codes land closest to whole steps.
+  const ranges = [(v) => (v - 8) / 12, (v) => ((v * 219) / 255 + 8) / 12];
+  const fit = (f) => reds.reduce((e, v) => e + Math.abs(f(v) - Math.round(f(v))), 0);
+  const f = fit(ranges[0]) <= fit(ranges[1]) ? ranges[0] : ranges[1];
+  return Math.round(f(reds[0])) + 20 * Math.round(f(reds[1]));
+})();
+check('video: at=2.0167 shows frame 60', frameAt === 60, `${frameAt} from ${reds}`);
+await page.evaluate(() => window.__unmount('v4'));
 
 // ---- chart: hover ----
 const hoverSpec = Buffer.from(

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- **Video posters from a moment of the video.** `\interactivevideo` takes `at=`, a time in seconds: with it, `poster=` is optional, and Maleficium renders the frame at that time as the poster when you compile. The live video starts at the same frame. The frame is rendered in a separate process that is stopped when it overruns its time limit, so a video that never finishes seeking cannot hang the editor. A frame that comes back blank is refused rather than used, and the widget keeps its placeholder. Tested on Linux; on macOS and Windows it is untested.
+
 ### For contributors
 
 - **Built-in runtimes have manifests.** Model, video, table and chart each declare a `runtime.json` beside their source, read from one registry in the app; a test fails when any list of widget kinds drifts from it. A custom runtime's `runtime.json` that uses `kit`, `params` or `extends` is refused as reserved for a later contract.
