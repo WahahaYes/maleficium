@@ -5,6 +5,7 @@
 ### For contributors
 
 - **Built-in runtimes have manifests.** Model, video, table and chart each declare a `runtime.json` beside their source, read from one registry in the app; a test fails when any list of widget kinds drifts from it. A custom runtime's `runtime.json` that uses `kit`, `params` or `extends` is refused as reserved for a later contract.
+- **Widget behaviour follows the manifests.** Which source a widget needs, which role may be `remote=`, how its poster is made (rendered, cropped from the PDF, or given by the document) and which poster options it takes now come from its runtime's `runtime.json`, not from code per kind. The generated TypeScript `WidgetType` is a plain string for now. Poster errors name the runtime and why: `table@1 posters are cropped from the PDF, nothing to render`.
 
 ## 0.4.1 - 2026-10-15
 
