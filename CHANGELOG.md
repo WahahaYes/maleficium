@@ -22,6 +22,14 @@
 - **An engine that cannot start says so.** An engine that failed without printing anything, as on that Windows, was reported as "no TeX support files are cached yet and there is no network" even with a working network. The message now gives the engine's exit status, and names a missing DLL on Windows.
 - **A finished compile no longer reads as "compile worker lost".** Polling a job after it finished returned the result once, then failed with "compile worker lost" and then reported it as running again. Anything that polled a job twice (an agent plus a live view, or two views) saw a failed or stuck compile. Every poll of a finished job now returns the same final result.
 - **A label's snippet lands on its figure.** `snippet` with a `label` (or a line such as `\label` or `\end{figure}` that has no box of its own) came back as the whole page body on the page where the float's text sits, so an agent asking about a figure got the wrong page. It now uses the nearest earlier line that has a placement of its own, which puts the snippet on the figure.
+- **Approved widgets run in the Article tab.** The tab loaded the reader inline, so the app window's security policy blocked its script and every widget stayed a poster, with no Approve button, on every platform. The reader now loads from its own address under its own policy, as an exported bundle does in a browser.
+- **The first save of a file can be undone.** Revision history kept only what each save wrote, so the text before a file's first save, or an outside edit made since the last revision, was lost. A save now keeps the content it overwrites when history does not already hold it.
+- **Opening a project no longer edits it.** Opening or switching to a file counted as an edit, so it autosaved the file, recorded a revision and compiled. Only real edits do now.
+- **Saving unchanged text no longer compiles.** Ctrl+S with no edits, or an autosave after an edit was undone, no longer starts an auto-compile.
+- **Every file of a runtime is checked.** The widget runtime check skipped any file named README or LICENSE at any depth, so a file such as `lib/README.js` could reach the widget page unchecked. Only the package's own top-level README, licence and metadata are skipped now.
+- **? types a question mark.** Pressing ? in the editor or a text field opened Keyboard Shortcuts. It now opens them only when focus is outside text.
+- **The Widgets panel drops stale errors.** A read that failed before a project's first compile ("main.tex has no compiled pdf") stayed beside the working listing after the compile succeeded. Each refresh now replaces what the last one reported.
+- **The privacy policy says where your data lives.** `PRIVACY.md` lists the app's data and cache folders on Linux, macOS and Windows, says uninstalling keeps them, and that deleting the cache is safe.
 
 ### For AI agents
 
