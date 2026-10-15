@@ -1057,9 +1057,16 @@ fn plan_widget(
     }
     let inline_opt = option(w, "inline").is_some_and(truthy);
     let remote = option(w, "remote").filter(|r| !r.is_empty());
-    if remote.is_some() && w.kind.name() != "video" {
+    // The role a remote URL may stand in for, if the kind's runtime has one.
+    let remote_role = w
+        .kind
+        .builtin()
+        .and_then(|b| b.manifest.sources.iter().find(|(_, r)| r.remote))
+        .map(|(role, _)| role.as_str());
+    if remote.is_some() && remote_role.is_none() {
         return Err(format!(
-            "widget {id}: remote= is only supported on video widgets"
+            "widget {id}: {} widgets take no remote= source",
+            w.kind.name()
         ));
     }
 
@@ -1162,36 +1169,29 @@ fn plan_widget(
         custom_options = options;
         doc
     } else {
-        let mut video_local: Option<&str> = None;
+        let mut remote_local: Option<&str> = None;
         for (role_key, s) in role_keys(w)? {
-            if w.kind.name() == "video" && s.role == "video" && remote.is_some() {
-                video_local = Some(&s.path);
+            if remote.is_some() && remote_role == Some(s.role.as_str()) {
+                remote_local = Some(&s.path);
                 continue;
             }
             let key = format!("{id}-{role_key}");
             p.add_local(key.clone(), &id, &s.path, inline_opt)?;
             sources.insert(role_key, key.into());
         }
-        if let Some(url) = remote {
-            let key = format!("{id}-video");
+        if let (Some(url), Some(role)) = (remote, remote_role) {
+            let key = format!("{id}-{role}");
             p.add_remote(
                 key.clone(),
                 &id,
-                "video",
+                role,
                 url,
-                video_local,
+                remote_local,
                 option(w, "sha256").filter(|s| !s.is_empty()),
             )?;
-            sources.insert("video".into(), key.into());
+            sources.insert(role.into(), key.into());
         }
-        let required = match w.kind.name() {
-            "model" => Some("model"),
-            "video" => Some("video"),
-            "table" => Some("data"),
-            "chart" => Some("spec"),
-            _ => None,
-        };
-        if let Some(role) = required {
+        if let Some(role) = w.kind.builtin().map(|b| b.manifest.primary_role()) {
             if !sources.contains_key(role) {
                 return Err(format!("widget {id}: it records no {role} source"));
             }
