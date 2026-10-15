@@ -1028,6 +1028,14 @@ fn plan_custom(
     Ok((Some(doc), Some(bound.options)))
 }
 
+/// A built-in whose poster is its typeset area: `poster=` is ignored, as
+/// the package warns.
+fn crops_its_poster(w: &Widget) -> bool {
+    w.kind
+        .builtin()
+        .is_some_and(|b| b.manifest.poster == crate::runtimes::PosterStrategy::Crop)
+}
+
 fn plan_widget(
     p: &mut Plan,
     w: &Widget,
@@ -1088,7 +1096,7 @@ fn plan_widget(
     };
     let source = crate::widgets::poster::poster_source(w, cached.as_deref());
     match source {
-        PosterSource::Explicit(rel) if w.kind.name() != "table" => {
+        PosterSource::Explicit(rel) if !crops_its_poster(w) => {
             p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
         }
         PosterSource::Cached(png) => {

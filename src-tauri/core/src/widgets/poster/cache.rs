@@ -157,13 +157,12 @@ pub(crate) fn digest(
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Whether a widget's poster can come from the cache: first-party model and
-/// chart runtimes, html widgets (the latter only while approved, see
-/// [`keyed`]), and custom widgets (only while their runtime is approved),
-/// and never when the document gives its own poster.
+/// Whether a widget's poster can come from the cache: a kind that
+/// [renders posters](WidgetType::renders_posters) (html only while approved,
+/// see [`keyed`]; custom only while its runtime is approved), and never when
+/// the document gives its own poster.
 fn auto(w: &Widget) -> bool {
-    matches!(w.kind.name(), "model" | "chart" | "html" | "custom")
-        && !matches!(poster_source(w, None), PosterSource::Explicit(_))
+    w.kind.renders_posters() && !matches!(poster_source(w, None), PosterSource::Explicit(_))
 }
 
 fn key_options(w: &Widget) -> Vec<(String, String)> {

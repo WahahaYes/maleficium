@@ -65,6 +65,16 @@ impl WidgetType {
             _ => None,
         }
     }
+
+    /// Whether the app renders this kind's poster when the document gives
+    /// none: a built-in whose strategy is `render`, an html widget, or a
+    /// custom runtime.
+    pub fn renders_posters(self) -> bool {
+        match self {
+            Self::Builtin(b) => b.manifest.poster == crate::runtimes::PosterStrategy::Render,
+            Self::Html | Self::Custom => true,
+        }
+    }
 }
 
 impl std::fmt::Debug for WidgetType {

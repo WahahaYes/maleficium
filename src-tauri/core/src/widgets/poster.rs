@@ -29,6 +29,7 @@
 
 use super::{params, read, Widget, WidgetSource, WidgetType};
 use crate::bundle::{fold, role_keys, runtime_options, sha_of};
+use crate::runtimes::PosterStrategy;
 use crate::theme::{Mode, Theme};
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
 use crate::Core;
@@ -264,18 +265,20 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
     match w.kind {
         WidgetType::Html => return html_job(base, cx, req, w, &theme, out, timeout),
         WidgetType::Custom => return custom_job(base, cx, req, w, &theme, out, timeout),
-        WidgetType::Builtin(b) => match b.manifest.name.as_str() {
-            "table" => {
+        WidgetType::Builtin(b) => match b.manifest.poster {
+            PosterStrategy::Render => {}
+            PosterStrategy::Crop => {
                 return Err(format!(
-                    "widget {id}: a table's poster is its typeset rows, nothing to render"
+                    "widget {id}: {} posters are cropped from the PDF, nothing to render",
+                    b.reference
                 ))
             }
-            "video" => {
+            PosterStrategy::Author => {
                 return Err(format!(
-                    "widget {id}: video posters are not rendered yet; give it poster="
+                    "widget {id}: {} posters come from the document; give it poster=",
+                    b.reference
                 ))
             }
-            _ => {}
         },
     }
     if req.digest.is_some() {
