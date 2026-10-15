@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+0.4.0 was tagged but never published: its release build was rejected before it started. 0.4.1 is the first release with those changes; see the 0.4.0 changelog below for what's new.
+
+### For contributors
+
+- **Releases publish again.** `release.yml` now grants the build it calls the `actions: write` permission that the cache cleanup job asks for; without it GitHub rejected the whole release run. The cache cleanup runs only on pushes to main, not during a release.
+- **`release.sh` waits for the full build.** It gave up when no required check had appeared after 10 minutes, but the one required check, `ci`, appears only after the platform builds finish, so every release stopped there and needed a rerun. It now waits while the release PR's checks are running, and stops at the first failed one.
+
 ## 0.4.0 - 2026-10-15
 
 ### License
