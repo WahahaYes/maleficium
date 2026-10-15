@@ -1028,6 +1028,14 @@ fn plan_custom(
     Ok((Some(doc), Some(bound.options)))
 }
 
+/// A built-in whose poster is its typeset area: `poster=` is ignored, as
+/// the package warns.
+fn crops_its_poster(w: &Widget) -> bool {
+    w.kind
+        .builtin()
+        .is_some_and(|b| b.manifest.poster == crate::runtimes::PosterStrategy::Crop)
+}
+
 fn plan_widget(
     p: &mut Plan,
     w: &Widget,
@@ -1057,9 +1065,16 @@ fn plan_widget(
     }
     let inline_opt = option(w, "inline").is_some_and(truthy);
     let remote = option(w, "remote").filter(|r| !r.is_empty());
-    if remote.is_some() && w.kind != WidgetType::Video {
+    // The role a remote URL may stand in for, if the kind's runtime has one.
+    let remote_role = w
+        .kind
+        .builtin()
+        .and_then(|b| b.manifest.sources.iter().find(|(_, r)| r.remote))
+        .map(|(role, _)| role.as_str());
+    if remote.is_some() && remote_role.is_none() {
         return Err(format!(
-            "widget {id}: remote= is only supported on video widgets"
+            "widget {id}: {} widgets take no remote= source",
+            w.kind.name()
         ));
     }
 
@@ -1081,7 +1096,7 @@ fn plan_widget(
     };
     let source = crate::widgets::poster::poster_source(w, cached.as_deref());
     match source {
-        PosterSource::Explicit(rel) if w.kind != WidgetType::Table => {
+        PosterSource::Explicit(rel) if !crops_its_poster(w) => {
             p.add_local(poster_key.clone(), &id, &rel, inline_opt)?
         }
         PosterSource::Cached(png) => {
@@ -1162,36 +1177,29 @@ fn plan_widget(
         custom_options = options;
         doc
     } else {
-        let mut video_local: Option<&str> = None;
+        let mut remote_local: Option<&str> = None;
         for (role_key, s) in role_keys(w)? {
-            if w.kind == WidgetType::Video && s.role == "video" && remote.is_some() {
-                video_local = Some(&s.path);
+            if remote.is_some() && remote_role == Some(s.role.as_str()) {
+                remote_local = Some(&s.path);
                 continue;
             }
             let key = format!("{id}-{role_key}");
             p.add_local(key.clone(), &id, &s.path, inline_opt)?;
             sources.insert(role_key, key.into());
         }
-        if let Some(url) = remote {
-            let key = format!("{id}-video");
+        if let (Some(url), Some(role)) = (remote, remote_role) {
+            let key = format!("{id}-{role}");
             p.add_remote(
                 key.clone(),
                 &id,
-                "video",
+                role,
                 url,
-                video_local,
+                remote_local,
                 option(w, "sha256").filter(|s| !s.is_empty()),
             )?;
-            sources.insert("video".into(), key.into());
+            sources.insert(role.into(), key.into());
         }
-        let required = match w.kind {
-            WidgetType::Model => Some("model"),
-            WidgetType::Video => Some("video"),
-            WidgetType::Table => Some("data"),
-            WidgetType::Chart => Some("spec"),
-            WidgetType::Html | WidgetType::Custom => None,
-        };
-        if let Some(role) = required {
+        if let Some(role) = w.kind.builtin().map(|b| b.manifest.primary_role()) {
             if !sources.contains_key(role) {
                 return Err(format!("widget {id}: it records no {role} source"));
             }
@@ -1454,27 +1462,17 @@ fn mounts<'a>(
                 (_, Bytes::Mem(b)) => data_url(&a.mime, b),
                 _ => return Err(format!("widget {}: its poster has no bytes", w.id)),
             };
-            let kind = match w.kind {
-                WidgetType::Model => "model",
-                WidgetType::Video => "video",
-                WidgetType::Table => "table",
-                WidgetType::Chart => "chart",
-                WidgetType::Html => "html",
-                WidgetType::Custom => "custom",
-            };
-            let size = (w.kind == WidgetType::Model)
-                .then(|| {
-                    w.options
-                        .iter()
-                        .find(|o| o.key == "size")
-                        .map(|o| crate::widgets::params::size(&o.value))
-                })
-                .flatten()
+            let kind = w.kind.name();
+            let size_key =
+                crate::widgets::params::option_with(w.kind, crate::runtimes::OptionFormat::Size);
+            let size = size_key
+                .and_then(|key| w.options.iter().find(|o| o.key == key))
+                .map(|o| crate::widgets::params::size(&o.value))
                 .transpose()
                 .map_err(|e| format!("widget {}: {e}", w.id))?;
             let rect = (w.rect.x1 - w.rect.x0, w.rect.y1 - w.rect.y0);
             let (frame, fraction) = reflow::article::frame(
-                kind,
+                size_key.is_some(),
                 size,
                 author_pt(&w.options, "width"),
                 w.line_width,

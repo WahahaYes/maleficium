@@ -638,6 +638,14 @@ fn a_remote_asset_with_a_local_copy_is_hashed_locally_and_not_stored() {
     assert!(export(&p, &dest(&p, "h"), BundleProfile::Folder)
         .unwrap_err()
         .contains("https"));
+    // Only a runtime with a remote role takes one.
+    let table = REAL_SIDECAR.replace("pdfrows=2|", "pdfrows=2,remote=https://example.org/r.csv|");
+    let p = project("remote-table", &table);
+    let e = export(&p, &dest(&p, "t"), BundleProfile::Folder).unwrap_err();
+    assert!(
+        e.ends_with("tab-results: table widgets take no remote= source"),
+        "{e}"
+    );
 }
 
 #[test]

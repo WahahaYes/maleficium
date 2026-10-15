@@ -283,7 +283,7 @@ again, _ = render("cam-front", "again.png")
 check("the renderer still works after a kill", again["ok"], str(again)[:300])
 
 r, _ = render("tab", "tab.png")
-check("tab is refused", not r["ok"] and "typeset rows" in r.get("error", ""), str(r)[:300])
+check("tab is refused", not r["ok"] and "cropped from the PDF" in r.get("error", ""), str(r)[:300])
 
 # --- the html gate -----------------------------------------------------------
 REAL = os.path.realpath(ROOT)
