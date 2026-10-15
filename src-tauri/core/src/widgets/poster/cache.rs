@@ -1078,6 +1078,13 @@ impl ProcessRenderer {
         };
         app.is_file().then_some(ProcessRenderer { exe: app })
     }
+
+    /// This program, whatever its file is called: the desktop app running
+    /// a render apart from its own process.
+    pub fn this_program() -> Option<Self> {
+        let exe = std::env::current_exe().ok()?;
+        exe.is_file().then_some(ProcessRenderer { exe })
+    }
 }
 
 /// Whether a window can open here. Linux needs a display server; the
