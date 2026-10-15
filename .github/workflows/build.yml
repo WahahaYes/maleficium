@@ -582,7 +582,7 @@ jobs:
   purge_caches:
     runs-on: ubuntu-24.04
     needs: [package]
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       actions: write
       contents: read
