@@ -118,6 +118,28 @@ fn kill<R: Runtime>(win: &WebviewWindow<R>) {
     let _ = win.destroy();
 }
 
+/// A seek job's view decodes and draws video without hardware
+/// acceleration. On Linux WebKitGTK's default GL video sink reads every
+/// common codec back as a transparent frame; with the policy off it hands
+/// the exact frame. Per view, queued before the host page loads: the
+/// editor and the other renders keep acceleration. Logs
+/// `hardware acceleration off in <label>` to stderr.
+fn software_video<R: Runtime>(win: &WebviewWindow<R>) {
+    #[cfg(target_os = "linux")]
+    {
+        let label = win.label().to_string();
+        let _ = win.with_webview(move |w| {
+            use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
+            if let Some(s) = WebViewExt::settings(&w.inner()) {
+                s.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Never);
+                eprintln!("hardware acceleration off in {label}");
+            }
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = win;
+}
+
 /// Runs one job in a fresh hidden window and returns the runtime's PNG data
 /// URL. Blocks the calling thread (never the main thread) until the
 /// snapshot arrives, the runtime reports an error, or the time limit
@@ -130,6 +152,7 @@ pub fn render<R: Runtime>(app: &AppHandle<R>, job: Arc<PosterJob>) -> Result<Str
         .replace("__W__", &w.to_string())
         .replace("__H__", &h.to_string());
     let timeout = job.timeout;
+    let seek = job.seek;
     let widget = job.widget_id.clone();
     let renders = app.state::<Renders>();
     renders.0.lock().unwrap_or_else(|e| e.into_inner()).insert(
@@ -158,6 +181,9 @@ pub fn render<R: Runtime>(app: &AppHandle<R>, job: Arc<PosterJob>) -> Result<Str
         )),
         Ok(win) => {
             crate::speculative::off(&win);
+            if seek {
+                software_video(&win);
+            }
             let r = match win.navigate(host_url()) {
                 Err(e) => Err(format!(
                     "widget {widget}: cannot load the poster host: {e}"
