@@ -48,6 +48,12 @@ jobs:
   build:
     needs: check
     uses: ./.github/workflows/build.yml
+    # A called workflow gets no more than this. build.yml's purge_caches asks
+    # for actions: write, and GitHub rejects the whole run if it is not
+    # granted here, even though that job only runs on pushes to main.
+    permissions:
+      actions: write
+      contents: read
 
   publish:
     needs: build
