@@ -309,7 +309,11 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
         sources.push(PosterSourceBytes { key, bytes });
     }
 
-    let mut options = runtime_options(w);
+    // Bound as the export binds it: typed, defaulted, PDF-only keys left out.
+    let mut options = match w.kind.builtin() {
+        Some(b) => crate::runtimes::bind(w, &b.manifest)?.options,
+        None => runtime_options(w),
+    };
     let rect_css = rect_css(w);
     // A runtime with a size option renders at that pixel size; any other
     // renders the widget's box at a density its scale option carries.
