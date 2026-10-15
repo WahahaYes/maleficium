@@ -166,7 +166,7 @@ fn a_video_with_a_moment_renders_that_frame_in_the_poster_subprocess() {
     let job = job_of(cx, &r);
     assert!(job.seek);
     assert_eq!(job.init["runtime"], "video@1");
-    assert_eq!(job.init["options"]["at"], "1.5");
+    assert_eq!(job.init["options"]["at"], serde_json::json!(1.5));
     assert_eq!(job.init["sources"]["video"]["name"], "clip.mp4");
     assert_eq!(job.sources[0].bytes, CLIP);
     // The PNG takes the video's own size; the frame is the widget's box.
