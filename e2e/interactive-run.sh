@@ -206,10 +206,8 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-id.tex", "must match [a-z0-9]"),
                       ("bad-missing.tex", "not found"),
                       ("bad-noalt.tex", "alt= is required"),
-                      ("bad-option.tex", "model widgets take no option `zoom'"),
                       ("bad-builtin-option.tex", "table widgets take no option `zoom'"),
                       ("bad-builtin-comma.tex", "character `,' is not allowed in columns"),
-                      ("bad-param.tex", "camera= does not apply to chart widgets"),
                       ("bad-origins.tex", "framedomains= `http://a.example.org' is malformed"),
                       ("bad-origins-type.tex", "framedomains= does not apply to video widgets"),
                       ("bad-size.tex", "size= `large' is malformed"),
@@ -225,7 +223,7 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-runtime-role-primary.tex", "source role `primary' must be a lowercase letter then up to 15 letters or digits, and not primary"),
                       ("bad-runtime-source-missing.tex", "File `figures/no-such.png' not found"),
                       ("bad-runtime-novalue.tex", "option `autorotate' needs a value: write autorotate=..."),
-                      ("bad-runtime-reserved-key.tex", "option key `camera' is reserved by the package"),
+                      ("bad-runtime-reserved-key.tex", "option key `inline' is an argument of \\interactiveruntime, not a runtime option"),
                       ("bad-runtime-key.tex", "option key `Color' must be a lowercase letter then up to 23 letters or digits"),
                       ("bad-runtime-comma.tex", "character `,' is not allowed in color"),
                       ("bad-runtime-comma-path.tex", "character `,' is not allowed in tex"),
@@ -291,6 +289,14 @@ check("a mistyped built-in option still compiles", tr.get("status") == "success"
 tw = call("widgets", {"root_id": "ip", "main_rel": "builtin-option-type.tex"})
 check("...and the widget list names it",
       not tw["ok"] and "fig-yes" in tw["error"] and "option loop=`yes` is not a boolean" in tw["error"], str(tw)[:300])
+# A hookless built-in takes any key the package lets through; its runtime
+# refuses what it does not declare when the widget is listed.
+for doc, want in [("bad-option.tex", "runtime model@1 has no option `zoom`"),
+                  ("bad-param.tex", "camera")]:
+    r = compile(doc, rounds=20)
+    check(f"{doc} compiles", r.get("status") == "success", str(r)[:200])
+    w = call("widgets", {"root_id": "ip", "main_rel": doc})
+    check(f"...and the widget list refuses it", not w["ok"] and want in w["error"], str(w)[:300])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)

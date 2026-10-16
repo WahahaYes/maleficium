@@ -353,7 +353,7 @@ fn poster_parameters_are_canonical_in_the_list_and_bad_ones_fail() {
             "scale",
             "height=170.71652pt|",
             "height=170.71652pt,scale=2|",
-            "widget fig-mesh: scale= does not apply",
+            "widget fig-mesh: runtime model@1 has no option `scale`",
         ),
     ] {
         let (id, _r, out) = compiled(
@@ -781,14 +781,17 @@ fn bad_origin_options_and_too_many_origins_fail_the_list() {
 }
 
 #[test]
-fn origin_options_apply_only_to_html_widgets() {
-    let e = params::canonical(
-        WidgetType::parse("model").unwrap(),
-        "framedomains",
-        "https://a.org",
-    )
-    .unwrap_err();
-    assert!(e.contains("does not apply"), "{e}");
+fn origin_options_are_canonical_for_html_widgets_only() {
+    // Elsewhere framedomains is a plain option its runtime may declare.
+    assert_eq!(
+        params::canonical(
+            WidgetType::parse("model").unwrap(),
+            "framedomains",
+            "https://a.org"
+        )
+        .unwrap(),
+        "https://a.org"
+    );
     assert_eq!(
         params::canonical(
             WidgetType::Html,
@@ -868,8 +871,8 @@ fn a_bad_custom_record_fails_the_list_with_its_message() {
         (CUSTOM_LINE.replace("texture=", "primary="), "widget fig-part: source role `primary` is given twice"),
         (CUSTOM_LINE.replace("labels=", "Labels="), "widget fig-part: source role `Labels` is not a plain word"),
         (CUSTOM_LINE.replace("color=", "col-or="), "widget fig-part: option key `col-or` is not a plain word"),
-        // Poster parameters belong to the built-in kinds.
-        (CUSTOM_LINE.replace("color=accent", "camera=0 0 1"), "camera= does not apply to this widget type"),
+        // A vocabulary key is checked by its format for custom runtimes too.
+        (CUSTOM_LINE.replace("color=accent", "camera=0 0 1"), "a camera matrix has 16 numbers"),
     ];
     for (line, want) in cases {
         let e = custom(&line).unwrap_err();

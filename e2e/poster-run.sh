@@ -176,7 +176,7 @@ check("size, background and scale are recorded",
       opt("cam-front", "size") == "320x240" and opt("cam-front", "background") == "#ffffff"
       and opt("chart", "scale") == "2", str(ws)[:300])
 check("a hookless built-in is listed as itself with its primary role",
-      ws.get("plotly", {}).get("type") == "plotly"
+      ws.get("plotly", {}).get("type") == "plotly" and opt("plotly", "scale") == "2"
       and [s["role"] for s in ws.get("plotly", {}).get("sources", [])] == ["figure"], str(ws.get("plotly"))[:300])
 mcp.p.kill()
 
@@ -281,8 +281,7 @@ plot, _ = render("plotly", "plotly.png")
 check("the plotly figure renders", plot["ok"], str(plot)[:300])
 pi = png_info(os.path.join(OUT, "plotly.png")) if plot["ok"] else None
 frame_w = round((ws["plotly"]["rect"]["x1"] - ws["plotly"]["rect"]["x0"]) * 96 / 72) if "plotly" in ws else 0
-# No scale=: the renderer's default density, 2 poster pixels per CSS pixel.
-check("the plotly poster fills its frame at the default density",
+check("the plotly poster fills its frame at scale 2",
       pi is not None and abs(pi[0] - 2 * frame_w) <= 2 and pi[2] is not None and pi[2] > 0.1,
       str((pi, frame_w)))
 

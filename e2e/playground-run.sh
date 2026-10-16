@@ -122,13 +122,19 @@ EXPECT = {  # id: (type, runtime, label)
 }
 check("sidecar lists every widget", {w[1] for w in rows} == set(EXPECT), str([w[1] for w in rows]))
 by_id = {w[1]: w for w in rows}
+# A built-in with no package hook is recorded custom and listed as itself.
+src = os.path.join(os.environ["DEVROOT"], "embed-runtime/src")
+BUILTINS = {d for d in os.listdir(src) if os.path.isfile(os.path.join(src, d, "runtime.json"))}
+def listed_type(rec):
+    name = rec[3].split("@")[0]
+    return name if rec[2] == "custom" and name in BUILTINS else rec[2]
 check("every widget type is covered",
-      {w[2] for w in rows} == {"model", "video", "table", "chart", "html"}, str({w[2] for w in rows}))
+      {listed_type(w) for w in rows} == {"model", "video", "table", "chart", "html"}, str({w[2] for w in rows}))
 check("every widget has alt text", all(len(w) == 11 and w[10].strip() for w in rows), str([w[-1] for w in rows]))
 for wid, (typ, rt, label) in EXPECT.items():
     w = by_id.get(wid)
     check(f"{wid} type, runtime and label",
-          bool(w) and w[2] == typ and w[3] == rt and w[4] == label, str(w))
+          bool(w) and listed_type(w) == typ and w[3] == rt and w[4] == label, str(w))
 check("uncaptioned and floatless widgets have no figure number",
       all(by_id[i][5] == "" for i in ("chart-bare", "chart-inline")), str([by_id[i] for i in ("chart-bare", "chart-inline")]))
 check("captioned widgets carry a figure number",
