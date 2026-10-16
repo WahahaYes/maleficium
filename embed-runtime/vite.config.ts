@@ -120,6 +120,8 @@ export default defineConfig(({ mode }) => {
   return {
     root: `embed-runtime/src/${runtime}`,
     plugins: [viteSingleFile(), ...(CLASSIC.includes(runtime) ? [classicScript()] : [])],
+    // Some vendored code (plotly.js) names Node's `global`.
+    define: { global: 'globalThis' },
     build: {
       outDir: `../../built/${runtime}`,
       emptyOutDir: true,
