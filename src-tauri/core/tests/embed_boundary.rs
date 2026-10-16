@@ -102,6 +102,17 @@ fn what_the_exporter_and_scaffold_embed_comes_from_embed_runtime() {
             seen += 1;
         }
     }
+    // build.rs writes the built-ins' table; its paths are absolute.
+    let table = std::fs::read_to_string(concat!(env!("OUT_DIR"), "/builtins.rs")).unwrap();
+    for c in include.captures_iter(&table) {
+        let path = dunce::canonicalize(&c[1]).unwrap();
+        assert!(
+            path.starts_with(&root),
+            "build.rs embeds {}, outside embed-runtime/",
+            &c[1]
+        );
+        seen += 1;
+    }
     assert!(
         seen >= 15,
         "the scan found only {seen} embeds; did the include form change?"
