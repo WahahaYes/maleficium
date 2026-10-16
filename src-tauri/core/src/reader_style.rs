@@ -19,6 +19,7 @@
 
 use crate::Core;
 use base64::Engine as _;
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 /// Largest stylesheet read, in bytes.
@@ -205,6 +206,109 @@ fn short(s: &str) -> String {
     }
 }
 
+/// The theme tokens a reader stylesheet sets, which the widgets get too
+/// ([`crate::theme::Theme::restyled`]): the `--m-*` declarations of its
+/// top-level `.m-reader` rules (`light`) and `.m-reader[data-theme=dark]`
+/// rules (`dark`), each checked as the sidecar's values are. Other rules
+/// style the page only. `refused` says why a declaration was left out.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct StyleTokens {
+    pub light: BTreeMap<String, String>,
+    pub dark: BTreeMap<String, String>,
+    pub refused: Vec<String>,
+}
+
+/// The token declarations of `css` (a stylesheet [`load`] accepted).
+pub fn tokens(css: &str) -> StyleTokens {
+    let mut out = StyleTokens::default();
+    let css = strip_comments(css);
+    let mut rest = css.as_str();
+    while let Some(open) = rest.find('{') {
+        let selector = rest[..open].trim();
+        let Some(len) = block_len(&rest[open..]) else {
+            break;
+        };
+        let body = &rest[open + 1..open + len - 1];
+        rest = &rest[open + len..];
+        // At-rules (@media, @font-face, @supports) are not the theme's.
+        if selector.starts_with('@') {
+            continue;
+        }
+        let (mut light, mut dark) = (false, false);
+        for s in selector.split(',') {
+            let s = s
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_ascii_lowercase();
+            match s.as_str() {
+                ".m-reader" => light = true,
+                ".m-reader[data-theme=dark]"
+                | ".m-reader[data-theme='dark']"
+                | ".m-reader[data-theme=\"dark\"]" => dark = true,
+                _ => {}
+            }
+        }
+        if !(light || dark) {
+            continue;
+        }
+        for decl in body.split(';') {
+            let Some((name, value)) = decl.split_once(':') else {
+                continue;
+            };
+            let (name, value) = (name.trim(), value.trim());
+            if !name.starts_with("--m-") {
+                continue;
+            }
+            match crate::theme::check(name, value) {
+                Ok(()) => {
+                    for (on, map) in [(light, &mut out.light), (dark, &mut out.dark)] {
+                        if on {
+                            map.insert(name.to_string(), value.to_string());
+                        }
+                    }
+                }
+                Err(why) => out.refused.push(why),
+            }
+        }
+    }
+    out
+}
+
+/// `css` without its `/* */` comments.
+fn strip_comments(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(at) = rest.find("/*") {
+        out.push_str(&rest[..at]);
+        match rest[at + 2..].find("*/") {
+            Some(end) => rest = &rest[at + 2 + end + 2..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The length of the brace block `s` starts with, its closing brace
+/// included; None when it never closes.
+fn block_len(s: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// The project-relative folder of the main file.
 pub fn main_dir(main_rel: &str) -> PathBuf {
     Path::new(main_rel)
@@ -216,7 +320,6 @@ pub fn main_dir(main_rel: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     fn files(list: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
         list.iter()
@@ -276,6 +379,37 @@ mod tests {
             let e = inline(css, "", &fs).unwrap_err();
             assert!(e.contains(says), "{css}: {e}");
         }
+    }
+
+    #[test]
+    fn the_reader_rules_token_declarations_are_the_widgets_tokens() {
+        let t = tokens(
+            "/* .m-reader{--m-cat-2:#000000} */\n\
+             .m-reader { --m-cat-1: #7A4A1E; --m-color-bg:#FAF3E8; color: red }\n\
+             .m-reader[data-theme='dark'] , .other{--m-cat-1:#D2A679}\n\
+             .m-reader [data-theme=dark]{--m-cat-3:#111111}\n\
+             @media (min-width: 40rem) { .m-reader { --m-cat-4: #222222 } }\n\
+             body .m-reader { --m-cat-5: #333333 }\n\
+             .m-reader{--m-cat-6:red;--m-cat-9:#444444;--m-font-body:\"Inter\", sans-serif}",
+        );
+        let pairs = |m: &BTreeMap<String, String>| {
+            m.iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            pairs(&t.light),
+            [
+                "--m-cat-1=#7A4A1E",
+                "--m-color-bg=#FAF3E8",
+                "--m-font-body=\"Inter\", sans-serif"
+            ]
+        );
+        assert_eq!(pairs(&t.dark), ["--m-cat-1=#D2A679"]);
+        assert_eq!(t.refused.len(), 2, "{:?}", t.refused);
+        assert!(t.refused[0].contains("--m-cat-6: `red` is not an allowed Color"));
+        assert!(t.refused[1].contains("--m-cat-9 is not a theme token"));
+        assert_eq!(tokens(".m-reader{--m-cat-1:#000"), StyleTokens::default());
     }
 
     #[test]

@@ -71,7 +71,7 @@ The reader gives a widget its column's width (or the author's `width=` fraction 
 
 ## Tokens a runtime may rely on
 
-`theme.tokens` holds the CSS custom properties listed in `theme::TOKENS` (`src-tauri/core/src/theme.rs`): fonts, sizes, spacing, UI colours, and the figure tokens. Apply them on `:root`, as `applyTheme` in `bridge.ts` does.
+`theme.tokens` holds the CSS custom properties listed in `theme::TOKENS` (`src-tauri/core/src/theme.rs`): fonts, sizes, spacing, UI colours, and the figure tokens. They are the paper's values with the author's reader stylesheet on top, so a widget drawn with them matches the page. Apply them on `:root`, as `applyTheme` in `bridge.ts` does.
 
 Draw with the figure tokens:
 

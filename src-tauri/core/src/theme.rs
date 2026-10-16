@@ -229,6 +229,20 @@ pub fn value_ok(kind: Kind, v: &str) -> bool {
     }
 }
 
+/// Whether `value` may be the value of token `name`; `Err` says why not,
+/// for a warning.
+pub fn check(name: &str, value: &str) -> Result<(), String> {
+    let t = token(name).ok_or_else(|| format!("{name} is not a theme token"))?;
+    if value_ok(t.kind, value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name}: `{value}` is not an allowed {:?} value",
+            t.kind
+        ))
+    }
+}
+
 /// Every token's value in both modes. Built only from checked values:
 /// [`Theme::house`], or a record read by [`Lines`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +300,25 @@ impl Theme {
             dark: tokens,
             style: None,
         })
+    }
+
+    /// The theme with a reader stylesheet's token declarations on top, as
+    /// the page's cascade resolves them: a `.m-reader` value is the light
+    /// one, and the dark one too for a token that does not change with the
+    /// mode; a `[data-theme=dark]` value is the dark one, whatever the
+    /// order. Values come checked from [`crate::reader_style::tokens`].
+    pub fn restyled(&self, s: &crate::reader_style::StyleTokens) -> Theme {
+        let mut t = self.clone();
+        for (k, v) in &s.light {
+            t.light.insert(k.clone(), v.clone());
+            if token(k).is_some_and(|t| t.dark.is_none()) {
+                t.dark.insert(k.clone(), v.clone());
+            }
+        }
+        for (k, v) in &s.dark {
+            t.dark.insert(k.clone(), v.clone());
+        }
+        t
     }
 
     /// Every token's value in `mode`.

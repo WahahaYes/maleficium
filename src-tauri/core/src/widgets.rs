@@ -863,7 +863,9 @@ pub fn widgets(cx: &Core, root_id: &str, main_rel: &str) -> Result<WidgetList, S
 
 /// [`widgets`] and the theme of the same compile, from one read of the
 /// sidecar: its theme record, or [`Theme::house`](crate::theme::Theme::house)
-/// when the compile recorded none (the document does not use the package).
+/// when the compile recorded none (the document does not use the package),
+/// with the reader stylesheet's tokens on top
+/// ([`crate::reader_style::tokens`]).
 pub fn read(
     cx: &Core,
     root_id: &str,
@@ -900,7 +902,14 @@ pub fn read(
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     let mut out = Vec::new();
-    let theme = sidecar.theme.unwrap_or_else(crate::theme::Theme::house);
+    let mut theme = sidecar.theme.unwrap_or_else(crate::theme::Theme::house);
+    // The reader stylesheet's tokens reach the widgets and their posters as
+    // they reach the page; one the page refuses changes nothing here either.
+    if let Some(style) = theme.style.clone() {
+        if let Ok(css) = crate::reader_style::load(cx, root_id, &main_dir_rel, &style) {
+            theme = theme.restyled(&crate::reader_style::tokens(&css));
+        }
+    }
     for (r, m) in join(sidecar.records, found).map_err(|e| format!("{main_rel}: {e}"))? {
         let csp = match r.kind {
             WidgetType::Html => match r.sources.iter().find(|s| s.role == "bundle") {
