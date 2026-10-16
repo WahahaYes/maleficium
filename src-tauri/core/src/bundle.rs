@@ -2138,7 +2138,17 @@ fn export_inner(
     let mut author_css = String::new();
     if let Some(style) = &theme.style {
         match crate::reader_style::load(cx, root_id, &plan.main_dir_rel, style) {
-            Ok(css) => author_css = css,
+            Ok(css) => {
+                // Its tokens are already in `theme` (widgets::read); say
+                // which declarations the widgets do not get.
+                for why in crate::reader_style::tokens(&css).refused {
+                    plan.warn(
+                        BundleWarningKind::ReaderStyle,
+                        format!("reader style `{style}`: {why}; widgets keep the theme's value"),
+                    );
+                }
+                author_css = css;
+            }
             Err(e) => plan.warn(BundleWarningKind::ReaderStyle, e),
         }
     }
