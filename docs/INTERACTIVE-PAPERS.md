@@ -16,9 +16,10 @@ Projects made from a template already hold `maleficium-interactive.sty`. It is a
 | `chart@1`        | a Vega-Lite chart                             |
 | `table@1`        | a sortable table from CSV                     |
 | `video@1`        | a local video file                            |
+| `plotly@1`       | a Plotly figure saved as JSON, with hover     |
 | `<name>@<major>` | a custom runtime ([RUNTIMES.md](RUNTIMES.md)) |
 
-Each needs `alt=` text. The package's header comments show their options by example. A built-in runtime also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`.
+Each needs `alt=` text. The package's header comments show their options by example. A built-in runtime also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`. A chart's data files are sources: `sources={data=data/a.csv, data=data/b.csv}`. A Plotly figure is what Python's `fig.write_json()` writes; WebGL, 3D and map traces are refused (large scatter plots fall back to SVG).
 
 ## Posters
 

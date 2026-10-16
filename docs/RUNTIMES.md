@@ -30,7 +30,7 @@ The manifest names the runtime, its licence, the source files it accepts, its op
 - `name`: matches the folder before `@`. `version`: `MAJOR.MINOR.PATCH`, with the major matching the folder.
 - `title`, `description`, `authors`, `license` (from the allowlist).
 - `sources`: the roles the widget binds files to. Each role is `{required, extensions, primary?, maxBytes?, description?}`. Exactly one role is `primary: true`, and it must be required.
-- `options`: an optional closed schema of string, number, integer and boolean properties, each with a default. The host sends them typed and defaulted.
+- `options`: an optional closed schema of string, number, integer and boolean properties, each with a default. The host sends them typed and defaulted. Any key may be an option except the macro's own arguments (`runtime`, `poster`, `height`, `width`, `id`, `alt`, `sources`, `plate`, `inline`, `primary`). Four keys mean the same for every runtime, and the package checks their shape at compile time: `camera` (a string: 16 numbers, or `pos=x,y,z target=x,y,z up=x,y,z`, sent with spaces), `size` (a string, `WxH`, which also shapes the PDF placeholder), `background` (a string, a hex colour or `transparent`) and `scale` (a number above 0, at most 8).
 - `capabilities`: `{webgl, wasm?}`. `wasm` defaults to false; see [WebAssembly](#webassembly).
 - `vendored`: each third-party library's name, version, allowlist licence, `source` (a claim, never fetched), its `files` under `vendor/`, and its `licenseFile`.
 
