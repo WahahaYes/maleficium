@@ -318,18 +318,19 @@ fn check_custom(r: &Record) -> Result<(), String> {
             "runtime `{runtime}` is not <name>@<major> (or names a reserved runtime)"
         ));
     }
-    let mut seen: Vec<&str> = Vec::new();
+    // Other roles may repeat when the runtime says so: bind checks them.
+    let mut primaries = 0;
     for s in &r.sources {
-        if s.role != crate::runtimes::PRIMARY && !crate::runtimes::valid_role(&s.role) {
+        if s.role == crate::runtimes::PRIMARY {
+            primaries += 1;
+        } else if !crate::runtimes::valid_role(&s.role) {
             return fail(format!("source role `{}` is not a plain word", s.role));
         }
-        if seen.contains(&s.role.as_str()) {
-            return fail(format!("source role `{}` is given twice", s.role));
-        }
-        seen.push(&s.role);
     }
-    if !seen.contains(&crate::runtimes::PRIMARY) {
-        return fail("a custom widget records no primary source".to_string());
+    match primaries {
+        0 => return fail("a custom widget records no primary source".to_string()),
+        1 => {}
+        _ => return fail("source role `primary` is given twice".to_string()),
     }
     if let Some(o) = r
         .options
@@ -474,8 +475,18 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         if out.iter().any(|r| r.id == id) {
             return Err(format!("widget sidecar line {n}: duplicate id `{id}`"));
         }
-        let kind = WidgetType::parse(f[2])
+        let mut kind = WidgetType::parse(f[2])
             .ok_or_else(|| format!("widget {id}: unknown type `{}` in the sidecar", f[2]))?;
+        // A built-in the package has no hook for is recorded as custom with
+        // its ref and its main file as primary: it is that built-in, and
+        // primary is its primary role.
+        let unhooked = match kind {
+            WidgetType::Custom => crate::builtins::by_ref(f[3]),
+            _ => None,
+        };
+        if let Some(b) = unhooked {
+            kind = WidgetType::Builtin(b);
+        }
         if f[10].trim().is_empty() {
             return Err(format!("widget {id}: the sidecar records no alt text"));
         }
@@ -489,7 +500,13 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             poster: opt(f[7]),
             sources: pairs(f[8], "source", id)?
                 .into_iter()
-                .map(|(role, path)| WidgetSource { role, path })
+                .map(|(role, path)| match unhooked {
+                    Some(b) if role == crate::runtimes::PRIMARY => WidgetSource {
+                        role: b.manifest.primary_role().to_string(),
+                        path,
+                    },
+                    _ => WidgetSource { role, path },
+                })
                 .collect(),
             options: pairs(f[9], "option", id)?
                 .into_iter()
