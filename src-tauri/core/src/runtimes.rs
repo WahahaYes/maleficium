@@ -247,13 +247,16 @@ pub enum OptionFormat {
     Size,
     Background,
     Scale,
+    /// A moment of the source media, in seconds: an `author` runtime's
+    /// widget that gives it has its poster rendered from that frame.
+    Time,
 }
 
 impl OptionFormat {
     /// The value type a format's canonical form has.
     fn kind(self) -> OptionType {
         match self {
-            Self::Scale => OptionType::Number,
+            Self::Scale | Self::Time => OptionType::Number,
             Self::Camera | Self::Size | Self::Background => OptionType::String,
         }
     }
@@ -261,7 +264,9 @@ impl OptionFormat {
 
 /// Contract 2: where a widget's poster comes from when the document gives
 /// none. `render` snapshots the live runtime, `crop` cuts the widget's
-/// typeset area from the PDF, `author` requires `poster=`.
+/// typeset area from the PDF, `author` requires `poster=`, or a moment of
+/// the media when the runtime declares a `time` option and the widget
+/// gives it (the frame there is rendered).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PosterStrategy {
@@ -523,6 +528,20 @@ fn check_value(k: &str, o: &OptionSpec, v: &Value, raw: &str) -> Result<(), Stri
 /// value its declaration asks for, every rule checked.
 fn convert(k: &str, o: &OptionSpec, raw: &str) -> Result<Value, String> {
     let not = || format!("option {k}=`{raw}` is not {}", o.kind.name());
+    // A formatted option's rule is its canonicalizer, whose canonical form
+    // may hold characters a plain string may not (a colour's `#`).
+    if let Some(f) = o.format {
+        let canonical = crate::widgets::params::canonical_format(f, k, raw)?;
+        return match o.kind {
+            OptionType::String => Ok(Value::String(canonical)),
+            _ => canonical
+                .parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+                .ok_or_else(not),
+        };
+    }
     let v = match o.kind {
         OptionType::String => {
             if !string_ok(raw) {
@@ -846,8 +865,9 @@ pub fn check_package(
 
 // ---- binding a widget -------------------------------------------------------
 
-/// One widget bound to its runtime: its sources under the runtime's role
-/// names, and its options as typed, defaulted JSON.
+/// One widget bound to its runtime: its sources under their role keys (a
+/// repeated role's second file is `<role>-2`, and so on), and its options
+/// as typed, defaulted JSON.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bound {
     pub sources: Vec<(String, WidgetSource)>,
@@ -856,19 +876,73 @@ pub struct Bound {
 
 /// Layout keys the macro records with the options; never runtime options.
 const LAYOUT_KEYS: [&str; 2] = ["height", "width"];
+/// Whether `key` is one a built-in's macro records for the exporter, never
+/// the runtime: `inline`, and `remote` and `sha256` where a role may be
+/// remote.
+fn export_key(m: &RuntimeManifest, key: &str) -> bool {
+    match key {
+        "inline" => true,
+        "remote" | "sha256" => m.sources.values().any(|s| s.remote),
+        _ => false,
+    }
+}
 
-/// Check `w`'s sidecar record against the manifest of the runtime it names:
-/// the recorded `primary` becomes the primary role, every other role must
-/// be declared and given once with an accepted extension, every required
-/// role must be given, and every option must be declared and convert to
-/// its type. Messages are prefixed `widget <id>: `.
+/// A recorded option list checked against the runtime `r` declares in `m`:
+/// every key declared and given once, every value converted to its type,
+/// then the declared defaults. A built-in's layout and export keys are
+/// skipped, and its PDF-only options are checked but left out. Messages
+/// carry no widget prefix.
+pub fn bind_options(
+    r: &str,
+    m: &RuntimeManifest,
+    builtin: bool,
+    recorded: &[crate::widgets::WidgetOption],
+) -> Result<Map<String, Value>, String> {
+    let empty = BTreeMap::new();
+    let declared = m.options.as_ref().map_or(&empty, |o| &o.properties);
+    let mut seen = BTreeSet::new();
+    let mut options = Map::new();
+    for o in recorded
+        .iter()
+        .filter(|o| !LAYOUT_KEYS.contains(&o.key.as_str()))
+        .filter(|o| !(builtin && export_key(m, &o.key)))
+    {
+        let Some(spec) = declared.get(&o.key) else {
+            return Err(format!("runtime {r} has no option `{}`", o.key));
+        };
+        if !seen.insert(o.key.as_str()) {
+            return Err(format!("option {} is given twice", o.key));
+        }
+        let v = convert(&o.key, spec, &o.value)?;
+        if !spec.pdf {
+            options.insert(o.key.clone(), v);
+        }
+    }
+    for (k, spec) in declared.iter().filter(|(_, s)| !s.pdf) {
+        if let (false, Some(d)) = (options.contains_key(k), &spec.default) {
+            options.insert(k.clone(), d.clone());
+        }
+    }
+    Ok(options)
+}
+
+/// Check `w`'s sidecar record against the manifest of the runtime it names.
+/// A custom widget's recorded `primary` becomes the primary role and every
+/// other role is named; a built-in's macro names every role itself. Every
+/// role must be declared, given once unless it repeats, with an accepted
+/// extension; every required role must be given (a remote one may be given
+/// as `remote=` instead); every option must be declared and convert to its
+/// type. Messages are prefixed `widget <id>: `.
 pub fn bind(w: &Widget, m: &RuntimeManifest) -> Result<Bound, String> {
     let id = &w.id;
     let r = w.runtime.as_deref().unwrap_or("");
     let fail = |e: String| format!("widget {id}: {e}");
+    let builtin = w.kind.builtin().is_some();
     let mut sources: Vec<(String, WidgetSource)> = Vec::new();
+    let mut given: BTreeMap<String, u32> = BTreeMap::new();
     for s in &w.sources {
-        let role = if s.role == PRIMARY {
+        let primary = !builtin && s.role == PRIMARY;
+        let role = if primary {
             m.primary_role().to_string()
         } else {
             s.role.clone()
@@ -876,14 +950,14 @@ pub fn bind(w: &Widget, m: &RuntimeManifest) -> Result<Bound, String> {
         let Some(spec) = m
             .sources
             .get(&role)
-            .filter(|_| s.role == PRIMARY || valid_role(&role))
+            .filter(|_| primary || valid_role(&role))
         else {
             return Err(fail(format!("runtime {r} has no source role `{role}`")));
         };
-        if s.role != PRIMARY && spec.primary {
-            return Err(fail(format!("source role `{role}` is given twice")));
-        }
-        if sources.iter().any(|(k, _)| *k == role) {
+        let n = given.entry(role.clone()).or_insert(0);
+        *n += 1;
+        let twice = (!builtin && !primary && spec.primary) || (*n > 1 && !spec.repeat);
+        if twice {
             return Err(fail(format!("source role `{role}` is given twice")));
         }
         let ext = extension(&s.path).unwrap_or_default();
@@ -898,41 +972,29 @@ pub fn bind(w: &Widget, m: &RuntimeManifest) -> Result<Bound, String> {
                     .join(", ")
             )));
         }
+        let key = if *n == 1 {
+            role.clone()
+        } else {
+            format!("{role}-{n}")
+        };
         sources.push((
-            role.clone(),
+            key,
             WidgetSource {
                 role,
                 path: s.path.clone(),
             },
         ));
     }
-    for (role, _) in m.sources.iter().filter(|(_, s)| s.required) {
-        if !sources.iter().any(|(k, _)| k == role) {
+    let remote = builtin
+        && w.options
+            .iter()
+            .any(|o| o.key == "remote" && !o.value.is_empty());
+    for (role, spec) in m.sources.iter().filter(|(_, s)| s.required) {
+        if !given.contains_key(role) && !(remote && spec.remote) {
             return Err(fail(format!("runtime {r} requires source {role}")));
         }
     }
-    let empty = BTreeMap::new();
-    let declared = m.options.as_ref().map_or(&empty, |o| &o.properties);
-    let mut options = Map::new();
-    for o in w
-        .options
-        .iter()
-        .filter(|o| !LAYOUT_KEYS.contains(&o.key.as_str()))
-    {
-        let Some(spec) = declared.get(&o.key) else {
-            return Err(fail(format!("runtime {r} has no option `{}`", o.key)));
-        };
-        if options.contains_key(&o.key) {
-            return Err(fail(format!("option {} is given twice", o.key)));
-        }
-        let v = convert(&o.key, spec, &o.value).map_err(fail)?;
-        options.insert(o.key.clone(), v);
-    }
-    for (k, spec) in declared {
-        if let (false, Some(d)) = (options.contains_key(k), &spec.default) {
-            options.insert(k.clone(), d.clone());
-        }
-    }
+    let options = bind_options(r, m, builtin, &w.options).map_err(fail)?;
     Ok(Bound { sources, options })
 }
 

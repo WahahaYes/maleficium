@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "maleficium-paper-bundle/1",
+  "$id": "maleficium-paper-bundle/2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,7 +15,7 @@
   ],
   "properties": {
     "format": { "const": "maleficium-paper-bundle" },
-    "formatVersion": { "const": 1 },
+    "formatVersion": { "const": 2 },
     "generator": {
       "type": "object",
       "additionalProperties": false,
@@ -109,7 +109,7 @@
     "widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } },
     "runtimes": {
       "type": "object",
-      "description": "the custom runtimes live widgets run, by ref; omitted when none",
+      "description": "every runtime a live widget runs, by ref, built-in or custom; omitted when none",
       "propertyNames": { "pattern": "^[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}$" },
       "additionalProperties": { "$ref": "#/$defs/runtime" }
     },
@@ -138,11 +138,18 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version", "digest", "license", "capabilities", "vendored"],
+      "required": ["name", "version", "builtin", "digest", "license", "capabilities", "vendored"],
       "properties": {
         "name": { "type": "string" },
         "version": { "type": "string" },
-        "digest": { "$ref": "#/$defs/sha256" },
+        "builtin": {
+          "type": "boolean",
+          "description": "true for a runtime the app embeds, false for a project's package"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256",
+          "description": "a package's approval digest, or a built-in's host document hash"
+        },
         "license": { "$ref": "#/$defs/license" },
         "capabilities": {
           "type": "object",
@@ -237,10 +244,14 @@
       "required": ["id", "type", "page", "rect", "poster", "alt"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$" },
-        "type": { "enum": ["model", "video", "table", "chart", "html", "custom"] },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,39}$",
+          "description": "html, custom, or the name of the built-in runtime that runs it"
+        },
         "runtime": {
           "type": "string",
-          "description": "built-in runtime and its major version, or a custom runtime's ref; absent for html"
+          "description": "the runtime's ref, <name>@<major>, listed in runtimes when the widget is live; absent for html"
         },
         "fallback": {
           "enum": ["runtime-missing", "runtime-invalid", "unapproved", "denied"],
@@ -273,7 +284,7 @@
         },
         "options": {
           "type": "object",
-          "description": "runtime options passed through from the .sty, validated by the runtime"
+          "description": "the runtime's options bound to its runtime.json: declared, typed and defaulted; PDF-only options left out"
         },
         "csp": { "$ref": "#/$defs/csp" }
       },
@@ -281,18 +292,15 @@
         {
           "if": { "properties": { "type": { "const": "html" } } },
           "then": { "not": { "required": ["runtime"] } },
-          "else": { "required": ["runtime", "sources"] }
+          "else": {
+            "required": ["runtime", "sources"],
+            "properties": { "runtime": { "pattern": "^[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}$" } }
+          }
         },
         {
           "if": { "properties": { "type": { "const": "custom" } } },
-          "then": {
-            "properties": { "runtime": { "pattern": "^[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}$" } },
-            "not": { "required": ["csp"] }
-          },
-          "else": {
-            "properties": { "runtime": { "pattern": "^(model|video|table|chart)@\\d+$" } },
-            "not": { "required": ["fallback"] }
-          }
+          "then": { "not": { "required": ["csp"] } },
+          "else": { "not": { "required": ["fallback"] } }
         },
         {
           "if": { "required": ["fallback"] },

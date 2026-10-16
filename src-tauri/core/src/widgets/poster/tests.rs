@@ -6,6 +6,7 @@ const REAL_SIDECAR: &str = include_str!("../../../testdata/interactive/main.mfw"
 const GLB: &[u8] = include_bytes!("../../../../../e2e/fixtures/interactive/models/mesh.glb");
 const SPEC: &[u8] =
     include_bytes!("../../../../../e2e/fixtures/interactive/charts/ablation.vl.json");
+const CLIP: &[u8] = include_bytes!("../../../../../e2e/fixtures/interactive/media/clip.mp4");
 
 /// The real compile's pdf and sidecar (fig-mesh's options replaced by
 /// `mesh_opts`) in a fresh project holding the widgets' files. Returns the
@@ -17,6 +18,7 @@ fn project(cx: &Core, name: &str, mesh_opts: &str) -> (String, PathBuf, PathBuf)
         ("main.tex", &b"x"[..]),
         ("models/mesh.glb", GLB),
         ("charts/ablation.vl.json", SPEC),
+        ("media/clip.mp4", CLIP),
         ("widgets/demo/index.html", b"<p>hi</p>"),
         ("out/.keep", b""),
     ] {
@@ -129,13 +131,89 @@ fn table_and_video_widgets_are_never_rendered() {
         ("tab-results", "table@1 posters are cropped from the PDF"),
         (
             "fig-clip",
-            "video@1 posters come from the document; give it poster=",
+            "video@1 posters come from the document; give it poster= or at=",
         ),
         ("ghost", "no widget `ghost`"),
     ] {
         let e = prepare(cx, &req(&id, w, &out)).unwrap_err();
         assert!(e.contains(want), "{w}: {e}");
     }
+}
+
+/// `from` replaced by `to` in the sidecar (fig-clip's recorded options).
+fn edit_sidecar(cx: &Core, id: &str, from: &str, to: &str) {
+    let o = crate::outputs::outputs_of(cx, id, "main.tex").unwrap();
+    let side = std::fs::read_to_string(o.outdir.join("main.mfw")).unwrap();
+    assert!(side.contains(from));
+    std::fs::write(o.outdir.join("main.mfw"), side.replace(from, to)).unwrap();
+}
+
+#[test]
+fn a_video_with_a_moment_renders_that_frame_in_the_poster_subprocess() {
+    let cx = &Core::default();
+    let (id, _root, out) = project(cx, "video-at", "height=170.71652pt");
+    let r = req(&id, "fig-clip", &out);
+    assert!(!needs_process(cx, &r), "no at=: nothing to seek");
+    edit_sidecar(cx, &id, "remote=,sha256=|", "remote=,sha256=,at=1.50|");
+    let list = widgets(cx, &id, "main.tex").unwrap();
+    let clip = list.widgets.iter().find(|w| w.id == "fig-clip").unwrap();
+    assert_eq!(poster_moment(clip), Some(1.5));
+    assert!(renders_poster(clip));
+    assert!(needs_process(cx, &r));
+    let mesh = list.widgets.iter().find(|w| w.id == "fig-mesh").unwrap();
+    assert_eq!(poster_moment(mesh), None, "only an author runtime seeks");
+    assert!(!needs_process(cx, &req(&id, "fig-mesh", &out)));
+    let job = job_of(cx, &r);
+    assert!(job.seek);
+    assert_eq!(job.init["runtime"], "video@1");
+    assert_eq!(job.init["options"]["at"], serde_json::json!(1.5));
+    assert_eq!(job.init["sources"]["video"]["name"], "clip.mp4");
+    assert_eq!(job.sources[0].bytes, CLIP);
+    // The PNG takes the video's own size; the frame is the widget's box.
+    assert_eq!(job.expect, None);
+    let rect = (clip.rect.x1 - clip.rect.x0) * CSS_PER_PT;
+    assert_eq!(job.frame.0, clamp_side(rect));
+    let e = prepare(cx, &req(&id, "fig-clip", &out));
+    assert!(e.is_ok(), "{e:?}");
+    edit_sidecar(cx, &id, "at=1.50", "at=soon");
+    let e = widgets(cx, &id, "main.tex").unwrap_err();
+    assert!(e.contains("at= is a time in seconds"), "{e}");
+}
+
+#[test]
+fn a_seek_job_refuses_a_blank_frame() {
+    let dir = crate::test_scratch::dir("poster-seek-blank");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut job = pair_job(&dir, None);
+    let flat = rgb_png(4, 3, [30, 30, 30], [30, 30, 30]);
+    // Not a seek: a flat snapshot is still a poster (a model's empty view).
+    assert!(finish(&job, &data_url(&flat)).is_ok());
+    std::fs::remove_file(&job.out).unwrap();
+    job.seek = true;
+    // Fully transparent, as WebKitGTK's GL video sink reads a frame back.
+    let clear = {
+        use png::{BitDepth, ColorType, Encoder};
+        let mut buf = Vec::new();
+        {
+            let mut enc = Encoder::new(&mut buf, 4, 3);
+            enc.set_color(ColorType::Rgba);
+            enc.set_depth(BitDepth::Eight);
+            enc.write_header()
+                .unwrap()
+                .write_image_data(&[0; 4 * 3 * 4])
+                .unwrap();
+        }
+        buf
+    };
+    for blank in [flat, clear, png(4, 3)] {
+        let e = finish(&job, &data_url(&blank)).unwrap_err();
+        assert!(e.contains("frame came back blank"), "{e}");
+        assert!(!job.out.exists());
+    }
+    let frame = rgb_png(4, 3, [30, 30, 30], [200, 200, 200]);
+    assert_eq!(finish(&job, &data_url(&frame)).unwrap().width, 4);
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -222,6 +300,7 @@ fn finish_checks_the_snapshot_and_writes_it_in_one_step() {
         sources: vec![],
         frame: (4, 3),
         expect: Some((4, 3)),
+        seek: false,
         timeout: Duration::from_secs(1),
         out: dir.join("w.png"),
     };
@@ -995,6 +1074,7 @@ fn pair_job(dir: &Path, expect: Option<(u32, u32)>) -> PosterJob {
         sources: vec![],
         frame: (4, 3),
         expect,
+        seek: false,
         timeout: Duration::from_secs(1),
         out: dir.join("w.png"),
     }

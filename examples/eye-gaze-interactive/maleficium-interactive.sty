@@ -8,9 +8,10 @@
 %
 % Posters: poster= is the document's own and always wins, so it stands in
 % for the widget: leave it out for a model, chart, html or custom-runtime
-% widget, whose real render the pdf then shows, and keep it for a video
-% (not rendered yet) or a figure you drew by hand. Model, chart and html
-% widgets may leave it out: Maleficium then renders one (an html
+% widget, whose real render the pdf then shows, and keep it for a figure
+% you drew by hand. A video needs poster= or at= (the frame at that many
+% seconds is its poster). Model, chart, html and at= video widgets may
+% leave it out: Maleficium then renders one (an html
 % widget's only once the user approved its folder, a custom-runtime widget's
 % only once the user allowed its runtime, from the runtime's own proposal)
 % into the project's .maleficium/posters/ folder and lists it in
@@ -30,7 +31,10 @@
 %     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
 %   \interactivevideo[poster=figures/clip.png,
 %     remote=https://cdn.example.org/clip.mp4, sha256=<hex>]{media/clip.mp4}
+%   \interactivevideo[poster=figures/clip.png, loop=true, muted=true]{media/clip.mp4}
+%   \interactivevideo[at=2.5, alt={...}]{media/clip.mp4}  % frame at 2.5 s
 %   \interactivetable[pdfrows=10]{data/results.csv}
+%   \interactivetable[sort={score desc}, columns={name;score}, maxrows=20]{data/results.csv}
 %   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %   \interactive[height=6cm, alt={...},
@@ -61,8 +65,16 @@
 % live view starts. Model: camera= (braced: 16 numbers of a column-major
 % camera-to-world matrix, or pos=x,y,z target=x,y,z up=x,y,z), size=WxH in
 % pixels, background= (transparent or a hex colour without #, e.g. ffffff).
-% Chart: scale= (poster pixels per CSS pixel). Each is an error on any other
-% widget type.
+% Chart: scale= (poster pixels per CSS pixel). Video: at= (seconds into the
+% video: the live view starts there and the poster is that frame). Each is
+% an error on any other widget type.
+%
+% Runtime options: each built-in macro also takes the options its runtime
+% declares in runtime.json beyond the keys above, recorded as written for the
+% app to check and type (see \mfw@bi@options). Video: loop= and muted= (true
+% or false). Table: sort= (a column, then asc or desc), filter=, columns= and
+% format= (lists separated by ;, since a recorded value holds no comma) and
+% maxrows=. Any other key is an error.
 %
 % Origins (html only): framedomains= and resourcedomains= name the https
 % origins the widget may frame or load from, separated by spaces (commas are
@@ -141,6 +153,7 @@
 \define@key{mfw}{size}{\def\mfw@p@size{#1}}
 \define@key{mfw}{background}{\def\mfw@p@background{#1}}
 \define@key{mfw}{scale}{\def\mfw@p@scale{#1}}
+\define@key{mfw}{at}{\def\mfw@p@at{#1}}
 \define@key{mfw}{framedomains}{\def\mfw@p@framedomains{#1}}
 \define@key{mfw}{resourcedomains}{\def\mfw@p@resourcedomains{#1}}
 % plate=<hex>: this widget's own backdrop (its poster and its live frame, in
@@ -162,6 +175,7 @@
   \def\mfw@id{}\def\mfw@runtime{}\def\mfw@pdfrows{10}%
   \def\mfw@remote{}\def\mfw@sha{}\def\mfw@data{}\def\mfw@alt{}%
   \def\mfw@p@camera{}\def\mfw@p@size{}\def\mfw@p@background{}\def\mfw@p@scale{}%
+  \def\mfw@p@at{}%
   \def\mfw@p@framedomains{}\def\mfw@p@resourcedomains{}\def\mfw@wplate{}%
 }
 % The text alternative is required: it becomes the HTML img alt.
@@ -274,6 +288,8 @@
   { \mfw_match:Nn \mfw@p@background { \A(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|transparent)\Z } }
 \cs_new_protected:Npn \mfw@check@scale
   { \mfw_match:Nn \mfw@p@scale { \A[0-9]*\.?[0-9]+\Z } }
+\cs_new_protected:Npn \mfw@check@at
+  { \mfw_match:Nn \mfw@p@at { \A[0-9]*\.?[0-9]+\Z } }
 % Origins: commas become spaces (the sidecar splits options on commas);
 % the shape is checked here, every origin itself by the app.
 \cs_new_protected:Npn \mfw_origins:N #1 {
@@ -822,7 +838,7 @@
 % -- poster parameters ---------------------------------------------------------
 % #1 the keys this widget type takes (the rest must stay empty), #2 the type.
 \newcommand{\mfw@params}[2]{%
-  \@for\mfw@k:={camera,size,background,scale,framedomains,resourcedomains}\do{%
+  \@for\mfw@k:={camera,size,background,scale,at,framedomains,resourcedomains}\do{%
     \expandafter\ifx\csname mfw@p@\mfw@k\endcsname\empty\else
       \mfw@ifin{\mfw@k}{#1}{%
         \csname mfw@check@\mfw@k\endcsname
@@ -841,7 +857,8 @@
 }
 \def\mfw@paramhelp{Model widgets take camera={16 numbers} or
   camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600 and
-  background=ffffff or transparent; chart widgets take scale=2; html
+  background=ffffff or transparent; chart widgets take scale=2; video
+  widgets take at=2.5 (seconds); html
   widgets take framedomains= and resourcedomains= (https origins
   separated by spaces).}
 % \mfw@ifin{<key macro>}{<comma list>}{<yes>}{<no>}
@@ -851,16 +868,46 @@
   \if1\mfw@found #3\else #4\fi
 }
 
+% -- runtime options ------------------------------------------------------------
+% A built-in macro reads its keys with \setkeys*, which leaves every other key
+% in \XKV@rm. \mfw@bi@options{<declared>}{<type>} records each of those that
+% the type's runtime.json declares (its options without a format or pdf flag,
+% which have keys above) into \mfw@xopts as ,key=value, as
+% \interactiveruntime records an author option; any other key is an error.
+% The app checks and types the values against the runtime.
+\newcommand{\mfw@bi@options}[2]{%
+  \def\mfw@xopts{}\def\mfw@bi@declared{#1}%
+  \mfw@rt@map\mfw@bi@option\XKV@rm
+}
+\newcommand{\mfw@bi@option}[1]{%
+  \mfw@rt@kv{#1}%
+  \mfw@ifin{\mfw@rt@k}{\mfw@bi@declared}{%
+    \ifmfw@rt@eq
+      \mfw@rt@checkcomma{\mfw@rt@k}%
+      \mfw@rt@add\mfw@xopts
+    \else
+      \PackageError{maleficium-interactive}%
+        {option `\mfw@rt@k' needs a value: write \mfw@rt@k=...}%
+        {An option is written key=value; key= alone uses the runtime's default.}%
+    \fi
+  }{%
+    \PackageError{maleficium-interactive}%
+      {\mfw@type\space widgets take no option `\mfw@rt@k'}%
+      {Remove it, or use an option the \mfw@type\space runtime declares.}%
+  }%
+}
+
 % -- the macros --------------------------------------------------------------
 \newcommand{\interactivemodel}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
   \mfw@params{camera,size,background}{model}%
+  \mfw@bi@options{}{model}%
   \mfw@needposter\mfw@needfile{#2}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background}%
+  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background\mfw@xopts}%
   \mfw@posterbox{\mfw@runtime}{model=#2}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{model=#2}{\mfw@opts}%
@@ -868,11 +915,13 @@
 }
 
 \newcommand{\interactivevideo}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{video}\ifx\mfw@runtime\empty\def\mfw@runtime{video@1}\fi
-  \mfw@params{}{video}%
-  \mfw@needfile{\mfw@poster}%
+  \mfw@params{at}{video}%
+  \mfw@bi@options{loop,muted}{video}%
+  % Without at= the poster is the document's; with it, poster= is optional.
+  \ifx\mfw@p@at\empty\mfw@needfile{\mfw@poster}\else\mfw@needposter\fi
   \IfFileExists{#2}{%
     \def\mfw@vidsrc{#2}%
     \ifx\mfw@sha\empty\else\fi
@@ -888,19 +937,23 @@
   }%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \mfw@sbox@graphic{\mfw@poster}%
+  \def\mfw@opts{\mfw@dims@opt,remote=\mfw@remote,sha256=\mfw@sha\mfw@xopts}%
+  \ifx\mfw@p@at\empty\else
+    \expandafter\def\expandafter\mfw@opts\expandafter{\mfw@opts,at=\mfw@p@at}%
+  \fi
+  \mfw@posterbox{\mfw@runtime}{video=\mfw@vidsrc}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{video=\mfw@vidsrc}%
-    {\mfw@dims@opt,remote=\mfw@remote,sha256=\mfw@sha}%
+    {\mfw@poster}{video=\mfw@vidsrc}{\mfw@opts}%
   \mfw@emit
 }
 
 % The poster is the typeset rows; the exporter crops it from the PDF.
 \newcommand{\interactivetable}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{table}\ifx\mfw@runtime\empty\def\mfw@runtime{table@1}\fi
   \mfw@params{}{table}%
+  \mfw@bi@options{sort,filter,columns,format,maxrows}{table}%
   \ifx\mfw@poster\empty\else
     \PackageWarning{maleficium-interactive}%
       {poster= is ignored for tables; the typeset rows are the poster}%
@@ -927,15 +980,16 @@
     every last row/.style={after row=\hline}]%
     {#2}}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {}{data=#2}{pdfrows=\mfw@pdfrows}%
+    {}{data=#2}{pdfrows=\mfw@pdfrows\mfw@xopts}%
   \mfw@emit
 }
 
 \newcommand{\interactivechart}[2][]{%
-  \mfw@resetkeys\setkeys{mfw}{#1}%
+  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
   \mfw@params{scale}{chart}%
+  \mfw@bi@options{}{chart}%
   \mfw@needposter\mfw@needfile{#2}%
   \def\mfw@srcs{spec=#2}%
   \ifx\mfw@data\empty\else
@@ -946,7 +1000,7 @@
   \fi
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale}%
+  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale\mfw@xopts}%
   \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {\mfw@poster}{\mfw@srcs}{\mfw@opts}%

@@ -7,6 +7,7 @@ const REAL_SIDECAR: &str = include_str!("../../../../testdata/interactive/main.m
 const GLB: &[u8] = include_bytes!("../../../../../../e2e/fixtures/interactive/models/mesh.glb");
 const SPEC: &[u8] =
     include_bytes!("../../../../../../e2e/fixtures/interactive/charts/ablation.vl.json");
+const CLIP: &[u8] = include_bytes!("../../../../../../e2e/fixtures/interactive/media/clip.mp4");
 
 /// The real compile's pdf and sidecar, with the model's and the chart's
 /// explicit posters dropped (so the cache provides them), in a fresh
@@ -18,6 +19,7 @@ fn project(cx: &Core, name: &str) -> (String, PathBuf) {
         ("main.tex", &b"x"[..]),
         ("models/mesh.glb", GLB),
         ("charts/ablation.vl.json", SPEC),
+        ("media/clip.mp4", CLIP),
         ("widgets/demo/index.html", b"<p>hi</p>"),
     ] {
         let p = dir.join(rel);
@@ -416,6 +418,30 @@ fn before_compile_renders_what_is_missing_once_and_maps_it() {
     run_before(cx, &id);
     assert_eq!(fake.seen.lock().unwrap().len(), 4);
     assert!(c.present() && c.map("main").is_file());
+}
+
+#[test]
+fn a_video_gets_an_auto_poster_only_when_it_names_a_moment() {
+    let cx = &Core::default();
+    let (id, root) = project(cx, "video-at");
+    let fake = with_fake(cx);
+    set_sidecar(cx, &id, |s| s.replace("|figures/clip.png|", "||"));
+    run_before(cx, &id);
+    assert!(!fake.seen.lock().unwrap().contains(&"fig-clip".to_string()));
+    set_sidecar(cx, &id, |s| {
+        s.replace("remote=,sha256=|", "remote=,sha256=,at=1|")
+    });
+    let lines = run_before(cx, &id);
+    assert!(
+        fake.seen.lock().unwrap().contains(&"fig-clip".to_string()),
+        "{lines:?}"
+    );
+    let m = parse_map(&std::fs::read_to_string(Cache::at(&root).map("main")).unwrap());
+    let clip = m.iter().find(|e| e.id == "fig-clip").expect("mapped");
+    assert_eq!(
+        clip.guard,
+        "video@1|video=media/clip.mp4|height=142.26378pt,remote=,sha256=,at=1"
+    );
 }
 
 #[test]
