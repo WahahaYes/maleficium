@@ -239,16 +239,19 @@ pub fn canonical_format(format: OptionFormat, key: &str, value: &str) -> Result<
     })
 }
 
-/// Keys the package reads as poster parameters for every widget: a kind
-/// whose runtime declares none of them refuses them.
-const POSTER_KEYS: [&str; 6] = [
-    "camera",
-    "size",
-    "background",
-    "scale",
-    "framedomains",
-    "resourcedomains",
+/// Option keys with one meaning for every runtime that declares them: the
+/// package checks their shape and the app canonicalizes them by this format.
+pub const VOCABULARY: [(&str, OptionFormat); 4] = [
+    ("camera", OptionFormat::Camera),
+    ("size", OptionFormat::Size),
+    ("background", OptionFormat::Background),
+    ("scale", OptionFormat::Scale),
 ];
+
+/// The format a vocabulary key always has.
+pub fn vocabulary_format(key: &str) -> Option<OptionFormat> {
+    VOCABULARY.iter().find(|(k, _)| *k == key).map(|(_, f)| *f)
+}
 
 /// The format a built-in's runtime declares for option `key`.
 fn format_of(kind: WidgetType, key: &str) -> Option<OptionFormat> {
@@ -271,18 +274,16 @@ pub fn option_with(kind: WidgetType, format: OptionFormat) -> Option<&'static st
 }
 
 /// Checks one recorded option and returns its canonical value: by the
-/// format the kind's runtime declares for it, or as an html widget's
-/// origins. Options that are not poster parameters pass through unchanged.
+/// format the kind's runtime declares for it, by a vocabulary key's own
+/// format, or as an html widget's origins. Any other option passes through;
+/// its runtime checks it.
 pub fn canonical(kind: WidgetType, key: &str, value: &str) -> Result<String, String> {
-    if let Some(f) = format_of(kind, key) {
+    if let Some(f) = format_of(kind, key).or_else(|| vocabulary_format(key)) {
         return canonical_format(f, key, value);
     }
     let origins = matches!(key, "framedomains" | "resourcedomains");
     if origins && kind == WidgetType::Html {
         return super::canonical_origins(key, value);
-    }
-    if POSTER_KEYS.contains(&key) {
-        return Err(format!("{key}= does not apply to this widget type"));
     }
     Ok(value.to_string())
 }
@@ -409,19 +410,13 @@ mod tests {
             canonical(m, "height", "170.71652pt").unwrap(),
             "170.71652pt"
         );
-        for (k, kind) in [
-            ("camera", WidgetType::parse("chart").unwrap()),
-            ("size", WidgetType::parse("video").unwrap()),
-            ("background", WidgetType::Html),
-            ("scale", WidgetType::parse("model").unwrap()),
-        ] {
-            assert!(
-                canonical(kind, k, "1")
-                    .unwrap_err()
-                    .contains("does not apply"),
-                "{k}"
-            );
-        }
+        // A vocabulary key is checked by its own format for any kind; whether
+        // the runtime takes it is the binding's question.
+        let custom = WidgetType::Custom;
+        assert_eq!(canonical(custom, "scale", "2.0").unwrap(), "2");
+        assert_eq!(canonical(custom, "background", "FFF").unwrap(), "#ffffff");
+        assert!(canonical(custom, "size", "big").is_err());
+        assert_eq!(canonical(custom, "pdfrows", "3").unwrap(), "3");
         assert_eq!(num(-0.0000001), "0");
         assert_eq!(num(0.1 + 0.2), "0.3");
         assert_eq!(num(-2.5), "-2.5");

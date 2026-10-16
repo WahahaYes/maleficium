@@ -36,6 +36,8 @@
 %   \interactiveruntime[runtime=table@1, pdfrows=10]{data/results.csv}
 %   \interactiveruntime[runtime=table@1, sort={score desc}, columns={name;score}, maxrows=20]{data/results.csv}
 %   \interactiveruntime[runtime=chart@1, poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
+%   \interactiveruntime[runtime=chart@1, alt={...},
+%     sources={data=data/a.csv, data=data/b.csv}]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %   \interactive[height=6cm, alt={...},
 %     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
@@ -64,12 +66,13 @@
 % caption text back.
 %
 % Poster parameters say what the app's rendered poster shows and where a
-% live view starts. Model: camera= (braced: 16 numbers of a column-major
+% live view starts: camera= (braced: 16 numbers of a column-major
 % camera-to-world matrix, or pos=x,y,z target=x,y,z up=x,y,z), size=WxH in
 % pixels, background= (transparent or a hex colour without #, e.g. ffffff).
-% Chart: scale= (poster pixels per CSS pixel). Video: at= (seconds into the
-% video: the live view starts there and the poster is that frame). Each is
-% an error on any other widget type.
+% scale= (poster pixels per CSS pixel). They mean the same for every runtime
+% that declares them (model takes the first three, chart and plotly scale).
+% Video: at= (seconds into the video: the live view starts there and the
+% poster is that frame).
 %
 % Runtime options: each built-in runtime also takes the options it
 % declares in runtime.json beyond the keys above, recorded as written for the
@@ -305,8 +308,8 @@
 % Custom runtimes: shapes of the ref, a source role and an option key (the
 % app checks the same ones again). The reserved names are the two kinds no
 % runtime backs and the package's own prefixes (a built-in's name never gets
-% here: \interactiveruntime hands it to its \mfw@kind@<name>); the reserved keys are every key the other
-% macros take plus the two the sidecar uses (sources, primary). Each takes
+% here: \interactiveruntime hands it to its \mfw@kind@<name>); the reserved
+% keys are the macro's own arguments and the sidecar's sources and primary. Each takes
 % the macro holding the text and sets \ifmfw@ok.
 \cs_new_protected:Npn \mfw@rt@isref #1
   { \mfw_match:Nn #1 { \A[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}\Z } }
@@ -323,7 +326,7 @@
   { \mfw_match:Nn #1 { \A[a-z][a-z0-9]{0,23}\Z } }
 \cs_new_protected:Npn \mfw@rt@isreservedkey #1
   { \mfw_match:Nn #1
-    { \A(?:runtime|poster|height|width|id|alt|sources|primary|inline|remote|sha256|pdfrows|data|camera|size|background|scale|framedomains|resourcedomains)\Z } }
+    { \A(?:runtime|poster|height|width|id|alt|sources|primary|inline|plate)\Z } }
 % A role is a plain word and never the reserved primary.
 \cs_new_protected:Npn \mfw@rt@isrole #1
   {
@@ -858,10 +861,10 @@
     \fi
   }%
 }
-\def\mfw@paramhelp{Model widgets take camera={16 numbers} or
-  camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600 and
-  background=ffffff or transparent; chart widgets take scale=2; video
-  widgets take at=2.5 (seconds); html
+\def\mfw@paramhelp{camera={16 numbers} or
+  camera={pos=x,y,z target=x,y,z up=x,y,z}, size=800x600,
+  background=ffffff or transparent and scale=2 mean the same for every
+  runtime that takes them; video widgets take at=2.5 (seconds); html
   widgets take framedomains= and resourcedomains= (https origins
   separated by spaces).}
 % \mfw@ifin{<key macro>}{<comma list>}{<yes>}{<no>}
@@ -901,25 +904,9 @@
 }
 
 % -- the built-in runtimes ---------------------------------------------------
-% \interactiveruntime hands a built-in's runtime=<name>@<major> to \mfw@kind@<name>,
-% which reads the same keys and writes the record the app expects for it;
-% the app checks the major.
-\newcommand{\mfw@kind@model}[2][]{%
-  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
-  \mfw@needalt%
-  \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
-  \mfw@params{camera,size,background}{model}%
-  \mfw@bi@options{}{model}%
-  \mfw@needposter\mfw@needfile{#2}%
-  \mfw@resolve@id\mfw@sizecanon
-  \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,camera=\mfw@p@camera,size=\mfw@p@size,background=\mfw@p@background\mfw@xopts}%
-  \mfw@posterbox{\mfw@runtime}{model=#2}{\mfw@opts}%
-  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{model=#2}{\mfw@opts}%
-  \mfw@emit
-}
-
+% \interactiveruntime hands runtime=<name>@<major> to \mfw@kind@<name> when the
+% package has one: a built-in whose keys mean TeX work (table rows, video
+% fallbacks). Every other runtime takes the generic path; the app checks it.
 \newcommand{\mfw@kind@video}[2][]{%
   \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
@@ -987,29 +974,6 @@
     {#2}}%
   \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
     {}{data=#2}{pdfrows=\mfw@pdfrows\mfw@xopts}%
-  \mfw@emit
-}
-
-\newcommand{\mfw@kind@chart}[2][]{%
-  \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
-  \mfw@needalt%
-  \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
-  \mfw@params{scale}{chart}%
-  \mfw@bi@options{}{chart}%
-  \mfw@needposter\mfw@needfile{#2}%
-  \def\mfw@srcs{spec=#2}%
-  \ifx\mfw@data\empty\else
-    \@for\mfw@f:=\mfw@data\do{%
-      \mfw@needfile{\mfw@f}%
-      \edef\mfw@srcs{\mfw@srcs,data=\mfw@f}%
-    }%
-  \fi
-  \mfw@resolve@id\mfw@sizecanon
-  \mfw@snap@fig%
-  \def\mfw@opts{\mfw@dims@opt,scale=\mfw@p@scale\mfw@xopts}%
-  \mfw@posterbox{\mfw@runtime}{\mfw@srcs}{\mfw@opts}%
-  \mfw@record{\mfw@type}{\mfw@runtime}{\mfw@floatlabel}{\mfw@figno}%
-    {\mfw@poster}{\mfw@srcs}{\mfw@opts}%
   \mfw@emit
 }
 
@@ -1096,6 +1060,18 @@
     \mfw@needfile{\mfw@poster}%
   \fi
 }
+% A vocabulary option: kept in \mfw@p@<key> (where the placeholder reads
+% size), checked, and recorded in the checked form.
+\newcommand{\mfw@rt@vocab}{%
+  \expandafter\let\csname mfw@p@\mfw@rt@k\endcsname\mfw@rt@v
+  \csname mfw@check@\mfw@rt@k\endcsname
+  \ifmfw@ok\else
+    \PackageError{maleficium-interactive}%
+      {\mfw@rt@k= `\mfw@rt@v' is malformed}%
+      {\mfw@paramhelp}%
+  \fi
+  \expandafter\let\expandafter\mfw@rt@v\csname mfw@p@\mfw@rt@k\endcsname
+}
 % One sources= entry: role=path, the role a plain word and not primary, the
 % file there. A role may repeat (chart data=); the app checks that against
 % the runtime.
@@ -1120,15 +1096,18 @@
   \fi
 }
 % One leftover key: an author option. It needs a value (an empty one means
-% the runtime's default), is a plain word and none of the package's own keys.
+% the runtime's default), is a plain word and none of the macro's own
+% arguments. A vocabulary key (camera, size, background, scale) has its shape
+% checked; camera's commas become spaces and size= shapes the placeholder.
 \newcommand{\mfw@rt@option}[1]{%
   \mfw@rt@kv{#1}%
   \ifmfw@rt@eq
+    \mfw@ifin{\mfw@rt@k}{camera,size,background,scale}{\mfw@rt@vocab}{}%
     \mfw@rt@isreservedkey\mfw@rt@k
     \ifmfw@ok
       \PackageError{maleficium-interactive}%
-        {option key `\mfw@rt@k' is reserved by the package}%
-        {\string\interactiveruntime\space gives these keys a meaning of their own; pick another option name.}%
+        {option key `\mfw@rt@k' is an argument of \string\interactiveruntime, not a runtime option}%
+        {Rename the runtime's option.}%
     \else
       \mfw@rt@iskey\mfw@rt@k
       \ifmfw@ok\else

@@ -35,33 +35,11 @@ pub const BUILTIN_CONTRACT: u64 = 2;
 const RESERVED_KEYS: [&str; 3] = ["kit", "params", "extends"];
 /// Name prefixes the package keeps for itself.
 pub const RESERVED_PREFIXES: [&str; 2] = ["m-", "maleficium"];
-/// Option keys no runtime may declare, built-ins included: the keys every
-/// macro takes and the sidecar's own `sources` and `primary`.
-const MACRO_KEYS: [&str; 9] = [
-    "runtime", "poster", "height", "width", "id", "alt", "sources", "primary", "inline",
-];
-/// Option keys a package may not declare: [`MACRO_KEYS`], the built-ins'
-/// own keys and the poster parameters.
-pub const RESERVED_OPTIONS: [&str; 19] = [
-    "runtime",
-    "poster",
-    "height",
-    "width",
-    "id",
-    "alt",
-    "sources",
-    "primary",
-    "inline",
-    "remote",
-    "sha256",
-    "pdfrows",
-    "data",
-    "camera",
-    "size",
-    "background",
-    "scale",
-    "framedomains",
-    "resourcedomains",
+/// Option keys no runtime may declare: `\interactiveruntime`'s own
+/// arguments and the sidecar's `sources` and `primary`. Every other key
+/// belongs to the runtime that declares it.
+pub const MACRO_KEYS: [&str; 10] = [
+    "runtime", "poster", "height", "width", "id", "alt", "sources", "primary", "inline", "plate",
 ];
 /// Licences a runtime and every library it vendors may carry.
 pub const LICENSES: [&str; 10] = [
@@ -253,6 +231,16 @@ pub enum OptionFormat {
 }
 
 impl OptionFormat {
+    fn kind_word(self) -> &'static str {
+        match self {
+            Self::Camera => "camera",
+            Self::Size => "size",
+            Self::Background => "background",
+            Self::Scale => "scale",
+            Self::Time => "time",
+        }
+    }
+
     /// The value type a format's canonical form has.
     fn kind(self) -> OptionType {
         match self {
@@ -712,12 +700,18 @@ fn parse_inner(reference: &str, text: &str, origin: Origin) -> Result<RuntimeMan
             return Err("options: at most 32 properties".to_string());
         }
         for (k, spec) in &o.properties {
-            let reserved = match origin {
-                Origin::Package => RESERVED_OPTIONS.contains(&k.as_str()),
-                Origin::Builtin => MACRO_KEYS.contains(&k.as_str()),
-            };
-            if !valid_option_key(k) || reserved {
+            if !valid_option_key(k) || MACRO_KEYS.contains(&k.as_str()) {
                 return Err(format!("options: `{k}` is not an allowed option name"));
+            }
+            // A vocabulary key has its one format; a package (contract 1)
+            // states none and gets it.
+            if let Some(f) = crate::widgets::params::vocabulary_format(k) {
+                if spec.format.is_some_and(|g| g != f) || spec.kind != f.kind() {
+                    return Err(format!(
+                        "options.{k}: `{k}` is the package's {} option",
+                        f.kind_word()
+                    ));
+                }
             }
             check_option(k, spec)?;
         }

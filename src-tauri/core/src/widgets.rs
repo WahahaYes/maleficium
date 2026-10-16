@@ -481,7 +481,9 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         // its ref and its main file as primary: it is that built-in, and
         // primary is its primary role.
         let unhooked = match kind {
-            WidgetType::Custom => crate::builtins::by_ref(f[3]),
+            WidgetType::Custom => {
+                crate::builtins::by_ref(f[3]).or_else(|| poster::test_hang_builtin(f[3]))
+            }
             _ => None,
         };
         if let Some(b) = unhooked {
