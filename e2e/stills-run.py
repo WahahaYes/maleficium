@@ -1379,7 +1379,7 @@ def state13():
 
 # The interactive fixture's figures: the built-ins run live in the Article
 # tab, the html widget (never approved here) keeps its poster.
-ARTICLE_LIVE = ("fig-mesh", "fig-clip", "tab-results", "fig-chart")
+ARTICLE_LIVE = ("fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly")
 ARTICLE_GATED = ("fig-demo",)
 
 

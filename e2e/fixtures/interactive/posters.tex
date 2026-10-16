@@ -14,6 +14,9 @@
 
 \interactiveruntime[runtime=chart@1, poster=figures/chart.png, height=4cm, id=chart, scale=2,
   alt={Ablation chart}]{charts/ablation.vl.json}
+% A built-in with no package hook: \interactiveruntime's generic path.
+\interactiveruntime[runtime=plotly@1, poster=figures/chart.png, height=4cm, id=plotly,
+  alt={Ablation as a Plotly figure}]{charts/ablation.plotly.json}
 
 % A test-only runtime (debug builds) that never answers.
 \interactiveruntime[runtime=model@test, poster=figures/mesh.png, height=3cm, id=hang,

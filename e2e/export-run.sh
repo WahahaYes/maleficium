@@ -153,7 +153,7 @@ def asset_bytes(profile, dest, m, a, html):
     blobs = json.loads(re.search(r'<script type="application/json" id="mfw-assets">(.*?)</script>', html, re.S).group(1))
     return base64.b64decode(blobs[a["sha256"]])
 
-WIDGETS = ["fig-mesh", "tab-results", "fig-chart", "fig-clip", "fig-demo"]
+WIDGETS = ["fig-mesh", "tab-results", "fig-chart", "fig-plotly", "fig-clip", "fig-demo"]
 for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("hosted", "hosted")]:
     dest = os.path.join(OUT, name)
     r = export(profile, name)
@@ -161,19 +161,19 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
     if not r["ok"]:
         continue
     exp[profile] = r
-    check(f"{profile}: result names the path and five widgets", r["path"] == dest and r["widgets"] == 5 and r["profile"] == profile, str(r)[:200])
+    check(f"{profile}: result names the path and six widgets", r["path"] == dest and r["widgets"] == 6 and r["profile"] == profile, str(r)[:200])
     m, html = manifest_of(profile, dest)
     errs = schema_errors(m)
     check(f"{profile}: manifest validates against the committed schema", not errs, "; ".join(errs[:3]))
     # The manifest orders widgets by PDF float placement while the article
     # follows document order, so the e2e compares sets, not order.
-    check(f"{profile}: widgets are the fixture five", sorted(w["id"] for w in m["widgets"]) == sorted(WIDGETS), str([w["id"] for w in m["widgets"]]))
+    check(f"{profile}: widgets are the fixture six", sorted(w["id"] for w in m["widgets"]) == sorted(WIDGETS), str([w["id"] for w in m["widgets"]]))
     # Format 2: built-ins bind through runtime.json like custom runtimes,
     # and runtimes lists every runtime a live widget runs, built-ins flagged.
     by = {w["id"]: w for w in m["widgets"]}
     check(f"{profile}: format 2 lists every built-in runtime, flagged",
           m["formatVersion"] == 2
-          and sorted(m.get("runtimes", {})) == ["chart@1", "model@1", "table@1", "video@1"]
+          and sorted(m.get("runtimes", {})) == ["chart@1", "model@1", "plotly@1", "table@1", "video@1"]
           and all(e["builtin"] is True for e in m["runtimes"].values()),
           str(m.get("runtimes"))[:300])
     check(f"{profile}: built-in options are bound: typed, defaulted, pdf-only left out",
@@ -333,7 +333,7 @@ if pv["ok"]:
     check("preview is outside the project", not os.path.realpath(pp).startswith(os.path.realpath(ROOT) + os.sep), pp)
     check("preview is under the app data dir", os.path.realpath(pp).startswith(os.path.realpath(os.environ["XDG_DATA_HOME"]) + os.sep), pp)
     html = open(pp, encoding="utf-8").read()
-    check("preview is the self-contained single-file bundle", 'id="mfw-manifest"' in html and 'id="pdf-link"' in html and pv["widgets"] == 5)
+    check("preview is the self-contained single-file bundle", 'id="mfw-manifest"' in html and 'id="pdf-link"' in html and pv["widgets"] == 6)
     check("preview returns a hint and opens nothing itself", pp in pv["hint"])
     stale = os.path.join(os.path.dirname(pp), "stale.txt")
     open(stale, "w").write("old")
