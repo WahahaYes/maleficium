@@ -44,7 +44,7 @@ fn every_embedded_manifest_parses_and_names_its_kind() {
         assert!(b.host.contains("<html"), "{name}: host is not a document");
         assert!(by_ref(b.reference).is_some_and(|x| std::ptr::eq(x, b)));
     }
-    assert!(by_ref("plotly@1").is_none());
+    assert!(by_ref("stl-viewer@1").is_none());
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn reserved_names_are_the_registry_and_its_two_kinds() {
         assert!(crate::runtimes::reserved_name(&k), "{k}");
         assert!(!crate::runtimes::valid_name(&k), "{k}");
     }
-    assert!(crate::runtimes::valid_name("plotly"));
+    assert!(crate::runtimes::valid_name("stl-viewer"));
 }
 
 #[test]
@@ -140,7 +140,11 @@ fn each_macro_passes_through_the_options_its_runtime_declares() {
                 (c[2].to_string(), keys)
             })
             .collect();
-    for b in all() {
+    // A kind with a package hook passes its plain options through; one
+    // without goes through \interactiveruntime's custom path, which passes all.
+    assert!(!sty.is_empty(), "no \\mfw@bi@options in the package");
+    for (name, keys) in &sty {
+        let b = by_name(name).unwrap_or_else(|| panic!("hook for {name}, not a built-in"));
         let want: BTreeSet<String> = b
             .manifest
             .options
@@ -149,11 +153,6 @@ fn each_macro_passes_through_the_options_its_runtime_declares() {
             .filter(|(_, o)| o.format.is_none() && !o.pdf)
             .map(|(k, _)| k.clone())
             .collect();
-        assert_eq!(
-            sty.get(&b.manifest.name),
-            Some(&want),
-            "runtime={}@1 passes through",
-            b.manifest.name
-        );
+        assert_eq!(keys, &want, "runtime={name}@1 passes through");
     }
 }

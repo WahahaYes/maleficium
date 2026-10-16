@@ -17,6 +17,25 @@ const INERT = new Set([
   'https://github.com/vega/vega-lite/issues/2415',
   'http://www.w3.org/1999/xhtml',
   'https://jcgt.org/published/0007/04/01/', // a citation in three.js
+  // plotly.js: a namespace, links in its attribute descriptions, and three
+  // config defaults that stay off: the logo link (displaylogo false), the
+  // Chart Studio button (off by default; form-action 'none'), and geo traces'
+  // topojson (not registered; connect-src 'none').
+  'http://www.w3.org/XML/1998/namespace',
+  'https://developer.mozilla.org/en-US/docs/Web/CSS/text-shadow',
+  'https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/fill-rule',
+  'https://www.w3.org/TR/css-color-4/#named-colors',
+  'https://github.com/d3/d3-format/tree/v1.4.5#d3-format',
+  'https://github.com/d3/d3-time-format/tree/v2.2.3#locale_format',
+  'https://github.com/d3/d3-hierarchy#treemap-tiling',
+  'https://github.com/d3/d3-hierarchy/blob/v3.1.1/README.md#squarify_ratio',
+  'https://plotly.com/javascript/plotlyjs-events/#event-data',
+  'https://plotly.com/javascript/animations/',
+  'https://sites.google.com/site/davidsstatistics/home/notched-box-plots',
+  'http://jse.amstat.org/v14n3/langford.html',
+  'https://plotly.com/',
+  'https://cloud.plotly.com/newchart',
+  'https://cdn.plot.ly/un/',
 ]);
 const URL_RE = /(?:https?|wss?|ftp):\/\/[^\s"'`)\\<>]+|\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+\//gi;
 const externalUrls = (html: string) =>
