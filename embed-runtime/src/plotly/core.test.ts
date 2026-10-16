@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mix, parseFigure, parseScale, themed, themeTemplate } from './core';
+import { mix, parseFigure, parseScale, parseTemplate, themed, themeTemplate } from './core';
 
 describe('plotly figure', () => {
   it('reads what fig.write_json() writes', () => {
@@ -31,6 +31,105 @@ describe('plotly figure', () => {
     expect(t.font).toEqual({ color: '#102030', family: 'Inter' });
     expect((t.colorway as string[])[7]).toBe('#000008');
     expect((t.xaxis as Record<string, string>).gridcolor).toBe('rgba(16, 32, 48, 0.12)');
+  });
+
+  const full = (): Record<string, string> => {
+    const t: Record<string, string> = {
+      '--m-figure-bg': '#ffffff',
+      '--m-figure-surface': '#f0f0f0',
+      '--m-figure-ink': '#102030',
+      '--m-tooltip-bg': '#fefefe',
+      '--m-tooltip-fg': '#111111',
+      '--m-tooltip-border': '#cccccc',
+      '--m-div-low': '#0000aa',
+      '--m-div-mid': '#eeeeee',
+      '--m-div-high': '#aa0000',
+    };
+    for (let i = 1; i <= 8; i++) t[`--m-cat-${i}`] = `#00000${i}`;
+    for (let i = 1; i <= 5; i++) t[`--m-seq-${i}`] = `#1${i}1${i}1${i}`;
+    return t;
+  };
+
+  it('themes colourscales, hover labels, polar axes and tables', () => {
+    const t = themeTemplate(full());
+    const l = t.layout as Record<string, Record<string, unknown>>;
+    expect(l.colorscale.sequential).toEqual([
+      [0, '#111111'],
+      [0.25, '#121212'],
+      [0.5, '#131313'],
+      [0.75, '#141414'],
+      [1, '#151515'],
+    ]);
+    expect((l.colorscale.sequentialminus as unknown[])[0]).toEqual([0, '#151515']);
+    expect(l.colorscale.diverging).toEqual([
+      [0, '#0000aa'],
+      [0.5, '#eeeeee'],
+      [1, '#aa0000'],
+    ]);
+    expect(l.autotypenumbers).toBe('strict');
+    expect(l.yaxis.automargin).toBe(true);
+    expect(l.hoverlabel).toEqual({
+      align: 'left',
+      bgcolor: '#fefefe',
+      bordercolor: '#cccccc',
+      font: { color: '#111111' },
+    });
+    expect((l.polar.radialaxis as Record<string, string>).gridcolor).toBe('rgba(16, 32, 48, 0.12)');
+    const d = t.data as Record<string, Record<string, unknown>[]>;
+    expect(d.heatmap[0].colorscale).toBe(l.colorscale.sequential);
+    expect(d.table[0].header).toEqual({
+      fill: { color: '#f0f0f0' },
+      line: { color: 'rgba(16, 32, 48, 0.2)' },
+    });
+  });
+
+  it('maps what a Plotly Express template wrote into the figure to the theme', () => {
+    // As px.bar(color=...) and px.density_heatmap() write them.
+    const plasma = [
+      [0, '#0d0887'],
+      [1, '#f0f921'],
+    ];
+    const fig = parseFigure(
+      JSON.stringify({
+        data: [
+          { type: 'bar', marker: { color: '#636efa' }, y: [1] },
+          { type: 'bar', marker: { color: '#EF553B', line: { color: '#123456' } }, y: [2] },
+        ],
+        layout: {
+          coloraxis: { colorscale: plasma },
+          template: {
+            layout: {
+              colorway: ['#636efa', '#EF553B'],
+              colorscale: {
+                sequential: plasma,
+                sequentialminus: plasma,
+                diverging: [[0, '#8e0152']],
+              },
+            },
+          },
+        },
+      }),
+    );
+    const f = themed(fig, full());
+    const marker = (i: number) => f.data[i].marker as Record<string, unknown>;
+    expect(marker(0).color).toBe('#000001');
+    expect(marker(1).color).toBe('#000002');
+    // A colour the template does not hold is the author's.
+    expect(marker(1).line).toEqual({ color: '#123456' });
+    expect((f.layout.coloraxis as Record<string, unknown>).colorscale).toEqual(
+      (themeTemplate(full()).layout as Record<string, Record<string, unknown>>).colorscale
+        .sequential,
+    );
+  });
+
+  it('keeps the figure as Python drew it with template=figure', () => {
+    const fig = parseFigure(
+      '{"data":[{"type":"bar","marker":{"color":"#636efa"}}],"layout":{"template":{"layout":{"colorway":["#636efa"]}}}}',
+    );
+    expect(themed(fig, full(), 'figure')).toBe(fig);
+    expect(parseTemplate('figure')).toBe('figure');
+    expect(parseTemplate(undefined)).toBe('paper');
+    expect(parseTemplate('nonsense')).toBe('paper');
   });
 
   it('leaves colorway to plotly when the palette is incomplete', () => {
