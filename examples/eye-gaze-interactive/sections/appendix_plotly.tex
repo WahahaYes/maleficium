@@ -1,0 +1,38 @@
+\section{The Results as Plotly Figures}
+\label{sec:plotly}
+
+This appendix is not part of the published paper. It shows how figures saved from Python with \texttt{fig.write\_json()} look in a Maleficium paper, using the data behind \autoref{fig:e1e2} and \autoref{fig:visual_sizes}. The script \texttt{plotly\_figures.py} in \texttt{tools/} writes them. None gives a \texttt{poster=}, so the PDF shows each one as Maleficium renders it.
+
+By default a Plotly figure takes the paper's style: its backdrop, ink, fonts, palette and colour scales replace Plotly's template, in light and dark mode. \autoref{fig:plotly-accuracy} and \autoref{fig:plotly-coverage} keep every Plotly Express default and get the paper's style. \autoref{fig:plotly-baselines} sets its own palette and font in Python. Those values win; the rest still comes from the paper. \autoref{fig:plotly-prior} keeps its own \texttt{ggplot2} template with \texttt{template=figure}, so it looks the same in both modes.
+
+\begin{figure}[H]
+  \centering
+  \interactiveruntime[runtime=plotly@1, width=\linewidth, height=0.72\linewidth, id=fig-plotly-accuracy,
+    alt={VLM accuracy against prior fixations for E1 and E2, with 95 percent intervals, in the paper's style}]{charts/accuracy.plotly.json}
+  \caption{Plotly Express defaults take the paper's style: VLM accuracy with 95\% intervals, from \autoref{fig:e1e2}.}
+  \label{fig:plotly-accuracy}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \interactiveruntime[runtime=plotly@1, width=\linewidth, height=0.72\linewidth, id=fig-plotly-coverage,
+    alt={Heatmap of the visual angle that covers each percentile of objects, for each measure and distance}]{charts/coverage.plotly.json}
+  \caption{A heatmap with no colour scale of its own takes the paper's sequential scale: the visual angle covering each percentile of objects, from \autoref{fig:visual_sizes}.}
+  \label{fig:plotly-coverage}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \interactiveruntime[runtime=plotly@1, width=\linewidth, height=0.72\linewidth, id=fig-plotly-baselines,
+    alt={Grouped bars of accuracy at 6 fixations for the VLM and three baselines, in the figure's own palette}]{charts/baselines.plotly.json}
+  \caption{The figure's own palette and font win; its backdrop, ink and grid are the paper's. Accuracy at 6 fixations against the baselines.}
+  \label{fig:plotly-baselines}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \interactiveruntime[runtime=plotly@1, template=figure, width=\linewidth, height=0.72\linewidth, id=fig-plotly-prior,
+    alt={Area chart of the random-prior baseline against prior fixations, in the ggplot2 template}]{charts/random-prior.plotly.json}
+  \caption{\texttt{template=figure} keeps the figure's own \texttt{ggplot2} template in both modes. The random-prior baseline.}
+  \label{fig:plotly-prior}
+\end{figure}
