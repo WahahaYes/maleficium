@@ -51,11 +51,11 @@ cat > "$SCRATCH/proj/auto.tex" <<'TEX'
 \documentclass{article}
 \usepackage{maleficium-interactive}
 \begin{document}
-\interactivemodel[height=4cm, id=auto-model, size=320x240, background=ffffff,
+\interactiveruntime[runtime=model@1, height=4cm, id=auto-model, size=320x240, background=ffffff,
   camera={0.707107, 0, -0.707107, 0, 0, 1, 0, 0, 0.707107, 0, 0.707107, 0, 2, 0, 2, 1},
   alt={The mesh from the side}]{models/mesh.glb}
 
-\interactivechart[height=4cm, id=auto-chart, alt={Ablation chart}]{charts/ablation.vl.json}
+\interactiveruntime[runtime=chart@1, height=4cm, id=auto-chart, alt={Ablation chart}]{charts/ablation.vl.json}
 \end{document}
 TEX
 (cd "$SCRATCH/proj" && git init -q && git add -A && git -c user.email=e2e@local -c user.name=e2e commit -qm fixture)

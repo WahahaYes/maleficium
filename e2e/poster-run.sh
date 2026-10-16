@@ -73,7 +73,7 @@ addEventListener("message", function (e) {
 });
 parent.postMessage({ mfw: 1, type: "ready" }, "*");
 JS
-sed -i 's|^\\interactivetable|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactive[height=3cm, id=html-pc, alt={Preconnect probe}]{widgets/pc/}\n\n\\interactivetable|' "$SCRATCH/proj/posters.tex"
+sed -i 's|^\\interactiveruntime\[runtime=table@1|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactive[height=3cm, id=html-pc, alt={Preconnect probe}]{widgets/pc/}\n\n\\interactiveruntime[runtime=table@1|' "$SCRATCH/proj/posters.tex"
 grep -q "id=html-probe" "$SCRATCH/proj/posters.tex" || fail "cannot add the probe widget"
 grep -q "id=html-pc" "$SCRATCH/proj/posters.tex" || fail "cannot add the preconnect probe widget"
 
@@ -496,8 +496,8 @@ check("...and no map entry: its cached poster does not stand in for the approval
 # through the subprocess renderer and maps it.
 tex = os.path.join(ROOT, "posters.tex")
 text = open(tex).read().replace(
-    "\\interactivetable",
-    "\\interactivevideo[height=2cm, id=vid-auto, at=3.35, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactivetable", 1)
+    "\\interactiveruntime[runtime=table@1",
+    "\\interactiveruntime[runtime=video@1, height=2cm, id=vid-auto, at=3.35, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactiveruntime[runtime=table@1", 1)
 open(tex, "w").write(text)
 rec = compile_lines()
 lines = rec.get("lines") or []
