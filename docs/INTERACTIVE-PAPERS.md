@@ -8,20 +8,21 @@ Projects made from a template already hold `maleficium-interactive.sty`. It is a
 
 ## Widgets
 
-| Macro                 | Shows                                         |
-| --------------------- | --------------------------------------------- |
-| `\interactivemodel`   | a glTF or GLB 3D model                        |
-| `\interactivechart`   | a Vega-Lite chart                             |
-| `\interactivetable`   | a sortable table from CSV                     |
-| `\interactivevideo`   | a local video file                            |
-| `\interactive`        | a folder of your own HTML                     |
-| `\interactiveruntime` | a custom runtime ([RUNTIMES.md](RUNTIMES.md)) |
+`\interactive[...]{widgets/demo/}` embeds a folder of your own HTML. Every other widget is `\interactiveruntime[runtime=..., ...]{file}`, where `runtime=` names what shows the file:
 
-Each needs `alt=` text. The package's header comments show their options by example. A built-in widget also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`.
+| `runtime=`       | Shows                                         |
+| ---------------- | --------------------------------------------- |
+| `model@1`        | a glTF or GLB 3D model                        |
+| `chart@1`        | a Vega-Lite chart                             |
+| `table@1`        | a sortable table from CSV                     |
+| `video@1`        | a local video file                            |
+| `<name>@<major>` | a custom runtime ([RUNTIMES.md](RUNTIMES.md)) |
+
+Each needs `alt=` text. The package's header comments show their options by example. A built-in runtime also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`.
 
 ## Posters
 
-In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets). A video needs `poster=` or `at=`: `\interactivevideo[at=2.5, alt={...}]{media/clip.mp4}` makes the frame 2.5 seconds in its poster, and the live video starts there too. A frame that renders blank is refused and leaves a placeholder; H.264 MP4 renders on every platform.
+In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets). A video needs `poster=` or `at=`: `\interactiveruntime[runtime=video@1, at=2.5, alt={...}]{media/clip.mp4}` makes the frame 2.5 seconds in its poster, and the live video starts there too. A frame that renders blank is refused and leaves a placeholder; H.264 MP4 renders on every platform.
 
 Rendered posters are cached in `.maleficium/` beside your main file. It is safe to delete. Commit it if the paper should compile with its posters without Maleficium.
 

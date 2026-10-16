@@ -63,7 +63,7 @@ xattr -dr com.apple.quarantine /Applications/Maleficium.app
 Your paper still compiles to a normal PDF, and Maleficium can also export it as a web page where readers can rotate 3D models, explore charts, sort tables, and play video. The [eye-gaze example](examples/eye-gaze-interactive/) is a published paper made this way.
 
 1. Projects made from a template already include `maleficium-interactive.sty`.
-2. Use its macros (`\interactivemodel`, `\interactivechart`, `\interactivetable`, `\interactivevideo`, `\interactive`). The PDF shows a poster for each.
+2. Use its macros: `\interactiveruntime[runtime=model@1]` (or `chart@1`, `table@1`, `video@1`, or a runtime of your own) and `\interactive` for a folder of your own HTML. The PDF shows a poster for each.
 3. **File > Preview in Browser**, or **File > Export Paper Bundle**.
 
 Posters, widget approval, styling, and limits: [docs/INTERACTIVE-PAPERS.md](docs/INTERACTIVE-PAPERS.md).
