@@ -20,14 +20,6 @@ fn kinds() -> BTreeSet<String> {
     k
 }
 
-fn quoted(list: &str) -> BTreeSet<String> {
-    Regex::new(r"'([a-z]+)'|\x22([a-z]+)\x22")
-        .unwrap()
-        .captures_iter(list)
-        .map(|c| c.get(1).or(c.get(2)).unwrap().as_str().to_string())
-        .collect()
-}
-
 fn capture<'a>(text: &'a str, pattern: &str) -> &'a str {
     Regex::new(pattern)
         .unwrap()
@@ -112,8 +104,11 @@ fn every_kind_list_matches_the_registry() {
     // Built-ins go through \interactiveruntime: no constructor per kind.
     assert_eq!(rhai, unbacked, ".sty.rhai widget constructors");
 
-    let vite = quoted(capture(VITE, r"export const RUNTIMES = \[([^\]]*)\]"));
-    assert_eq!(vite, names(), "embed-runtime/vite.config.ts RUNTIMES");
+    // vite finds the runtimes the way build.rs does: by their folders.
+    assert!(
+        !VITE.contains("export const RUNTIMES = ["),
+        "embed-runtime/vite.config.ts keeps a runtime list"
+    );
 
     // Format 2 leaves the widget type open: a pattern every kind fits.
     let schema: serde_json::Value = serde_json::from_str(crate::bundle::MANIFEST_SCHEMA).unwrap();

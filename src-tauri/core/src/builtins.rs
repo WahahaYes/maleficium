@@ -20,32 +20,12 @@ impl std::fmt::Debug for Builtin {
     }
 }
 
-/// Ref, manifest and host of each built-in. Literal paths: the licence
-/// boundary test (`tests/embed_boundary.rs`) checks every one.
-const EMBEDDED: [(&str, &str, &str); 4] = [
-    (
-        "model@1",
-        include_str!("../../../embed-runtime/src/model/runtime.json"),
-        include_str!("../../../embed-runtime/built/model/index.html"),
-    ),
-    (
-        "video@1",
-        include_str!("../../../embed-runtime/src/video/runtime.json"),
-        include_str!("../../../embed-runtime/built/video/index.html"),
-    ),
-    (
-        "table@1",
-        include_str!("../../../embed-runtime/src/table/runtime.json"),
-        include_str!("../../../embed-runtime/built/table/index.html"),
-    ),
-    (
-        "chart@1",
-        include_str!("../../../embed-runtime/src/chart/runtime.json"),
-        include_str!("../../../embed-runtime/built/chart/index.html"),
-    ),
-];
+// Ref, manifest and host of each built-in, one per `embed-runtime/src/<name>/`
+// folder with a `runtime.json` (build.rs). The licence boundary test
+// (`tests/embed_boundary.rs`) checks every path.
+include!(concat!(env!("OUT_DIR"), "/builtins.rs"));
 
-/// Every built-in, in the order above. An embedded manifest that does not
+/// Every built-in, by name. An embedded manifest that does not
 /// parse is a build defect the tests catch, so it panics.
 pub fn all() -> &'static [Builtin] {
     static ALL: OnceLock<Vec<Builtin>> = OnceLock::new();
