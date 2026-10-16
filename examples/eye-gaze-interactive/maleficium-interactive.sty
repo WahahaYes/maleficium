@@ -1096,21 +1096,15 @@
     \mfw@needfile{\mfw@poster}%
   \fi
 }
-% One sources= entry: role=path, the role a plain word, not primary and not
-% given before (a flag per widget id and role), the file there.
+% One sources= entry: role=path, the role a plain word and not primary, the
+% file there. A role may repeat (chart data=); the app checks that against
+% the runtime.
 \newcommand{\mfw@rt@source}[1]{%
   \mfw@rt@kv{#1}%
   \ifmfw@rt@eq\ifx\mfw@rt@v\empty\mfw@rt@eqfalse\fi\fi
   \ifmfw@rt@eq
     \mfw@rt@isrole\mfw@rt@k
-    \ifmfw@ok
-      \ifcsname mfw@rt@r@\mfw@id @\mfw@rt@k\endcsname
-        \PackageError{maleficium-interactive}%
-          {source role `\mfw@rt@k' is given twice}%
-          {Each role may appear once in sources=.}%
-      \fi
-      \expandafter\gdef\csname mfw@rt@r@\mfw@id @\mfw@rt@k\endcsname{}%
-    \else
+    \ifmfw@ok\else
       \PackageError{maleficium-interactive}%
         {source role `\mfw@rt@k' must be a lowercase letter then up to 15
           letters or digits, and not primary}%

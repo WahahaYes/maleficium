@@ -860,12 +860,12 @@ fn a_bad_custom_record_fails_the_list_with_its_message() {
     let cases = [
         (CUSTOM_LINE.replace("|stl-viewer@1|", "||"), "widget fig-part: a custom widget records no runtime"),
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer|"), "widget fig-part: runtime `stl-viewer` is not <name>@<major> (or names a reserved runtime)"),
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "|model@1|"), "runtime `model@1` is not <name>@<major>"),
+        // model@1 is the built-in itself; another major is a reserved name.
+        (CUSTOM_LINE.replace("|stl-viewer@1|", "|model@2|"), "runtime `model@2` is not <name>@<major>"),
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|m-viewer@1|"), "runtime `m-viewer@1` is not"),
         (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer@0|"), "runtime `stl-viewer@0` is not"),
         (CUSTOM_LINE.replace("primary=models/mesh.glb,", ""), "widget fig-part: a custom widget records no primary source"),
         (CUSTOM_LINE.replace("texture=", "primary="), "widget fig-part: source role `primary` is given twice"),
-        (CUSTOM_LINE.replace("labels=", "texture="), "widget fig-part: source role `texture` is given twice"),
         (CUSTOM_LINE.replace("labels=", "Labels="), "widget fig-part: source role `Labels` is not a plain word"),
         (CUSTOM_LINE.replace("color=", "col-or="), "widget fig-part: option key `col-or` is not a plain word"),
         // Poster parameters belong to the built-in kinds.
@@ -875,6 +875,19 @@ fn a_bad_custom_record_fails_the_list_with_its_message() {
         let e = custom(&line).unwrap_err();
         assert!(e.contains(want), "want `{want}` in: {e}");
     }
+}
+
+#[test]
+fn a_built_in_without_a_hook_is_that_built_in_with_its_primary_role() {
+    let line = "widget|fig-c|custom|chart@1|||house||primary=charts/a.vl.json,data=data/a.csv,data=data/b.csv|height=10pt,scale=2|A chart";
+    let r = &custom(line).unwrap().records[0];
+    assert_eq!(r.kind, WidgetType::parse("chart").unwrap());
+    let roles: Vec<_> = r.sources.iter().map(|s| s.role.as_str()).collect();
+    assert_eq!(roles, ["spec", "data", "data"]);
+    // A custom runtime still may not repeat primary, and other repeats are
+    // the runtime's to allow (bind checks them).
+    let twice = CUSTOM_LINE.replace("labels=", "texture=");
+    assert!(custom(&twice).is_ok());
 }
 
 #[test]
