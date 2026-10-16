@@ -25,17 +25,17 @@
 %   \maleficiumtheme{house}                    % optional; house is default
 %   \maleficiumcontents{off}                   % optional; on is default
 %   \maleficiummeasure{wide}                   % optional: narrow, default, wide or full
-%   \interactivemodel[poster=figures/mesh.png, height=6cm]{models/mesh.glb}
-%   \interactivemodel[height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
-%   \interactivemodel[poster=figures/mesh.png, size=800x600, background=ffffff,
-%     camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
-%   \interactivevideo[poster=figures/clip.png,
+%   \interactiveruntime[runtime=model@1, poster=figures/mesh.png, height=6cm]{models/mesh.glb}
+%   \interactiveruntime[runtime=model@1, height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
+%   \interactiveruntime[runtime=model@1, poster=figures/mesh.png, size=800x600,
+%     background=ffffff, camera={pos=0,1,3 target=0,0,0 up=0,1,0}]{models/mesh.glb}
+%   \interactiveruntime[runtime=video@1, poster=figures/clip.png,
 %     remote=https://cdn.example.org/clip.mp4, sha256=<hex>]{media/clip.mp4}
-%   \interactivevideo[poster=figures/clip.png, loop=true, muted=true]{media/clip.mp4}
-%   \interactivevideo[at=2.5, alt={...}]{media/clip.mp4}  % frame at 2.5 s
-%   \interactivetable[pdfrows=10]{data/results.csv}
-%   \interactivetable[sort={score desc}, columns={name;score}, maxrows=20]{data/results.csv}
-%   \interactivechart[poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
+%   \interactiveruntime[runtime=video@1, poster=figures/clip.png, loop=true, muted=true]{media/clip.mp4}
+%   \interactiveruntime[runtime=video@1, at=2.5, alt={...}]{media/clip.mp4}  % frame at 2.5 s
+%   \interactiveruntime[runtime=table@1, pdfrows=10]{data/results.csv}
+%   \interactiveruntime[runtime=table@1, sort={score desc}, columns={name;score}, maxrows=20]{data/results.csv}
+%   \interactiveruntime[runtime=chart@1, poster=figures/chart.pdf, scale=2]{charts/ablation.vl.json}
 %   \interactive[poster=figures/demo.png, height=8cm]{widgets/demo/}
 %   \interactive[height=6cm, alt={...},
 %     framedomains=https://www.youtube-nocookie.com]{widgets/talk/}
@@ -47,7 +47,9 @@
 % Sidecar line (pipe-separated, one per widget):
 %   widget|<id>|<type>|<runtime>|<label>|<figure>|<theme>|<poster>|<sources>|<options>|<alt>
 % sources is role=path,... and options is k=v,...; empty fields are empty.
-% A custom runtime's widget has type custom, runtime <name>@<major> and its
+% A built-in runtime (model@1, video@1, table@1, chart@1) records its name
+% as the type and its own source roles. A custom runtime's widget has type
+% custom, runtime <name>@<major> and its
 % main argument under the reserved role primary (the runtime names the role
 % when the exporter binds it; this package needs no runtime installed).
 % Recorded values never contain |, # or braces; dimensions ride as pt.
@@ -69,7 +71,7 @@
 % video: the live view starts there and the poster is that frame). Each is
 % an error on any other widget type.
 %
-% Runtime options: each built-in macro also takes the options its runtime
+% Runtime options: each built-in runtime also takes the options it
 % declares in runtime.json beyond the keys above, recorded as written for the
 % app to check and type (see \mfw@bi@options). Video: loop= and muted= (true
 % or false). Table: sort= (a column, then asc or desc), filter=, columns= and
@@ -897,8 +899,11 @@
   }%
 }
 
-% -- the macros --------------------------------------------------------------
-\newcommand{\interactivemodel}[2][]{%
+% -- the built-in runtimes ---------------------------------------------------
+% \interactiveruntime hands a built-in's runtime=<name>@<major> to \mfw@kind@<name>,
+% which reads the same keys and writes the record the app expects for it;
+% the app checks the major.
+\newcommand{\mfw@kind@model}[2][]{%
   \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{model}\ifx\mfw@runtime\empty\def\mfw@runtime{model@1}\fi
@@ -914,7 +919,7 @@
   \mfw@emit
 }
 
-\newcommand{\interactivevideo}[2][]{%
+\newcommand{\mfw@kind@video}[2][]{%
   \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{video}\ifx\mfw@runtime\empty\def\mfw@runtime{video@1}\fi
@@ -948,7 +953,7 @@
 }
 
 % The poster is the typeset rows; the exporter crops it from the PDF.
-\newcommand{\interactivetable}[2][]{%
+\newcommand{\mfw@kind@table}[2][]{%
   \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{table}\ifx\mfw@runtime\empty\def\mfw@runtime{table@1}\fi
@@ -984,7 +989,7 @@
   \mfw@emit
 }
 
-\newcommand{\interactivechart}[2][]{%
+\newcommand{\mfw@kind@chart}[2][]{%
   \mfw@resetkeys\def\XKV@rm{}\setkeys*{mfw}{#1}%
   \mfw@needalt%
   \def\mfw@type{chart}\ifx\mfw@runtime\empty\def\mfw@runtime{chart@1}\fi
@@ -1030,8 +1035,9 @@
   \mfw@emit
 }
 
-% \interactiveruntime: a widget run by a custom runtime, named by runtime=
-% <name>@<major>. The package cannot know the runtime's roles or options
+% \interactiveruntime: a widget run by the runtime named by runtime=
+% <name>@<major>. A built-in goes to its \mfw@kind@<name> above; the rest of
+% this section is a custom runtime's path. The package cannot know the runtime's roles or options
 % (it must compile with none installed), so the main argument is recorded
 % under the reserved role primary and every key that is not the macro's own
 % rides to the app as an option, verbatim. xkeyval's \setkeys* leaves such
@@ -1148,15 +1154,25 @@
 \newcommand{\interactiveruntime}[2][]{%
   \mfw@resetkeys\def\mfw@rt@sources{}\def\XKV@rm{}%
   \setkeys*{mfwrt}{#1}%
+  \mfw@rt@setname\mfw@runtime
+  \ifcsname mfw@kind@\mfw@rt@n\endcsname
+    \expandafter\@firstoftwo
+  \else
+    \expandafter\@secondoftwo
+  \fi
+  {\csname mfw@kind@\mfw@rt@n\endcsname[#1]{#2}}%
+  {\mfw@rt@custom{#2}}%
+}
+\newcommand{\mfw@rt@custom}[1]{%
   \def\mfw@type{custom}%
   \mfw@rt@checkref
   \mfw@needalt
   \mfw@rt@needposter
-  \mfw@needfile{#2}%
-  \def\mfw@rt@v{#2}\mfw@rt@checkcomma{primary}%
+  \mfw@needfile{#1}%
+  \def\mfw@rt@v{#1}\mfw@rt@checkcomma{primary}%
   \mfw@resolve@id\mfw@sizecanon
   \mfw@snap@fig
-  \def\mfw@srcs{primary=#2}%
+  \def\mfw@srcs{primary=#1}%
   \mfw@rt@map\mfw@rt@source\mfw@rt@sources
   \def\mfw@opts{\mfw@dims@opt}%
   \mfw@rt@map\mfw@rt@option\XKV@rm

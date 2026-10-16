@@ -454,7 +454,7 @@ mod tests {
         )
         .unwrap();
         let text = String::from_utf8(canon.clone()).unwrap();
-        for macro_name in ["\\interactivemodel", "\\interactive", "\\maleficiumtheme"] {
+        for macro_name in ["\\interactiveruntime", "\\interactive", "\\maleficiumtheme"] {
             assert!(text.contains(macro_name), "{macro_name} missing");
         }
         assert!(TEMPLATES.len() >= 10);

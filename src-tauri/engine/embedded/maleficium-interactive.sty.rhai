@@ -8,7 +8,8 @@
 //
 //     <span class="ltx_text m-widget m-widget-KIND"></span>
 //
-// with KIND one of model, video, table, chart, html, custom. `ltx:text` takes no
+// with KIND html (\interactive) or custom (\interactiveruntime, built-in
+// runtimes included). `ltx:text` takes no
 // arbitrary attributes, so the kind rides in a class token and the element
 // itself is the mount point. The element carries no id, options or path: the
 // i-th placeholder in document order joins the i-th `widget|` record of the
@@ -16,9 +17,8 @@
 // figure numbers come from there, never from this binding.
 //
 // Macros of the .sty and what they become here:
-//   \interactive, \interactivemodel, \interactivevideo, \interactivetable,
-//   \interactivechart, \interactiveruntime   placeholder, arguments read
-//                       verbatim and dropped (custom: the runtime's own widget)
+//   \interactive, \interactiveruntime   placeholder, arguments read
+//                       verbatim and dropped (custom: any runtime's widget)
 //   \maleficiumcontents{on|off}             one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-contents-on|off"/>
 //   \maleficiummeasure{narrow|default|wide|full}  one empty flag marker per call:
@@ -55,10 +55,6 @@ DefMacro("\\maleficiumreaderstyle Semiverbatim", |x| "");
 DefMacro("\\mfwSlash", || "");
 
 DefConstructor("\\interactive [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-html\"/>");
-DefConstructor("\\interactivemodel [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-model\"/>");
-DefConstructor("\\interactivevideo [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-video\"/>");
-DefConstructor("\\interactivetable [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-table\"/>");
-DefConstructor("\\interactivechart [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-chart\"/>");
 DefConstructor("\\interactiveruntime [Semiverbatim] Semiverbatim", "<ltx:text class=\"m-widget m-widget-custom\"/>");
 
 DefConstructor("\\maleficiumcontents Semiverbatim", |document, v| {

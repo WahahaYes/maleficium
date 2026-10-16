@@ -107,7 +107,9 @@ fn every_kind_list_matches_the_registry() {
         .captures_iter(RHAI)
         .map(|c| c[1].to_string())
         .collect();
-    assert_eq!(rhai, kinds(), ".sty.rhai widget constructors");
+    // Built-ins go through \interactiveruntime: no constructor per kind.
+    let macros: BTreeSet<String> = ["html", "custom"].map(String::from).into();
+    assert_eq!(rhai, macros, ".sty.rhai widget constructors");
 
     let vite = quoted(capture(VITE, r"export const RUNTIMES = \[([^\]]*)\]"));
     assert_eq!(vite, names(), "embed-runtime/vite.config.ts RUNTIMES");
@@ -154,7 +156,7 @@ fn each_macro_passes_through_the_options_its_runtime_declares() {
         assert_eq!(
             sty.get(&b.manifest.name),
             Some(&want),
-            "\\interactive{} passes through",
+            "runtime={}@1 passes through",
             b.manifest.name
         );
     }

@@ -210,7 +210,7 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       # \interactiveruntime: one document per .sty message.
                       ("bad-runtime-missing.tex", "\\interactiveruntime needs runtime=<name>@<major>"),
                       ("bad-runtime-ref.tex", "runtime= `Stl_Viewer' must be <name>@<major>: a lowercase letter, 1 to 39 letters, digits or dashes, then @ and a major version 1 to 9999"),
-                      ("bad-runtime-reserved.tex", "runtime name `model' is reserved"),
+                      ("bad-runtime-reserved.tex", "runtime name `html' is reserved"),
                       ("bad-runtime-reserved-prefix.tex", "runtime name `maleficium-x' is reserved"),
                       ("bad-runtime-noalt.tex", "alt= is required"),
                       ("bad-runtime-missing-file.tex", "File `figures/no-such.png' not found"),

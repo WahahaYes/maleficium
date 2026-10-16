@@ -40,7 +40,7 @@ cat > "$ROOT/remote.tex" <<'EOF'
 \usepackage{maleficium-interactive}
 \begin{document}
 \begin{figure}
-\interactivevideo[poster=figures/clip.png, height=5cm, id=fig-remote, alt={Remote clip}, remote=https://media.example.org/clip.mp4]{media/absent.mp4}
+\interactiveruntime[runtime=video@1, poster=figures/clip.png, height=5cm, id=fig-remote, alt={Remote clip}, remote=https://media.example.org/clip.mp4]{media/absent.mp4}
 \caption{A remote video.}
 \end{figure}
 \end{document}
