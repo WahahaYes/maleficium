@@ -23,6 +23,12 @@
         "type": "number",
         "format": "scale",
         "description": "The poster's pixels per CSS pixel, above 0 and at most 8."
+      },
+      "template": {
+        "type": "string",
+        "enum": ["paper", "figure"],
+        "default": "paper",
+        "description": "paper styles the figure with the paper's theme in both colour modes; figure keeps the figure's own template."
       }
     }
   },
