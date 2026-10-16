@@ -19,6 +19,28 @@
 \interactivemodel[poster=figures/mesh.png, height=3cm, id=hang, runtime=hang@test,
   alt={A runtime that never answers}]{models/mesh.glb}
 
+% Video posters from a moment (at=, seconds) of frame-indexed clips: frame
+% 60, 100 (mid-GOP), 30 (VP9) and the last one (at= past the end). Each has
+% its own poster too, so a compile renders none of them.
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-h264, at=2.0167,
+  alt={Frame-indexed H.264 clip}]{media/frames.mp4}
+
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-gop, at=3.35,
+  alt={Frame-indexed H.264 clip, mid-GOP}]{media/frames.mp4}
+
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-vp9, at=1.0167,
+  alt={Frame-indexed VP9 clip}]{media/frames.webm}
+
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-end, at=9,
+  alt={Frame-indexed clip, past its end}]{media/frames.mp4}
+
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-still,
+  alt={A video with no moment}]{media/clip.mp4}
+
+% The test-only runtime that never answers, on a video with a moment.
+\interactivevideo[poster=figures/clip.png, height=2cm, id=vid-hang, at=1,
+  runtime=hang@test, alt={A video whose runtime never answers}]{media/frames.mp4}
+
 \interactive[poster=figures/demo.png, height=3cm, id=html-demo,
   alt={Live demo widget}]{widgets/demo/}
 

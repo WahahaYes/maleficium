@@ -25,7 +25,12 @@
         "default": false,
         "description": "Play again from the start at the end."
       },
-      "muted": { "type": "boolean", "default": false, "description": "Start with the sound off." }
+      "muted": { "type": "boolean", "default": false, "description": "Start with the sound off." },
+      "at": {
+        "type": "number",
+        "format": "time",
+        "description": "Seconds into the video where the view starts; the poster is the frame there."
+      }
     }
   },
   "capabilities": { "webgl": false },

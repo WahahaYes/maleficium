@@ -4,8 +4,8 @@
 # copy of e2e/fixtures/interactive/, then asserts the sidecar, the named
 # PDF annotations, the table row cap, porcelain discipline, and the failing
 # documents (bad ids, files, alt, unknown options, misplaced or malformed
-# poster parameters, every \interactiveruntime error) and the custom runtime
-# widget's sidecar line.
+# poster parameters, every \interactiveruntime error), the custom runtime
+# widget's sidecar line and the options built-in macros pass through.
 # The table row text checks need `mutool` and print skip: without it.
 # POLL_ROUNDS bounds polling.
 set -euo pipefail
@@ -200,7 +200,9 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-id.tex", "must match [a-z0-9]"),
                       ("bad-missing.tex", "not found"),
                       ("bad-noalt.tex", "alt= is required"),
-                      ("bad-option.tex", "`zoom' undefined in families `mfw'"),
+                      ("bad-option.tex", "model widgets take no option `zoom'"),
+                      ("bad-builtin-option.tex", "table widgets take no option `zoom'"),
+                      ("bad-builtin-comma.tex", "character `,' is not allowed in columns"),
                       ("bad-param.tex", "camera= does not apply to chart widgets"),
                       ("bad-origins.tex", "framedomains= `http://a.example.org' is malformed"),
                       ("bad-origins-type.tex", "framedomains= does not apply to video widgets"),
@@ -265,6 +267,25 @@ check("custom runtime without poster= records an empty poster field",
           "widget|fig-noposter|custom|stl-viewer@1|||house||primary=models/mesh.glb"
           "|height=170.71652pt|Orbitable flange"],
       str(nlines)[:400])
+
+# A built-in macro passes the options its runtime.json declares through to
+# the sidecar, as written; the widget list checks and keeps them, and a
+# value of the wrong type fails the list, naming the option.
+br = compile("builtin-options.tex", rounds=20)
+check("built-in runtime options compile", br.get("status") == "success", str(br)[:200])
+bw = call("widgets", {"root_id": "ip", "main_rel": "builtin-options.tex"})
+bby = {w["id"]: {o["key"]: o["value"] for o in w["options"]} for w in bw.get("widgets", [])} if bw["ok"] else {}
+check("video options ride to the widget list",
+      bby.get("fig-loop", {}).get("loop") == "true" and bby["fig-loop"].get("muted") == "true", str(bby)[:300])
+check("table options ride to the widget list as written",
+      {k: bby.get("tab-sorted", {}).get(k) for k in ("pdfrows", "sort", "columns", "format", "maxrows")}
+      == {"pdfrows": "2", "sort": "score desc", "columns": "name;score", "format": "score=fixed:1", "maxrows": "3"},
+      str(bby)[:300])
+tr = compile("builtin-option-type.tex", rounds=20)
+check("a mistyped built-in option still compiles", tr.get("status") == "success", str(tr)[:200])
+tw = call("widgets", {"root_id": "ip", "main_rel": "builtin-option-type.tex"})
+check("...and the widget list names it",
+      not tw["ok"] and "fig-yes" in tw["error"] and "option loop=`yes` is not a boolean" in tw["error"], str(tw)[:300])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)

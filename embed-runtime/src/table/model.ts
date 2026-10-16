@@ -114,7 +114,8 @@ export type Resolved = { ok: true; options: TableOptions } | { ok: false; error:
  * `pdfrows` is read by the exporter to crop the PDF poster and is ignored here.
  */
 export function resolveOptions(raw: Record<string, unknown>): Resolved {
-  const known = new Set(['sort', 'filter', 'columns', 'format', 'maxrows', 'pdfrows']);
+  // The options table@1's runtime.json declares (pdfrows is the PDF's only).
+  const known = new Set(['sort', 'filter', 'columns', 'format', 'maxrows']);
   for (const k of Object.keys(raw)) {
     if (!known.has(k)) return { ok: false, error: `unknown table option "${k}"` };
   }
@@ -151,7 +152,7 @@ export function resolveOptions(raw: Record<string, unknown>): Resolved {
       filter: str('filter') ?? '',
       columns: cols
         ? cols
-            .split(',')
+            .split(/[;,]/)
             .map((c) => c.trim())
             .filter(Boolean)
         : null,

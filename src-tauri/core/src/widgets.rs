@@ -506,6 +506,13 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         if kind == WidgetType::Custom {
             check_custom(&record)?;
         }
+        // A built-in's options are checked against its runtime.json here,
+        // so an undeclared or mistyped one fails the widget list, not only
+        // the export.
+        if let Some(b) = kind.builtin() {
+            crate::runtimes::bind_options(b.reference, &b.manifest, true, &record.options)
+                .map_err(|e| format!("widget {id}: {e}"))?;
+        }
         out.push(record);
     }
     let theme = match (theme.finish()?, style) {

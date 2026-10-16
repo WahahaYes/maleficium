@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+### Changes
+
+- **Table and video options work from LaTeX.** `\interactivetable` takes `sort=`, `filter=`, `columns=`, `format=` and `maxrows=`, and `\interactivevideo` takes `loop=` and `muted=`. The runtimes read them, but the package refused them, so no paper could set them. Separate the items of a list with `;`. A key the widget's runtime does not declare fails the compile and names the widget type.
+- **Exported papers load widgets as you reach them.** Each interactive figure shows its poster until you scroll near it, and only then starts its widget, so a paper opens faster and a widget you never scroll to never runs. A folder bundle does not even download it. A widget also waits while its tab is in the background, and one held back for approval never starts. Once started, a widget stays live.
+- **Video posters from a moment of the video.** `\interactivevideo` takes `at=`, a time in seconds: with it, `poster=` is optional, and Maleficium renders the frame at that time as the poster when you compile. The live video starts at the same frame. The frame is rendered in a separate process that is stopped when it overruns its time limit, so a video that never finishes seeking cannot hang the editor. A frame that comes back blank is refused rather than used, and the widget keeps its placeholder. Tested on Linux; on macOS and Windows it is untested.
+
 ### For contributors
+
+- **Paper bundles are format 2.** Built-in widgets bind through their `runtime.json` the way custom runtimes do: options arrive typed and defaulted, PDF-only ones like `pdfrows` stay out, and the manifest's `runtimes` lists every runtime a live widget runs, each flagged `builtin` or not. The new `paper-bundle-2` schema leaves the widget type open, and the reader mounts whatever `runtimes` lists instead of keeping its own list of kinds. The Article tab logs where each figure settled (`article.widget`).
 
 - **Built-in runtimes have manifests.** Model, video, table and chart each declare a `runtime.json` beside their source, read from one registry in the app; a test fails when any list of widget kinds drifts from it. A custom runtime's `runtime.json` that uses `kit`, `params` or `extends` is refused as reserved for a later contract.
 - **Widget behaviour follows the manifests.** Which source a widget needs, which role may be `remote=`, how its poster is made (rendered, cropped from the PDF, or given by the document) and which poster options it takes now come from its runtime's `runtime.json`, not from code per kind. The generated TypeScript `WidgetType` is a plain string for now. Poster errors name the runtime and why: `table@1 posters are cropped from the PDF, nothing to render`.

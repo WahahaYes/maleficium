@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const schema = JSON.parse(
-  readFileSync('src-tauri/core/schemas/paper-bundle-1.schema.json', 'utf8'),
+  readFileSync('src-tauri/core/schemas/paper-bundle-2.schema.json', 'utf8'),
 ) as {
   $schema: string;
   $id: string;
@@ -24,10 +24,10 @@ function unionOf(source: string, name: string): string[] {
 describe('paper bundle manifest schema', () => {
   const events = readFileSync('src/lib/generated/events.ts', 'utf8');
 
-  it('is JSON Schema 2020-12 for format version 1 and closed at the top level', () => {
+  it('is JSON Schema 2020-12 for format version 2 and closed at the top level', () => {
     expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
     expect(schema.properties.format.const).toBe('maleficium-paper-bundle');
-    expect(schema.properties.formatVersion.const).toBe(1);
+    expect(schema.properties.formatVersion.const).toBe(2);
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toEqual(
       expect.arrayContaining(['format', 'formatVersion', 'paper', 'pdf', 'theme', 'widgets']),
