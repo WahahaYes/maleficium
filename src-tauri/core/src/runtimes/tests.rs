@@ -119,9 +119,10 @@ fn refs_names_and_reserved_names() {
         assert!(!valid_ref(bad), "{bad}");
     }
     assert_eq!(split_ref("stl-viewer@12"), Some(("stl-viewer", 12)));
-    // The package's own reserved list: the same one the .sty refuses.
+    // The .sty refuses the two kinds no runtime backs; a built-in's name
+    // never reaches its check (it dispatches to the kind's hook).
     let sty = include_str!("../../../../embed-runtime/tex/maleficium-interactive.sty");
-    assert!(sty.contains("(?:model|video|table|chart|html|custom)"));
+    assert!(sty.contains("(?:html|custom)"));
     for k in RESERVED_OPTIONS {
         assert!(
             sty.contains(&format!("|{k}|"))
