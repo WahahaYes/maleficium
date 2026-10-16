@@ -303,14 +303,15 @@
 \cs_new_protected:Npn \mfw@check@framedomains { \mfw_origins:N \mfw@p@framedomains }
 \cs_new_protected:Npn \mfw@check@resourcedomains { \mfw_origins:N \mfw@p@resourcedomains }
 % Custom runtimes: shapes of the ref, a source role and an option key (the
-% app checks the same ones again). The reserved names are the built-in kinds
-% and the package's own prefixes; the reserved keys are every key the other
+% app checks the same ones again). The reserved names are the two kinds no
+% runtime backs and the package's own prefixes (a built-in's name never gets
+% here: \interactiveruntime hands it to its \mfw@kind@<name>); the reserved keys are every key the other
 % macros take plus the two the sidecar uses (sources, primary). Each takes
 % the macro holding the text and sets \ifmfw@ok.
 \cs_new_protected:Npn \mfw@rt@isref #1
   { \mfw_match:Nn #1 { \A[a-z][a-z0-9-]{1,39}@[1-9][0-9]{0,3}\Z } }
 \cs_new_protected:Npn \mfw@rt@isreservedname #1
-  { \mfw_match:Nn #1 { \A(?:model|video|table|chart|html|custom)\Z|\Am-|\Amaleficium } }
+  { \mfw_match:Nn #1 { \A(?:html|custom)\Z|\Am-|\Amaleficium } }
 % The name of a ref (up to the @) into \mfw@rt@n. Not a delimited macro: the
 % @ in the document is not a letter, as it is here.
 \cs_new_protected:Npn \mfw@rt@setname #1
@@ -1077,7 +1078,7 @@
       \ifmfw@ok
         \PackageError{maleficium-interactive}%
           {runtime name `\mfw@rt@n' is reserved}%
-          {The built-in kinds, m-... and maleficium... are taken; name your runtime otherwise.}%
+          {html, custom, m-... and maleficium... are taken; name your runtime otherwise.}%
       \fi
     \else
       \PackageError{maleficium-interactive}%

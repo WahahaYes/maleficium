@@ -100,7 +100,9 @@ fn every_kind_list_matches_the_registry() {
         .split('|')
         .map(str::to_string)
         .collect();
-    assert_eq!(sty, kinds(), ".sty reserved runtime names");
+    // A built-in's name dispatches to its hook before the reserved check.
+    let unbacked: BTreeSet<String> = ["html", "custom"].map(String::from).into();
+    assert_eq!(sty, unbacked, ".sty reserved runtime names");
 
     let rhai: BTreeSet<String> = Regex::new(r"m-widget m-widget-([a-z]+)")
         .unwrap()
@@ -108,8 +110,7 @@ fn every_kind_list_matches_the_registry() {
         .map(|c| c[1].to_string())
         .collect();
     // Built-ins go through \interactiveruntime: no constructor per kind.
-    let macros: BTreeSet<String> = ["html", "custom"].map(String::from).into();
-    assert_eq!(rhai, macros, ".sty.rhai widget constructors");
+    assert_eq!(rhai, unbacked, ".sty.rhai widget constructors");
 
     let vite = quoted(capture(VITE, r"export const RUNTIMES = \[([^\]]*)\]"));
     assert_eq!(vite, names(), "embed-runtime/vite.config.ts RUNTIMES");
