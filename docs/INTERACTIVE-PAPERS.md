@@ -21,6 +21,8 @@ Projects made from a template already hold `maleficium-interactive.sty`. It is a
 
 Each needs `alt=` text. The package's header comments show their options by example. A built-in runtime also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`. A chart's data files are sources: `sources={data=data/a.csv, data=data/b.csv}`. A Plotly figure is what Python's `fig.write_json()` writes; WebGL, 3D and map traces are refused (large scatter plots fall back to SVG).
 
+A Plotly figure takes the paper's style in both colour modes: backdrop, ink, font, palette and colour scales replace its template. That includes the template colours Plotly Express copies into each trace. What you set yourself in Python wins, such as `color_discrete_sequence=[...]` or `fig.update_layout(font_family=...)`. `template=figure` keeps the figure's own template, so it looks as it did in Python, in both modes. The example's appendix shows each case.
+
 ## Posters
 
 In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets). A video needs `poster=` or `at=`: `\interactiveruntime[runtime=video@1, at=2.5, alt={...}]{media/clip.mp4}` makes the frame 2.5 seconds in its poster, and the live video starts there too. A frame that renders blank is refused and leaves a placeholder; H.264 MP4 renders on every platform.
@@ -61,7 +63,9 @@ The reader has light and dark modes. To restyle it, name a stylesheet in your so
 }
 ```
 
-It applies after the reader's own rules. Set the `--m-*` variables for both modes. `url()`s may name fonts and images in the project; they are inlined so the page works offline. `@import`, remote URLs, and anything that runs script are refused with a warning. The PDF never changes.
+It applies after the reader's own rules. Set the `--m-*` variables for both modes. `url()`s may name fonts and images in the project; they are inlined so the page works offline. `@import`, remote URLs, and anything that runs script are refused with a warning.
+
+The theme tokens on those two selectors also reach every widget and the posters Maleficium renders. For example, `--m-cat-1` to `--m-cat-8` recolour each chart and Plotly figure that uses the paper's palette. Give colours as hex, `rgb()` or `hsl()`; a value the theme does not allow is left out with a warning. Other rules, and tokens inside `@media`, style the page only. The PDF changes only in posters Maleficium renders.
 
 ## Limits
 
