@@ -100,11 +100,11 @@ mfw = os.path.join(outdir, "main.mfw")
 lines = open(mfw).read().splitlines() if os.path.isfile(mfw) else []
 check("sidecar header", lines[:1] == ["mfw 1"], str(lines[:1]))
 widgets = [l.split("|") for l in lines[1:] if l.startswith("widget|")]
-check("sidecar lists five widgets", len(widgets) == 5, str(len(widgets)))
+check("sidecar lists six widgets", len(widgets) == 6, str(len(widgets)))
 check("sidecar fields are complete", all(len(w) == 11 for w in widgets), str([len(w) for w in widgets]))
 ids = {w[1] for w in widgets}
-check("sidecar widget ids", ids == {"fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-demo"}, str(ids))
-check("sidecar runtimes", {w[3] for w in widgets} == {"model@1", "video@1", "table@1", "chart@1", ""}, str({w[3] for w in widgets}))
+check("sidecar widget ids", ids == {"fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly", "fig-demo"}, str(ids))
+check("sidecar runtimes", {w[3] for w in widgets} == {"model@1", "video@1", "table@1", "chart@1", "plotly@1", ""}, str({w[3] for w in widgets}))
 check("sidecar alts are non-empty", all(w[10].strip() for w in widgets), str([w[10] for w in widgets]))
 by_id = {w[1]: w for w in widgets}
 check("post-caption float captures label and figure",
@@ -113,8 +113,8 @@ check("pre-caption float stays honest",
       by_id["fig-clip"][4] == "" and by_id["fig-clip"][5] == "", str(by_id["fig-clip"][4:6]))
 
 check("widgets outside a captioned float record no label or figure",
-      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("tab-results", "fig-chart", "fig-demo")),
-      str({i: by_id[i][4:6] for i in ("tab-results", "fig-chart", "fig-demo")}))
+      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")),
+      str({i: by_id[i][4:6] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")}))
 
 def streams(pdf_path):
     data = open(pdf_path, "rb").read()
@@ -129,7 +129,7 @@ def streams(pdf_path):
 
 blob = streams(pdf)
 marks = re.findall(rb"/NM\s*\(mfw:([^)]+)\)", blob)
-check("pdf carries five named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-demo"]), str(marks))
+check("pdf carries six named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-plotly", b"fig-demo"]), str(marks))
 uris = re.findall(rb"/URI\s*\(", blob)
 check("the pdf carries no text links", not uris, str(uris))
 rects = re.findall(rb"/Rect\s*\[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]", blob)
@@ -142,11 +142,17 @@ wl = w.get("widgets") or []
 check("widgets returns every widget in document order",
       # Without the per-widget mark lines both floats fit on page 1, so the
       # pre-caption clip float sorts before the inline widgets that follow.
-      [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-demo"],
+      [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly", "fig-demo"],
       str([x["id"] for x in wl]))
 wby = {x["id"]: x for x in wl}
+# A built-in with no package hook is recorded custom and listed as itself.
+src = os.path.join(os.environ["DEVROOT"], "embed-runtime/src")
+BUILTINS = {d for d in os.listdir(src) if os.path.isfile(os.path.join(src, d, "runtime.json"))}
+def listed_type(rec):
+    name = rec[3].split("@")[0]
+    return name if rec[2] == "custom" and name in BUILTINS else rec[2]
 check("widgets agree with the sidecar on type and runtime",
-      all(x["type"] == by_id[x["id"]][2] and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
+      all(x["type"] == listed_type(by_id[x["id"]]) and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
       str(wl)[:300])
 check("widget rects are the pdf annotation rects",
       all(any(all(abs(float(r[i]) - x["rect"][k]) < 0.01 for i, k in enumerate(["x0", "y0", "x1", "y1"]))
@@ -161,8 +167,8 @@ check("widget sources and options are typed",
 check("pre-caption widget takes its float's label and figure number",
       wby["fig-clip"].get("label") == "fig:clip" and wby["fig-clip"].get("figure") == "2", str(wby["fig-clip"]))
 check("widgets outside a float list no label or figure",
-      all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-demo")),
-      str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-demo")})[:300])
+      all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")),
+      str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")})[:300])
 
 # A sidecar that lost track of the pdf is an error, not a shorter list.
 mfw_good = open(mfw).read()
