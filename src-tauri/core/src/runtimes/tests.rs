@@ -119,17 +119,15 @@ fn refs_names_and_reserved_names() {
         assert!(!valid_ref(bad), "{bad}");
     }
     assert_eq!(split_ref("stl-viewer@12"), Some(("stl-viewer", 12)));
-    // The package's own reserved list: the same one the .sty refuses.
+    // The .sty refuses the two kinds no runtime backs; a built-in's name
+    // never reaches its check (it dispatches to the kind's hook).
     let sty = include_str!("../../../../embed-runtime/tex/maleficium-interactive.sty");
-    assert!(sty.contains("(?:model|video|table|chart|html|custom)"));
-    for k in RESERVED_OPTIONS {
-        assert!(
-            sty.contains(&format!("|{k}|"))
-                || sty.contains(&format!("(?:{k}|"))
-                || sty.contains(&format!("|{k})")),
-            "{k}"
-        );
-    }
+    assert!(sty.contains("(?:html|custom)"));
+    // The package refuses as option keys exactly the macro's own arguments.
+    assert!(
+        sty.contains(&format!("\\A(?:{})\\Z", MACRO_KEYS.join("|"))),
+        "the .sty's reserved keys are MACRO_KEYS"
+    );
     assert!(valid_role("texture") && !valid_role("primary") && !valid_role("a-b"));
     assert!(!valid_role(&"a".repeat(17)) && valid_role(&"a".repeat(16)));
     assert!(valid_option_key("autorotate") && !valid_option_key("auto-rotate"));
@@ -219,7 +217,9 @@ fn every_manifest_rule_has_its_message() {
         (with(good(), &["sources", "data", "mimes"], json!(["text/csv"])), "unknown field `mimes`"),
         (with(good(), &["options", "type"], json!("array")), "options: type must be \"object\""),
         (with(good(), &["options", "additionalProperties"], json!(true)), "options: additionalProperties must be false"),
-        (with(good(), &["options", "properties", "camera"], json!({"type": "string"})), "options: `camera` is not an allowed option name"),
+        (with(good(), &["options", "properties", "height"], json!({"type": "string"})), "options: `height` is not an allowed option name"),
+        // A vocabulary key keeps its one meaning.
+        (with(good(), &["options", "properties", "scale"], json!({"type": "string"})), "options.scale: `scale` is the package's scale option"),
         (with(good(), &["options", "properties", "height"], json!({"type": "string"})), "options: `height` is not an allowed option name"),
         (with(good(), &["options", "properties", "Caps"], json!({"type": "string"})), "options: `Caps` is not an allowed option name"),
         (with(good(), &["options", "properties", "x"], json!({"type": "object"})), "unknown variant `object`"),

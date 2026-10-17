@@ -1,0 +1,44 @@
+{
+  "contract": 2,
+  "name": "plotly",
+  "version": "1.0.0",
+  "title": "Plotly figure",
+  "description": "Shows a Plotly figure saved as JSON, such as Python's fig.write_json(), with hover.",
+  "authors": ["Maleficium contributors"],
+  "license": "MIT-0",
+  "poster": "render",
+  "sources": {
+    "figure": {
+      "primary": true,
+      "required": true,
+      "extensions": ["json"],
+      "description": "The figure: an object with data and, optionally, layout."
+    }
+  },
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "scale": {
+        "type": "number",
+        "format": "scale",
+        "description": "The poster's pixels per CSS pixel, above 0 and at most 8."
+      },
+      "template": {
+        "type": "string",
+        "enum": ["paper", "figure"],
+        "default": "paper",
+        "description": "paper styles the figure with the paper's theme in both colour modes; figure keeps the figure's own template."
+      }
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": [
+    {
+      "name": "plotly.js",
+      "version": "4.1.1",
+      "license": "MIT",
+      "source": "https://www.npmjs.com/package/plotly.js"
+    }
+  ]
+}

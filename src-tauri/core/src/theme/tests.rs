@@ -296,3 +296,30 @@ fn a_widget_plate_is_its_backdrop_in_both_modes_with_ink_that_reads_on_it() {
         assert!(house.with_plate(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn a_reader_stylesheet_restyles_as_the_page_cascade_does() {
+    let s = crate::reader_style::tokens(
+        ".m-reader[data-theme=dark]{--m-cat-1:#222222;--m-radius:2px}\n\
+         .m-reader{--m-cat-1:#111111;--m-cat-2:#333333;--m-radius:4px}",
+    );
+    let t = Theme::house().restyled(&s);
+    let (l, d) = (t.tokens(Mode::Light), t.tokens(Mode::Dark));
+    assert_eq!(
+        (l["--m-cat-1"].as_str(), d["--m-cat-1"].as_str()),
+        ("#111111", "#222222")
+    );
+    // A light value of a moded token leaves dark mode the theme's, as the
+    // theme's dark rule outranks the author's .m-reader on the page.
+    assert_eq!(l["--m-cat-2"], "#333333");
+    assert_eq!(
+        d["--m-cat-2"],
+        Theme::house().tokens(Mode::Dark)["--m-cat-2"]
+    );
+    // A shared token follows into dark mode unless the dark rule sets it.
+    assert_eq!(
+        (l["--m-radius"].as_str(), d["--m-radius"].as_str()),
+        ("4px", "2px")
+    );
+    assert!(t.css().is_ok());
+}

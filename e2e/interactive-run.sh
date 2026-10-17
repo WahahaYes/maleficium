@@ -100,11 +100,11 @@ mfw = os.path.join(outdir, "main.mfw")
 lines = open(mfw).read().splitlines() if os.path.isfile(mfw) else []
 check("sidecar header", lines[:1] == ["mfw 1"], str(lines[:1]))
 widgets = [l.split("|") for l in lines[1:] if l.startswith("widget|")]
-check("sidecar lists five widgets", len(widgets) == 5, str(len(widgets)))
+check("sidecar lists six widgets", len(widgets) == 6, str(len(widgets)))
 check("sidecar fields are complete", all(len(w) == 11 for w in widgets), str([len(w) for w in widgets]))
 ids = {w[1] for w in widgets}
-check("sidecar widget ids", ids == {"fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-demo"}, str(ids))
-check("sidecar runtimes", {w[3] for w in widgets} == {"model@1", "video@1", "table@1", "chart@1", ""}, str({w[3] for w in widgets}))
+check("sidecar widget ids", ids == {"fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly", "fig-demo"}, str(ids))
+check("sidecar runtimes", {w[3] for w in widgets} == {"model@1", "video@1", "table@1", "chart@1", "plotly@1", ""}, str({w[3] for w in widgets}))
 check("sidecar alts are non-empty", all(w[10].strip() for w in widgets), str([w[10] for w in widgets]))
 by_id = {w[1]: w for w in widgets}
 check("post-caption float captures label and figure",
@@ -113,8 +113,8 @@ check("pre-caption float stays honest",
       by_id["fig-clip"][4] == "" and by_id["fig-clip"][5] == "", str(by_id["fig-clip"][4:6]))
 
 check("widgets outside a captioned float record no label or figure",
-      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("tab-results", "fig-chart", "fig-demo")),
-      str({i: by_id[i][4:6] for i in ("tab-results", "fig-chart", "fig-demo")}))
+      all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")),
+      str({i: by_id[i][4:6] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")}))
 
 def streams(pdf_path):
     data = open(pdf_path, "rb").read()
@@ -129,7 +129,7 @@ def streams(pdf_path):
 
 blob = streams(pdf)
 marks = re.findall(rb"/NM\s*\(mfw:([^)]+)\)", blob)
-check("pdf carries five named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-demo"]), str(marks))
+check("pdf carries six named annotations", sorted(marks) == sorted([b"fig-mesh", b"fig-clip", b"tab-results", b"fig-chart", b"fig-plotly", b"fig-demo"]), str(marks))
 uris = re.findall(rb"/URI\s*\(", blob)
 check("the pdf carries no text links", not uris, str(uris))
 rects = re.findall(rb"/Rect\s*\[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]", blob)
@@ -142,11 +142,17 @@ wl = w.get("widgets") or []
 check("widgets returns every widget in document order",
       # Without the per-widget mark lines both floats fit on page 1, so the
       # pre-caption clip float sorts before the inline widgets that follow.
-      [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-demo"],
+      [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly", "fig-demo"],
       str([x["id"] for x in wl]))
 wby = {x["id"]: x for x in wl}
+# A built-in with no package hook is recorded custom and listed as itself.
+src = os.path.join(os.environ["DEVROOT"], "embed-runtime/src")
+BUILTINS = {d for d in os.listdir(src) if os.path.isfile(os.path.join(src, d, "runtime.json"))}
+def listed_type(rec):
+    name = rec[3].split("@")[0]
+    return name if rec[2] == "custom" and name in BUILTINS else rec[2]
 check("widgets agree with the sidecar on type and runtime",
-      all(x["type"] == by_id[x["id"]][2] and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
+      all(x["type"] == listed_type(by_id[x["id"]]) and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
       str(wl)[:300])
 check("widget rects are the pdf annotation rects",
       all(any(all(abs(float(r[i]) - x["rect"][k]) < 0.01 for i, k in enumerate(["x0", "y0", "x1", "y1"]))
@@ -161,8 +167,8 @@ check("widget sources and options are typed",
 check("pre-caption widget takes its float's label and figure number",
       wby["fig-clip"].get("label") == "fig:clip" and wby["fig-clip"].get("figure") == "2", str(wby["fig-clip"]))
 check("widgets outside a float list no label or figure",
-      all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-demo")),
-      str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-demo")})[:300])
+      all("label" not in wby[i] and "figure" not in wby[i] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")),
+      str({i: wby[i] for i in ("tab-results", "fig-chart", "fig-plotly", "fig-demo")})[:300])
 
 # A sidecar that lost track of the pdf is an error, not a shorter list.
 mfw_good = open(mfw).read()
@@ -200,27 +206,24 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-id.tex", "must match [a-z0-9]"),
                       ("bad-missing.tex", "not found"),
                       ("bad-noalt.tex", "alt= is required"),
-                      ("bad-option.tex", "model widgets take no option `zoom'"),
                       ("bad-builtin-option.tex", "table widgets take no option `zoom'"),
                       ("bad-builtin-comma.tex", "character `,' is not allowed in columns"),
-                      ("bad-param.tex", "camera= does not apply to chart widgets"),
                       ("bad-origins.tex", "framedomains= `http://a.example.org' is malformed"),
                       ("bad-origins-type.tex", "framedomains= does not apply to video widgets"),
                       ("bad-size.tex", "size= `large' is malformed"),
                       # \interactiveruntime: one document per .sty message.
                       ("bad-runtime-missing.tex", "\\interactiveruntime needs runtime=<name>@<major>"),
                       ("bad-runtime-ref.tex", "runtime= `Stl_Viewer' must be <name>@<major>: a lowercase letter, 1 to 39 letters, digits or dashes, then @ and a major version 1 to 9999"),
-                      ("bad-runtime-reserved.tex", "runtime name `model' is reserved"),
+                      ("bad-runtime-reserved.tex", "runtime name `html' is reserved"),
                       ("bad-runtime-reserved-prefix.tex", "runtime name `maleficium-x' is reserved"),
                       ("bad-runtime-noalt.tex", "alt= is required"),
                       ("bad-runtime-missing-file.tex", "File `figures/no-such.png' not found"),
                       ("bad-runtime-source.tex", "sources= entry `figures/runtime-texture.png' must be role=path"),
                       ("bad-runtime-role.tex", "source role `Tex' must be a lowercase letter then up to 15 letters or digits, and not primary"),
                       ("bad-runtime-role-primary.tex", "source role `primary' must be a lowercase letter then up to 15 letters or digits, and not primary"),
-                      ("bad-runtime-role-twice.tex", "source role `tex' is given twice"),
                       ("bad-runtime-source-missing.tex", "File `figures/no-such.png' not found"),
                       ("bad-runtime-novalue.tex", "option `autorotate' needs a value: write autorotate=..."),
-                      ("bad-runtime-reserved-key.tex", "option key `camera' is reserved by the package"),
+                      ("bad-runtime-reserved-key.tex", "option key `inline' is an argument of \\interactiveruntime, not a runtime option"),
                       ("bad-runtime-key.tex", "option key `Color' must be a lowercase letter then up to 23 letters or digits"),
                       ("bad-runtime-comma.tex", "character `,' is not allowed in color"),
                       ("bad-runtime-comma-path.tex", "character `,' is not allowed in tex"),
@@ -286,6 +289,14 @@ check("a mistyped built-in option still compiles", tr.get("status") == "success"
 tw = call("widgets", {"root_id": "ip", "main_rel": "builtin-option-type.tex"})
 check("...and the widget list names it",
       not tw["ok"] and "fig-yes" in tw["error"] and "option loop=`yes` is not a boolean" in tw["error"], str(tw)[:300])
+# A hookless built-in takes any key the package lets through; its runtime
+# refuses what it does not declare when the widget is listed.
+for doc, want in [("bad-option.tex", "runtime model@1 has no option `zoom`"),
+                  ("bad-param.tex", "camera")]:
+    r = compile(doc, rounds=20)
+    check(f"{doc} compiles", r.get("status") == "success", str(r)[:200])
+    w = call("widgets", {"root_id": "ip", "main_rel": doc})
+    check(f"...and the widget list refuses it", not w["ok"] and want in w["error"], str(w)[:300])
 
 mcp.p.kill()
 sys.exit(1 if fails else 0)

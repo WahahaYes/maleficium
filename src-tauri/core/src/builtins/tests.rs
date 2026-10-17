@@ -20,14 +20,6 @@ fn kinds() -> BTreeSet<String> {
     k
 }
 
-fn quoted(list: &str) -> BTreeSet<String> {
-    Regex::new(r"'([a-z]+)'|\x22([a-z]+)\x22")
-        .unwrap()
-        .captures_iter(list)
-        .map(|c| c.get(1).or(c.get(2)).unwrap().as_str().to_string())
-        .collect()
-}
-
 fn capture<'a>(text: &'a str, pattern: &str) -> &'a str {
     Regex::new(pattern)
         .unwrap()
@@ -52,7 +44,7 @@ fn every_embedded_manifest_parses_and_names_its_kind() {
         assert!(b.host.contains("<html"), "{name}: host is not a document");
         assert!(by_ref(b.reference).is_some_and(|x| std::ptr::eq(x, b)));
     }
-    assert!(by_ref("plotly@1").is_none());
+    assert!(by_ref("stl-viewer@1").is_none());
 }
 
 #[test]
@@ -85,7 +77,7 @@ fn reserved_names_are_the_registry_and_its_two_kinds() {
         assert!(crate::runtimes::reserved_name(&k), "{k}");
         assert!(!crate::runtimes::valid_name(&k), "{k}");
     }
-    assert!(crate::runtimes::valid_name("plotly"));
+    assert!(crate::runtimes::valid_name("stl-viewer"));
 }
 
 #[test]
@@ -100,17 +92,23 @@ fn every_kind_list_matches_the_registry() {
         .split('|')
         .map(str::to_string)
         .collect();
-    assert_eq!(sty, kinds(), ".sty reserved runtime names");
+    // A built-in's name dispatches to its hook before the reserved check.
+    let unbacked: BTreeSet<String> = ["html", "custom"].map(String::from).into();
+    assert_eq!(sty, unbacked, ".sty reserved runtime names");
 
     let rhai: BTreeSet<String> = Regex::new(r"m-widget m-widget-([a-z]+)")
         .unwrap()
         .captures_iter(RHAI)
         .map(|c| c[1].to_string())
         .collect();
-    assert_eq!(rhai, kinds(), ".sty.rhai widget constructors");
+    // Built-ins go through \interactiveruntime: no constructor per kind.
+    assert_eq!(rhai, unbacked, ".sty.rhai widget constructors");
 
-    let vite = quoted(capture(VITE, r"export const RUNTIMES = \[([^\]]*)\]"));
-    assert_eq!(vite, names(), "embed-runtime/vite.config.ts RUNTIMES");
+    // vite finds the runtimes the way build.rs does: by their folders.
+    assert!(
+        !VITE.contains("export const RUNTIMES = ["),
+        "embed-runtime/vite.config.ts keeps a runtime list"
+    );
 
     // Format 2 leaves the widget type open: a pattern every kind fits.
     let schema: serde_json::Value = serde_json::from_str(crate::bundle::MANIFEST_SCHEMA).unwrap();
@@ -142,7 +140,11 @@ fn each_macro_passes_through_the_options_its_runtime_declares() {
                 (c[2].to_string(), keys)
             })
             .collect();
-    for b in all() {
+    // A kind with a package hook passes its plain options through; one
+    // without goes through \interactiveruntime's custom path, which passes all.
+    assert!(!sty.is_empty(), "no \\mfw@bi@options in the package");
+    for (name, keys) in &sty {
+        let b = by_name(name).unwrap_or_else(|| panic!("hook for {name}, not a built-in"));
         let want: BTreeSet<String> = b
             .manifest
             .options
@@ -151,11 +153,6 @@ fn each_macro_passes_through_the_options_its_runtime_declares() {
             .filter(|(_, o)| o.format.is_none() && !o.pdf)
             .map(|(k, _)| k.clone())
             .collect();
-        assert_eq!(
-            sty.get(&b.manifest.name),
-            Some(&want),
-            "\\interactive{} passes through",
-            b.manifest.name
-        );
+        assert_eq!(keys, &want, "runtime={name}@1 passes through");
     }
 }

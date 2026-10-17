@@ -119,7 +119,7 @@ def complete(w, cause):
 res, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
 check("widgets_status is a normal result", res.get("isError") is not True and bool(s), str(res)[:300])
 check("one html widget pending, auto-approval off", s.get("pending") == 1 and s.get("autoApprove") is False, str(s)[:300])
-check("first-party widgets are exempt", sorted(s.get("exempt", [])) == ["fig-chart", "fig-clip", "fig-mesh", "tab-results"], str(s.get("exempt")))
+check("first-party widgets are exempt", sorted(s.get("exempt", [])) == ["fig-chart", "fig-clip", "fig-mesh", "fig-plotly", "tab-results"], str(s.get("exempt")))
 w = (s.get("widgets") or [{}])[0]
 good, missing = complete(w, "never_approved")
 check("the pending item carries id, path, digest, cause, panel, user action and message", good, f"missing {missing}: {json.dumps(w)[:400]}")

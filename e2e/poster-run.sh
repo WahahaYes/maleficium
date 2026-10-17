@@ -73,7 +73,7 @@ addEventListener("message", function (e) {
 });
 parent.postMessage({ mfw: 1, type: "ready" }, "*");
 JS
-sed -i 's|^\\interactivetable|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactive[height=3cm, id=html-pc, alt={Preconnect probe}]{widgets/pc/}\n\n\\interactivetable|' "$SCRATCH/proj/posters.tex"
+sed -i 's|^\\interactiveruntime\[runtime=table@1|\\interactive[height=3cm, id=html-probe, alt={Probe widget}]{widgets/probe/}\n\n\\interactive[height=3cm, id=html-pc, alt={Preconnect probe}]{widgets/pc/}\n\n\\interactiveruntime[runtime=table@1|' "$SCRATCH/proj/posters.tex"
 grep -q "id=html-probe" "$SCRATCH/proj/posters.tex" || fail "cannot add the probe widget"
 grep -q "id=html-pc" "$SCRATCH/proj/posters.tex" || fail "cannot add the preconnect probe widget"
 
@@ -175,6 +175,9 @@ check("the matrix camera is recorded canonical and rigid",
 check("size, background and scale are recorded",
       opt("cam-front", "size") == "320x240" and opt("cam-front", "background") == "#ffffff"
       and opt("chart", "scale") == "2", str(ws)[:300])
+check("a hookless built-in is listed as itself with its primary role",
+      ws.get("plotly", {}).get("type") == "plotly" and opt("plotly", "scale") == "2"
+      and [s["role"] for s in ws.get("plotly", {}).get("sources", [])] == ["figure"], str(ws.get("plotly"))[:300])
 mcp.p.kill()
 
 def png_info(path):
@@ -273,6 +276,14 @@ frame_w = round((ws["chart"]["rect"]["x1"] - ws["chart"]["rect"]["x0"]) * 96 / 7
 check("the chart poster fills its frame at scale 2",
       ci is not None and abs(ci[0] - 2 * frame_w) <= 2 and ci[2] is not None and ci[2] > 0.1,
       str((ci, frame_w)))
+
+plot, _ = render("plotly", "plotly.png")
+check("the plotly figure renders", plot["ok"], str(plot)[:300])
+pi = png_info(os.path.join(OUT, "plotly.png")) if plot["ok"] else None
+frame_w = round((ws["plotly"]["rect"]["x1"] - ws["plotly"]["rect"]["x0"]) * 96 / 72) if "plotly" in ws else 0
+check("the plotly poster fills its frame at scale 2",
+      pi is not None and abs(pi[0] - 2 * frame_w) <= 2 and pi[2] is not None and pi[2] > 0.1,
+      str((pi, frame_w)))
 
 hang, took = render("hang", "hang.png", timeout_ms=3000)
 check("a hanging runtime is stopped at its time limit",
@@ -496,8 +507,8 @@ check("...and no map entry: its cached poster does not stand in for the approval
 # through the subprocess renderer and maps it.
 tex = os.path.join(ROOT, "posters.tex")
 text = open(tex).read().replace(
-    "\\interactivetable",
-    "\\interactivevideo[height=2cm, id=vid-auto, at=3.35, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactivetable", 1)
+    "\\interactiveruntime[runtime=table@1",
+    "\\interactiveruntime[runtime=video@1, height=2cm, id=vid-auto, at=3.35, alt={An auto-poster}]{media/frames.mp4}\n\n\\interactiveruntime[runtime=table@1", 1)
 open(tex, "w").write(text)
 rec = compile_lines()
 lines = rec.get("lines") or []
