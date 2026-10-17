@@ -114,6 +114,8 @@ EXPECT = {  # id: (type, runtime, label)
     "fig-video": ("video", "video@1", "fig:video"),
     "tab-results": ("table", "table@1", "tab:results"),
     "fig-chart": ("chart", "chart@1", "fig:chart"),
+    "fig-plotly-tradeoff": ("plotly", "plotly@1", "fig:plotly-tradeoff"),
+    "fig-plotly-latency": ("plotly", "plotly@1", "fig:plotly-latency"),
     "fig-html": ("html", "", "fig:html"),
     "chart-bare": ("chart", "chart@1", ""),
     "chart-inline": ("chart", "chart@1", ""),
@@ -129,7 +131,7 @@ def listed_type(rec):
     name = rec[3].split("@")[0]
     return name if rec[2] == "custom" and name in BUILTINS else rec[2]
 check("every widget type is covered",
-      {listed_type(w) for w in rows} == {"model", "video", "table", "chart", "html"}, str({w[2] for w in rows}))
+      {listed_type(w) for w in rows} == {"model", "video", "table", "chart", "plotly", "html"}, str({w[2] for w in rows}))
 check("every widget has alt text", all(len(w) == 11 and w[10].strip() for w in rows), str([w[-1] for w in rows]))
 for wid, (typ, rt, label) in EXPECT.items():
     w = by_id.get(wid)
@@ -138,7 +140,7 @@ for wid, (typ, rt, label) in EXPECT.items():
 check("uncaptioned and floatless widgets have no figure number",
       all(by_id[i][5] == "" for i in ("chart-bare", "chart-inline")), str([by_id[i] for i in ("chart-bare", "chart-inline")]))
 check("captioned widgets carry a figure number",
-      all(by_id[i][5] != "" for i in ("fig-model", "fig-video", "fig-chart", "fig-html")), str([by_id[i][5] for i in by_id]))
+      all(by_id[i][5] != "" for i in ("fig-model", "fig-video", "fig-chart", "fig-plotly-tradeoff", "fig-plotly-latency", "fig-html")), str([by_id[i][5] for i in by_id]))
 check("pre-caption subfigure widgets record no label or figure",
       all(by_id[i][4] == "" and by_id[i][5] == "" for i in ("fig-pair-a", "fig-pair-b")),
       str({i: by_id[i][4:6] for i in ("fig-pair-a", "fig-pair-b")}))
@@ -163,8 +165,8 @@ check("widgets lists the compiled paper", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
 check("widgets returns every widget",
       sorted(x["id"] for x in wl) == sorted(EXPECT), str([x["id"] for x in wl]))
-check("widgets covers all five types",
-      {x["type"] for x in wl} == {"model", "video", "table", "chart", "html"}, str({x["type"] for x in wl}))
+check("widgets covers all six types",
+      {x["type"] for x in wl} == {"model", "video", "table", "chart", "plotly", "html"}, str({x["type"] for x in wl}))
 check("widgets follow the pdf, page by page",
       [x["page"] for x in wl] == sorted(x["page"] for x in wl), str([(x["id"], x["page"]) for x in wl]))
 check("widget pages and rects are well-formed",

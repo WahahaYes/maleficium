@@ -2,7 +2,7 @@
 
 Ethan Wilson, Naveen Sendhilnathan, Charlie S. Burlingham, Yusuf Mansour, Robert Cavin, Sai Deep Tetali, Ajoy Savio Fernandes, and Michael J. Proulx. _Eye Gaze as a Signal for Conveying User Attention in Contextual AI Systems._ ETRA '25, [doi:10.1145/3715669.3727349](https://doi.org/10.1145/3715669.3727349), [arXiv:2501.13878](https://arxiv.org/abs/2501.13878).
 
-One LaTeX source, two outputs. The compiled PDF is pixel-identical to the published paper, followed by an appendix that is not in it. The exported reader shows the same paper reflowed for the screen, with four interactive figures and the appendix's four Plotly figures. This folder is the source vendored in [e2e/fixtures/vendored/eye-gaze-attention/](../../e2e/fixtures/vendored/eye-gaze-attention/) plus the widgets.
+One LaTeX source, two outputs. The compiled PDF is pixel-identical to the published paper. The exported reader shows the same paper reflowed for the screen, with four interactive figures. This folder is the source vendored in [e2e/fixtures/vendored/eye-gaze-attention/](../../e2e/fixtures/vendored/eye-gaze-attention/) plus the widgets.
 
 ## What is live in the reader
 
@@ -15,9 +15,7 @@ One LaTeX source, two outputs. The compiled PDF is pixel-identical to the publis
 
 PNGs are in `figures/`; runtimes are in `runtimes/`.
 
-The appendix (`sections/appendix_plotly.tex`, after the references) shows how Plotly figures saved from Python take the paper's style. Figures 5 and 6 keep Plotly Express defaults and get the paper's palette, fonts and colour scale. Figure 7 sets its own palette and font. Figure 8 keeps its own template with `template=figure`. `tools/plotly_figures.py` writes `charts/` from `data/` (Python 3 with plotly and pandas). They have no `poster=`, so Maleficium renders their posters when you compile.
-
-The only changes to the published source are the `\usepackage{maleficium-interactive}` block (with its reader settings) and the appendix in `main.tex`, and four `\includegraphics` lines in `sections/eval_object_size.tex` and `sections/eval_vlm.tex`, each replaced by a widget macro. Every widget uses the published PNG as its `poster=`, so the PDF is unchanged. Its larger `height=` only sizes the reader's frame to fit the controls.
+The only changes to the source are the `\usepackage{maleficium-interactive}` block (with its reader settings) in `main.tex` and four `\includegraphics` lines in `sections/eval_object_size.tex` and `sections/eval_vlm.tex`, each replaced by a widget macro. Every widget uses the published PNG as its `poster=`, so the PDF is unchanged. Its larger `height=` only sizes the reader's frame to fit the controls.
 
 ## Open it
 
