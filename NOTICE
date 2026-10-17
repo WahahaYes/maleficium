@@ -94,6 +94,13 @@ three.js authors, MIT, with no dependencies (checked against package-lock.json,
 dependencies (MIT, Apache-2.0), are build-time only and not bundled. The video
 runtime uses only the browser's own <video> element.
 
+The plotly runtime under embed-runtime/built/plotly/ inlines plotly.js 4.1.1
+(its core and the SVG traces the runtime registers), Copyright (c) 2016-2024
+Plotly Technologies Inc., MIT, and the 36 packages those modules use: MIT,
+ISC and BSD-3-Clause (@plotly/d3, @plotly/d3-sankey, d3-collection, and the
+stylesheet of maplibre-gl), and gl-mat4 under Zlib (checked against the
+build's module list and package-lock.json, 2026-10-16).
+
 The model and video test fixtures under e2e/fixtures/ (a generated glb cube and
 an ffmpeg test pattern, e2e/fixtures/gen-media.py) are original to Maleficium
 and dedicated to the public domain under CC0 1.0.

@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "type": "bar",
+      "name": "accuracy",
+      "x": ["full", "no-gaze", "no-depth", "no-both"],
+      "y": [0.91, 0.84, 0.86, 0.78],
+      "hovertemplate": "%{x}: %{y:.2f}<extra></extra>"
+    },
+    {
+      "type": "scattergl",
+      "mode": "lines+markers",
+      "name": "recall",
+      "x": ["full", "no-gaze", "no-depth", "no-both"],
+      "y": [0.88, 0.8, 0.83, 0.74]
+    }
+  ],
+  "layout": {
+    "template": {
+      "data": {
+        "bar": [{ "marker": { "line": { "color": "#E5ECF6", "width": 0.5 } }, "type": "bar" }]
+      },
+      "layout": {
+        "colorway": ["#636efa", "#EF553B", "#00cc96", "#ab63fa"],
+        "paper_bgcolor": "white",
+        "plot_bgcolor": "#E5ECF6"
+      }
+    },
+    "title": { "text": "Ablation" },
+    "yaxis": { "title": { "text": "score" }, "range": [0, 1] },
+    "margin": { "l": 48, "r": 16, "t": 40, "b": 40 }
+  }
+}

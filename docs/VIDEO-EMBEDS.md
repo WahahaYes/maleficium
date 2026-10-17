@@ -2,7 +2,7 @@
 
 A paper bundle can show a YouTube or Vimeo video inside an interactive figure. There is no embed widget type. You write a small `html` widget that frames the provider's player, and you declare the player's origin so that one widget may frame it.
 
-If you can ship the video file, use `\interactivevideo` with a local file instead. The bundle then stays offline and hashed, with no third party involved. The rest of this page is about what you give up by not doing that.
+If you can ship the video file, use `\interactiveruntime[runtime=video@1]` with a local file instead. The bundle then stays offline and hashed, with no third party involved. The rest of this page is about what you give up by not doing that.
 
 ## The widget
 

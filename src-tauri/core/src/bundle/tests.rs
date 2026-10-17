@@ -1690,6 +1690,34 @@ fn the_page_css_and_every_widgets_tokens_come_from_the_sidecars_theme() {
 }
 
 #[test]
+fn the_reader_stylesheets_tokens_reach_every_widget() {
+    let p = project(
+        "styletokens",
+        &format!("{}style|reader.css\n", themed_sidecar()),
+    );
+    std::fs::write(
+        p.root.join("reader.css"),
+        ".m-reader{--m-cat-1:#7A4A1E;--m-cat-2:tomato}\n.m-reader[data-theme=dark]{--m-cat-1:#D2A679}",
+    )
+    .unwrap();
+    let d = dest(&p, "paper.html");
+    let r = export(&p, &d, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&d).unwrap();
+    let theme = island_json(&html, "mfw-theme");
+    assert_eq!(theme["light"]["--m-cat-1"], "#7A4A1E");
+    assert_eq!(theme["dark"]["--m-cat-1"], "#D2A679");
+    assert_eq!(theme["light"]["--m-cat-2"], "#EB6834");
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.kind == BundleWarningKind::ReaderStyle
+                && w.message.contains("--m-cat-2: `tomato`")),
+        "{:?}",
+        r.warnings
+    );
+}
+
+#[test]
 fn a_sidecar_without_a_theme_record_exports_in_the_house_theme() {
     let p = project("housetheme", REAL_SIDECAR);
     let d = dest(&p, "paper.html");

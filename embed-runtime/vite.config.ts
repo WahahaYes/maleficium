@@ -6,12 +6,14 @@
 // fresh.test.ts fails on a stale build).
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import process from 'node:process';
 import type { Plugin } from 'vite';
 
-/** Every runtime, by its directory under embed-runtime/src/. */
-export const RUNTIMES = ['table', 'chart', 'model', 'video'];
+/** Every runtime: each directory under embed-runtime/src/ with a runtime.json. */
+export const RUNTIMES = readdirSync('embed-runtime/src')
+  .filter((d) => existsSync(`embed-runtime/src/${d}/runtime.json`))
+  .sort();
 
 /** Runtimes shipped as one classic script: no module graph, nothing that needs CORS. */
 const CLASSIC = ['model', 'video'];
@@ -118,6 +120,8 @@ export default defineConfig(({ mode }) => {
   return {
     root: `embed-runtime/src/${runtime}`,
     plugins: [viteSingleFile(), ...(CLASSIC.includes(runtime) ? [classicScript()] : [])],
+    // Some vendored code (plotly.js) names Node's `global`.
+    define: { global: 'globalThis' },
     build: {
       outDir: `../../built/${runtime}`,
       emptyOutDir: true,

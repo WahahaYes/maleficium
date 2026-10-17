@@ -31,7 +31,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "sh scripts/clean.sh",
-    "build:runtimes": "vite build --config embed-runtime/vite.config.ts --mode table && vite build --config embed-runtime/vite.config.ts --mode chart && vite build --config embed-runtime/vite.config.ts --mode model && vite build --config embed-runtime/vite.config.ts --mode video && vite build --config embed-runtime/vite.config.ts --mode bridge && vite build --config embed-runtime/vite.config.ts --mode fork-three && vite build --config embed-runtime/vite.config.ts --mode fork-viewer"
+    "build:runtimes": "node scripts/build-runtimes.mjs"
   },
   "dependencies": {
     "@codemirror/language": "^6.12.4",
@@ -67,6 +67,7 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^16.5.0",
     "playwright-core": "^1.63.0",
+    "plotly.js": "4.1.1",
     "prettier": "^3.9.8",
     "three": "0.186.1",
     "typescript": "~6.0.3",

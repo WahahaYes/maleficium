@@ -403,6 +403,44 @@ async function reader(label, url, expectCsp, requests = null) {
       found ? JSON.stringify(text.slice(0, 120)) : 'no chart widget on this page',
     );
   }
+  // Plotly hover: its own hover label, drawn into the plot's hover layer.
+  {
+    let found = false;
+    let text = '';
+    for (const fr of page.frames()) {
+      let has = false;
+      try {
+        has = (await fr.locator('#plot .main-svg').count()) > 0;
+      } catch {
+        continue;
+      }
+      if (!has) continue;
+      found = true;
+      try {
+        const plot = fr.locator('#plot .nsewdrag').first();
+        const bb = await plot.boundingBox();
+        if (bb) {
+          for (const fx of [0.15, 0.4, 0.6, 0.85]) {
+            await plot.hover({
+              position: { x: Math.floor(bb.width * fx), y: Math.floor(bb.height * 0.5) },
+              timeout: 5000,
+            });
+            await page.waitForTimeout(250);
+            text = (await fr.locator('#plot .hoverlayer .hovertext').allTextContents()).join(' ');
+            if (text.trim()) break;
+          }
+        }
+      } catch {
+        /* detached mid-hover; text stays empty with the evidence below */
+      }
+      break;
+    }
+    check(
+      `${label}: plotly hover shows its label`,
+      found && text.trim().length > 0,
+      found ? JSON.stringify(text.slice(0, 120)) : 'no plotly widget on this page',
+    );
+  }
   check(`${label}: the reader's meta CSP is the exporter's`, s.csp === expectCsp, s.csp);
   const violations = await page.evaluate(() => window.__csp);
   check(

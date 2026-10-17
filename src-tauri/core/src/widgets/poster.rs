@@ -64,10 +64,22 @@ const MAX_PROPOSAL_SIDE: u32 = 4096;
 pub(crate) const CUSTOM_TIMEOUT_MS: u64 = 10_000;
 
 /// A debug-only runtime that announces itself, then spins forever on
-/// `init`: the renderer's hard time limit is proven against it. Release
-/// builds do not know the name.
+/// `init`: the renderer's hard time limit is proven against it. A built-in
+/// named with major 9999 (`video@9999` too) is that built-in with this host;
+/// release builds refuse the ref.
 #[cfg(debug_assertions)]
-pub const TEST_HANG_RUNTIME: &str = "hang@test";
+pub const TEST_HANG_RUNTIME: &str = "model@9999";
+#[cfg(debug_assertions)]
+const TEST_HANG_MAJOR: &str = "@9999";
+
+/// The built-in a debug build's hanging test runtime stands in for.
+pub(crate) fn test_hang_builtin(_runtime: &str) -> Option<&'static crate::builtins::Builtin> {
+    #[cfg(debug_assertions)]
+    if let Some(name) = _runtime.strip_suffix(TEST_HANG_MAJOR) {
+        return crate::builtins::by_name(name);
+    }
+    None
+}
 #[cfg(debug_assertions)]
 const TEST_HANG_HOST: &str = include_str!("../../testdata/runtimes/hang-host.html");
 
@@ -212,7 +224,7 @@ pub fn needs_process(cx: &Core, req: &PosterRequest) -> bool {
 
 fn host_document(runtime: &str) -> Option<&'static str> {
     #[cfg(debug_assertions)]
-    if runtime == TEST_HANG_RUNTIME {
+    if runtime.ends_with(TEST_HANG_MAJOR) {
         return Some(TEST_HANG_HOST);
     }
     crate::builtins::host(runtime)

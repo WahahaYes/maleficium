@@ -4,11 +4,12 @@
 //! turns every `\interactive*` macro into one empty placeholder element:
 //!
 //! ```html
-//! <span class="ltx_text m-widget m-widget-model"></span>
+//! <span class="ltx_text m-widget m-widget-custom"></span>
 //! ```
 //!
-//! The class token `m-widget-KIND` names the widget type (`model`, `video`,
-//! `table`, `chart`, `html`). The element carries nothing else: the PDF
+//! The class token `m-widget-KIND` names the macro: `html` for `\interactive`,
+//! `custom` for `\interactiveruntime`, whose record may be a built-in kind.
+//! The element carries nothing else: the PDF
 //! compile resolved ids, labels, posters and figure numbers into the
 //! `<jobname>.mfw` sidecar, and the i-th placeholder in document order is the
 //! i-th `widget|` record. [`join`] checks that the counts agree and that each
@@ -152,6 +153,12 @@ pub fn extract_placeholders(html: &str) -> Result<Vec<Placeholder>, JoinError> {
     Ok(out)
 }
 
+/// `\interactiveruntime` writes a `custom` placeholder for every runtime,
+/// built-ins included.
+fn placeholder_admits(placeholder: WidgetType, record: WidgetType) -> bool {
+    placeholder == record || (placeholder == WidgetType::Custom && record.builtin().is_some())
+}
+
 /// Pair the placeholders of `html` with `records` by order. Refuses a count
 /// mismatch (carrying both counts) and a type mismatch at any position.
 pub fn join(html: &str, records: Vec<Record>) -> Result<Vec<Joined>, JoinError> {
@@ -164,7 +171,7 @@ pub fn join(html: &str, records: Vec<Record>) -> Result<Vec<Joined>, JoinError> 
     }
     let mut out = Vec::with_capacity(found.len());
     for (placeholder, record) in found.into_iter().zip(records) {
-        if placeholder.kind != record.kind {
+        if !placeholder_admits(placeholder.kind, record.kind) {
             return Err(JoinError::KindMismatch {
                 index: placeholder.index,
                 id: record.id,

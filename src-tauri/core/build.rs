@@ -112,6 +112,60 @@ fn embed_templates() {
     std::fs::write(out, src).expect("templates table written");
 }
 
+/// Embeds every built-in runtime as `EMBEDDED: &[(ref, runtime.json, host)]`:
+/// each `embed-runtime/src/<name>/runtime.json` and its committed build in
+/// `embed-runtime/built/<name>/index.html`. A folder is the whole registration.
+fn embed_builtins() {
+    let root =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../embed-runtime");
+    let src_dir = root.join("src");
+    println!("cargo:rerun-if-changed={}", src_dir.display());
+    let mut names: Vec<_> = std::fs::read_dir(&src_dir)
+        .expect("embed-runtime/src readable")
+        .flatten()
+        .filter(|e| e.path().join("runtime.json").is_file())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    let mut src = String::from("const EMBEDDED: &[(&str, &str, &str)] = &[\n");
+    for name in names {
+        let manifest = src_dir.join(&name).join("runtime.json");
+        let host = root.join("built").join(&name).join("index.html");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rerun-if-changed={}", host.display());
+        let text = std::fs::read_to_string(&manifest).expect("runtime.json readable");
+        let m: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", manifest.display()));
+        assert_eq!(
+            m["name"],
+            name.as_str(),
+            "{}: name is not its folder",
+            manifest.display()
+        );
+        let major = m["version"]
+            .as_str()
+            .and_then(|v| v.split('.').next())
+            .unwrap_or_else(|| panic!("{}: no version", manifest.display()));
+        assert!(
+            host.is_file(),
+            "{} missing: run npm run build:runtimes",
+            host.display()
+        );
+        writeln!(
+            src,
+            "    ({:?}, include_str!({:?}), include_str!({:?})),",
+            format!("{name}@{major}"),
+            manifest.display().to_string(),
+            host.display().to_string()
+        )
+        .unwrap();
+    }
+    src.push_str("];\n");
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("builtins.rs");
+    std::fs::write(out, src).expect("builtins table written");
+}
+
 fn main() {
     embed_templates();
+    embed_builtins();
 }
