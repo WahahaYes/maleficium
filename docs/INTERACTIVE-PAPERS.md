@@ -21,7 +21,7 @@ Projects made from a template already hold `maleficium-interactive.sty`. It is a
 
 Each needs `alt=` text. The package's header comments show their options by example. A built-in runtime also takes the options its runtime declares, such as `loop=true` for a video or `sort={score desc}` and `columns={name;score}` for a table. Separate the items of a list with `;`. A chart's data files are sources: `sources={data=data/a.csv, data=data/b.csv}`. A Plotly figure is what Python's `fig.write_json()` writes; WebGL, 3D and map traces are refused (large scatter plots fall back to SVG).
 
-A Plotly figure takes the paper's style in both colour modes: backdrop, ink, font, palette and colour scales replace its template. That includes the template colours Plotly Express copies into each trace. What you set yourself in Python wins, such as `color_discrete_sequence=[...]` or `fig.update_layout(font_family=...)`. `template=figure` keeps the figure's own template, so it looks as it did in Python, in both modes. The example's appendix shows each case.
+A Plotly figure takes the paper's style in both colour modes: backdrop, ink, font, palette and colour scales replace its template. That includes the template colours Plotly Express copies into each trace. What you set yourself in Python wins, such as `color_discrete_sequence=[...]` or `fig.update_layout(font_family=...)`. `template=figure` keeps the figure's own template, so it looks as it did in Python, in both modes. The playground paper (`e2e/fixtures/playground`, or `sh scripts/playground.sh`) shows both.
 
 ## Posters
 
