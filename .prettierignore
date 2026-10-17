@@ -12,3 +12,4 @@ src/assets/themes/**/*.jsonc
 src/lib/generated
 src-tauri/mcp/views
 embed-runtime/built
+e2e/fixtures/playground/charts/*.plotly.json
