@@ -12,4 +12,3 @@ src/assets/themes/**/*.jsonc
 src/lib/generated
 src-tauri/mcp/views
 embed-runtime/built
-examples/eye-gaze-interactive/charts
