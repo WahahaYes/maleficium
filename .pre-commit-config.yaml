@@ -4,11 +4,18 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: trailing-whitespace
+        # Vendored, generated and built files keep their upstream bytes.
+        exclude: &verbatim ^(e2e/fixtures/|examples/|embed-runtime/built/|src/assets/themes/|src/lib/generated/|src-tauri/binaries/)
+      - id: end-of-file-fixer
+        exclude: *verbatim
       - id: check-yaml
       - id: check-json
         exclude: ^(src-tauri/(tauri\.conf\.json|capabilities/|gen/|target/)|tsconfig\.json)$
       - id: check-toml
       - id: check-merge-conflict
+      - id: fix-byte-order-marker
+        exclude: *verbatim
       - id: check-added-large-files
         args: ['--maxkb=2048']
         # Fetched engine sidecars and full-resolution vendored fixture
