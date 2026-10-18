@@ -4,3 +4,11 @@
 *.ico binary
 *.icns binary
 CHANGELOG.md merge=union
+
+# Keep third-party and generated files out of GitHub language stats.
+e2e/fixtures/vendored/** linguist-vendored
+src-tauri/engine/synctex/** linguist-vendored
+embed-runtime/built/model-fork/vendor/** linguist-vendored
+embed-runtime/built/** linguist-generated
+package-lock.json linguist-generated
+src-tauri/engine/Cargo.lock linguist-generated
