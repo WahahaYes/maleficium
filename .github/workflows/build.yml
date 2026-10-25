@@ -203,8 +203,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
       # The engine links ICU, freetype, graphite2, libpng and fontconfig (found
-      # through pkg-config; build-engine.sh adds the keg-only icu4c). Static
-      # linking is still open.
+      # through pkg-config; build-engine.sh adds the keg-only icu4c) from their
+      # static .a files, so nothing from Homebrew ships.
       - name: macOS engine libraries
         if: runner.os == 'macOS'
         run: |

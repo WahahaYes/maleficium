@@ -50,6 +50,15 @@ if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
         export PKG_CONFIG_PATH
     fi
 fi
+# macOS: link the C libraries (ICU, freetype, graphite2, libpng, ...) statically
+# from Homebrew's .a files, so the engine needs no Homebrew on the user's Mac.
+# tectonic_dep_support's semi-static mode links every library whose lib<name>.a
+# is on the pkg-config path statically and leaves the system ones (libc++, libz)
+# dynamic; PKG_CONFIG_ALL_STATIC makes pkg-config report the private
+# dependencies too. package-smoke.py fails if the engine links a non-system dylib.
+if [ "$(uname -s)" = Darwin ]; then
+    export TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC=1 PKG_CONFIG_ALL_STATIC=1
+fi
 # On Linux bindgen needs the C compiler's headers; point it at them when
 # libclang does not find stddef.h on its own. Not elsewhere: on Windows a
 # MinGW gcc on PATH would feed bindgen headers that clash with MSVC's.
