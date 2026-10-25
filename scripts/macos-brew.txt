@@ -1,0 +1,7 @@
+pkg-config
+icu4c
+graphite2
+freetype
+libpng
+fontconfig
+harfbuzz
