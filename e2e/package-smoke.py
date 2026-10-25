@@ -10,8 +10,9 @@ The one smoke path for every OS. Only installing is per OS:
            the bundle links only system libraries or ones inside the bundle;
            the probes below then run with Homebrew and the developer tools
            moved out of sight, as on a Mac that never had them
-  Windows: silent NSIS install; check the installed binaries, and that none
-           imports the Visual C++ runtime (absent on a fresh Windows)
+  Windows: silent NSIS install; check the installed binaries, that every exe
+           and dll imports only system DLLs or ones in the install (no Visual
+           C++ runtime), and run the probes with only System32 on PATH
 Then the same checks everywhere:
   1. the installed MCP server, as maleficium-mcp and as the app's --mcp,
      names itself, compiles a page with its bundled engine, and answers a
@@ -344,11 +345,20 @@ def macos(dir):
         fail(deps)
 
 
-# The Visual C++ runtime: absent from a fresh Windows, preinstalled on CI
-# runners, so a binary that imports it passes every check below and still
-# fails to start for users (0xC0000135). The UCRT (api-ms-win-crt-*) ships
-# with Windows 10 and later and is fine.
-VC_RUNTIME = {"msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll"}
+# DLLs a fresh Windows 10+ has: the Win32 subsystem and the API sets (this includes
+# the UCRT, api-ms-win-crt-*). Anything else an installed binary imports must be
+# a file in the install itself (WebView2Loader.dll); the Visual C++ runtime
+# (msvcp140.dll, vcruntime140.dll, ...) is on CI runners but not on a fresh Windows,
+# so it fails here (it would start with 0xC0000135).
+WINDOWS_SYSTEM = {
+    "kernel32.dll", "kernelbase.dll", "ntdll.dll", "user32.dll", "gdi32.dll", "gdi32full.dll", "win32u.dll",
+    "advapi32.dll", "shell32.dll", "shlwapi.dll", "shcore.dll", "ole32.dll", "oleaut32.dll", "combase.dll",
+    "comctl32.dll", "comdlg32.dll", "uxtheme.dll", "dwmapi.dll", "imm32.dll", "version.dll", "winmm.dll",
+    "ws2_32.dll", "mswsock.dll", "iphlpapi.dll", "netapi32.dll", "secur32.dll", "sspicli.dll", "crypt32.dll",
+    "bcrypt.dll", "ncrypt.dll", "userenv.dll", "rpcrt4.dll", "setupapi.dll", "cfgmgr32.dll", "propsys.dll",
+    "dbghelp.dll", "psapi.dll", "wtsapi32.dll", "winspool.drv", "d3d11.dll", "dxgi.dll", "d3d12.dll",
+    "dcomp.dll", "dwrite.dll", "d2d1.dll", "wintrust.dll", "msimg32.dll", "opengl32.dll", "glu32.dll",
+}
 
 
 def pe_imports(path):
@@ -391,14 +401,33 @@ def windows(dir):
     for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
         if not os.path.isfile(os.path.join(dest, b)):
             fail("install lacks %s" % b)
-        runtime = pe_imports(os.path.join(dest, b)) & VC_RUNTIME
-        if runtime:
-            fail("%s imports the Visual C++ runtime (%s), which a fresh Windows lacks" % (b, ", ".join(sorted(runtime))))
-    say("install ok (%s), no Visual C++ runtime imports" % dest)
-    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"))
-    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"))
+    shipped = {}
+    for root, _, files in os.walk(dest):
+        for f in files:
+            if f.lower().endswith((".exe", ".dll")):
+                shipped[os.path.join(root, f)] = None
+    local = {os.path.basename(f).lower() for f in shipped}
+    offenders = {}
+    for f in shipped:
+        bad = sorted(
+            d for d in pe_imports(f)
+            if d not in WINDOWS_SYSTEM and d not in local and not d.startswith(("api-ms-win-", "ext-ms-win-"))
+        )
+        if bad:
+            offenders[os.path.relpath(f, dest)] = bad
+    for f, deps in sorted(offenders.items()):
+        for d in deps:
+            print("smoke:   %s links %s" % (f, d), flush=True)
+    if offenders:
+        fail("%d binaries import DLLs a fresh Windows lacks (listed above)" % len(offenders))
+    say("install ok (%s), %d exe/dll files import only system or bundled DLLs" % (dest, len(shipped)))
+    # A fresh Windows has none of the runner's toolchains on PATH (vcpkg, MSYS, cargo, ...).
+    root = os.environ.get("SystemRoot", r"C:\Windows")
+    env = dict(os.environ, PATH=";".join([root + r"\System32", root, root + r"\System32\Wbem"]))
+    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"), env=env)
+    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"), env=env)
     events = os.path.join(os.environ["APPDATA"], IDENT, "maleficium-log", "events.jsonl")
-    launch("app", [os.path.join(dest, "Maleficium.exe")], events=events)
+    launch("app", [os.path.join(dest, "Maleficium.exe")], events=events, env=env)
 
 
 def main():
