@@ -71,7 +71,7 @@ if [ "$(uname -s)" = Darwin ]; then
             || die "graphite2 checksum mismatch"
         tar -xzf "$g2_src/g.tgz" -C "$g2_src"
         cmake -S "$g2_src/graphite2-1.3.14" -B "$g2_src/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$g2_prefix" >/dev/null || die "graphite2 configure failed"
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX="$g2_prefix" || die "graphite2 configure failed"
         cmake --build "$g2_src/build" >/dev/null && cmake --install "$g2_src/build" >/dev/null || die "graphite2 build failed"
         rm -rf "$g2_src"
     fi

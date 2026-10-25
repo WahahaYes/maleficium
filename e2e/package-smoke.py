@@ -362,7 +362,7 @@ WINDOWS_SYSTEM = {
 
 
 def pe_imports(path):
-    """The DLL names a 64-bit PE file imports, lowercased, from its import table."""
+    """The DLL names a PE file imports, lowercased, from its import table."""
     import struct
 
     with open(path, "rb") as f:
@@ -372,9 +372,11 @@ def pe_imports(path):
         fail("%s is not a PE file" % path)
     _, nsections, _, _, _, optsize = struct.unpack_from("<HHIIIH", data, pe + 4)
     opt = pe + 24
-    if struct.unpack_from("<H", data, opt)[0] != 0x20B:
-        fail("%s is not a 64-bit PE file" % path)
-    import_rva = struct.unpack_from("<I", data, opt + 112 + 8)[0]  # data directory 1: imports
+    magic = struct.unpack_from("<H", data, opt)[0]
+    if magic not in (0x10B, 0x20B):  # PE32 (the NSIS uninstaller) or PE32+
+        fail("%s is not a PE file" % path)
+    dirs = 96 if magic == 0x10B else 112  # offset of the data directories
+    import_rva = struct.unpack_from("<I", data, opt + dirs + 8)[0]  # data directory 1: imports
     sections = [struct.unpack_from("<IIII", data, opt + optsize + i * 40 + 8) for i in range(nsections)]
 
     def offset(rva):
