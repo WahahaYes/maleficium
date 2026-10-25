@@ -111,27 +111,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: npm cache dir
-        id: npm-dir
-        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
-      - name: npm cache
-        id: npm-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: npm-${{ runner.os }}-
-      - run: npm ci
-      - name: npm cache save
-        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - uses: ./.github/actions/npm
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
         run: rustup toolchain install
       # A version written into the app or docs goes stale at the next bump.
@@ -208,7 +189,7 @@ jobs:
       - name: macOS engine libraries
         if: runner.os == 'macOS'
         run: |
-          brew install pkg-config icu4c graphite2 freetype libpng fontconfig harfbuzz
+          xargs brew install < scripts/macos-brew.txt
       # Windows: the engine's C libraries come from vcpkg, statically linked
       # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
       # find the same triplet through VCPKGRS_TRIPLET). The triplet links the
@@ -245,19 +226,6 @@ jobs:
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
           key: vcpkg-x64-windows-static-engine-v3-${{ hashFiles('scripts/vcpkg-ports.txt') }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-      - name: npm cache dir
-        id: npm-dir
-        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
-      - name: npm cache
-        id: npm-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: npm-${{ runner.os }}-
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -276,53 +244,8 @@ jobs:
           # Main seeds caches every PR reads; PR runs never write their own sets.
           # Only main saves, so tag builds (full LTO) always build cold.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: npm ci
-      - name: npm cache save
-        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      # latexml's format dumps come from the pinned bundle over the network
-      # (about two minutes). They belong to one latexml version and one
-      # bundle pin, so the cache is keyed on exactly that pair
-      # (scripts/dumps-key.sh); build-engine.sh skips generation on a hit.
-      # Both steps are UNVERIFIED on macOS and Windows until CI runs.
-      - name: Format dumps key
-        id: dumps-key
-        run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
-      - name: Format dumps cache
-        id: dumps-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/resources/dumps
-          key: ${{ steps.dumps-key.outputs.key }}
-      # The built engine, keyed on its sources, the runner image and the
-      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
-      # cargo when the restored binary is stamped with the current key.
-      - name: Engine key
-        id: engine-key
-        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Engine cache
-        id: engine-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
-      - name: Engine
-        run: sh scripts/build-engine.sh
-      - name: Engine cache save
-        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
-      - name: Format dumps cache save
-        if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/resources/dumps
-          key: ${{ steps.dumps-key.outputs.key }}
+      - uses: ./.github/actions/npm
+      - uses: ./.github/actions/engine
 
       # The same on every OS from here.
       - name: Package
@@ -347,26 +270,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-      - name: npm cache dir
-        id: npm-dir
-        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
-      - name: npm cache
-        id: npm-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: npm-${{ runner.os }}-
-      - run: npm ci
-      - name: npm cache save
-        if: github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.npm-dir.outputs.dir }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - uses: ./.github/actions/npm
       - name: Unit tests
         run: npx vitest run
 
@@ -397,26 +301,7 @@ jobs:
             src-tauri
             src-tauri/engine
           save-if: false
-      # The built engine, keyed on its sources, the runner image and the
-      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
-      # cargo when the restored binary is stamped with the current key.
-      - name: Engine key
-        id: engine-key
-        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Engine cache
-        id: engine-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
-      - name: Engine
-        run: sh scripts/build-engine.sh
-      - name: Engine cache save
-        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
+      - uses: ./.github/actions/engine
       - name: Changed vendored papers and examples
         id: papers
         run: |
@@ -492,43 +377,9 @@ jobs:
             src-tauri/engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - name: Format dumps key
-        id: dumps-key
-        run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
-      - name: Format dumps cache
-        id: dumps-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/resources/dumps
-          key: ${{ steps.dumps-key.outputs.key }}
       # Before any cargo build: tauri-build copies this engine into
       # target/debug, and ci-e2e.sh checks the copy matches.
-      # The built engine, keyed on its sources, the runner image and the
-      # vcpkg ports it links (scripts/engine-key.sh); build-engine.sh skips
-      # cargo when the restored binary is stamped with the current key.
-      - name: Engine key
-        id: engine-key
-        run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Engine cache
-        id: engine-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
-      - name: Engine
-        run: sh scripts/build-engine.sh
-      - name: Engine cache save
-        if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/binaries
-          key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
-      - name: Format dumps cache save
-        if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: src-tauri/resources/dumps
-          key: ${{ steps.dumps-key.outputs.key }}
+      - uses: ./.github/actions/engine
       # The browsers belong to the playwright-core version in the lockfile.
       - name: Playwright browsers cache
         id: playwright-cache
