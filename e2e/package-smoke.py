@@ -345,19 +345,16 @@ def macos(dir):
         fail(deps)
 
 
-# DLLs a fresh Windows 10+ has: the Win32 subsystem and the API sets (this includes
-# the UCRT, api-ms-win-crt-*). Anything else an installed binary imports must be
-# a file in the install itself (WebView2Loader.dll); the Visual C++ runtime
-# (msvcp140.dll, vcruntime140.dll, ...) is on CI runners but not on a fresh Windows,
-# so it fails here (it would start with 0xC0000135).
+# DLLs a fresh Windows 10+ has in System32, plus the API sets (api-ms-win-*, which
+# includes the UCRT). This is exactly what the three exes import today (the smoke
+# logs it); a new import fails here until someone checks it ships with Windows and
+# adds it. Anything else must be a file in the install itself. The Visual C++
+# runtime (msvcp140.dll, vcruntime140.dll, ...) is on CI runners but not on a fresh
+# Windows, so it fails here (it would start with 0xC0000135).
 WINDOWS_SYSTEM = {
-    "kernel32.dll", "kernelbase.dll", "ntdll.dll", "user32.dll", "gdi32.dll", "gdi32full.dll", "win32u.dll",
-    "advapi32.dll", "shell32.dll", "shlwapi.dll", "shcore.dll", "ole32.dll", "oleaut32.dll", "combase.dll",
-    "comctl32.dll", "comdlg32.dll", "uxtheme.dll", "dwmapi.dll", "imm32.dll", "version.dll", "winmm.dll",
-    "ws2_32.dll", "mswsock.dll", "iphlpapi.dll", "netapi32.dll", "secur32.dll", "sspicli.dll", "crypt32.dll",
-    "bcrypt.dll", "ncrypt.dll", "userenv.dll", "rpcrt4.dll", "setupapi.dll", "cfgmgr32.dll", "propsys.dll",
-    "dbghelp.dll", "psapi.dll", "wtsapi32.dll", "winspool.drv", "d3d11.dll", "dxgi.dll", "d3d12.dll",
-    "dcomp.dll", "bcryptprimitives.dll", "ucrtbase.dll", "msvcrt.dll", "powrprof.dll", "winhttp.dll", "wininet.dll", "wldap32.dll", "oleacc.dll", "uiautomationcore.dll", "avrt.dll", "gdiplus.dll", "hid.dll", "xinput1_4.dll", "cryptbase.dll", "cryptsp.dll", "normaliz.dll", "dnsapi.dll", "dwrite.dll", "d2d1.dll", "wintrust.dll", "msimg32.dll", "opengl32.dll", "glu32.dll",
+    "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "combase.dll", "comctl32.dll", "crypt32.dll",
+    "dwmapi.dll", "gdi32.dll", "kernel32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "shell32.dll",
+    "shlwapi.dll", "user32.dll", "userenv.dll", "ws2_32.dll",
 }
 
 
