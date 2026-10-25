@@ -6,7 +6,8 @@ The one smoke path for every OS. Only installing is per OS:
            (binaries, desktop entry, dumps resource); the AppImage carries
            no libwayland and ships the dumps resource
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
-           every binary is built for this machine
+           every binary is built for this machine, and that every Mach-O in
+           the bundle links only system libraries or ones inside the bundle
   Windows: silent NSIS install; check the installed binaries, and that none
            imports the Visual C++ runtime (absent on a fresh Windows)
 Then the same checks everywhere:
@@ -211,6 +212,67 @@ def linux(dir):
     launch("AppImage", ["xvfb-run", "-a", os.path.abspath(img)], env=dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
 
 
+MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}
+
+
+def macho_files(app):
+    """Every Mach-O file (executable, dylib, bundle) under the .app, by magic number."""
+    for root, _, files in os.walk(app):
+        for f in files:
+            path = os.path.join(root, f)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            with open(path, "rb") as fh:
+                if fh.read(4) in MACHO_MAGIC:
+                    yield path
+
+
+def macho_offenders(app, path):
+    """The dependencies of one Mach-O that a clean Mac would not have: anything but
+    /usr/lib, /System/Library, or an @executable_path/@loader_path/@rpath path that
+    lands inside the bundle (Homebrew's /opt/homebrew, /usr/local/... are absent)."""
+    out = lambda *a: run(["otool", *a, path], capture_output=True, text=True).stdout
+    own = set(out("-D").splitlines()[1:])  # a dylib's own install name is not a dependency
+    rpaths = [l.split()[1] for l in out("-l").splitlines() if l.strip().startswith("path ") and "(offset" in l]
+    exe_dir = os.path.join(app, "Contents/MacOS")
+    here = os.path.dirname(path)
+    inside = lambda p: os.path.exists(p) and os.path.realpath(p).startswith(os.path.realpath(app) + os.sep)
+    bad = []
+    for line in out("-L").splitlines()[1:]:
+        dep = line.strip().split(" (compatibility")[0]
+        if not dep or dep in own:
+            continue
+        if dep.startswith(("/usr/lib/", "/System/Library/")):
+            continue
+        base = {"@executable_path": exe_dir, "@loader_path": here}
+        head, _, rest = dep.partition("/")
+        if head in base:
+            ok = inside(os.path.join(base[head], rest))
+        elif head == "@rpath":
+            ok = any(
+                inside(os.path.join(base.get(r.partition("/")[0], ""), r.partition("/")[2], rest))
+                for r in rpaths
+                if r.partition("/")[0] in base
+            )
+        else:
+            ok = False
+        if not ok:
+            bad.append(dep)
+    return bad
+
+
+def macos_dependencies(app):
+    files = list(macho_files(app))
+    offenders = {os.path.relpath(f, app): macho_offenders(app, f) for f in files}
+    offenders = {f: d for f, d in offenders.items() if d}
+    if offenders:
+        for f, deps in sorted(offenders.items()):
+            for d in deps:
+                print("smoke:   %s links %s" % (f, d), flush=True)
+        fail("%d binaries link libraries a clean Mac lacks (listed above)" % len(offenders))
+    say("dependencies ok (%d Mach-O files link only system or bundled libraries)" % len(files))
+
+
 def macos(dir):
     dmg = one(dir, "Maleficium_*.dmg")
     t = tempfile.mkdtemp(prefix="smoke-")
@@ -233,6 +295,7 @@ def macos(dir):
         if arch not in archs:
             fail("%s is %s, not %s" % (b, archs, arch))
     say("bundle ok (%s)" % arch)
+    macos_dependencies(app)
     with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
         main = plistlib.load(f)["CFBundleExecutable"]
     compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"))
