@@ -159,6 +159,33 @@ def launch(name, cmd, events=None, env=None):
     say("%s launch ok" % name)
 
 
+def dependency_report(found, checked, allowed):
+    """The one dependency-leak report, for every object format. `found` maps each
+    checked file to the dependencies it has that a clean machine lacks. Prints one
+    `smoke:   <file> links <dep>` line per leak and returns the failure message
+    (None when clean), so a caller can run its probes before failing."""
+    if not found:
+        say("dependencies ok (%d files link only %s)" % (checked, allowed))
+        return None
+    for f, deps in sorted(found.items()):
+        for d in deps:
+            print("smoke:   %s links %s" % (f, d), flush=True)
+    return "%d of %d files link something outside %s (listed above)" % (len(found), checked, allowed)
+
+
+def probes_then_leaks(leaks, probes):
+    """Run `probes` (a function), then fail on `leaks`. A leak is the likely cause of
+    a probe failure, so say so; and when the probes pass, still fail on the leak."""
+    try:
+        probes()
+    except SystemExit:
+        if leaks:
+            say("dependencies: " + leaks)
+        raise
+    if leaks:
+        fail(leaks)
+
+
 # ---- per OS ----------------------------------------------------------------
 
 
@@ -266,15 +293,9 @@ def macho_offenders(app, path):
 
 def macos_dependencies(app):
     files = list(macho_files(app))
-    offenders = {os.path.relpath(f, app): macho_offenders(app, f) for f in files}
-    offenders = {f: d for f, d in offenders.items() if d}
-    if offenders:
-        for f, deps in sorted(offenders.items()):
-            for d in deps:
-                print("smoke:   %s links %s" % (f, d), flush=True)
-        return "%d binaries link libraries a clean Mac lacks (listed above)" % len(offenders)
-    say("dependencies ok (%d Mach-O files link only system or bundled libraries)" % len(files))
-    return None
+    found = {os.path.relpath(f, app): macho_offenders(app, f) for f in files}
+    found = {f: d for f, d in found.items() if d}
+    return dependency_report(found, len(files), "system libraries or ones inside the bundle")
 
 
 @contextlib.contextmanager
@@ -333,16 +354,13 @@ def macos(dir):
         main = plistlib.load(f)["CFBundleExecutable"]
     events = os.path.expanduser("~/Library/Application Support/%s/maleficium-log/events.jsonl" % IDENT)
     with macos_hidden_tooling() as env:
-        try:
+
+        def probes():
             compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"), env=env)
             compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"), env=env)
             launch("app", [os.path.join(bin, main)], events=events, env=env)
-        except SystemExit as e:
-            if deps:
-                say("dependencies: " + deps)  # the likely cause of the probe failure above
-            raise e
-    if deps:
-        fail(deps)
+
+        probes_then_leaks(deps, probes)
 
 
 # DLLs a fresh Windows 10+ has in System32, plus the API sets (api-ms-win-*, which
@@ -392,21 +410,10 @@ def pe_imports(path):
         at += 20
 
 
-def windows(dir):
-    setup = one(dir, "Maleficium_*-setup.exe")
-    dest = tempfile.mkdtemp(prefix="smoke-")
-    # NSIS takes /D= last and unquoted, so pass a raw command line.
-    run('"%s" /S /D=%s' % (setup, dest))
-    for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
-        if not os.path.isfile(os.path.join(dest, b)):
-            fail("install lacks %s" % b)
-    shipped = {}
-    for root, _, files in os.walk(dest):
-        for f in files:
-            if f.lower().endswith((".exe", ".dll")):
-                shipped[os.path.join(root, f)] = None
+def windows_dependencies(dest):
+    shipped = [os.path.join(r, f) for r, _, fs in os.walk(dest) for f in fs if f.lower().endswith((".exe", ".dll"))]
     local = {os.path.basename(f).lower() for f in shipped}
-    offenders, seen = {}, set()
+    found, seen = {}, set()
     for f in shipped:
         imports = pe_imports(f)
         seen |= imports - local
@@ -415,21 +422,31 @@ def windows(dir):
             if d not in WINDOWS_SYSTEM and d not in local and not d.startswith(("api-ms-win-", "ext-ms-win-"))
         )
         if bad:
-            offenders[os.path.relpath(f, dest)] = bad
-    for f, deps in sorted(offenders.items()):
-        for d in deps:
-            print("smoke:   %s links %s" % (f, d), flush=True)
-    if offenders:
-        fail("%d binaries import DLLs a fresh Windows lacks (listed above)" % len(offenders))
-    say("install ok (%s), %d exe/dll files import only system or bundled DLLs" % (dest, len(shipped)))
+            found[os.path.relpath(f, dest)] = bad
     say("system DLLs imported: " + " ".join(sorted(d for d in seen if not d.startswith("api-ms-win-"))))
+    return dependency_report(found, len(shipped), "Windows system DLLs or ones in the install")
+
+
+def windows(dir):
+    setup = one(dir, "Maleficium_*-setup.exe")
+    dest = tempfile.mkdtemp(prefix="smoke-")
+    # NSIS takes /D= last and unquoted, so pass a raw command line.
+    run('"%s" /S /D=%s' % (setup, dest))
+    for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
+        if not os.path.isfile(os.path.join(dest, b)):
+            fail("install lacks %s" % b)
+    deps = windows_dependencies(dest)
     # A fresh Windows has none of the runner's toolchains on PATH (vcpkg, MSYS, cargo, ...).
     root = os.environ.get("SystemRoot", r"C:\Windows")
     env = dict(os.environ, PATH=";".join([root + r"\System32", root, root + r"\System32\Wbem"]))
-    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"), env=env)
-    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"), env=env)
     events = os.path.join(os.environ["APPDATA"], IDENT, "maleficium-log", "events.jsonl")
-    launch("app", [os.path.join(dest, "Maleficium.exe")], events=events, env=env)
+
+    def probes():
+        compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"), env=env)
+        compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"), env=env)
+        launch("app", [os.path.join(dest, "Maleficium.exe")], events=events, env=env)
+
+    probes_then_leaks(deps, probes)
 
 
 def main():
