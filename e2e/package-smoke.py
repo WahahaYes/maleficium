@@ -409,10 +409,12 @@ def windows(dir):
             if f.lower().endswith((".exe", ".dll")):
                 shipped[os.path.join(root, f)] = None
     local = {os.path.basename(f).lower() for f in shipped}
-    offenders = {}
+    offenders, seen = {}, set()
     for f in shipped:
+        imports = pe_imports(f)
+        seen |= imports - local
         bad = sorted(
-            d for d in pe_imports(f)
+            d for d in imports
             if d not in WINDOWS_SYSTEM and d not in local and not d.startswith(("api-ms-win-", "ext-ms-win-"))
         )
         if bad:
@@ -423,6 +425,7 @@ def windows(dir):
     if offenders:
         fail("%d binaries import DLLs a fresh Windows lacks (listed above)" % len(offenders))
     say("install ok (%s), %d exe/dll files import only system or bundled DLLs" % (dest, len(shipped)))
+    say("system DLLs imported: " + " ".join(sorted(d for d in seen if not d.startswith("api-ms-win-"))))
     # A fresh Windows has none of the runner's toolchains on PATH (vcpkg, MSYS, cargo, ...).
     root = os.environ.get("SystemRoot", r"C:\Windows")
     env = dict(os.environ, PATH=";".join([root + r"\System32", root, root + r"\System32\Wbem"]))
