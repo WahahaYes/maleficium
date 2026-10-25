@@ -70,6 +70,9 @@ if [ "$(uname -s)" = Darwin ]; then
         [ "$(shasum -a 256 "$g2_src/g.tgz" | cut -d' ' -f1)" = f99d1c13aa5fa296898a181dff9b82fb25f6cc0933dbaa7a475d8109bd54209d ] \
             || die "graphite2 checksum mismatch"
         tar -xzf "$g2_src/g.tgz" -C "$g2_src"
+        # Its test targets assume a shared library; the static build needs only src.
+        sed -i.bak -e '/nolib_test/d' "$g2_src/graphite2-1.3.14/src/CMakeLists.txt"
+        sed -i.bak -E -e '/add_subdirectory\((tests|doc|gr2fonttest)\)/d' "$g2_src/graphite2-1.3.14/CMakeLists.txt"
         cmake -S "$g2_src/graphite2-1.3.14" -B "$g2_src/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX="$g2_prefix" || die "graphite2 configure failed"
         cmake --build "$g2_src/build" >/dev/null && cmake --install "$g2_src/build" >/dev/null || die "graphite2 build failed"

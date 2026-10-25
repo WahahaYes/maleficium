@@ -357,7 +357,7 @@ WINDOWS_SYSTEM = {
     "ws2_32.dll", "mswsock.dll", "iphlpapi.dll", "netapi32.dll", "secur32.dll", "sspicli.dll", "crypt32.dll",
     "bcrypt.dll", "ncrypt.dll", "userenv.dll", "rpcrt4.dll", "setupapi.dll", "cfgmgr32.dll", "propsys.dll",
     "dbghelp.dll", "psapi.dll", "wtsapi32.dll", "winspool.drv", "d3d11.dll", "dxgi.dll", "d3d12.dll",
-    "dcomp.dll", "dwrite.dll", "d2d1.dll", "wintrust.dll", "msimg32.dll", "opengl32.dll", "glu32.dll",
+    "dcomp.dll", "bcryptprimitives.dll", "ucrtbase.dll", "msvcrt.dll", "powrprof.dll", "winhttp.dll", "wininet.dll", "wldap32.dll", "oleacc.dll", "uiautomationcore.dll", "avrt.dll", "gdiplus.dll", "hid.dll", "xinput1_4.dll", "cryptbase.dll", "cryptsp.dll", "normaliz.dll", "dnsapi.dll", "dwrite.dll", "d2d1.dll", "wintrust.dll", "msimg32.dll", "opengl32.dll", "glu32.dll",
 }
 
 
