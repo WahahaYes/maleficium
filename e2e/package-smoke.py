@@ -7,7 +7,9 @@ The one smoke path for every OS. Only installing is per OS:
            no libwayland and ships the dumps resource
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
            every binary is built for this machine, and that every Mach-O in
-           the bundle links only system libraries or ones inside the bundle
+           the bundle links only system libraries or ones inside the bundle;
+           the probes below then run with Homebrew and the developer tools
+           moved out of sight, as on a Mac that never had them
   Windows: silent NSIS install; check the installed binaries, and that none
            imports the Visual C++ runtime (absent on a fresh Windows)
 Then the same checks everywhere:
@@ -25,7 +27,7 @@ Usage: python3 e2e/package-smoke.py <artifact-dir> [--image IMAGE | --in-contain
 Needs: python3 3.9+; Linux: docker. A first launch needs no recent
 projects, so macOS and Windows expect a fresh user (CI runners are).
 """
-import argparse, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
+import argparse, contextlib, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
 
 from mcp_client import McpClient
 
@@ -269,8 +271,38 @@ def macos_dependencies(app):
         for f, deps in sorted(offenders.items()):
             for d in deps:
                 print("smoke:   %s links %s" % (f, d), flush=True)
-        fail("%d binaries link libraries a clean Mac lacks (listed above)" % len(offenders))
+        return "%d binaries link libraries a clean Mac lacks (listed above)" % len(offenders)
     say("dependencies ok (%d Mach-O files link only system or bundled libraries)" % len(files))
+    return None
+
+
+@contextlib.contextmanager
+def macos_hidden_tooling():
+    """Yield an env for the probes, with what a clean Mac lacks moved aside: Homebrew
+    (/opt/homebrew on Apple silicon; its libraries under /usr/local on Intel) and the
+    Xcode/Command Line Tools (DEVELOPER_DIR points at an empty directory). CI runners
+    have all of it, so a binary that leans on any of it passes there and fails for
+    users. The paths come back in the finally."""
+    if platform.machine() == "arm64":
+        paths = ["/opt/homebrew"]
+    else:
+        paths = ["/usr/local/" + d for d in ("lib", "opt", "Cellar")]
+    moved = []
+    try:
+        for p in paths:
+            if os.path.exists(p):
+                run(["sudo", "mv", p, p + ".smoke-hidden"])
+                moved.append(p)
+        still = [p for p in paths if os.path.exists(p)]
+        if still:
+            fail("could not hide %s" % still)
+        say("hid %s and the developer tools" % (", ".join(moved) or "nothing (none present)"))
+        env = dict(os.environ, DEVELOPER_DIR=tempfile.mkdtemp(prefix="no-devtools-"))
+        env["PATH"] = ":".join(d for d in env["PATH"].split(":") if not d.startswith(("/opt/homebrew", "/usr/local")))
+        yield env
+    finally:
+        for p in moved:
+            run(["sudo", "mv", p + ".smoke-hidden", p])
 
 
 def macos(dir):
@@ -295,13 +327,21 @@ def macos(dir):
         if arch not in archs:
             fail("%s is %s, not %s" % (b, archs, arch))
     say("bundle ok (%s)" % arch)
-    macos_dependencies(app)
+    deps = macos_dependencies(app)  # needs otool, so before the tools are hidden; fails below
     with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
         main = plistlib.load(f)["CFBundleExecutable"]
-    compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"))
-    compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"))
     events = os.path.expanduser("~/Library/Application Support/%s/maleficium-log/events.jsonl" % IDENT)
-    launch("app", [os.path.join(bin, main)], events=events)
+    with macos_hidden_tooling() as env:
+        try:
+            compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"), env=env)
+            compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"), env=env)
+            launch("app", [os.path.join(bin, main)], events=events, env=env)
+        except SystemExit as e:
+            if deps:
+                say("dependencies: " + deps)  # the likely cause of the probe failure above
+            raise e
+    if deps:
+        fail(deps)
 
 
 # The Visual C++ runtime: absent from a fresh Windows, preinstalled on CI
