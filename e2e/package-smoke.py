@@ -4,7 +4,9 @@ The one smoke path for every OS. Only installing is per OS:
   Linux:   the .deb into a clean Ubuntu container (so its Depends are what
            make it run, not a build host's -dev packages); payload checks
            (binaries, desktop entry, dumps resource); the AppImage carries
-           no libwayland and ships the dumps resource
+           no libwayland and ships the dumps resource; every binary needs
+           only the C library and what the .deb's Depends install (the
+           AppImage: what it bundles)
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
            every binary is built for this machine, and that every Mach-O in
            the bundle links only system libraries or ones inside the bundle;
@@ -159,6 +161,29 @@ def launch(name, cmd, events=None, env=None):
     say("%s launch ok" % name)
 
 
+# ---- object files ----------------------------------------------------------
+
+
+MACHO_MAGIC = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+ELF_MAGIC = (b"\x7fELF",)
+PE_MAGIC = (b"MZ",)
+
+
+def object_files(root, magics, suffixes=None):
+    """Every regular file under `root` that starts with one of `magics`: the
+    executables and libraries of one object format. `suffixes` narrows by name."""
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            path = os.path.join(dirpath, f)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            if suffixes and not f.lower().endswith(suffixes):
+                continue
+            with open(path, "rb") as fh:
+                if fh.read(4).startswith(magics):
+                    yield path
+
+
 def dependency_report(found, checked, allowed):
     """The one dependency-leak report, for every object format. `found` maps each
     checked file to the dependencies it has that a clean machine lacks. Prints one
@@ -199,6 +224,100 @@ def linux_in_container(dir, image):
 LINUX_SCREEN = "1280x800x24"  # xvfb-run's default is 640x480x8
 
 
+LINUX_HOST = {  # the C library family: part of every Linux a user could run this on
+    "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1", "libutil.so.1", "libresolv.so.2",
+    "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1",
+}
+
+
+def elf_needed(path):
+    """The sonames a 64-bit little-endian ELF file lists as DT_NEEDED."""
+    import struct
+
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:5] != b"\x7fELF\x02" or data[5] != 1:
+        fail("%s is not a 64-bit little-endian ELF file" % path)
+    phoff = struct.unpack_from("<Q", data, 32)[0]
+    phentsize, phnum = struct.unpack_from("<HH", data, 54)
+    loads, dynamic = [], None
+    for i in range(phnum):
+        kind, _, offset, vaddr, _, filesz, _, _ = struct.unpack_from("<IIQQQQQQ", data, phoff + i * phentsize)
+        if kind == 1:
+            loads.append((vaddr, offset, filesz))
+        elif kind == 2:
+            dynamic = (offset, filesz)
+    if not dynamic:
+        return []  # statically linked
+
+    def offset(vaddr):
+        for va, off, size in loads:
+            if va <= vaddr < va + size:
+                return off + vaddr - va
+        fail("%s: address %#x is in no segment" % (path, vaddr))
+
+    needed, strtab = [], None
+    for at in range(dynamic[0], dynamic[0] + dynamic[1], 16):
+        tag, val = struct.unpack_from("<qQ", data, at)
+        if tag == 0:
+            break
+        if tag == 1:
+            needed.append(val)
+        elif tag == 5:
+            strtab = offset(val)
+    return [data[strtab + n : data.index(b"\0", strtab + n)].decode() for n in needed]
+
+
+def dpkg_owner(path):
+    """The package that owns `path` (or the same file under /usr, for the merged-usr aliases)."""
+    for candidate in dict.fromkeys([path, os.path.realpath(path), "/usr" + path]):
+        r = subprocess.run(["dpkg", "-S", candidate], capture_output=True, text=True)
+        if r.returncode == 0:
+            return r.stdout.split(":")[0].split(",")[0].strip()
+    return None
+
+
+def linux_deb_dependencies(files):
+    """Every library an installed .deb binary needs must come from a package in the
+    closure of the .deb's Depends (so apt installs it), or be the C library. Run
+    before any test tooling is installed, so a library the image happens to have
+    but the Depends omit is caught."""
+    tree = run(["apt-cache", "depends", "--recurse", "--no-recommends", "--no-suggests", "--no-conflicts", "--no-breaks",
+                "--no-replaces", "--no-enhances", "maleficium"], capture_output=True, text=True).stdout
+    closure = {l.split(":")[0] for l in tree.splitlines() if l and not l.startswith((" ", "<"))}
+    cache = {}
+    for line in run(["ldconfig", "-p"], capture_output=True, text=True).stdout.splitlines()[1:]:
+        if "x86-64" in line or "AArch64" in line:
+            cache.setdefault(line.split()[0], line.rsplit("=> ", 1)[-1])
+    elfs = [f for f in files if os.path.isfile(f) and not os.path.islink(f) and open(f, "rb").read(4) in ELF_MAGIC]
+    found = {}
+    for f in elfs:
+        bad = []
+        for need in elf_needed(f):
+            if need in LINUX_HOST:
+                continue
+            owner = dpkg_owner(cache[need]) if need in cache else None
+            if owner is None:
+                bad.append("%s (not installed)" % need)
+            elif owner not in closure:
+                bad.append("%s (from %s, not a dependency)" % (need, owner))
+        if bad:
+            found[f] = bad
+    return dependency_report(found, len(elfs), "the C library or the .deb's Depends")
+
+
+def linux_appimage_dependencies(root):
+    """Every library an AppImage binary needs must be inside the AppImage or be the C library."""
+    bundled = {f for _, _, fs in os.walk(root) for f in fs}
+    elfs = list(object_files(root, ELF_MAGIC))
+    found = {}
+    for f in elfs:
+        bad = [n for n in elf_needed(f) if n not in bundled and n not in LINUX_HOST]
+        if bad:
+            found[os.path.relpath(f, root)] = bad
+    return dependency_report(found, len(elfs), "the C library or libraries inside the AppImage")
+
+
 def linux(dir):
     deb = one(dir, "Maleficium_*_amd64.deb")
     img = deb[: -len(".deb")] + ".AppImage"
@@ -206,8 +325,8 @@ def linux(dir):
         fail("missing %s" % img)
     fields = run(["dpkg-deb", "-f", deb, "Package", "Version", "Depends"], capture_output=True, text=True).stdout
     say("control: " + " ".join(fields.split()))
-    run(["apt-get", "install", "-y", "-qq", os.path.abspath(deb), "xvfb", "matchbox-window-manager"], stdout=subprocess.DEVNULL,
-        env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
+    apt = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    run(["apt-get", "install", "-y", "-qq", os.path.abspath(deb)], stdout=subprocess.DEVNULL, env=apt)
     files = run(["dpkg", "-L", "maleficium"], capture_output=True, text=True).stdout.splitlines()
     for want in ["/usr/bin/maleficium", "/usr/bin/maleficium-mcp", "/usr/bin/maleficium-engine"]:
         if want not in files:
@@ -218,6 +337,8 @@ def linux(dir):
     if not any(os.path.basename(f).startswith("latex.") and f.endswith(".dump.txt") for f in dumps):
         fail("package lacks the latexml format dumps under /usr/lib/Maleficium/resources/dumps")
     say("install ok (%d dumps resource files)" % len(dumps))
+    deb_leaks = linux_deb_dependencies(files)  # before the test tooling below is installed
+    run(["apt-get", "install", "-y", "-qq", "xvfb", "matchbox-window-manager"], stdout=subprocess.DEVNULL, env=apt)
     with tempfile.TemporaryDirectory() as t:
         run([os.path.abspath(img), "--appimage-extract"], cwd=t, stdout=subprocess.DEVNULL)
         bundled = glob.glob(os.path.join(t, "squashfs-root/usr/lib/libwayland-*"))
@@ -226,35 +347,24 @@ def linux(dir):
         dumps = glob.glob(os.path.join(t, "squashfs-root/usr/lib/Maleficium/resources/dumps/latex.*.dump.txt"))
         if not dumps:
             fail("AppImage lacks the latexml format dumps (usr/lib/Maleficium/resources/dumps)")
+        app_leaks = linux_appimage_dependencies(os.path.join(t, "squashfs-root"))
     say("AppImage bundles no libwayland, dumps resource ok")
     home = tempfile.mkdtemp(prefix="smoke-home-")
     env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
     env["HOME"] = home
-    compile_probe(["/usr/bin/maleficium-mcp"], os.path.join(home, "doc"), env)
-    compile_probe(["/usr/bin/maleficium", "--mcp"], os.path.join(home, "doc-app"), env)
-    compile_probe([os.path.abspath(img), "--mcp"], os.path.join(home, "doc-appimage"),
-                  dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
     events = os.path.join(home, ".local/share", IDENT, "maleficium-log/events.jsonl")
     # matchbox maximizes the window to the whole screen, as a desktop session would
     session = "matchbox-window-manager -use_titlebar no & exec maleficium"
-    launch("deb", ["xvfb-run", "-a", "-s", "-screen 0 " + LINUX_SCREEN, "sh", "-c", session],
-           events=events, env=env)
-    launch("AppImage", ["xvfb-run", "-a", os.path.abspath(img)], env=dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
+    appimage_env = dict(env, APPIMAGE_EXTRACT_AND_RUN="1")
 
+    def probes():
+        compile_probe(["/usr/bin/maleficium-mcp"], os.path.join(home, "doc"), env)
+        compile_probe(["/usr/bin/maleficium", "--mcp"], os.path.join(home, "doc-app"), env)
+        compile_probe([os.path.abspath(img), "--mcp"], os.path.join(home, "doc-appimage"), appimage_env)
+        launch("deb", ["xvfb-run", "-a", "-s", "-screen 0 " + LINUX_SCREEN, "sh", "-c", session], events=events, env=env)
+        launch("AppImage", ["xvfb-run", "-a", os.path.abspath(img)], env=appimage_env)
 
-MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}
-
-
-def macho_files(app):
-    """Every Mach-O file (executable, dylib, bundle) under the .app, by magic number."""
-    for root, _, files in os.walk(app):
-        for f in files:
-            path = os.path.join(root, f)
-            if os.path.islink(path) or not os.path.isfile(path):
-                continue
-            with open(path, "rb") as fh:
-                if fh.read(4) in MACHO_MAGIC:
-                    yield path
+    probes_then_leaks("; ".join(l for l in (deb_leaks, app_leaks) if l) or None, probes)
 
 
 def macho_offenders(app, path):
@@ -292,7 +402,7 @@ def macho_offenders(app, path):
 
 
 def macos_dependencies(app):
-    files = list(macho_files(app))
+    files = list(object_files(app, MACHO_MAGIC))
     found = {os.path.relpath(f, app): macho_offenders(app, f) for f in files}
     found = {f: d for f, d in found.items() if d}
     return dependency_report(found, len(files), "system libraries or ones inside the bundle")
@@ -411,7 +521,7 @@ def pe_imports(path):
 
 
 def windows_dependencies(dest):
-    shipped = [os.path.join(r, f) for r, _, fs in os.walk(dest) for f in fs if f.lower().endswith((".exe", ".dll"))]
+    shipped = list(object_files(dest, PE_MAGIC, (".exe", ".dll")))
     local = {os.path.basename(f).lower() for f in shipped}
     found, seen = {}, set()
     for f in shipped:
