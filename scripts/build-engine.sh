@@ -50,6 +50,37 @@ if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
         export PKG_CONFIG_PATH
     fi
 fi
+# macOS: link the C libraries (ICU, freetype, graphite2, libpng, ...) statically
+# from .a files (Homebrew's, plus graphite2 built below), so the engine needs no Homebrew on the user's Mac.
+# tectonic_dep_support's semi-static mode links every library whose lib<name>.a
+# is on the pkg-config path statically and leaves the system ones (libc++, libz)
+# dynamic; PKG_CONFIG_ALL_STATIC makes pkg-config report the private
+# dependencies too. package-smoke.py fails if the engine links a non-system dylib.
+# Homebrew's graphite2 ships only a dylib, so build a static one from the pinned
+# release (small, cmake) and put it first on the pkg-config path.
+if [ "$(uname -s)" = Darwin ]; then
+    export TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC=1 PKG_CONFIG_ALL_STATIC=1
+    g2_prefix="${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/static-graphite2"
+    if [ ! -f "$g2_prefix/lib/libgraphite2.a" ]; then
+        need cmake
+        say "building a static graphite2 1.3.14"
+        g2_src=$(mktemp -d "${TMPDIR:-/tmp}/graphite2-XXXXXX")
+        curl -fsSL -o "$g2_src/g.tgz" https://github.com/silnrsi/graphite/releases/download/1.3.14/graphite2-1.3.14.tgz \
+            || die "cannot download graphite2"
+        [ "$(shasum -a 256 "$g2_src/g.tgz" | cut -d' ' -f1)" = f99d1c13aa5fa296898a181dff9b82fb25f6cc0933dbaa7a475d8109bd54209d ] \
+            || die "graphite2 checksum mismatch"
+        tar -xzf "$g2_src/g.tgz" -C "$g2_src"
+        # Its test targets assume a shared library; the static build needs only src.
+        sed -i.bak -e '/nolib_test/d' "$g2_src/graphite2-1.3.14/src/CMakeLists.txt"
+        sed -i.bak -E -e '/add_subdirectory\((tests|doc|gr2fonttest)\)/d' "$g2_src/graphite2-1.3.14/CMakeLists.txt"
+        cmake -S "$g2_src/graphite2-1.3.14" -B "$g2_src/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX="$g2_prefix" || die "graphite2 configure failed"
+        cmake --build "$g2_src/build" >/dev/null && cmake --install "$g2_src/build" >/dev/null || die "graphite2 build failed"
+        rm -rf "$g2_src"
+    fi
+    PKG_CONFIG_PATH="$g2_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_PATH
+fi
 # On Linux bindgen needs the C compiler's headers; point it at them when
 # libclang does not find stddef.h on its own. Not elsewhere: on Windows a
 # MinGW gcc on PATH would feed bindgen headers that clash with MSVC's.

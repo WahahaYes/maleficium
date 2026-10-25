@@ -6,9 +6,13 @@ The one smoke path for every OS. Only installing is per OS:
            (binaries, desktop entry, dumps resource); the AppImage carries
            no libwayland and ships the dumps resource
   macOS:   mount the .dmg, copy the .app out, verify its signature, check
-           every binary is built for this machine
-  Windows: silent NSIS install; check the installed binaries, and that none
-           imports the Visual C++ runtime (absent on a fresh Windows)
+           every binary is built for this machine, and that every Mach-O in
+           the bundle links only system libraries or ones inside the bundle;
+           the probes below then run with Homebrew and the developer tools
+           moved out of sight, as on a Mac that never had them
+  Windows: silent NSIS install; check the installed binaries, that every exe
+           and dll imports only system DLLs or ones in the install (no Visual
+           C++ runtime), and run the probes with only System32 on PATH
 Then the same checks everywhere:
   1. the installed MCP server, as maleficium-mcp and as the app's --mcp,
      names itself, compiles a page with its bundled engine, and answers a
@@ -24,7 +28,7 @@ Usage: python3 e2e/package-smoke.py <artifact-dir> [--image IMAGE | --in-contain
 Needs: python3 3.9+; Linux: docker. A first launch needs no recent
 projects, so macOS and Windows expect a fresh user (CI runners are).
 """
-import argparse, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
+import argparse, contextlib, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
 
 from mcp_client import McpClient
 
@@ -211,6 +215,97 @@ def linux(dir):
     launch("AppImage", ["xvfb-run", "-a", os.path.abspath(img)], env=dict(env, APPIMAGE_EXTRACT_AND_RUN="1"))
 
 
+MACHO_MAGIC = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}
+
+
+def macho_files(app):
+    """Every Mach-O file (executable, dylib, bundle) under the .app, by magic number."""
+    for root, _, files in os.walk(app):
+        for f in files:
+            path = os.path.join(root, f)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            with open(path, "rb") as fh:
+                if fh.read(4) in MACHO_MAGIC:
+                    yield path
+
+
+def macho_offenders(app, path):
+    """The dependencies of one Mach-O that a clean Mac would not have: anything but
+    /usr/lib, /System/Library, or an @executable_path/@loader_path/@rpath path that
+    lands inside the bundle (Homebrew's /opt/homebrew, /usr/local/... are absent)."""
+    out = lambda *a: run(["otool", *a, path], capture_output=True, text=True).stdout
+    own = set(out("-D").splitlines()[1:])  # a dylib's own install name is not a dependency
+    rpaths = [l.split()[1] for l in out("-l").splitlines() if l.strip().startswith("path ") and "(offset" in l]
+    exe_dir = os.path.join(app, "Contents/MacOS")
+    here = os.path.dirname(path)
+    inside = lambda p: os.path.exists(p) and os.path.realpath(p).startswith(os.path.realpath(app) + os.sep)
+    bad = []
+    for line in out("-L").splitlines()[1:]:
+        dep = line.strip().split(" (compatibility")[0]
+        if not dep or dep in own:
+            continue
+        if dep.startswith(("/usr/lib/", "/System/Library/")):
+            continue
+        base = {"@executable_path": exe_dir, "@loader_path": here}
+        head, _, rest = dep.partition("/")
+        if head in base:
+            ok = inside(os.path.join(base[head], rest))
+        elif head == "@rpath":
+            ok = any(
+                inside(os.path.join(base.get(r.partition("/")[0], ""), r.partition("/")[2], rest))
+                for r in rpaths
+                if r.partition("/")[0] in base
+            )
+        else:
+            ok = False
+        if not ok:
+            bad.append(dep)
+    return bad
+
+
+def macos_dependencies(app):
+    files = list(macho_files(app))
+    offenders = {os.path.relpath(f, app): macho_offenders(app, f) for f in files}
+    offenders = {f: d for f, d in offenders.items() if d}
+    if offenders:
+        for f, deps in sorted(offenders.items()):
+            for d in deps:
+                print("smoke:   %s links %s" % (f, d), flush=True)
+        return "%d binaries link libraries a clean Mac lacks (listed above)" % len(offenders)
+    say("dependencies ok (%d Mach-O files link only system or bundled libraries)" % len(files))
+    return None
+
+
+@contextlib.contextmanager
+def macos_hidden_tooling():
+    """Yield an env for the probes, with what a clean Mac lacks moved aside: Homebrew
+    (/opt/homebrew on Apple silicon; its libraries under /usr/local on Intel) and the
+    Xcode/Command Line Tools (DEVELOPER_DIR points at an empty directory). CI runners
+    have all of it, so a binary that leans on any of it passes there and fails for
+    users. The paths come back in the finally."""
+    if platform.machine() == "arm64":
+        paths = ["/opt/homebrew"]
+    else:
+        paths = ["/usr/local/" + d for d in ("lib", "opt", "Cellar")]
+    moved = []
+    try:
+        for p in paths:
+            if os.path.exists(p):
+                run(["sudo", "mv", p, p + ".smoke-hidden"])
+                moved.append(p)
+        still = [p for p in paths if os.path.exists(p)]
+        if still:
+            fail("could not hide %s" % still)
+        say("hid %s and the developer tools" % (", ".join(moved) or "nothing (none present)"))
+        env = dict(os.environ, DEVELOPER_DIR=tempfile.mkdtemp(prefix="no-devtools-"))
+        env["PATH"] = ":".join(d for d in env["PATH"].split(":") if not d.startswith(("/opt/homebrew", "/usr/local")))
+        yield env
+    finally:
+        for p in moved:
+            run(["sudo", "mv", p + ".smoke-hidden", p])
+
+
 def macos(dir):
     dmg = one(dir, "Maleficium_*.dmg")
     t = tempfile.mkdtemp(prefix="smoke-")
@@ -233,23 +328,38 @@ def macos(dir):
         if arch not in archs:
             fail("%s is %s, not %s" % (b, archs, arch))
     say("bundle ok (%s)" % arch)
+    deps = macos_dependencies(app)  # needs otool, so before the tools are hidden; fails below
     with open(os.path.join(app, "Contents/Info.plist"), "rb") as f:
         main = plistlib.load(f)["CFBundleExecutable"]
-    compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"))
-    compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"))
     events = os.path.expanduser("~/Library/Application Support/%s/maleficium-log/events.jsonl" % IDENT)
-    launch("app", [os.path.join(bin, main)], events=events)
+    with macos_hidden_tooling() as env:
+        try:
+            compile_probe([os.path.join(bin, "maleficium-mcp")], os.path.join(t, "doc"), env=env)
+            compile_probe([os.path.join(bin, main), "--mcp"], os.path.join(t, "doc-app"), env=env)
+            launch("app", [os.path.join(bin, main)], events=events, env=env)
+        except SystemExit as e:
+            if deps:
+                say("dependencies: " + deps)  # the likely cause of the probe failure above
+            raise e
+    if deps:
+        fail(deps)
 
 
-# The Visual C++ runtime: absent from a fresh Windows, preinstalled on CI
-# runners, so a binary that imports it passes every check below and still
-# fails to start for users (0xC0000135). The UCRT (api-ms-win-crt-*) ships
-# with Windows 10 and later and is fine.
-VC_RUNTIME = {"msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll"}
+# DLLs a fresh Windows 10+ has in System32, plus the API sets (api-ms-win-*, which
+# includes the UCRT). This is exactly what the three exes import today (the smoke
+# logs it); a new import fails here until someone checks it ships with Windows and
+# adds it. Anything else must be a file in the install itself. The Visual C++
+# runtime (msvcp140.dll, vcruntime140.dll, ...) is on CI runners but not on a fresh
+# Windows, so it fails here (it would start with 0xC0000135).
+WINDOWS_SYSTEM = {
+    "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "combase.dll", "comctl32.dll", "crypt32.dll",
+    "dwmapi.dll", "gdi32.dll", "kernel32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "shell32.dll",
+    "shlwapi.dll", "user32.dll", "userenv.dll", "ws2_32.dll",
+}
 
 
 def pe_imports(path):
-    """The DLL names a 64-bit PE file imports, lowercased, from its import table."""
+    """The DLL names a PE file imports, lowercased, from its import table."""
     import struct
 
     with open(path, "rb") as f:
@@ -259,9 +369,11 @@ def pe_imports(path):
         fail("%s is not a PE file" % path)
     _, nsections, _, _, _, optsize = struct.unpack_from("<HHIIIH", data, pe + 4)
     opt = pe + 24
-    if struct.unpack_from("<H", data, opt)[0] != 0x20B:
-        fail("%s is not a 64-bit PE file" % path)
-    import_rva = struct.unpack_from("<I", data, opt + 112 + 8)[0]  # data directory 1: imports
+    magic = struct.unpack_from("<H", data, opt)[0]
+    if magic not in (0x10B, 0x20B):  # PE32 (the NSIS uninstaller) or PE32+
+        fail("%s is not a PE file" % path)
+    dirs = 96 if magic == 0x10B else 112  # offset of the data directories
+    import_rva = struct.unpack_from("<I", data, opt + dirs + 8)[0]  # data directory 1: imports
     sections = [struct.unpack_from("<IIII", data, opt + optsize + i * 40 + 8) for i in range(nsections)]
 
     def offset(rva):
@@ -288,14 +400,36 @@ def windows(dir):
     for b in ["Maleficium.exe", "maleficium-mcp.exe", "maleficium-engine.exe"]:
         if not os.path.isfile(os.path.join(dest, b)):
             fail("install lacks %s" % b)
-        runtime = pe_imports(os.path.join(dest, b)) & VC_RUNTIME
-        if runtime:
-            fail("%s imports the Visual C++ runtime (%s), which a fresh Windows lacks" % (b, ", ".join(sorted(runtime))))
-    say("install ok (%s), no Visual C++ runtime imports" % dest)
-    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"))
-    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"))
+    shipped = {}
+    for root, _, files in os.walk(dest):
+        for f in files:
+            if f.lower().endswith((".exe", ".dll")):
+                shipped[os.path.join(root, f)] = None
+    local = {os.path.basename(f).lower() for f in shipped}
+    offenders, seen = {}, set()
+    for f in shipped:
+        imports = pe_imports(f)
+        seen |= imports - local
+        bad = sorted(
+            d for d in imports
+            if d not in WINDOWS_SYSTEM and d not in local and not d.startswith(("api-ms-win-", "ext-ms-win-"))
+        )
+        if bad:
+            offenders[os.path.relpath(f, dest)] = bad
+    for f, deps in sorted(offenders.items()):
+        for d in deps:
+            print("smoke:   %s links %s" % (f, d), flush=True)
+    if offenders:
+        fail("%d binaries import DLLs a fresh Windows lacks (listed above)" % len(offenders))
+    say("install ok (%s), %d exe/dll files import only system or bundled DLLs" % (dest, len(shipped)))
+    say("system DLLs imported: " + " ".join(sorted(d for d in seen if not d.startswith("api-ms-win-"))))
+    # A fresh Windows has none of the runner's toolchains on PATH (vcpkg, MSYS, cargo, ...).
+    root = os.environ.get("SystemRoot", r"C:\Windows")
+    env = dict(os.environ, PATH=";".join([root + r"\System32", root, root + r"\System32\Wbem"]))
+    compile_probe([os.path.join(dest, "maleficium-mcp.exe")], os.path.join(dest, "..", "smoke-doc"), env=env)
+    compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"), env=env)
     events = os.path.join(os.environ["APPDATA"], IDENT, "maleficium-log", "events.jsonl")
-    launch("app", [os.path.join(dest, "Maleficium.exe")], events=events)
+    launch("app", [os.path.join(dest, "Maleficium.exe")], events=events, env=env)
 
 
 def main():
