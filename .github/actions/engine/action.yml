@@ -1,0 +1,48 @@
+# The bundled engine and the latexml format dumps, built by scripts/build-engine.sh
+# behind two caches. Only main saves them; PR runs restore.
+#  - dumps: one latexml version and one bundle pin (scripts/dumps-key.sh); the
+#    dumps need the network (about two minutes) when missing.
+#  - engine: its sources and build script (scripts/engine-key.sh), the runner image
+#    and the vcpkg ports it links; build-engine.sh skips cargo when the restored
+#    binary is stamped with the current key.
+# Run after the toolchains and the OS's engine libraries are set up.
+name: engine
+description: Build or restore the engine and format dumps
+runs:
+  using: composite
+  steps:
+    - name: Format dumps key
+      id: dumps-key
+      shell: bash
+      run: echo "key=dumps-${{ runner.os }}-$(sh scripts/dumps-key.sh)" >> "$GITHUB_OUTPUT"
+    - name: Format dumps cache
+      id: dumps-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: src-tauri/resources/dumps
+        key: ${{ steps.dumps-key.outputs.key }}
+    - name: Engine key
+      id: engine-key
+      shell: bash
+      run: echo "key=$(sh scripts/engine-key.sh)-${ImageVersion:-none}-$(cksum <scripts/vcpkg-ports.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    - name: Engine cache
+      id: engine-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: src-tauri/binaries
+        key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
+    - name: Engine
+      shell: bash
+      run: sh scripts/build-engine.sh
+    - name: Engine cache save
+      if: github.ref == 'refs/heads/main' && steps.engine-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: src-tauri/binaries
+        key: engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.engine-key.outputs.key }}
+    - name: Format dumps cache save
+      if: github.ref == 'refs/heads/main' && steps.dumps-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: src-tauri/resources/dumps
+        key: ${{ steps.dumps-key.outputs.key }}
