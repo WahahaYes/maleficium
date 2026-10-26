@@ -221,6 +221,17 @@ def linux_in_container(dir, image):
          " && python3 /e2e/package-smoke.py /pkg --in-container"])
 
 
+# Releases whose apt must be able to resolve the .deb's Depends (the main run installs it on --image).
+LINUX_RESOLVE_ON = ["ubuntu:26.04"]
+
+
+def linux_resolves_on(dir, image):
+    """Dry-run the .deb install on `image`: its Depends exist there, by name."""
+    run(["docker", "run", "--rm", "-v", "%s:/pkg:ro" % os.path.abspath(dir), image, "bash", "-c",
+         "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -s -y /pkg/Maleficium_*_amd64.deb >/dev/null"])
+    say("deb resolves its Depends on %s" % image)
+
+
 LINUX_SCREEN = "1280x800x24"  # xvfb-run's default is 640x480x8
 
 
@@ -582,7 +593,12 @@ def main():
     a = ap.parse_args()
     system = platform.system()
     if system == "Linux":
-        linux(a.dir) if a.in_container else linux_in_container(a.dir, a.image)
+        if a.in_container:
+            linux(a.dir)
+        else:
+            linux_in_container(a.dir, a.image)
+            for image in LINUX_RESOLVE_ON:
+                linux_resolves_on(a.dir, image)
     elif system == "Darwin":
         macos(a.dir)
     elif system == "Windows":
