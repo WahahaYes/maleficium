@@ -50,35 +50,65 @@ if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
         export PKG_CONFIG_PATH
     fi
 fi
-# macOS: link the C libraries (ICU, freetype, graphite2, libpng, ...) statically
-# from .a files (Homebrew's, plus graphite2 built below), so the engine needs no Homebrew on the user's Mac.
-# tectonic_dep_support's semi-static mode links every library whose lib<name>.a
-# is on the pkg-config path statically and leaves the system ones (libc++, libz)
-# dynamic; PKG_CONFIG_ALL_STATIC makes pkg-config report the private
-# dependencies too. package-smoke.py fails if the engine links a non-system dylib.
-# Homebrew's graphite2 ships only a dylib, so build a static one from the pinned
-# release (small, cmake) and put it first on the pkg-config path.
-if [ "$(uname -s)" = Darwin ]; then
+# macOS and Linux: link the engine's C libraries (ICU, freetype, graphite2, libpng,
+# libxslt, ...) statically, so a package needs nothing installed first and the .deb
+# names no versioned library package. tectonic_dep_support's semi-static mode links
+# every library whose lib<name>.a is on the pkg-config path statically and leaves the
+# system ones (libc, libstdc++, libz) dynamic; PKG_CONFIG_ALL_STATIC makes pkg-config
+# report the private dependencies too. Homebrew and the -dev packages ship .a files for
+# most of them; the few that do not (graphite2 everywhere, libxslt on Linux) are built
+# below from checksum-pinned releases into a prefix that comes first on the pkg-config
+# path. package-smoke.py fails if a shipped binary links a library outside the system's.
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+# fetch_source URL SHA256 DIR: download, verify and unpack into DIR; prints the unpacked path.
+fetch_source() {
+    curl -fsSL -o "$3/src.tar" "$1" || die "cannot download $1"
+    [ "$(sha256 "$3/src.tar")" = "$2" ] || die "checksum mismatch for $1"
+    tar -xf "$3/src.tar" -C "$3" || die "cannot unpack $1"
+    rm -f "$3/src.tar"
+}
+if [ "$(uname -s)" = Darwin ] || [ "$(uname -s)" = Linux ]; then
     export TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC=1 PKG_CONFIG_ALL_STATIC=1
-    g2_prefix="${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/static-graphite2"
-    if [ ! -f "$g2_prefix/lib/libgraphite2.a" ]; then
+    static_prefix="${CARGO_TARGET_DIR:-$ROOT/src-tauri/engine/target}/static-libs"
+    if [ ! -f "$static_prefix/lib/libgraphite2.a" ]; then
         need cmake
         say "building a static graphite2 1.3.14"
-        g2_src=$(mktemp -d "${TMPDIR:-/tmp}/graphite2-XXXXXX")
-        curl -fsSL -o "$g2_src/g.tgz" https://github.com/silnrsi/graphite/releases/download/1.3.14/graphite2-1.3.14.tgz \
-            || die "cannot download graphite2"
-        [ "$(shasum -a 256 "$g2_src/g.tgz" | cut -d' ' -f1)" = f99d1c13aa5fa296898a181dff9b82fb25f6cc0933dbaa7a475d8109bd54209d ] \
-            || die "graphite2 checksum mismatch"
-        tar -xzf "$g2_src/g.tgz" -C "$g2_src"
+        g2=$(mktemp -d "${TMPDIR:-/tmp}/graphite2-XXXXXX")
+        fetch_source https://github.com/silnrsi/graphite/releases/download/1.3.14/graphite2-1.3.14.tgz \
+            f99d1c13aa5fa296898a181dff9b82fb25f6cc0933dbaa7a475d8109bd54209d "$g2"
         # Its test targets assume a shared library; the static build needs only src.
-        sed -i.bak -e '/nolib_test/d' "$g2_src/graphite2-1.3.14/src/CMakeLists.txt"
-        sed -i.bak -E -e '/add_subdirectory\((tests|doc|gr2fonttest)\)/d' "$g2_src/graphite2-1.3.14/CMakeLists.txt"
-        cmake -S "$g2_src/graphite2-1.3.14" -B "$g2_src/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX="$g2_prefix" || die "graphite2 configure failed"
-        cmake --build "$g2_src/build" >/dev/null && cmake --install "$g2_src/build" >/dev/null || die "graphite2 build failed"
-        rm -rf "$g2_src"
+        sed -i.bak -e '/nolib_test/d' "$g2/graphite2-1.3.14/src/CMakeLists.txt"
+        sed -i.bak -E -e '/add_subdirectory\((tests|doc|gr2fonttest)\)/d' "$g2/graphite2-1.3.14/CMakeLists.txt"
+        cmake -S "$g2/graphite2-1.3.14" -B "$g2/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_INSTALL_PREFIX="$static_prefix" || die "graphite2 configure failed"
+        cmake --build "$g2/build" >/dev/null && cmake --install "$g2/build" >/dev/null || die "graphite2 build failed"
+        rm -rf "$g2"
     fi
-    PKG_CONFIG_PATH="$g2_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    # Linux: libxml2 and libxslt. pkg-config will not link a library statically from a
+    # system path (/usr/lib), so libxml2 comes from here too (the libxml crate opts in
+    # with LIBXML2_STATIC), and Debian and Ubuntu ship no static libxslt at all (its .pc
+    # asks for libgcrypt). Built without the optional codecs, so they link nothing extra.
+    if [ "$(uname -s)" = Linux ]; then
+        export LIBXML2_STATIC=1
+        if [ ! -f "$static_prefix/lib/libxslt.a" ] || [ ! -f "$static_prefix/lib/libxml2.a" ]; then
+            say "building a static libxml2 2.12.10 and libxslt 1.1.42"
+            xs=$(mktemp -d "${TMPDIR:-/tmp}/libxml-XXXXXX")
+            fetch_source https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.10.tar.xz \
+                c3d8c0c34aa39098f66576fe51969db12a5100b956233dc56506f7a8679be995 "$xs"
+            fetch_source https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.42.tar.xz \
+                85ca62cac0d41fc77d3f6033da9df6fd73d20ea2fc18b0a3609ffb4110e1baeb "$xs"
+            (cd "$xs/libxml2-2.12.10" && ./configure --prefix="$static_prefix" --disable-shared --enable-static --with-pic \
+                --without-python --without-icu --without-lzma --without-zlib >/dev/null \
+                && make -j"${CARGO_BUILD_JOBS:-2}" >/dev/null && make install >/dev/null) || die "libxml2 build failed"
+            (cd "$xs/libxslt-1.1.42" && PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" ./configure --prefix="$static_prefix" \
+                --disable-shared --enable-static --with-pic --with-libxml-prefix="$static_prefix" \
+                --without-crypto --without-python --without-plugins --without-debugger >/dev/null \
+                && make -j"${CARGO_BUILD_JOBS:-2}" >/dev/null && make install >/dev/null) || die "libxslt build failed"
+            rm -rf "$xs"
+        fi
+    fi
+    PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
     export PKG_CONFIG_PATH
 fi
 # On Linux bindgen needs the C compiler's headers; point it at them when
