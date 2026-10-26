@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.2 - 2026-10-25
+
 ### Changes
 
 - **Plotly figures.** `\interactiveruntime[runtime=plotly@1, alt={...}]{charts/fig.json}` shows a figure saved with Python's `fig.write_json()`, with Plotly's hover. It takes the paper's style in light and dark mode: backdrop, ink, font, palette, colour scales, hover labels and tables. Colours Plotly Express copied from its default template follow the paper too. Anything you set yourself wins, and `template=figure` keeps the figure's own template. Leave out `poster=` and Maleficium renders the poster.
