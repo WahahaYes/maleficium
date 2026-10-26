@@ -230,6 +230,17 @@ LINUX_HOST = {  # the C library family: part of every Linux a user could run thi
 }
 
 
+# What an AppImage leaves to the host by convention: the AppImageCommunity excludelist
+# (libraries tied to the host's graphics and system stack), plus libwayland-*, which
+# the smoke requires an AppImage not to bundle. Exactly what this AppImage needs from
+# the list today; a new one fails until someone checks it is on the list.
+LINUX_APPIMAGE_HOST = {
+    "libX11.so.6", "libX11-xcb.so.1", "libxcb.so.1", "libGL.so.1", "libEGL.so.1", "libgbm.so.1", "libdrm.so.2",
+    "libz.so.1", "libgcc_s.so.1", "libstdc++.so.6", "libfontconfig.so.1", "libfreetype.so.6", "libharfbuzz.so.0",
+    "libfribidi.so.0", "libexpat.so.1", "libgpg-error.so.0", "libgmp.so.10", "libcom_err.so.2",
+}
+
+
 def elf_needed(path):
     """The sonames a 64-bit little-endian ELF file lists as DT_NEEDED."""
     import struct
@@ -307,15 +318,19 @@ def linux_deb_dependencies(files):
 
 
 def linux_appimage_dependencies(root):
-    """Every library an AppImage binary needs must be inside the AppImage or be the C library."""
+    """Every library an AppImage binary needs must be inside the AppImage, the C library,
+    or one an AppImage leaves to the host."""
     bundled = {f for _, _, fs in os.walk(root) for f in fs}
     elfs = list(object_files(root, ELF_MAGIC))
     found = {}
     for f in elfs:
-        bad = [n for n in elf_needed(f) if n not in bundled and n not in LINUX_HOST]
+        bad = [
+            n for n in elf_needed(f)
+            if n not in bundled and n not in LINUX_HOST and n not in LINUX_APPIMAGE_HOST and not n.startswith("libwayland-")
+        ]
         if bad:
             found[os.path.relpath(f, root)] = bad
-    return dependency_report(found, len(elfs), "the C library or libraries inside the AppImage")
+    return dependency_report(found, len(elfs), "the C library, the host libraries AppImages assume, or libraries inside the AppImage")
 
 
 def linux(dir):
