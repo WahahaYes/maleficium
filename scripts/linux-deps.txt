@@ -1,4 +1,5 @@
 build-essential
+cmake
 ca-certificates
 curl
 file
