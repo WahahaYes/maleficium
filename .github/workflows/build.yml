@@ -328,7 +328,8 @@ jobs:
 
   # The interactive-papers suites (e2e/README.md): paper export with the
   # reader in Chromium, Firefox and WebKit, the interactive package, headless
-  # widget posters under Xvfb, and html widget approval. Linux only, in a
+  # widget posters under Xvfb, html widget approval, and the live-equation
+  # formula language's shared cases through l3fp. Linux only, in a
   # debug build (the poster run needs the debug-only hanging runtime).
   # scripts/ci-e2e.sh runs them the same way locally.
   e2e:

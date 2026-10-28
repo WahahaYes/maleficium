@@ -1,12 +1,12 @@
 #!/bin/sh
 # The interactive-papers e2e suites, one after another, as CI runs them (the
 # e2e job in .github/workflows/build.yml): export (with the reader and the
-# wasm cells in Chromium, Firefox and WebKit), interactive, poster and
-# approval. Stops at the first failing suite and exits non-zero.
+# wasm cells in Chromium, Firefox and WebKit), interactive, poster,
+# approval and liveeq (the formula language's shared cases through l3fp). Stops at the first failing suite and exits non-zero.
 # Needs what the suites' headers name: the engine and its format dumps
 # from scripts/build-engine.sh, python3 with jsonschema, npm ci and
 # playwright-core's three browsers, Xvfb, and openssl. Linux only.
-#   sh scripts/ci-e2e.sh [suite...]     default: export interactive poster approval
+#   sh scripts/ci-e2e.sh [suite...]     default: export interactive poster approval liveeq
 # CI_E2E_LOGS=<dir> keeps each suite's output as <suite>.log (default: a temp
 # dir, removed on exit); CI_E2E_TIMEOUT caps each suite in seconds (1800).
 # POSIX sh.
@@ -19,7 +19,7 @@ die() { echo "ci-e2e: $1" >&2; exit 1; }
 say() { echo "ci-e2e: $1"; }
 
 [ "$(uname -s)" = Linux ] || die "the suites run on Linux only"
-[ $# -gt 0 ] || set -- export interactive poster approval
+[ $# -gt 0 ] || set -- export interactive poster approval liveeq
 for s in "$@"; do
     [ -f "e2e/$s-run.sh" ] || die "no suite e2e/$s-run.sh"
 done
