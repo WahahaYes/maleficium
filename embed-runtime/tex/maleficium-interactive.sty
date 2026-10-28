@@ -401,6 +401,121 @@
 }
 \cs_new_protected:Npn \mfw@valid@digits { \exp_args:NV \mfw_valid_digits:n \mfw@pdfrows }
 \cs_new_protected:Npn \mfw@check@nobar #1 { \exp_args:NV \mfw_nobar:n #1 }
+
+% -- live equations: the formula language --------------------------------------
+% The PDF side of the reader's interpreter (embed-runtime/src/expr.ts, which
+% holds the grammar): the same formulas, evaluated by l3fp in this compile, so
+% any LaTeX setup typesets the static values. l3fp reads more than the
+% language allows (2pi, spaces inside numbers, **, a single =) and an unknown
+% name is a cryptic l3fp error, so \mfw_leq_check:nn refuses those first.
+% Structure l3fp reads anyway (arity, chained comparisons) is the app's check.
+% The shared cases (embed-runtime/src/expr.vectors.json) run here through
+% e2e/liveeq-vectors.py.
+\str_new:N \l_mfw_leq_err_str
+\str_new:N \l_mfw_leq_shape_str
+\seq_new:N \l_mfw_leq_names_seq
+\tl_new:N \l_mfw_leq_expr_tl
+\tl_new:N \l_mfw_leq_out_tl
+\tl_new:N \l_mfw_leq_value_tl
+\tl_new:N \g_mfw_leq_tl_tl
+\tl_new:N \g_mfw_leq_dec_tl
+\tl_new:N \l_mfw_leq_int_tl
+\tl_new:N \l_mfw_leq_frac_tl
+\clist_const:Nn \c_mfw_leq_fns_clist
+  { abs, exp, ln, sqrt, sin, cos, tan, asin, acos, atan, floor, ceil, trunc, sign, round, min, max }
+\cs_new_protected:Npn \mfw_leq_fail:n #1
+  { \str_if_empty:NT \l_mfw_leq_err_str { \str_set:Nn \l_mfw_leq_err_str {#1} } }
+% #1 the formula, #2 the comma list of its equation's param names. Sets
+% \l_mfw_leq_err_str to why the formula is refused, empty when it is not.
+\str_new:N \l_mfw_leq_allowed_str
+\prg_generate_conditional_variant:Nnn \regex_match:nn { nV } { T, F, TF }
+\cs_generate_variant:Nn \regex_extract_all:nnN { nV }
+% #1 the formula, #2 the comma list of its equation's param names. Sets
+% \l_mfw_leq_err_str to why the formula is refused, empty when it is not.
+% Names compare as strings: the formula may arrive as a string (other
+% catcodes), the lists as letters.
+\cs_new_protected:Npn \mfw_leq_check:nn #1 #2 {
+  \str_clear:N \l_mfw_leq_err_str
+  \str_set:Nn \l_mfw_leq_shape_str {#1}
+  \regex_match:nVF { \S } \l_mfw_leq_shape_str { \mfw_leq_fail:n { formula~is~empty } }
+  \regex_match:nVF { \A[0-9A-Za-z.+\-*/^<>=!&|?:(),\s]*\Z } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { unexpected~character } }
+  \regex_match:nVT { \*\* } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { use~^~for~powers,~not~** } }
+  \regex_replace_all:nnN { [<>=!]= } { < } \l_mfw_leq_shape_str
+  \regex_match:nVT { = } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { use~==~to~compare,~not~= } }
+  % Numbers become @, so an exponent's e is not read as a name.
+  \regex_replace_all:nnN
+    { (?:\b[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+\-]?[0-9]+)? } { @ } \l_mfw_leq_shape_str
+  \seq_set_from_clist:Nn \l_mfw_leq_names_seq {#2}
+  \str_set:Nx \l_mfw_leq_allowed_str
+    { , \clist_use:Nn \c_mfw_leq_fns_clist { , } , pi , \seq_use:Nn \l_mfw_leq_names_seq { , } , }
+  \regex_extract_all:nVN { [A-Za-z][A-Za-z0-9]* } \l_mfw_leq_shape_str \l_tmpa_seq
+  \seq_map_inline:Nn \l_tmpa_seq {
+    \exp_args:NV \str_if_in:nnF \l_mfw_leq_allowed_str { ,##1, }
+      { \mfw_leq_fail:n { unknown~name~'##1' } }
+  }
+  % The shape: 1 a function, v any other name or number. Two operands side by
+  % side are an implicit product (or spaces inside a number).
+  \regex_replace_all:nnN
+    { \b(?:abs|exp|ln|sqrt|sin|cos|tan|asin|acos|atan|floor|ceil|trunc|sign|round|min|max)\b }
+    { 1 } \l_mfw_leq_shape_str
+  \regex_replace_all:nnN { [A-Za-z][A-Za-z0-9]* | @ } { v } \l_mfw_leq_shape_str
+  \regex_replace_all:nnN { \s+ } { } \l_mfw_leq_shape_str
+  \regex_match:nVT { [v)][v1(] } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { write~*~between~factors;~implicit~multiplication~is~not~allowed } }
+  \regex_replace_all:nnN { [^()] } { } \l_mfw_leq_shape_str
+  \mfw_leq_pairs:
+  \str_if_empty:NF \l_mfw_leq_shape_str { \mfw_leq_fail:n { unbalanced~parentheses } }
+}
+% Drop matched () pairs until none is left: what remains is unbalanced.
+\cs_new_protected:Npn \mfw_leq_pairs: {
+  \regex_replace_all:nnNT { \(\) } { } \l_mfw_leq_shape_str { \mfw_leq_pairs: }
+}
+% #1 a formula \mfw_leq_check:nn accepted, #2 its params as k=v,..., #3 the
+% decimal places shown. Sets \l_mfw_leq_out_tl to the value with exactly #3
+% decimals, ties to even (l3fp's round), or empty when it is undefined (NaN
+% or infinite). l3fp's traps are off only inside the group.
+\cs_new_protected:Npn \mfw_leq_eval:nnn #1 #2 #3 {
+  % Rescanned, so names in the formula and in #2 are letters alike.
+  \tl_set_rescan:Nnn \l_mfw_leq_expr_tl { } {#1}
+  \tl_set_rescan:Nnn \l_tmpb_tl { } {#2}
+  \clist_map_inline:Nn \l_tmpb_tl { \mfw_leq_subst:w ##1 \q_stop }
+  \group_begin:
+    \fp_trap:nn { invalid_operation } { none }
+    \fp_trap:nn { division_by_zero } { none }
+    \fp_trap:nn { overflow } { none }
+    \fp_trap:nn { underflow } { none }
+    \tl_gset:Nx \g_mfw_leq_tl_tl { \fp_to_tl:n { round( ( \l_mfw_leq_expr_tl ) , #3 ) } }
+    \tl_gset:Nx \g_mfw_leq_dec_tl { \fp_to_decimal:n { round( ( \l_mfw_leq_expr_tl ) , #3 ) } }
+  \group_end:
+  \regex_match:nVTF { nan|inf } \g_mfw_leq_tl_tl
+    { \tl_clear:N \l_mfw_leq_out_tl }
+    { \mfw_leq_pad:n {#3} }
+}
+\cs_new_protected:Npn \mfw_leq_subst:w #1 = #2 \q_stop {
+  \tl_set:Nx \l_mfw_leq_value_tl { \tl_trim_spaces:n {#2} }
+  \tl_set:Nx \l_tmpa_tl { \tl_trim_spaces:n {#1} }
+  \regex_replace_all:nnN { \b\u{l_tmpa_tl}\b } { \( \u{l_mfw_leq_value_tl} \) }
+    \l_mfw_leq_expr_tl
+}
+% Zero-pad \g_mfw_leq_dec_tl to #1 decimals; -0 shows as 0.
+\cs_new_protected:Npn \mfw_leq_pad:n #1 {
+  \tl_set_eq:NN \l_mfw_leq_int_tl \g_mfw_leq_dec_tl
+  \tl_clear:N \l_mfw_leq_frac_tl
+  \regex_extract_once:nVNT { \A([^.]*)\.(.*)\Z } \g_mfw_leq_dec_tl \l_tmpa_seq
+    {
+      \tl_set:Nx \l_mfw_leq_int_tl { \seq_item:Nn \l_tmpa_seq { 2 } }
+      \tl_set:Nx \l_mfw_leq_frac_tl { \seq_item:Nn \l_tmpa_seq { 3 } }
+    }
+  \tl_put_right:Nx \l_mfw_leq_frac_tl
+    { \prg_replicate:nn { \int_max:nn { 0 } { #1 - \tl_count:N \l_mfw_leq_frac_tl } } { 0 } }
+  \tl_set:Nx \l_mfw_leq_out_tl
+    { \l_mfw_leq_int_tl \int_compare:nNnT {#1} > { 0 } { . \l_mfw_leq_frac_tl } }
+  \regex_replace_once:nnN { \A-(0*(?:\.0*)?)\Z } { \1 } \l_mfw_leq_out_tl
+}
+\prg_generate_conditional_variant:Nnn \regex_extract_once:nnN { nV } { T }
 \ExplSyntaxOff
 
 % The float's own label, and only that: entering a float clears it, labels
