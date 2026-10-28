@@ -14,11 +14,14 @@ because the results are read from the TeX log. Its cache persists across runs
 (LIVEEQ_CACHE, default /var/tmp/maleficium-liveeq-cache-<uid>), so only the
 first run downloads TeX support files. Needs network on a cold cache.
 
+Prints ok: or FAIL: like the shell harnesses; e2e/liveeq-run.sh runs it as a
+scripts/ci-e2e.sh suite.
+
 Usage:
-  python3 e2e/liveeq-vectors.py [--engine PATH]
+  python3 e2e/liveeq-vectors.py [--engine PATH] [--keep]
 Without --engine it uses src-tauri/binaries/maleficium-engine-<host triple>.
 """
-import argparse, glob, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -63,10 +66,12 @@ def say(msg):
 
 
 def host_engine():
-    found = sorted(glob.glob(os.path.join(ROOT, "src-tauri", "binaries", "maleficium-engine-*")))
-    if not found:
-        sys.exit("liveeq: no engine in src-tauri/binaries (sh scripts/build-engine.sh), or pass --engine")
-    return found[0]
+    triple = re.search(r"^host: (\S+)", subprocess.run(["rustc", "-vV"], capture_output=True,
+                                                         text=True).stdout, re.M).group(1)
+    path = os.path.join(ROOT, "src-tauri", "binaries", "maleficium-engine-" + triple)
+    if not os.path.exists(path):
+        sys.exit("liveeq: no engine at %s (sh scripts/build-engine.sh), or pass --engine" % path)
+    return path
 
 
 def bundle_url():
@@ -111,8 +116,8 @@ def main():
         log = open(os.path.join(work, "main.log"), errors="replace").read() if os.path.exists(
             os.path.join(work, "main.log")) else ""
         if r.returncode != 0:
-            say("compile failed (exit %d):\n%s\n%s" % (r.returncode, r.stderr[-2000:], "\n".join(
-                l for l in log.splitlines() if l.startswith("!"))[:2000]))
+            print("FAIL: compile failed (exit %d):\n%s\n%s" % (r.returncode, r.stderr[-2000:], "\n".join(
+                l for l in log.splitlines() if l.startswith("!"))[:2000]), flush=True)
             return 1
         got = {int(m.group(1)): (m.group(2), m.group(3))
                for m in re.finditer(r"^LEQ\|(\d+)\|(OUT|ERR)\|(.*)\|$", log, re.M)}
@@ -126,9 +131,12 @@ def main():
                 ok = g is not None and g[0] == "ERR" and g[1] != ""
             if not ok:
                 bad += 1
-                say("FAIL %s %r: want %s, got %s" % (kind, c["expr"],
-                                                     want if kind == "value" else "a refusal", g))
-        say("%d of %d cases agree with l3fp" % (len(cases) - bad, len(cases)))
+                print("FAIL: %s %r: want %s, got %s" % (kind, c["expr"],
+                                                        want if kind == "value" else "a refusal", g), flush=True)
+        if not bad:
+            print("ok: all %d cases agree with l3fp" % len(cases), flush=True)
+        else:
+            say("%d of %d cases agree with l3fp" % (len(cases) - bad, len(cases)))
         return 1 if bad else 0
     finally:
         if a.keep:
