@@ -249,7 +249,9 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
 # A live equation compiles to its values at the defaults and records itself,
 # its params and its results; a result undefined somewhere in a param's
 # range warns. The widget list reads the records with the widgets.
-lr = compile("liveeq.tex", rounds=20)
+# The first documents with math: a TeX cache that predates them fetches the
+# math fonts online here, so they get the full poll budget.
+lr = compile("liveeq.tex")
 check("live equation document compiles", lr.get("status") == "success", str(lr)[:200])
 lmfw = os.path.join(os.path.dirname(lr.get("pdf_url") or ""), "liveeq.mfw")
 llines = open(lmfw).read().splitlines() if os.path.isfile(lmfw) else []
@@ -271,7 +273,7 @@ check("a result that outgrows its static value warns",
       "result 1 of eq-decay shows 100.0" in llog, ltex)
 lw = call("widgets", {"root_id": "ip", "main_rel": "liveeq.tex"})
 check("the widget list reads live equation records", lw["ok"], str(lw)[:300])
-cr = compile("liveeq-chained.tex", rounds=20)
+cr = compile("liveeq-chained.tex")
 check("a formula only the app refuses still compiles", cr.get("status") == "success", str(cr)[:200])
 cw = call("widgets", {"root_id": "ip", "main_rel": "liveeq-chained.tex"})
 check("the widget list refuses it, naming why",
