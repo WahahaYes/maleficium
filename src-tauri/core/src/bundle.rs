@@ -106,6 +106,9 @@ pub enum BundleWarningKind {
     /// The author's reader stylesheet was refused (a remote or escaping
     /// url(), @import, or script); the page keeps the theme alone.
     ReaderStyle,
+    /// The article's live equations and the sidecar disagree; their results
+    /// show `?` and stay static.
+    LiveEquation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -1736,6 +1739,10 @@ fn article_warnings(
                 kind: BundleWarningKind::WidgetJoin,
                 message: format!("the widgets could not be placed in the article ({e}); they are listed at its end"),
             },
+            Issue::Equations(why) => BundleWarning {
+                kind: BundleWarningKind::LiveEquation,
+                message: format!("the live equations could not be filled in ({why}); their results show ?"),
+            },
             Issue::Figure(w) => BundleWarning {
                 kind: BundleWarningKind::Figure,
                 message: if w.file.is_empty() {
@@ -2283,6 +2290,20 @@ fn export_inner(
         "widgets".into(),
         Value::Array(planned.iter().map(|p| p.json.clone()).collect()),
     );
+    let equations = sidecar
+        .as_deref()
+        .and_then(|t| crate::widgets::parse_sidecar(t).ok())
+        .map(|s| s.equations)
+        .unwrap_or_default();
+    if !equations.is_empty() {
+        manifest.insert(
+            "equations".into(),
+            equations
+                .iter()
+                .map(crate::liveeq::Equation::to_json)
+                .collect(),
+        );
+    }
     if !plan.runtime_entries.is_empty() {
         manifest.insert(
             "runtimes".into(),

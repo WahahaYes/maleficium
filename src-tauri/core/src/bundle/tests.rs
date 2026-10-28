@@ -2729,3 +2729,108 @@ fn a_scan_failed_runtime_is_poster_only_with_red_warnings() {
         std::fs::copy(&proof, to).unwrap();
     }
 }
+
+// ---- live equations -------------------------------------------------------
+
+/// The records the package writes for the two equations of
+/// reflow/fixtures/liveeq-converted.frag.
+const LIVEEQ_SIDECAR: &str = "liveeq|eq-decay|eq:decay|1|inline|Exponential decay
+param|eq-decay|k|0.5|0|2|0.05|2|0.50
+result|eq-decay|1|1|22.3|100*exp(-3*k)
+liveeq|eq-2|||inline|
+param|eq-2|x|1|0|10|1|0|1
+result|eq-2|1|2|0.00|ln(x)
+";
+
+/// The fixture project with the two live equations in its article and
+/// `records` (some or all of LIVEEQ_SIDECAR) in its sidecar.
+fn live_project(name: &str, records: &str) -> Project {
+    let p = project(name, &format!("{REAL_SIDECAR}{records}"));
+    let frag = include_str!("../reflow/fixtures/liveeq-converted.frag").trim();
+    let inner = frag
+        .strip_prefix("<article class=\"ltx_document\">")
+        .and_then(|f| f.strip_suffix("</article>"))
+        .unwrap();
+    let html = clean_conversion().replacen("</article>", &format!("{inner}</article>"), 1);
+    converts_to(&p, Ok(html), &[]);
+    p
+}
+
+#[test]
+fn live_equations_reach_the_article_and_the_manifest() {
+    let p = live_project("liveeq", LIVEEQ_SIDECAR);
+    let d = dest(&p, "f");
+    let r = export(&p, &d, BundleProfile::Folder).unwrap();
+    assert!(
+        !kinds(&r).contains(&BundleWarningKind::LiveEquation),
+        "{:?}",
+        r.warnings
+    );
+    let html = reader_html(&d, BundleProfile::Folder);
+    assert!(
+        html.contains("<mn class=\"m-param m-param-k\">0.50</mn>"),
+        "sanitizer kept the tokens"
+    );
+    assert!(html.contains("<mn class=\"m-result m-result-1\">22.3</mn>"));
+    assert!(html.contains("m-liveeq m-liveeq-eq-2"));
+    assert!(
+        !html.contains("mfwleq"),
+        "no binding macro left in an alttext"
+    );
+
+    let m = manifest_of(Path::new(&d));
+    validate_manifest(&m).unwrap();
+    assert_eq!(
+        m["equations"][0],
+        json!({
+            "id": "eq-decay", "label": "eq:decay", "number": "1", "mode": "inline",
+            "alt": "Exponential decay",
+            "params": [{ "name": "k", "default": 0.5, "min": 0.0, "max": 2.0, "step": 0.05, "places": 2 }],
+            "results": [{ "n": 1, "places": 1, "formula": "100*exp(-3*k)" }],
+        })
+    );
+    assert_eq!(m["equations"][1]["id"], "eq-2");
+    assert!(
+        m["equations"][1].get("number").is_none(),
+        "liveequation* has no number"
+    );
+
+    let bad = |f: &dyn Fn(&mut Value)| -> String {
+        let mut c = m.clone();
+        f(&mut c);
+        validate_manifest(&c).unwrap_err()
+    };
+    assert!(bad(&|c| c["equations"][0]["mode"] = "popup".into()).contains("schema"));
+    assert!(bad(&|c| c["equations"][0]["params"] = json!([])).contains("schema"));
+    assert!(bad(&|c| c["equations"][0]["params"][0]["step"] = 0.into()).contains("schema"));
+}
+
+#[test]
+fn a_document_without_live_equations_has_no_equations_field() {
+    let m = good_manifest("liveeq-none");
+    assert!(m.get("equations").is_none());
+}
+
+#[test]
+fn live_equations_the_sidecar_lacks_warn_and_show_question_marks() {
+    let first: String = LIVEEQ_SIDECAR
+        .lines()
+        .take(3)
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let p = live_project("liveeq-short", &first);
+    let d = dest(&p, "f");
+    let r = export(&p, &d, BundleProfile::Folder).unwrap();
+    let w = r
+        .warnings
+        .iter()
+        .find(|w| w.kind == BundleWarningKind::LiveEquation)
+        .unwrap();
+    assert!(
+        w.message
+            .contains("2 live equations but the sidecar records 1"),
+        "{}",
+        w.message
+    );
+    assert!(reader_html(&d, BundleProfile::Folder).contains("<mn class=\"m-result\">?</mn>"));
+}

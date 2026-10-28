@@ -27,6 +27,17 @@
 //   \maleficiumreaderstyle   no output (their keys are
 //                       consumed, never surfaced in the article)
 //   \mfwSlash           no output (the PDF's brand mark)
+//   liveequation(*)     equation (displaymath), options dropped
+//   \maleficiumparam    one number token <mn class="m-param m-param-NAME">,
+//                       the default (or 0 when repeated); the range dropped
+//   \liveresult         one number token <mn class="m-result">0</mn>
+// Live equations: the converter cannot evaluate a formula, so every value
+// token's text is a stand-in. The exporter joins each <math> holding
+// m-param tokens to the i-th liveeq record of the sidecar, writes the values
+// the PDF typeset into the tokens and numbers the results (see
+// core/src/reflow/equations.rs). It also rewrites the alttext, which holds
+// these macros' expansions: \mathrm{\mfwleqtok{NAME}{X}} and
+// \mathrm{\mfwleqres}. \mathrm keeps the numbers upright.
 // A flag marker is the reader-flag analog of a widget placeholder: one empty
 // element, the value riding in a closed class token (`ltx:text` takes no
 // value attributes). The PDF compile already rejected anything outside the
@@ -78,3 +89,12 @@ DefConstructor("\\maleficiummeasure Semiverbatim", |document, v| {
     Error("maleficium", "maleficiummeasure", "measure flag `" + s + "' must be narrow, default, wide or full");
   }
 });
+
+DefConstructor("\\mfwleqtok Semiverbatim Semiverbatim", "<ltx:XMTok role=\"NUMBER\" meaning=\"#2\" class=\"m-param m-param-#1\">#2</ltx:XMTok>");
+DefConstructor("\\mfwleqres", "<ltx:XMTok role=\"NUMBER\" meaning=\"0\" class=\"m-result\">0</ltx:XMTok>");
+RawTeX("\\def\\maleficiumparam#1{\\@ifnextchar\\bgroup{\\mfwleqpd{#1}}{\\mathrm{\\mfwleqtok{#1}{0}}}}\\def\\mfwleqpd#1#2{\\@ifnextchar[{\\mfwleqpr{#1}{#2}}{\\mathrm{\\mfwleqtok{#1}{#2}}}}\\def\\mfwleqpr#1#2[#3]{\\mathrm{\\mfwleqtok{#1}{#2}}}");
+DefMacro("\\liveresult[]{}", "\\mathrm{\\mfwleqres}");
+DefMacro("\\liveequation[]", "\\begin{equation}");
+DefMacro("\\endliveequation", "\\end{equation}");
+DefMacro("\\csname liveequation*\\endcsname[]", "\\begin{displaymath}");
+DefMacro("\\csname endliveequation*\\endcsname", "\\end{displaymath}");
