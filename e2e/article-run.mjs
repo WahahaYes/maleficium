@@ -5,7 +5,10 @@
 // keyboard, open for print, and open when the page lands on something inside
 // them. Citations show their bibliography entry in a card on hover and on
 // keyboard focus (no ids, no "Cited by" back-links), hide on leave and
-// Escape, and still jump to the entry on click. No CSP violation throughout.
+// Escape, and still jump to the entry on click. Live equations show the
+// PDF's values with scripts off and get controls with scripts on: a slider
+// recomputes the result, a typed value is clamped, every copy of a param
+// follows, reset restores. No CSP violation throughout.
 //
 //   node e2e/article-run.mjs --single <file.html> [--browser chromium|firefox|webkit]
 //
@@ -240,6 +243,65 @@ const proofsOf = (page) =>
     JSON.stringify([hash, target, s.shown]),
   );
   check('no csp violations with the card', (await page.evaluate(() => window.__csp)).length === 0);
+  await ctx.close();
+}
+
+// ---- live equations ----
+const liveOf = (page) =>
+  page.evaluate(() => {
+    const m = document.querySelector('math.m-liveeq-eq-binary-entropy');
+    const pm = document.querySelector('math.m-liveeq-eq-parabola');
+    return {
+      p: m?.querySelector('.m-param-p')?.textContent ?? null,
+      h: m?.querySelector('.m-result-1')?.textContent ?? null,
+      xs: pm ? [...pm.querySelectorAll('.m-param-x')].map((t) => t.textContent) : [],
+      y: pm?.querySelector('.m-result-1')?.textContent ?? null,
+      controls: document.querySelectorAll('.m-liveeq-controls').length,
+    };
+  });
+{
+  const { ctx, page } = await open('', { javaScriptEnabled: false });
+  const s = await liveOf(page);
+  check(
+    "scripts off: live equations show the PDF's values and no controls",
+    s.p === '0.25' && s.h === '0.811' && s.y === '2.25' && s.controls === 0,
+    JSON.stringify(s),
+  );
+  await ctx.close();
+}
+{
+  const { ctx, page } = await open();
+  let s = await liveOf(page);
+  check(
+    'each live equation gets its controls, at the defaults',
+    s.controls === 2 && s.p === '0.25' && s.h === '0.811',
+    JSON.stringify(s),
+  );
+  const range = page.locator('.m-liveeq-controls input[type=range][aria-label="p"]');
+  await range.fill('0.5');
+  s = await liveOf(page);
+  check(
+    'moving the slider recomputes the result',
+    s.p === '0.50' && s.h === '1.000',
+    JSON.stringify(s),
+  );
+  const box = page.locator('.m-liveeq-controls input[type=number][aria-label="x value"]');
+  await box.fill('-5');
+  await box.press('Enter');
+  await box.blur();
+  s = await liveOf(page);
+  check(
+    'a typed value is clamped to the range and every copy of the param follows',
+    s.xs.length === 2 && s.xs.every((x) => x === '\u22122.0') && s.y === '4.00',
+    JSON.stringify(s),
+  );
+  await page.locator('.m-liveeq-reset').first().click();
+  s = await liveOf(page);
+  check('reset restores the defaults', s.p === '0.25' && s.h === '0.811', JSON.stringify(s));
+  check(
+    'no csp violations with live equations',
+    (await page.evaluate(() => window.__csp)).length === 0,
+  );
   await ctx.close();
 }
 
