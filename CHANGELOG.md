@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### For contributors
+
+- **The macOS smoke test hides Xcode and the Command Line Tools for real.** It used to only point `DEVELOPER_DIR` at an empty folder, so the runner's tools stayed usable. It now moves every `/Applications/Xcode*.app`, `/Library/Developer/CommandLineTools` and `/usr/local`'s `lib`, `opt` and `Cellar` aside (on Apple silicon too) before the compile and launch probes, and fails unless `xcode-select -p` fails, as on a Mac that never had them.
+
 ## 0.4.2 - 2026-10-25
 
 ### Changes
