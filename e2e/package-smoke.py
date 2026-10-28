@@ -578,7 +578,8 @@ def windows_dependencies(dest):
     return dependency_report(found, len(shipped), "Windows system DLLs or ones in the install")
 
 
-# The Visual C++ runtime's DLL names (all versions 14.x share the 140 suffix).
+# The Visual C++ runtime's DLL names (all versions 14.x share the 140 suffix). The
+# *_clr0400.dll copies are the .NET Framework's own, part of every Windows: kept.
 VC_RUNTIME = ["vcruntime140*.dll", "msvcp140*.dll", "concrt140*.dll", "vccorlib140*.dll", "vcomp140*.dll", "vcamp140*.dll", "mfc140*.dll"]
 
 
@@ -587,11 +588,14 @@ def windows_hidden_runtime():
     """Rename the Visual C++ runtime in System32 and SysWOW64 aside for the probes. A
     fresh Windows has none of it; CI runners do, so a binary that loads it at run time
     (not through its import table) passes there and fails for users. The files are
-    TrustedInstaller's: take them over, then give back their ACL and owner in the
-    finally. A DLL already loaded can still be renamed."""
+    TrustedInstaller's: take them over, then give back their owner and ACL in the
+    finally (owner first, while the grant still allows it). A DLL already loaded can
+    still be renamed."""
     root = os.environ.get("SystemRoot", r"C:\Windows")
     dirs = [os.path.join(root, d) for d in ("System32", "SysWOW64")]
-    found = lambda: sorted(f for d in dirs for g in VC_RUNTIME for f in glob.glob(os.path.join(d, g)))
+    found = lambda: sorted(
+        f for d in dirs for g in VC_RUNTIME for f in glob.glob(os.path.join(d, g)) if not f.lower().endswith("_clr0400.dll")
+    )
     acls = tempfile.mkdtemp(prefix="smoke-acl-")
     moved = []
     try:
@@ -607,10 +611,16 @@ def windows_hidden_runtime():
         say("hid the Visual C++ runtime: %s" % (" ".join(os.path.relpath(f, root) for f, _ in moved) or "nothing (none present)"))
         yield
     finally:
+        unrestored = []
         for f, acl in moved:
-            os.rename(f + ".smoke-hidden", f)
-            run(["icacls", os.path.dirname(f), "/restore", acl], stdout=subprocess.DEVNULL)
-            run(["icacls", f, "/setowner", "NT SERVICE\\TrustedInstaller"], stdout=subprocess.DEVNULL)
+            try:
+                os.rename(f + ".smoke-hidden", f)
+                run(["icacls", f, "/setowner", "NT SERVICE\\TrustedInstaller"], stdout=subprocess.DEVNULL)
+                run(["icacls", os.path.dirname(f), "/restore", acl], stdout=subprocess.DEVNULL)
+            except (OSError, subprocess.CalledProcessError) as e:
+                unrestored.append("%s (%s)" % (f, e))
+        if unrestored:
+            fail("could not restore %s" % "; ".join(unrestored))
 
 
 def windows(dir):
