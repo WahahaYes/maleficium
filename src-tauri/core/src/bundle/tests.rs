@@ -2844,3 +2844,32 @@ fn live_equations_the_sidecar_lacks_warn_and_show_question_marks() {
     );
     assert!(reader_html(&d, BundleProfile::Folder).contains("<mn class=\"m-result\">?</mn>"));
 }
+
+#[test]
+fn a_widget_mode_equation_ships_the_liveeq_widget_once() {
+    let records = LIVEEQ_SIDECAR.replace("liveeq|eq-2|||inline|", "liveeq|eq-2|||widget|");
+    let p = live_project("liveeq-widget", &records);
+    let d = dest(&p, "f");
+    export(&p, &d, BundleProfile::Folder).unwrap();
+    let doc = std::fs::read_to_string(Path::new(&d).join(reader::LIVEEQ_ENTRY)).unwrap();
+    assert!(
+        doc.contains("Content-Security-Policy"),
+        "folded under the widget policy"
+    );
+    assert_eq!(manifest_of(Path::new(&d))["equations"][1]["mode"], "widget");
+
+    let s = dest(&p, "s.html");
+    export(&p, &s, BundleProfile::SingleFile).unwrap();
+    let docs = island_json(&reader_html(&s, BundleProfile::SingleFile), "mfw-widgets");
+    assert!(docs[reader::LIVEEQ_REF]
+        .as_str()
+        .is_some_and(|d| d.contains("Live equation")));
+
+    let inline = live_project("liveeq-inline-only", LIVEEQ_SIDECAR);
+    let d = dest(&inline, "f");
+    export(&inline, &d, BundleProfile::Folder).unwrap();
+    assert!(
+        !Path::new(&d).join(reader::LIVEEQ_ENTRY).exists(),
+        "inline equations need no widget"
+    );
+}

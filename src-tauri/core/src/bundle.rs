@@ -2329,6 +2329,12 @@ fn export_inner(
     let mut total = 0u64;
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n";
 
+    // The live-equation widget, once, when some equation runs as one.
+    let liveeq_doc = equations
+        .iter()
+        .any(|e| e.mode == crate::liveeq::Mode::Widget)
+        .then(|| fold::widget_document(reader::LIVEEQ, &fold::widget_policy(None)));
+
     // Every frame origin some widget declared: the reader's own frame-src.
     let frames: Vec<String> = planned
         .iter()
@@ -2355,10 +2361,13 @@ fn export_inner(
                         .into(),
                 );
             }
-            let widgets: Map<String, Value> = planned
+            let mut widgets: Map<String, Value> = planned
                 .iter()
                 .filter_map(|p| p.doc.clone().map(|d| (p.id.clone(), d.into())))
                 .collect();
+            if let Some(doc) = &liveeq_doc {
+                widgets.insert(reader::LIVEEQ_REF.into(), doc.clone().into());
+            }
             let islands = [
                 island("mfw-manifest", &manifest),
                 island("mfw-widgets", &Value::Object(widgets)),
@@ -2409,6 +2418,9 @@ fn export_inner(
                         &mut total,
                     )?;
                 }
+            }
+            if let Some(doc) = &liveeq_doc {
+                put(&stage, reader::LIVEEQ_ENTRY, doc.as_bytes(), &mut total)?;
             }
             let mut inline = Map::new();
             let mut stored = BTreeSet::new();

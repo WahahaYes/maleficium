@@ -1143,7 +1143,19 @@ body.m-reader {
   }
 }
 
-/* Live equations: the controls under an equation (reader.js). */
+/* Live equations: the controls under an inline one (reader.js), and the
+   frame of a mode=widget one, whose poster is the equation itself: the
+   frame takes the equation's height until the widget reports its own. */
+.m-reader figure.m-liveeq-widget {
+  margin: var(--m-space-3) 0;
+}
+.m-reader figure.m-liveeq-widget .frame {
+  width: 100%;
+  aspect-ratio: auto;
+}
+.m-reader figure.m-liveeq-widget .frame .poster {
+  background: none;
+}
 .m-liveeq-controls {
   display: flex;
   flex-wrap: wrap;
