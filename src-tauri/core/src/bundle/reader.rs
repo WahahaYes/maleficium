@@ -24,6 +24,13 @@ const JS: &str = include_str!("../../../../embed-runtime/reader/reader.js");
 /// by `npm run build:runtimes`): inlined only when the paper has live
 /// equations, before `reader.js`, which reads it as `mfwExpr`.
 const EXPR: &str = include_str!("../../../../embed-runtime/built/expr/expr.js");
+/// The `liveeq@1` widget (`embed-runtime/src/liveeq`): the frame the reader
+/// mounts for a `mode=widget` live equation. Not a widget kind an author
+/// places, so it has no `runtime.json`; it ships when an equation uses it,
+/// in the widget island under its ref, or as [`LIVEEQ_ENTRY`] in a folder.
+pub(super) const LIVEEQ: &str = include_str!("../../../../embed-runtime/built/liveeq/index.html");
+pub(super) const LIVEEQ_REF: &str = "liveeq@1";
+pub(super) const LIVEEQ_ENTRY: &str = "equations/index.html";
 /// The Maleficium mark (re-authored as SVG from the CC0 `maleficium-mark.pdf`).
 const MARK: &str = include_str!("../../../../embed-runtime/reader/mark.svg");
 /// Where the "Made with Maleficium" colophon links, like `\mlHome`.

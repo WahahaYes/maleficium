@@ -325,6 +325,7 @@
   // manifest lists, built-in or custom.
   function runnable(w) {
     if (!w || w.fallback) return false;
+    if (w.type === 'liveeq') return true;
     if (
       w.type !== 'html' &&
       !Object.prototype.hasOwnProperty.call(manifest.runtimes || {}, w.runtime)
@@ -339,8 +340,41 @@
   function documentOf(w) {
     if (FOLDER) return w.entry;
     if (docs === null) docs = island('mfw-widgets');
-    return typeof docs[w.id] === 'string' ? docs[w.id] : null;
+    var key = w.type === 'liveeq' ? w.runtime : w.id;
+    return typeof docs[key] === 'string' ? docs[key] : null;
   }
+  // A live equation with mode=widget runs as the liveeq@1 widget, which the
+  // bundle ships once (a folder's equations/index.html, or the widget island
+  // under its ref). The equation stays in the article as the widget's
+  // poster, in a mount figure made here; the widget gets the equation's
+  // record and its MathML in init.
+  (Array.isArray(manifest.equations) ? manifest.equations : []).forEach(function (eq) {
+    if (!eq || eq.mode !== 'widget' || typeof eq.id !== 'string') return;
+    var math = document.querySelector('math.m-liveeq-' + eq.id);
+    if (!math) return;
+    var host = math.closest('table.ltx_equation') || math;
+    var fig = document.createElement('figure');
+    fig.className = 'm-liveeq-widget';
+    fig.setAttribute('data-widget', eq.id);
+    fig.setAttribute('data-type', 'liveeq');
+    var frame = document.createElement('div');
+    frame.className = 'frame';
+    var poster = document.createElement('div');
+    poster.className = 'poster';
+    host.parentNode.insertBefore(fig, host);
+    poster.appendChild(host);
+    frame.appendChild(poster);
+    fig.appendChild(frame);
+    widgets[eq.id] = {
+      id: eq.id,
+      type: 'liveeq',
+      runtime: 'liveeq@1',
+      alt: eq.alt || '',
+      entry: 'equations/index.html',
+      options: { equation: eq, mathml: math.outerHTML },
+      sources: {},
+    };
+  });
   // Widgets mount lazily: each figure shows its poster until it comes near
   // the screen (half a screen ahead) while the page is visible, and only
   // then gets its frame and its runtime. A figure held back for approval
@@ -854,7 +888,7 @@
   spy();
 })();
 
-// Live equations (manifest.equations): under each one, a slider and a
+// Live equations (manifest.equations) with mode=inline: under each one, a slider and a
 // number box per param and a reset. Moving one rewrites the param's tokens
 // and recomputes every result in the equation's MathML in place, with the
 // formula interpreter the page carries as mfwExpr (embed-runtime/src/
@@ -877,6 +911,8 @@
     return s === null ? '?' : s.replace(/^-/, '−');
   }
   eqs.forEach(function (eq) {
+    // mode=widget runs in its own frame (the liveeq@1 widget, above).
+    if (eq.mode === 'widget') return;
     var math = document.querySelector('math.m-liveeq-' + eq.id);
     if (!math || !Array.isArray(eq.params) || !eq.params.length) return;
     var names = eq.params.map(function (p) {

@@ -217,8 +217,11 @@ outcomes with probabilities $p$ and $1-p$, in bits.
   \label{eq:binary-entropy}
 \end{liveequation}
 A result may come before the parameters it uses, a parameter may be
-shown again, and \verb|liveequation*| is unnumbered:
-\begin{liveequation*}[id=eq-parabola, alt={A parabola y = a x squared with live a and x}]
+shown again, and \verb|liveequation*| is unnumbered. With
+\verb|mode=widget| the equation runs in a frame of its own, on the
+figure plate, instead of in the article's text:
+\begin{liveequation*}[id=eq-parabola, mode=widget,
+    alt={A parabola y = a x squared with live a and x}]
   y = \liveresult{a*x^2}
     = \maleficiumparam{a}{1}[0.5,1.5,0.1] \cdot \maleficiumparam{x}{1.5}[-2,2,0.1]^2,
   \qquad x = \maleficiumparam{x}

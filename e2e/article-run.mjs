@@ -6,9 +6,10 @@
 // them. Citations show their bibliography entry in a card on hover and on
 // keyboard focus (no ids, no "Cited by" back-links), hide on leave and
 // Escape, and still jump to the entry on click. Live equations show the
-// PDF's values with scripts off and get controls with scripts on: a slider
-// recomputes the result, a typed value is clamped, every copy of a param
-// follows, reset restores. No CSP violation throughout.
+// PDF's values with scripts off. With scripts on an inline one gets
+// controls (a slider recomputes, reset restores) and a mode=widget one
+// mounts the liveeq@1 frame (a typed value is clamped, every copy of a
+// param follows). No CSP violation throughout.
 //
 //   node e2e/article-run.mjs --single <file.html> [--browser chromium|firefox|webkit]
 //
@@ -273,8 +274,8 @@ const liveOf = (page) =>
   const { ctx, page } = await open();
   let s = await liveOf(page);
   check(
-    'each live equation gets its controls, at the defaults',
-    s.controls === 2 && s.p === '0.25' && s.h === '0.811',
+    'an inline live equation gets its controls under it, at the defaults',
+    s.controls === 1 && s.p === '0.25' && s.h === '0.811',
     JSON.stringify(s),
   );
   const range = page.locator('.m-liveeq-controls input[type=range][aria-label="p"]');
@@ -285,19 +286,35 @@ const liveOf = (page) =>
     s.p === '0.50' && s.h === '1.000',
     JSON.stringify(s),
   );
-  const box = page.locator('.m-liveeq-controls input[type=number][aria-label="x value"]');
-  await box.fill('-5');
-  await box.press('Enter');
-  await box.blur();
-  s = await liveOf(page);
-  check(
-    'a typed value is clamped to the range and every copy of the param follows',
-    s.xs.length === 2 && s.xs.every((x) => x === '\u22122.0') && s.y === '4.00',
-    JSON.stringify(s),
-  );
   await page.locator('.m-liveeq-reset').first().click();
   s = await liveOf(page);
   check('reset restores the defaults', s.p === '0.25' && s.h === '0.811', JSON.stringify(s));
+
+  // mode=widget: the liveeq@1 frame mounts when near the screen, the
+  // equation being its poster until it is ready.
+  const fig = page.locator('figure[data-widget="eq-parabola"]');
+  check('a widget-mode equation is a mount figure', (await fig.count()) === 1);
+  await fig.scrollIntoViewIfNeeded();
+  let state = null;
+  for (let i = 0; i < 100 && state !== 'ready'; i++) {
+    await sleep(100);
+    state = await fig.getAttribute('data-state');
+  }
+  check('the liveeq@1 widget reaches ready', state === 'ready', String(state));
+  const inner = page
+    .frameLocator('figure[data-widget="eq-parabola"] iframe')
+    .frameLocator('iframe');
+  const box = inner.locator('input[type=number][aria-label="x value"]');
+  await box.fill('-5');
+  await box.press('Enter');
+  await box.blur();
+  const xs = await inner.locator('.m-param-x').allTextContents();
+  const y = await inner.locator('.m-result-1').textContent();
+  check(
+    'in the widget, a typed value is clamped and every copy of the param follows',
+    xs.length === 2 && xs.every((x) => x === '\u22122.0') && y === '4.00',
+    JSON.stringify([xs, y]),
+  );
   check(
     'no csp violations with live equations',
     (await page.evaluate(() => window.__csp)).length === 0,

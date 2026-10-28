@@ -134,7 +134,10 @@ export default defineConfig(({ mode }) => {
       },
     };
   }
-  const runtime = process.env.RUNTIME ?? (RUNTIMES.includes(mode) ? mode : 'table');
+  // liveeq has no runtime.json: the reader mounts it for mode=widget
+  // equations, and no author places it as a widget.
+  const runtime =
+    process.env.RUNTIME ?? (RUNTIMES.includes(mode) || mode === 'liveeq' ? mode : 'table');
   return {
     root: `embed-runtime/src/${runtime}`,
     plugins: [viteSingleFile(), ...(CLASSIC.includes(runtime) ? [classicScript()] : [])],
