@@ -501,51 +501,42 @@ def macos(dir):
 
 
 def macos_downloaded(dmg, t, main, env):
-    """DIAGNOSTIC (throwaway): launch the app the way a downloaded copy starts, with
-    the dmg quarantined, Gatekeeper off and then on, by exec and by LaunchServices.
-    Prints what happens; never fails."""
+    """DIAGNOSTIC (throwaway): run the released v0.4.1 app (engine linked to Homebrew)
+    with Homebrew hidden, then this build the same way, and show what each does: the
+    main thread's stack, child processes, events, output. Prints; never fails."""
     def sh(cmd):
         out = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env).stdout
         say("$ %s\n%s" % (cmd, out))
 
-    sh("sw_vers; uname -a; csrutil status; spctl --status; id")
-    dl = os.path.join(t, "download")
-    os.makedirs(dl)
-    copy = os.path.join(dl, os.path.basename(dmg))
-    shutil.copy(dmg, copy)
-    sh("xattr -w com.apple.quarantine '0083;%x;Safari;' '%s' && xattr -l '%s'" % (int(time.time()), copy, copy))
-    mnt = os.path.join(dl, "dmg")
-    run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mnt, copy], stdout=subprocess.DEVNULL)
-    try:
-        run(["cp", "-R", os.path.join(mnt, "Maleficium.app"), dl])
-    finally:
-        run(["hdiutil", "detach", mnt], stdout=subprocess.DEVNULL)
-    app = os.path.join(dl, "Maleficium.app")
-    exe = os.path.join(app, "Contents/MacOS", main)
-    sh("xattr -l '%s' '%s'; codesign -dvvv '%s' 2>&1 | head -20" % (app, exe, app))
-
-    def attempt(label):
-        sh("spctl --status; spctl --assess -vv --type execute '%s'" % app)
-        for how, cmd in [("exec", [exe]), ("open", ["open", "-n", app])]:
-            say("--- %s: %s" % (label, how))
-            started = time.time()
-            log = tempfile.TemporaryFile()
-            p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
-            time.sleep(25)
-            pids = subprocess.run(["pgrep", "-f", exe], capture_output=True, text=True).stdout.split()
-            say("%s after %ds: launcher %s, app pids %s" % (how, time.time() - started, p.poll(), pids))
-            for pid in pids:
-                sh("ps -o pid,stat,etime,command -p %s; sample %s 1 2>&1 | grep -E -m12 'dyld|Call graph|main|Thread_' " % (pid, pid))
-                sh("kill -9 %s" % pid)
+    arch = "aarch64" if platform.machine() == "arm64" else "x64"
+    old = os.path.join(t, "Maleficium_0.4.1_%s.dmg" % arch)
+    run(["curl", "-fsSL", "-o", old, "https://github.com/WahahaYes/maleficium/releases/download/v0.4.1/" + os.path.basename(old)])
+    events_dir = os.path.expanduser("~/Library/Application Support/%s" % IDENT)
+    for label, image in [("v0.4.1", old), ("this build", dmg)]:
+        d = tempfile.mkdtemp(prefix="diag-")
+        mnt = os.path.join(d, "dmg")
+        run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mnt, image], stdout=subprocess.DEVNULL)
+        try:
+            run(["cp", "-R", os.path.join(mnt, "Maleficium.app"), d])
+        finally:
+            run(["hdiutil", "detach", mnt], stdout=subprocess.DEVNULL)
+        exe = os.path.join(d, "Maleficium.app/Contents/MacOS", main)
+        shutil.rmtree(events_dir, ignore_errors=True)  # a first launch, as on a new Mac
+        say("=== %s: exec %s" % (label, exe))
+        log = tempfile.TemporaryFile()
+        p = subprocess.Popen([exe], stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        time.sleep(40)
+        say("%s alive after 40s: %s" % (label, p.poll() is None))
+        sh("pgrep -fl Maleficium.app; ps -o pid,ppid,stat,etime,command -g %d" % p.pid)
+        sh("sample %d 2 -mayDie 2>&1 | sed -n '/Call graph/,/Total number in stack/p' | head -80" % p.pid)
+        sh("tail -c 4000 '%s/maleficium-log/events.jsonl'" % events_dir)
+        sh("pkill -9 -f '%s'" % d)
+        try:
             stop(p)
-            log.seek(0)
-            say("%s output: %s" % (how, log.read().decode(errors="replace")[-1500:]))
-        sh("log show --last 2m --style compact --predicate 'process IN {\"syspolicyd\",\"amfid\",\"XprotectService\",\"kernel\"} AND (eventMessage CONTAINS[c] \"maleficium\" OR eventMessage CONTAINS[c] \"quarantine\" OR eventMessage CONTAINS[c] \"gatekeeper\")' | tail -60")
-
-    attempt("gatekeeper as found")
-    sh("sudo spctl --global-enable || sudo spctl --master-enable; spctl --status")
-    attempt("gatekeeper enabled")
-    sh("sudo spctl --global-disable || sudo spctl --master-disable; spctl --status")
+        except OSError:
+            pass
+        log.seek(0)
+        say("%s output: %s" % (label, log.read().decode(errors="replace")[-3000:]))
 
 
 # DLLs a fresh Windows 10+ has in System32, plus the API sets (api-ms-win-*, which
