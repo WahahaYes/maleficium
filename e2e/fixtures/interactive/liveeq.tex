@@ -1,0 +1,14 @@
+\documentclass{article}
+\usepackage{maleficium-interactive}
+\begin{document}
+% A live equation records itself, its params and its results after it.
+\begin{liveequation}[id=eq-decay, alt={Exponential decay with a live rate k}]
+  N(t) = N_0 e^{-\maleficiumparam{k}{0.5}[0,2,0.05]\, t},
+  \qquad N(3) = \liveresult[digits=1]{100*exp(-3*k)}
+  \label{eq:decay}
+\end{liveequation}
+% A result may come before its param; ln(x) is undefined at x=0, a warning.
+\begin{liveequation*}
+  y = \liveresult{ln(x)} \quad\mbox{at}\quad x = \maleficiumparam{x}{1}[0,10,1]
+\end{liveequation*}
+\end{document}
