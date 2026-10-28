@@ -16,7 +16,7 @@
 \begin{abstract}
 One source that compiles to a PDF today and is meant to become an
 interactive HTML paper later. Every widget macro the package offers
-appears at least once, beside plain figures, subfigures, math,
+appears at least once, beside live equations, plain figures, subfigures, math,
 citations that preview their reference on hover, cross-references, and
 theorems whose proofs fold away in the HTML paper.
 \end{abstract}
@@ -204,6 +204,26 @@ Lemma~\ref{lem:gibbs} with the uniform $q_i = 1/n$ gives
 $H(X) \le -\sum_i p_i \log \tfrac{1}{n} = \log n$.
 \end{proof}
 
+\subsection{Live equations}
+A \verb|liveequation| is an equation whose parameters the reader can
+change. The PDF shows the values at their defaults; the HTML paper puts a
+slider and a number box under the equation and recomputes each result.
+Equation~\eqref{eq:binary-entropy} is Definition~\ref{def:entropy} for two
+outcomes with probabilities $p$ and $1-p$, in bits.
+\begin{liveequation}[id=eq-binary-entropy,
+    alt={Binary entropy in bits at a probability p the reader can change}]
+  H_2(\maleficiumparam{p}{0.25}[0.01,0.99,0.01])
+    = \liveresult[digits=3]{-(p*ln(p) + (1-p)*ln(1-p))/ln(2)}\ \text{bits}
+  \label{eq:binary-entropy}
+\end{liveequation}
+A result may come before the parameters it uses, a parameter may be
+shown again, and \verb|liveequation*| is unnumbered:
+\begin{liveequation*}[id=eq-parabola, alt={A parabola y = a x squared with live a and x}]
+  y = \liveresult{a*x^2}
+    = \maleficiumparam{a}{1}[0.5,1.5,0.1] \cdot \maleficiumparam{x}{1.5}[-2,2,0.1]^2,
+  \qquad x = \maleficiumparam{x}
+\end{liveequation*}
+
 \section{What each widget does}\label{sec:guide}
 \begin{description}
 \item[Model] \verb|runtime=model@1| loads a glTF model (\texttt{.glb}) for orbiting
@@ -219,6 +239,10 @@ $H(X) \le -\sum_i p_i \log \tfrac{1}{n} = \log n$.
   (Figures~\ref{fig:plotly-tradeoff} and~\ref{fig:plotly-latency}).
 \item[HTML] \verb|\interactive| embeds a folder with an \texttt{index.html} in a
   sandboxed frame (Figure~\ref{fig:html}).
+\item[Live equation] \verb|liveequation| with \verb|\maleficiumparam{name}{default}[min,max,step]|
+  and \verb|\liveresult[digits=n]{formula}|: the PDF typesets the values at the
+  defaults, the HTML paper lets the reader change them
+  (Equation~\eqref{eq:binary-entropy}).
 \end{description}
 Every widget requires \texttt{alt=} text, which becomes the image
 description in the HTML view. The app renders the PDF's picture of a

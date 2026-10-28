@@ -3,9 +3,10 @@
 # copies the interactive package into a scratch copy of
 # e2e/fixtures/playground/, compiles main.tex, and asserts both that the PDF
 # builds cleanly (bibliography resolved, no undefined references) and that
-# the MCP `widgets` tool lists every widget the paper declares. Then exports
+# the MCP `widgets` tool lists every widget the paper declares and the
+# sidecar its live equations. Then exports
 # the single-file bundle and drives its article (folding proofs, citation
-# cards) in Chromium, Firefox and WebKit with e2e/article-run.mjs, and its
+# cards, live equations) in Chromium, Firefox and WebKit with e2e/article-run.mjs, and its
 # frame under the app window's CSP with e2e/article-frame-run.mjs.
 set -euo pipefail
 
@@ -123,6 +124,8 @@ EXPECT = {  # id: (type, runtime, label)
     "fig-pair-b": ("chart", "chart@1", ""),
 }
 check("sidecar lists every widget", {w[1] for w in rows} == set(EXPECT), str([w[1] for w in rows]))
+leqs = [l.split("|")[1] for l in lines if l.startswith("liveeq|")]
+check("sidecar records the live equations", leqs == ["eq-binary-entropy", "eq-parabola"], str(leqs))
 by_id = {w[1]: w for w in rows}
 # A built-in with no package hook is recorded custom and listed as itself.
 src = os.path.join(os.environ["DEVROOT"], "embed-runtime/src")
