@@ -2777,6 +2777,10 @@ fn live_equations_reach_the_article_and_the_manifest() {
         !html.contains("mfwleq"),
         "no binding macro left in an alttext"
     );
+    assert!(
+        html.contains("var mfwExpr="),
+        "the page carries the formula interpreter"
+    );
 
     let m = manifest_of(Path::new(&d));
     validate_manifest(&m).unwrap();
@@ -2807,8 +2811,14 @@ fn live_equations_reach_the_article_and_the_manifest() {
 
 #[test]
 fn a_document_without_live_equations_has_no_equations_field() {
-    let m = good_manifest("liveeq-none");
-    assert!(m.get("equations").is_none());
+    let p = project("liveeq-none", REAL_SIDECAR);
+    let d = dest(&p, "m");
+    export(&p, &d, BundleProfile::Folder).unwrap();
+    assert!(manifest_of(Path::new(&d)).get("equations").is_none());
+    assert!(
+        !reader_html(&d, BundleProfile::Folder).contains("var mfwExpr="),
+        "nor the interpreter"
+    );
 }
 
 #[test]

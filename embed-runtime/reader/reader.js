@@ -853,3 +853,122 @@
   window.addEventListener('resize', spy);
   spy();
 })();
+
+// Live equations (manifest.equations): under each one, a slider and a
+// number box per param and a reset. Moving one rewrites the param's tokens
+// and recomputes every result in the equation's MathML in place, with the
+// formula interpreter the page carries as mfwExpr (embed-runtime/src/
+// expr.ts: data, never eval). The article holds the PDF's values, so with
+// scripts off it reads as the PDF does.
+(function () {
+  'use strict';
+  var expr = window.mfwExpr;
+  var el = document.getElementById('mfw-manifest');
+  var manifest;
+  try {
+    manifest = el ? JSON.parse(el.textContent) : {};
+  } catch (_) {
+    manifest = {};
+  }
+  var eqs = Array.isArray(manifest.equations) ? manifest.equations : [];
+  if (!expr || !eqs.length) return;
+  function shown(v, places) {
+    var s = expr.format(v, places);
+    return s === null ? '?' : s.replace(/^-/, '−');
+  }
+  eqs.forEach(function (eq) {
+    var math = document.querySelector('math.m-liveeq-' + eq.id);
+    if (!math || !Array.isArray(eq.params) || !eq.params.length) return;
+    var names = eq.params.map(function (p) {
+      return p.name;
+    });
+    var results = (eq.results || []).map(function (r) {
+      var p = expr.parse(String(r.formula), names);
+      return { n: r.n, places: r.places, expr: p.ok ? p.expr : null };
+    });
+    var values = {};
+    eq.params.forEach(function (p) {
+      values[p.name] = p.default;
+    });
+    var controls = document.createElement('div');
+    controls.className = 'm-liveeq-controls';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute(
+      'aria-label',
+      eq.alt || (eq.number ? 'Equation (' + eq.number + ')' : 'Live equation'),
+    );
+    var live = document.createElement('p');
+    live.className = 'm-liveeq-live';
+    live.setAttribute('aria-live', 'polite');
+    var inputs = {};
+    function update(announce) {
+      eq.params.forEach(function (p) {
+        var text = shown(values[p.name], p.places);
+        Array.prototype.forEach.call(math.querySelectorAll('.m-param-' + p.name), function (t) {
+          t.textContent = text;
+        });
+        inputs[p.name].range.value = String(values[p.name]);
+        inputs[p.name].number.value = String(values[p.name]);
+      });
+      var said = [];
+      results.forEach(function (r) {
+        if (!r.expr) return;
+        var text = shown(expr.evaluate(r.expr, values), r.places);
+        Array.prototype.forEach.call(math.querySelectorAll('.m-result-' + r.n), function (t) {
+          t.textContent = text;
+        });
+        said.push(text);
+      });
+      if (announce) live.textContent = said.join(', ');
+    }
+    eq.params.forEach(function (p) {
+      var row = document.createElement('label');
+      row.className = 'm-liveeq-param';
+      var name = document.createElement('span');
+      name.className = 'm-liveeq-name';
+      name.textContent = p.name;
+      var range = document.createElement('input');
+      range.type = 'range';
+      var number = document.createElement('input');
+      number.type = 'number';
+      [range, number].forEach(function (i) {
+        i.min = String(p.min);
+        i.max = String(p.max);
+        i.step = String(p.step);
+        i.value = String(p.default);
+      });
+      range.setAttribute('aria-label', p.name);
+      number.setAttribute('aria-label', p.name + ' value');
+      range.addEventListener('input', function () {
+        values[p.name] = Number(range.value);
+        update(true);
+      });
+      number.addEventListener('change', function () {
+        var v = Number(number.value);
+        if (number.value !== '' && isFinite(v))
+          values[p.name] = Math.min(p.max, Math.max(p.min, v));
+        update(true);
+      });
+      inputs[p.name] = { range: range, number: number };
+      row.appendChild(name);
+      row.appendChild(range);
+      row.appendChild(number);
+      controls.appendChild(row);
+    });
+    var reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'm-liveeq-reset';
+    reset.textContent = 'Reset';
+    reset.addEventListener('click', function () {
+      eq.params.forEach(function (p) {
+        values[p.name] = p.default;
+      });
+      update(true);
+    });
+    controls.appendChild(reset);
+    controls.appendChild(live);
+    var host = math.closest('table.ltx_equation') || math;
+    host.parentNode.insertBefore(controls, host.nextSibling);
+    update(false);
+  });
+})();

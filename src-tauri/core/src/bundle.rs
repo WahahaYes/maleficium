@@ -2377,6 +2377,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                equations: !equations.is_empty(),
                 plates: &plates,
             });
             std::fs::write(&stage, html.as_bytes())
@@ -2465,6 +2466,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                equations: !equations.is_empty(),
                 plates: &plates,
             });
             put(&stage, "index.html", html.as_bytes(), &mut total)?;
