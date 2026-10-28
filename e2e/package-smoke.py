@@ -13,8 +13,9 @@ The one smoke path for every OS. Only installing is per OS:
            the probes below then run with Homebrew and the developer tools
            moved out of sight, as on a Mac that never had them
   Windows: silent NSIS install; check the installed binaries, that every exe
-           and dll imports only system DLLs or ones in the install (no Visual
-           C++ runtime), and run the probes with only System32 on PATH
+           and dll imports (or delay-loads) only system DLLs or ones in the
+           install (no Visual C++ runtime), and run the probes with only
+           System32 on PATH and the runner's Visual C++ runtime renamed aside
 Then the same checks everywhere:
   1. the installed MCP server, as maleficium-mcp and as the app's --mcp,
      names itself, compiles a page with its bundled engine, and answers a
@@ -516,7 +517,9 @@ WINDOWS_SYSTEM = {
 
 
 def pe_imports(path):
-    """The DLL names a PE file imports, lowercased, from its import table."""
+    """The DLL names a PE file imports, lowercased, from its import table and its
+    delay-load table (a delay-loaded DLL missing on a clean machine fails only when
+    first called, so a launch probe can miss it)."""
     import struct
 
     with open(path, "rb") as f:
@@ -531,6 +534,8 @@ def pe_imports(path):
         fail("%s is not a PE file" % path)
     dirs = 96 if magic == 0x10B else 112  # offset of the data directories
     import_rva = struct.unpack_from("<I", data, opt + dirs + 8)[0]  # data directory 1: imports
+    delay_rva = struct.unpack_from("<I", data, opt + dirs + 13 * 8)[0]  # 13: delay-load imports
+    image_base = struct.unpack_from("<I", data, opt + 28)[0] if magic == 0x10B else struct.unpack_from("<Q", data, opt + 24)[0]
     sections = [struct.unpack_from("<IIII", data, opt + optsize + i * 40 + 8) for i in range(nsections)]
 
     def offset(rva):
@@ -539,14 +544,21 @@ def pe_imports(path):
                 return rawptr + rva - vaddr
         fail("%s: rva %#x is in no section" % (path, rva))
 
-    names, at = set(), offset(import_rva)
-    while True:
-        entry = struct.unpack_from("<IIIII", data, at)
-        if not any(entry):
-            return names
-        name = offset(entry[3])
-        names.add(data[name : data.index(b"\0", name)].decode("ascii").lower())
-        at += 20
+    def table(rva, size, name_at):
+        """The DLL names in a table of `size`-byte descriptors ending in an all-zero one."""
+        at = offset(rva) if rva else None
+        while at is not None:
+            entry = struct.unpack_from("<%dI" % (size // 4), data, at)
+            if not any(entry):
+                return
+            name_rva = entry[name_at]
+            if size == 32 and not entry[0] & 1:  # an old-style delay descriptor holds VAs
+                name_rva -= image_base
+            name = offset(name_rva)
+            yield data[name : data.index(b"\0", name)].decode("ascii").lower()
+            at += size
+
+    return set(table(import_rva, 20, 3)) | set(table(delay_rva, 32, 1))
 
 
 def windows_dependencies(dest):
@@ -562,8 +574,53 @@ def windows_dependencies(dest):
         )
         if bad:
             found[os.path.relpath(f, dest)] = bad
-    say("system DLLs imported: " + " ".join(sorted(d for d in seen if not d.startswith("api-ms-win-"))))
+    say("system DLLs imported (and delay-loaded): " + " ".join(sorted(d for d in seen if not d.startswith("api-ms-win-"))))
     return dependency_report(found, len(shipped), "Windows system DLLs or ones in the install")
+
+
+# The Visual C++ runtime's DLL names (all versions 14.x share the 140 suffix). The
+# *_clr0400.dll copies are the .NET Framework's own, part of every Windows: kept.
+VC_RUNTIME = ["vcruntime140*.dll", "msvcp140*.dll", "concrt140*.dll", "vccorlib140*.dll", "vcomp140*.dll", "vcamp140*.dll", "mfc140*.dll"]
+
+
+@contextlib.contextmanager
+def windows_hidden_runtime():
+    """Rename the Visual C++ runtime in System32 and SysWOW64 aside for the probes. A
+    fresh Windows has none of it; CI runners do, so a binary that loads it at run time
+    (not through its import table) passes there and fails for users. The files are
+    TrustedInstaller's: take them over, then give back their owner and ACL in the
+    finally (owner first, while the grant still allows it). A DLL already loaded can
+    still be renamed."""
+    root = os.environ.get("SystemRoot", r"C:\Windows")
+    dirs = [os.path.join(root, d) for d in ("System32", "SysWOW64")]
+    found = lambda: sorted(
+        f for d in dirs for g in VC_RUNTIME for f in glob.glob(os.path.join(d, g)) if not f.lower().endswith("_clr0400.dll")
+    )
+    acls = tempfile.mkdtemp(prefix="smoke-acl-")
+    moved = []
+    try:
+        for f in found():
+            acl = os.path.join(acls, "%d.acl" % len(moved))
+            run(["icacls", f, "/save", acl], stdout=subprocess.DEVNULL)
+            run(["takeown", "/f", f, "/a"], stdout=subprocess.DEVNULL)
+            run(["icacls", f, "/grant", "*S-1-5-32-544:F"], stdout=subprocess.DEVNULL)  # Administrators
+            os.rename(f, f + ".smoke-hidden")
+            moved.append((f, acl))
+        if found():
+            fail("could not hide %s" % found())
+        say("hid the Visual C++ runtime: %s" % (" ".join(os.path.relpath(f, root) for f, _ in moved) or "nothing (none present)"))
+        yield
+    finally:
+        unrestored = []
+        for f, acl in moved:
+            try:
+                os.rename(f + ".smoke-hidden", f)
+                run(["icacls", f, "/setowner", "NT SERVICE\\TrustedInstaller"], stdout=subprocess.DEVNULL)
+                run(["icacls", os.path.dirname(f), "/restore", acl], stdout=subprocess.DEVNULL)
+            except (OSError, subprocess.CalledProcessError) as e:
+                unrestored.append("%s (%s)" % (f, e))
+        if unrestored:
+            fail("could not restore %s" % "; ".join(unrestored))
 
 
 def windows(dir):
@@ -585,7 +642,8 @@ def windows(dir):
         compile_probe([os.path.join(dest, "Maleficium.exe"), "--mcp"], os.path.join(dest, "..", "smoke-doc-app"), env=env)
         launch("app", [os.path.join(dest, "Maleficium.exe")], events=events, env=env)
 
-    probes_then_leaks(deps, probes)
+    with windows_hidden_runtime():
+        probes_then_leaks(deps, probes)
 
 
 def main():
