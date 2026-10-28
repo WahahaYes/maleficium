@@ -437,26 +437,29 @@ def macos_dependencies(app):
 @contextlib.contextmanager
 def macos_hidden_tooling():
     """Yield an env for the probes, with what a clean Mac lacks moved aside: Homebrew
-    (/opt/homebrew on Apple silicon; its libraries under /usr/local on Intel) and the
-    Xcode/Command Line Tools (DEVELOPER_DIR points at an empty directory). CI runners
-    have all of it, so a binary that leans on any of it passes there and fails for
-    users. The paths come back in the finally."""
-    if platform.machine() == "arm64":
-        paths = ["/opt/homebrew"]
-    else:
-        paths = ["/usr/local/" + d for d in ("lib", "opt", "Cellar")]
+    (/opt/homebrew on Apple silicon; its libraries under /usr/local on both), every
+    Xcode in /Applications and the Command Line Tools, so `xcode-select -p` fails as
+    it does on a Mac that never had them. CI runners have all of it, so a binary that
+    leans on any of it passes there and fails for users. The paths come back in the
+    finally."""
+    paths = ["/opt/homebrew"] + ["/usr/local/" + d for d in ("lib", "opt", "Cellar")]
+    paths += sorted(glob.glob("/Applications/Xcode*.app")) + ["/Library/Developer/CommandLineTools"]
     moved = []
     try:
         for p in paths:
-            if os.path.exists(p):
+            if os.path.lexists(p):
                 run(["sudo", "mv", p, p + ".smoke-hidden"])
                 moved.append(p)
-        still = [p for p in paths if os.path.exists(p)]
+        still = [p for p in paths if os.path.lexists(p)]
         if still:
             fail("could not hide %s" % still)
-        say("hid %s and the developer tools" % (", ".join(moved) or "nothing (none present)"))
-        env = dict(os.environ, DEVELOPER_DIR=tempfile.mkdtemp(prefix="no-devtools-"))
+        env = dict(os.environ)
+        env.pop("DEVELOPER_DIR", None)
         env["PATH"] = ":".join(d for d in env["PATH"].split(":") if not d.startswith(("/opt/homebrew", "/usr/local")))
+        dev = subprocess.run(["xcode-select", "-p"], capture_output=True, text=True, env=env)
+        if dev.returncode == 0:
+            fail("developer tools still found at %s" % dev.stdout.strip())
+        say("hid %s; xcode-select -p fails" % (", ".join(moved) or "nothing (none present)"))
         yield env
     finally:
         for p in moved:
