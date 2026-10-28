@@ -521,7 +521,11 @@ def macos_downloaded(dmg, t, main, env):
         finally:
             run(["hdiutil", "detach", mnt], stdout=subprocess.DEVNULL)
         exe = os.path.join(d, "Maleficium.app/Contents/MacOS", main)
-        shutil.rmtree(events_dir, ignore_errors=True)  # a first launch, as on a new Mac
+        # a first launch, as on a new Mac: app data, the webview's storage (recents), caches
+        for sub in ["Application Support", "WebKit", "Caches", "HTTPStorages", "Saved Application State"]:
+            for path in glob.glob(os.path.expanduser("~/Library/%s/%s*" % (sub, IDENT))):
+                shutil.rmtree(path, ignore_errors=True)
+        sh("ls -d ~/Library/*/%s* 2>&1" % IDENT)
         say("=== %s: exec %s" % (label, exe))
         log = tempfile.TemporaryFile()
         p = subprocess.Popen([exe], stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
