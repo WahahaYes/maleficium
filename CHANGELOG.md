@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changes
+
+- **Live equations.** `\begin{liveequation}...\end{liveequation}` is an equation whose numbers a reader can change. `\maleficiumparam{k}{0.5}[0,2,0.05]` declares a param with its default and range, and `\liveresult[digits=1]{100*exp(-3*k)}` typesets a formula's value. The PDF shows the values at the defaults; the exported paper puts a slider and a number box under the equation and recomputes the results in place, or with `mode=widget` runs the equation in a frame of its own. Formulas are arithmetic TeX evaluates too, so the PDF needs nothing else. The compile refuses a formula the language does not allow and warns when a result is undefined somewhere in a param's range or outgrows its printed value. See [Live equations](docs/INTERACTIVE-PAPERS.md#live-equations); the playground paper shows both kinds.
+
+### For contributors
+
+- **One formula language, three evaluators.** `embed-runtime/src/expr.ts` (the reader and the `liveeq@1` widget), the package's `l3fp` path and the app's sidecar check (`core/src/liveeq.rs`) are held to the shared cases in `embed-runtime/src/expr.vectors.json`: vitest and the Rust tests run them, and `e2e/liveeq-run.sh`, a new `ci-e2e.sh` suite, runs them through `l3fp` in one compile. The bundle manifest gains an optional `equations` list (schema `paper-bundle-2`), and the reader inlines the interpreter only when a paper has live equations.
+
 ## 0.4.2 - 2026-10-25
 
 ### Changes
