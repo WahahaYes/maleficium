@@ -49,10 +49,11 @@ describe('committed widget runtimes', () => {
     ).toBe(true);
   }, 60_000);
 
-  // The `model@1` fork the scaffold writes (vendored three.js with its
-  // licence, and the viewer as a classic script over it), and the reader's
-  // formula interpreter.
+  // Committed outputs that are not widget runtimes, each against a fresh
+  // build of its mode.
   it.each([
+    // The `model@1` fork the scaffold writes: vendored three.js with its
+    // licence, and the viewer as a classic script over it.
     ['fork-three', 'three.js', 'model-fork/vendor/three/three.js'],
     ['fork-three', 'LICENSE', 'model-fork/vendor/three/LICENSE'],
     ['fork-viewer', 'viewer.js', 'model-fork/viewer.js'],
