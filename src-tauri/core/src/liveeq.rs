@@ -69,6 +69,48 @@ pub struct LiveResult {
     pub formula: String,
 }
 
+impl Equation {
+    /// The bundle manifest's `equations` entry (schema `$defs/equation`).
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut e = serde_json::Map::new();
+        e.insert("id".into(), self.id.clone().into());
+        for (k, v) in [
+            ("label", &self.label),
+            ("number", &self.number),
+            ("alt", &self.alt),
+        ] {
+            if let Some(v) = v {
+                e.insert(k.into(), v.clone().into());
+            }
+        }
+        let mode = match self.mode {
+            Mode::Inline => "inline",
+            Mode::Widget => "widget",
+        };
+        e.insert("mode".into(), mode.into());
+        e.insert(
+            "params".into(),
+            self.params
+                .iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "name": p.name, "default": p.default, "min": p.min, "max": p.max,
+                        "step": p.step, "places": p.places,
+                    })
+                })
+                .collect(),
+        );
+        e.insert(
+            "results".into(),
+            self.results
+                .iter()
+                .map(|r| serde_json::json!({ "n": r.n, "places": r.places, "formula": r.formula }))
+                .collect(),
+        );
+        e.into()
+    }
+}
+
 /// Most decimals a param or result may show.
 pub const MAX_PLACES: u32 = 99;
 
