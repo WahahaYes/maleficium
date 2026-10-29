@@ -1142,3 +1142,77 @@ body.m-reader {
     display: none;
   }
 }
+
+/* Live equations: the controls under an inline one (reader.js), and the
+   frame of a mode=widget one, whose poster is the equation itself: the
+   frame takes the equation's height until the widget reports its own. */
+.m-reader figure.m-liveeq-widget {
+  margin: var(--m-space-3) 0;
+}
+.m-reader figure.m-liveeq-widget .frame {
+  width: 100%;
+  aspect-ratio: auto;
+}
+.m-reader figure.m-liveeq-widget .frame .poster {
+  background: none;
+}
+.m-liveeq-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-space-2) var(--m-space-3);
+  margin: calc(-1 * var(--m-space-2)) 0 var(--m-space-3);
+  padding: var(--m-space-2) var(--m-space-3);
+  background: var(--m-color-surface);
+  border-radius: var(--m-radius);
+  font-size: var(--m-size-small);
+}
+.m-liveeq-param {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-space-2);
+}
+.m-liveeq-name {
+  font-family: var(--m-font-math);
+  font-style: italic;
+}
+.m-liveeq-param input[type='range'] {
+  accent-color: var(--m-color-accent);
+  width: min(12rem, 40vw);
+}
+.m-liveeq-param input[type='number'] {
+  width: 5.5em;
+  font: inherit;
+  color: var(--m-color-text);
+  background: var(--m-color-bg);
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  padding: 0 var(--m-space-1);
+}
+.m-liveeq-reset {
+  font: inherit;
+  color: var(--m-color-link);
+  background: none;
+  border: 1px solid var(--m-color-rule);
+  border-radius: var(--m-radius);
+  padding: 0 var(--m-space-2);
+  cursor: pointer;
+}
+.m-liveeq-reset:focus-visible,
+.m-liveeq-param input:focus-visible {
+  outline: 2px solid var(--m-color-accent);
+  outline-offset: 2px;
+}
+.m-liveeq-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media print {
+  .m-liveeq-controls {
+    display: none;
+  }
+}

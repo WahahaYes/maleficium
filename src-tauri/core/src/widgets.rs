@@ -270,7 +270,7 @@ fn opt(s: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     let b = id.as_bytes();
     let edge = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
     !b.is_empty()
@@ -342,11 +342,13 @@ fn check_custom(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-/// A parsed sidecar: the widget records in document order, and the theme
-/// the package recorded (None from a sidecar without theme lines).
+/// A parsed sidecar: the widget records and the live equations in document
+/// order, and the theme the package recorded (None from a sidecar without
+/// theme lines).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sidecar {
     pub records: Vec<Record>,
+    pub equations: Vec<crate::liveeq::Equation>,
     pub theme: Option<crate::theme::Theme>,
 }
 
@@ -362,6 +364,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         }
     }
     let mut out: Vec<Record> = Vec::new();
+    let mut equations = Vec::new();
     let mut theme = crate::theme::Lines::default();
     let mut style: Option<String> = None;
     for (n, line) in lines.enumerate() {
@@ -370,6 +373,10 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             continue;
         }
         let f: Vec<&str> = line.split('|').collect();
+        if crate::liveeq::is_record(f[0]) {
+            crate::liveeq::add_record(&mut equations, n, line)?;
+            continue;
+        }
         if f[0] == "theme" {
             theme.add(n, &f[1..])?;
             continue;
@@ -546,8 +553,11 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
         }
         (None, None) => None,
     };
+    let ids: Vec<&str> = out.iter().map(|r| r.id.as_str()).collect();
+    crate::liveeq::check_all(&equations, &ids)?;
     Ok(Sidecar {
         records: out,
+        equations,
         theme,
     })
 }

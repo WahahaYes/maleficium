@@ -23,6 +23,21 @@ Each needs `alt=` text. The package's header comments show their options by exam
 
 A Plotly figure takes the paper's style in both colour modes: backdrop, ink, font, palette and colour scales replace its template. That includes the template colours Plotly Express copies into each trace. What you set yourself in Python wins, such as `color_discrete_sequence=[...]` or `fig.update_layout(font_family=...)`. `template=figure` keeps the figure's own template, so it looks as it did in Python, in both modes. The playground paper (`e2e/fixtures/playground`, or `sh scripts/playground.sh`) shows both.
 
+## Live equations
+
+A `liveequation` is a display equation whose numbers a reader can change:
+
+```latex
+\begin{liveequation}[id=eq-decay, alt={Exponential decay with a live rate k}]
+  N(3) = \liveresult[digits=1]{100*exp(-3*k)}
+  \quad\text{at}\quad k = \maleficiumparam{k}{0.5}[0,2,0.05]
+\end{liveequation}
+```
+
+`\maleficiumparam{k}{0.5}[0,2,0.05]` declares `k` with its default, minimum, maximum and step, and typesets the default; `\maleficiumparam{k}` typesets it again. `\liveresult[digits=1]{...}` typesets a formula's value with that many decimals (2 when not given). The PDF shows the values at the defaults. The exported paper puts a slider and a number box for each param under the equation and recomputes the results as they move. `liveequation*` is unnumbered. With `mode=widget` the equation runs in a frame of its own on the figure plate instead of in the text.
+
+Formulas are arithmetic that TeX also evaluates, so the PDF needs nothing beyond the package: numbers, the equation's params, `pi`, `+ - * / ^`, comparisons, `&& || !`, `? :` and `abs exp ln sqrt sin cos tan asin acos atan floor ceil trunc sign round min max`. Write `*` between factors (`2*k`, not `2k`). A formula the language refuses, or a default outside its range, fails the compile. The compile warns when a result is undefined somewhere in a param's range (`ln(x)` at `x = 0`) or needs more room there than its static value; raise `digits=` or narrow the range.
+
 ## Posters
 
 In the PDF, each widget is a still poster. Give one with `poster=`, or let Maleficium render it when you compile (models, charts, and HTML widgets). A video needs `poster=` or `at=`: `\interactiveruntime[runtime=video@1, at=2.5, alt={...}]{media/clip.mp4}` makes the frame 2.5 seconds in its poster, and the live video starts there too. A frame that renders blank is refused and leaves a placeholder; H.264 MP4 renders on every platform.

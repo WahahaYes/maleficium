@@ -5,7 +5,9 @@
 # PDF annotations, the table row cap, porcelain discipline, and the failing
 # documents (bad ids, files, alt, unknown options, misplaced or malformed
 # poster parameters, every \interactiveruntime error), the custom runtime
-# widget's sidecar line and the options built-in macros pass through.
+# widget's sidecar line, the options built-in macros pass through, and live
+# equations (their records, range warnings, errors, and a formula only the
+# widget list refuses).
 # The table row text checks need `mutool` and print skip: without it.
 # POLL_ROUNDS bounds polling.
 set -euo pipefail
@@ -228,6 +230,13 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-runtime-comma.tex", "character `,' is not allowed in color"),
                       ("bad-runtime-comma-path.tex", "character `,' is not allowed in tex"),
                       ("bad-runtime-bar.tex", "character `|' is not allowed"),
+                      # Live equations: one document per .sty message.
+                      ("bad-liveeq-implicit.tex", "implicit multiplication is not allowed in `2k'"),
+                      ("bad-liveeq-name.tex", "unknown name 'q' in `q+1'"),
+                      ("bad-liveeq-range.tex", "default 3 is outside [0,2]"),
+                      ("bad-liveeq-noparam.tex", "declares no param"),
+                      ("bad-liveeq-outside.tex", "\\liveresult is only allowed inside liveequation"),
+                      ("bad-liveeq-undefined.tex", "is undefined at the defaults: `ln(k)'"),
                       # Reader flags: one document per .sty message.
                       ("bad-contents.tex", "Contents flag `sideways' must be on or off"),
                       ("bad-measure.tex", "Measure flag `huge' must be narrow, default, wide or full")]:
@@ -236,6 +245,39 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
     check(f"{bad_doc} fails", fr.get("status") == "failed", str(fr)[:200])
     check(f"{bad_doc} names the cause", want in flog, flog[:300])
     check(f"{bad_doc} writes no pdf", not fr.get("pdf_url"), str(fr.get("pdf_url")))
+
+# A live equation compiles to its values at the defaults and records itself,
+# its params and its results; a result undefined somewhere in a param's
+# range warns. The widget list reads the records with the widgets.
+# The first documents with math: a TeX cache that predates them fetches the
+# math fonts online here, so they get the full poll budget.
+lr = compile("liveeq.tex")
+check("live equation document compiles", lr.get("status") == "success", str(lr)[:200])
+lmfw = os.path.join(os.path.dirname(lr.get("pdf_url") or ""), "liveeq.mfw")
+llines = open(lmfw).read().splitlines() if os.path.isfile(lmfw) else []
+check("live equation sidecar lines are exact",
+      [l for l in llines if l.split("|")[0] in ("liveeq", "param", "result")] == [
+          "liveeq|eq-decay|eq:decay|1|inline|Exponential decay with a live rate k",
+          "param|eq-decay|k|0.5|0|2|0.05|2|0.50",
+          "result|eq-decay|1|1|22.3|100*exp(-3*k)",
+          "liveeq|eq-2|||inline|",
+          "param|eq-2|x|1|0|10|1|0|1",
+          "result|eq-2|1|2|0.00|ln(x)"],
+      str(llines)[:400])
+# Warnings are read from the TeX log beside the sidecar: the poll returns
+# only the tail.
+ltex = os.path.join(os.path.dirname(lmfw), "liveeq.log")
+llog = open(ltex, errors="replace").read() if os.path.isfile(ltex) else ""
+check("a result undefined in its range warns", "result 1 of eq-2 is undefined at x = 0" in llog, ltex)
+check("a result that outgrows its static value warns",
+      "result 1 of eq-decay shows 100.0" in llog, ltex)
+lw = call("widgets", {"root_id": "ip", "main_rel": "liveeq.tex"})
+check("the widget list reads live equation records", lw["ok"], str(lw)[:300])
+cr = compile("liveeq-chained.tex")
+check("a formula only the app refuses still compiles", cr.get("status") == "success", str(cr)[:200])
+cw = call("widgets", {"root_id": "ip", "main_rel": "liveeq-chained.tex"})
+check("the widget list refuses it, naming why",
+      not cw["ok"] and "chained comparisons are not allowed" in cw.get("error", ""), str(cw)[:300])
 
 pr = compile("plain.tex", rounds=20)
 check("package-free document compiles", pr.get("status") == "success", str(pr)[:200])

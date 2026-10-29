@@ -76,6 +76,24 @@ export default defineConfig(({ mode }) => {
       },
     };
   }
+  // The live-equation formula interpreter the reader page inlines when a
+  // paper has live equations: expr.ts as one classic script, committed so
+  // the exporter can include it.
+  if (mode === 'expr') {
+    return {
+      build: {
+        outDir: 'embed-runtime/built/expr',
+        emptyOutDir: true,
+        target: 'es2020',
+        lib: {
+          entry: 'embed-runtime/src/expr.ts',
+          formats: ['iife'],
+          name: 'mfwExpr',
+          fileName: () => 'expr.js',
+        },
+      },
+    };
+  }
   // A `model@1` fork (the scaffold's `from: model@1`): three.js as a
   // vendored classic script with its licence, and the viewer as a readable
   // classic script over it and the bridge, both committed for the scaffold.
@@ -116,7 +134,10 @@ export default defineConfig(({ mode }) => {
       },
     };
   }
-  const runtime = process.env.RUNTIME ?? (RUNTIMES.includes(mode) ? mode : 'table');
+  // liveeq has no runtime.json: the reader mounts it for mode=widget
+  // equations, and no author places it as a widget.
+  const runtime =
+    process.env.RUNTIME ?? (RUNTIMES.includes(mode) || mode === 'liveeq' ? mode : 'table');
   return {
     root: `embed-runtime/src/${runtime}`,
     plugins: [viteSingleFile(), ...(CLASSIC.includes(runtime) ? [classicScript()] : [])],

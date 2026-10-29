@@ -118,6 +118,12 @@ static OTF_MISSING: LazyLock<Regex> = LazyLock::new(|| {
     )
     .unwrap()
 });
+/// xdvipdfmx's miss of the glyph file behind a font TeX already measured:
+/// `warning: >> Please check if kpathsea library can find this font: cmmi10.pfb`.
+/// TeX succeeded, so only the PDF stage names the file.
+static GLYPHS_MISSING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^warning: >> Please check if kpathsea library can find this font: (\S+)$").unwrap()
+});
 static FONT_MISSING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^error: .*Package fontspec Error: The font "([^"]+)" cannot be found"#).unwrap()
 });
@@ -243,8 +249,8 @@ fn first(lines: &[&str], re: &Regex) -> Option<String> {
         .find_map(|l| re.captures(l).map(|m| m[1].to_string()))
 }
 
-/// The font file a font miss names: a TFM, or a font file fontspec loaded
-/// by name. TeX wraps its lines at 79 columns, so a line is also read joined
+/// The font file a font miss names: a TFM, a font file fontspec loaded by
+/// name, or the glyphs xdvipdfmx could not find. TeX wraps its lines at 79 columns, so a line is also read joined
 /// to the next.
 fn missing_font(lines: &[&str]) -> Option<String> {
     let joined = lines.windows(2).map(|w| format!("{}{}", w[0], w[1]));
@@ -263,9 +269,10 @@ fn missing_font(lines: &[&str]) -> Option<String> {
             if let Some(m) = TFM_MISSING.captures(&l) {
                 return Some(with_ext(m[1].to_string(), "tfm"));
             }
-            OTF_MISSING
-                .captures(&l)
-                .map(|m| with_ext(m[1].to_string(), "otf"))
+            if let Some(m) = OTF_MISSING.captures(&l) {
+                return Some(with_ext(m[1].to_string(), "otf"));
+            }
+            GLYPHS_MISSING.captures(&l).map(|m| m[1].to_string())
         })
 }
 
@@ -371,6 +378,7 @@ mod tests {
         "fontspec.sty",
         "cmr17.tfm",
         "lmroman8-italic.otf",
+        "cmmi10.pfb",
     ];
 
     fn in_bundle(f: &str) -> bool {
@@ -480,6 +488,28 @@ error: main.tex:90: {miss}
                 "{miss}"
             );
         }
+    }
+
+    #[test]
+    fn cached_only_miss_of_bundled_glyphs_is_not_cached() {
+        let c = "note: using only cached resource files
+note: Running TeX ...
+note: Running xdvipdfmx ...
+warning: Tectonic unable to generate PK font \"cmmi10.pfb\" (dpi 600) on-the-fly
+warning: Could not locate a virtual/physical font for TFM \"cmmi10\".
+warning: >> This font is mapped to a physical font \"cmmi10.pfb\".
+warning: >> Please check if kpathsea library can find this font: cmmi10.pfb
+error: something bad happened inside xdvipdfmx; its output follows:
+
+===============================================================================
+
+===============================================================================
+error: the xdvipdfmx engine had an unrecoverable error
+caused by: Cannot proceed without .vf or \"physical\" font for PDF output...";
+        assert_eq!(
+            verdict(c, false),
+            file("cmmi10.pfb", MissingReason::NotCached)
+        );
     }
 
     #[test]
