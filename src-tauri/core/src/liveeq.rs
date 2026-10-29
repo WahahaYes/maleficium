@@ -1,18 +1,11 @@
 //! Live equations: the sidecar records `liveequation` writes, and the app's
 //! check of their formulas.
 //!
-//! The package (`maleficium-interactive.sty`, "live equations") typesets
-//! each equation at its params' defaults and records, after it:
-//!
-//! ```text
-//! liveeq|<id>|<label>|<number>|<mode>|<alt>
-//! param|<id>|<name>|<default>|<min>|<max>|<step>|<places>|<shown>
-//! result|<id>|<n>|<places>|<shown>|<formula>
-//! ```
-//!
-//! `shown` is the text the PDF typeset, which the exporter puts in the
-//! article's MathML (the converter cannot evaluate a formula). The formula
-//! comes last because `||` is one of its operators.
+//! The package (`maleficium-interactive.sty`) typesets each equation at its
+//! params' defaults and writes sidecar lines after it; its "live equations:
+//! the macros" header holds their format. Their `shown` field is the text the
+//! PDF typeset, which the exporter puts in the article's MathML (the
+//! converter cannot evaluate a formula).
 //!
 //! The formula language is the reader's (`embed-runtime/src/expr.ts`, which
 //! holds the grammar). The package refuses what `l3fp` would misread, but

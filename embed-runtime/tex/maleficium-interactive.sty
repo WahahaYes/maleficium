@@ -519,14 +519,16 @@
 \prg_generate_conditional_variant:Nnn \regex_extract_once:nnN { nV } { T }
 
 % -- live equations: the macros --------------------------------------------------
-%   \begin{liveequation}[id=eq-decay, alt={...}, mode=inline] ... \end{liveequation}
+%   \begin{liveequation}[id=<id>, alt={<text>}, mode=inline|widget] ... \end{liveequation}
 % (liveequation* is unnumbered): a display equation whose params the reader
 % can change and whose results it recomputes. The PDF shows the values at
 % the defaults. Inside it:
-%   \maleficiumparam{k}{0.5}[0,2,0.05]    declare k (default, then min, max,
-%                                         step) and typeset its default
-%   \maleficiumparam{k}                   typeset k again
-%   \liveresult[digits=1]{100*exp(-3*k)}  typeset the formula's value
+%   \maleficiumparam{<name>}{<default>}[<min>,<max>,<step>]
+%                                  declare a param and typeset its default
+%   \maleficiumparam{<name>}       typeset it again
+%   \liveresult[digits=<n>]{<formula>}
+%                                  typeset the formula's value
+% docs/INTERACTIVE-PAPERS.md has a worked example and the formula language.
 % Numbers in a declaration are plain decimals. A param shows as many
 % decimals as its default or its step has, whichever is more; a result
 % shows digits= decimals (2 when not given). id= defaults to eq-<n>.
