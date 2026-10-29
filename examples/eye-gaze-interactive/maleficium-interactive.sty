@@ -401,6 +401,483 @@
 }
 \cs_new_protected:Npn \mfw@valid@digits { \exp_args:NV \mfw_valid_digits:n \mfw@pdfrows }
 \cs_new_protected:Npn \mfw@check@nobar #1 { \exp_args:NV \mfw_nobar:n #1 }
+
+% -- live equations: the formula language --------------------------------------
+% The PDF side of the reader's interpreter (embed-runtime/src/expr.ts, which
+% holds the grammar): the same formulas, evaluated by l3fp in this compile, so
+% any LaTeX setup typesets the static values. l3fp reads more than the
+% language allows (2pi, spaces inside numbers, **, a single =) and an unknown
+% name is a cryptic l3fp error, so \mfw_leq_check:nn refuses those first.
+% Structure l3fp reads anyway (arity, chained comparisons) is the app's check.
+% The shared cases (embed-runtime/src/expr.vectors.json) run here through
+% e2e/liveeq-vectors.py.
+\str_new:N \l_mfw_leq_err_str
+\str_new:N \l_mfw_leq_shape_str
+\seq_new:N \l_mfw_leq_names_seq
+\tl_new:N \l_mfw_leq_expr_tl
+\tl_new:N \l_mfw_leq_out_tl
+\tl_new:N \l_mfw_leq_value_tl
+\tl_new:N \g_mfw_leq_tl_tl
+\tl_new:N \g_mfw_leq_dec_tl
+\tl_new:N \g_mfw_leq_raw_tl
+\tl_new:N \l_mfw_leq_int_tl
+\tl_new:N \l_mfw_leq_frac_tl
+\clist_const:Nn \c_mfw_leq_fns_clist
+  { abs, exp, ln, sqrt, sin, cos, tan, asin, acos, atan, floor, ceil, trunc, sign, round, min, max }
+\cs_new_protected:Npn \mfw_leq_fail:n #1
+  { \str_if_empty:NT \l_mfw_leq_err_str { \str_set:Nn \l_mfw_leq_err_str {#1} } }
+\str_new:N \l_mfw_leq_allowed_str
+\prg_generate_conditional_variant:Nnn \regex_match:nn { nV } { T, F, TF }
+\cs_generate_variant:Nn \regex_extract_all:nnN { nV }
+% #1 the formula, #2 the comma list of its equation's param names. Sets
+% \l_mfw_leq_err_str to why the formula is refused, empty when it is not.
+% Names compare as strings: the formula may arrive as a string (other
+% catcodes), the lists as letters.
+\cs_new_protected:Npn \mfw_leq_check:nn #1 #2 {
+  \str_clear:N \l_mfw_leq_err_str
+  \str_set:Nn \l_mfw_leq_shape_str {#1}
+  \regex_match:nVF { \S } \l_mfw_leq_shape_str { \mfw_leq_fail:n { formula~is~empty } }
+  \regex_match:nVF { \A[0-9A-Za-z.+\-*/^<>=!&|?:(),\s]*\Z } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { unexpected~character } }
+  \regex_match:nVT { \*\* } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { use~^~for~powers,~not~** } }
+  \regex_replace_all:nnN { [<>=!]= } { < } \l_mfw_leq_shape_str
+  \regex_match:nVT { = } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { use~==~to~compare,~not~= } }
+  % Numbers become @, so an exponent's e is not read as a name.
+  \regex_replace_all:nnN
+    { (?:\b[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+\-]?[0-9]+)? } { @ } \l_mfw_leq_shape_str
+  \seq_set_from_clist:Nn \l_mfw_leq_names_seq {#2}
+  \str_set:Nx \l_mfw_leq_allowed_str
+    { , \clist_use:Nn \c_mfw_leq_fns_clist { , } , pi , \seq_use:Nn \l_mfw_leq_names_seq { , } , }
+  \regex_extract_all:nVN { [A-Za-z][A-Za-z0-9]* } \l_mfw_leq_shape_str \l_tmpa_seq
+  \seq_map_inline:Nn \l_tmpa_seq {
+    \exp_args:NV \str_if_in:nnF \l_mfw_leq_allowed_str { ,##1, }
+      { \mfw_leq_fail:n { unknown~name~'##1' } }
+  }
+  % The shape: 1 a function, v any other name or number. Two operands side by
+  % side are an implicit product (or spaces inside a number).
+  \regex_replace_all:nnN
+    { \b(?:abs|exp|ln|sqrt|sin|cos|tan|asin|acos|atan|floor|ceil|trunc|sign|round|min|max)\b }
+    { 1 } \l_mfw_leq_shape_str
+  \regex_replace_all:nnN { [A-Za-z][A-Za-z0-9]* | @ } { v } \l_mfw_leq_shape_str
+  \regex_replace_all:nnN { \s+ } { } \l_mfw_leq_shape_str
+  \regex_match:nVT { [v)][v1(] } \l_mfw_leq_shape_str
+    { \mfw_leq_fail:n { write~*~between~factors;~implicit~multiplication~is~not~allowed } }
+  \regex_replace_all:nnN { [^()] } { } \l_mfw_leq_shape_str
+  \mfw_leq_pairs:
+  \str_if_empty:NF \l_mfw_leq_shape_str { \mfw_leq_fail:n { unbalanced~parentheses } }
+}
+% Drop matched () pairs until none is left: what remains is unbalanced.
+\cs_new_protected:Npn \mfw_leq_pairs: {
+  \regex_replace_all:nnNT { \(\) } { } \l_mfw_leq_shape_str { \mfw_leq_pairs: }
+}
+% #1 a formula \mfw_leq_check:nn accepted, #2 its params as k=v,..., #3 the
+% decimal places shown. Sets \l_mfw_leq_out_tl to the value with exactly #3
+% decimals, ties to even (l3fp's round), or empty when it is undefined (NaN
+% or infinite), and \g_mfw_leq_raw_tl to the unrounded value. l3fp's traps
+% are off only inside the group.
+\cs_new_protected:Npn \mfw_leq_eval:nnn #1 #2 #3 {
+  % Rescanned, so names in the formula and in #2 are letters alike.
+  \tl_set_rescan:Nnn \l_mfw_leq_expr_tl { } {#1}
+  \tl_set_rescan:Nnn \l_tmpb_tl { } {#2}
+  \exp_args:NV \clist_map_inline:nn \l_tmpb_tl { \mfw_leq_subst:w ##1 \q_stop }
+  \group_begin:
+    \fp_trap:nn { invalid_operation } { none }
+    \fp_trap:nn { division_by_zero } { none }
+    \fp_trap:nn { overflow } { none }
+    \fp_trap:nn { underflow } { none }
+    \tl_gset:Nx \g_mfw_leq_tl_tl { \fp_to_tl:n { round( ( \l_mfw_leq_expr_tl ) , #3 ) } }
+    \tl_gset:Nx \g_mfw_leq_dec_tl { \fp_to_decimal:n { round( ( \l_mfw_leq_expr_tl ) , #3 ) } }
+    \tl_gset:Nx \g_mfw_leq_raw_tl { \fp_to_tl:n { \l_mfw_leq_expr_tl } }
+  \group_end:
+  \regex_match:nVTF { nan|inf } \g_mfw_leq_tl_tl
+    { \tl_clear:N \l_mfw_leq_out_tl }
+    { \mfw_leq_pad:n {#3} }
+}
+\cs_new_protected:Npn \mfw_leq_subst:w #1 = #2 \q_stop {
+  \tl_set:Nx \l_mfw_leq_value_tl { \tl_trim_spaces:n {#2} }
+  \tl_set:Nx \l_tmpa_tl { \tl_trim_spaces:n {#1} }
+  \regex_replace_all:nnN { \b\u{l_tmpa_tl}\b } { \( \u{l_mfw_leq_value_tl} \) }
+    \l_mfw_leq_expr_tl
+}
+% Zero-pad \g_mfw_leq_dec_tl to #1 decimals; -0 shows as 0.
+\cs_new_protected:Npn \mfw_leq_pad:n #1 {
+  \tl_set_eq:NN \l_mfw_leq_int_tl \g_mfw_leq_dec_tl
+  \tl_clear:N \l_mfw_leq_frac_tl
+  \regex_extract_once:nVNT { \A([^.]*)\.(.*)\Z } \g_mfw_leq_dec_tl \l_tmpa_seq
+    {
+      \tl_set:Nx \l_mfw_leq_int_tl { \seq_item:Nn \l_tmpa_seq { 2 } }
+      \tl_set:Nx \l_mfw_leq_frac_tl { \seq_item:Nn \l_tmpa_seq { 3 } }
+    }
+  \tl_put_right:Nx \l_mfw_leq_frac_tl
+    { \prg_replicate:nn { \int_max:nn { 0 } { #1 - \tl_count:N \l_mfw_leq_frac_tl } } { 0 } }
+  \tl_set:Nx \l_mfw_leq_out_tl
+    { \l_mfw_leq_int_tl \int_compare:nNnT {#1} > { 0 } { . \l_mfw_leq_frac_tl } }
+  \regex_replace_once:nnN { \A-(0*(?:\.0*)?)\Z } { \1 } \l_mfw_leq_out_tl
+}
+\prg_generate_conditional_variant:Nnn \regex_extract_once:nnN { nV } { T }
+
+% -- live equations: the macros --------------------------------------------------
+%   \begin{liveequation}[id=eq-decay, alt={...}, mode=inline] ... \end{liveequation}
+% (liveequation* is unnumbered): a display equation whose params the reader
+% can change and whose results it recomputes. The PDF shows the values at
+% the defaults. Inside it:
+%   \maleficiumparam{k}{0.5}[0,2,0.05]    declare k (default, then min, max,
+%                                         step) and typeset its default
+%   \maleficiumparam{k}                   typeset k again
+%   \liveresult[digits=1]{100*exp(-3*k)}  typeset the formula's value
+% Numbers in a declaration are plain decimals. A param shows as many
+% decimals as its default or its step has, whichever is more; a result
+% shows digits= decimals (2 when not given). id= defaults to eq-<n>.
+% mode=inline (the default) has the reader update the article's equation in
+% place; mode=widget runs it as the liveeq@1 widget. The body runs twice: in
+% a box to collect the params (so a result may come before a param it uses),
+% then as the equation. Sidecar lines, after the equation (shown is the text
+% the PDF typeset; the formula comes last, as it may hold |):
+%   liveeq|<id>|<label>|<number>|<mode>|<alt>
+%   param|<id>|<name>|<default>|<min>|<max>|<step>|<places>|<shown>
+%   result|<id>|<n>|<places>|<shown>|<formula>
+% The compile warns when a result is undefined somewhere in a param's range,
+% or needs more room there than its static value (more characters, a sign,
+% or 0 for a value that is not 0). Each param sweeps its range, at most
+% \c_mfw_leq_samples_int points, with the others at their defaults.
+\int_const:Nn \c_mfw_leq_samples_int { 101 }
+\bool_new:N \l_mfw_leq_in_bool
+\bool_new:N \l_mfw_leq_scan_bool
+\tl_new:N \l_mfw_leq_id_tl
+\tl_new:N \l_mfw_leq_alt_tl
+\tl_new:N \l_mfw_leq_mode_tl
+\tl_new:N \l_mfw_leq_digits_tl
+\tl_new:N \g_mfw_leq_label_tl
+\int_new:N \g_mfw_leq_count_int
+\int_new:N \g_mfw_leq_result_int
+\int_new:N \l_mfw_leq_places_int
+\seq_new:N \g_mfw_leq_params_seq
+\seq_new:N \g_mfw_leq_results_seq
+\tl_new:N \l_mfw_leq_defaults_tl
+\tl_new:N \l_mfw_leq_assign_tl
+\tl_new:N \l_mfw_leq_at_tl
+\str_new:N \l_mfw_leq_name_str
+\str_new:N \l_mfw_leq_formula_str
+\bool_new:N \l_mfw_leq_undef_bool
+\bool_new:N \l_mfw_leq_room_bool
+\bool_new:N \l_mfw_leq_grows_bool
+% Each param's fields, keyed by its name.
+\clist_map_inline:nn { default, min, max, step, places, shown }
+  { \prop_new:c { g_mfw_leq_#1_prop } }
+\cs_new:Npn \mfw_leq_field:nn #1 #2 { \prop_item:cn { g_mfw_leq_#2_prop } {#1} }
+\cs_generate_variant:Nn \mfw_leq_field:nn { V }
+\keys_define:nn { mfw/liveequation } {
+  id .tl_set:N = \l_mfw_leq_id_tl,
+  alt .tl_set:N = \l_mfw_leq_alt_tl,
+  mode .choices:nn = { inline, widget } { \tl_set_eq:NN \l_mfw_leq_mode_tl \l_keys_choice_tl },
+}
+\keys_define:nn { mfw/liveresult } { digits .tl_set:N = \l_mfw_leq_digits_tl }
+\cs_new_protected:Npn \mfw_leq_error:n #1
+  { \PackageError { maleficium-interactive } {#1} { See~the~live~equations~section~of~the~package. } }
+\cs_new_protected:Npn \mfw_leq_warning:n #1
+  { \PackageWarning { maleficium-interactive } {#1} }
+\prg_generate_conditional_variant:Nnn \prop_if_in:Nn { cV } { T, F, TF }
+\cs_generate_variant:Nn \prop_gput:Nnn { cVx }
+\cs_generate_variant:Nn \mfw_leq_eval:nnn { VVn, nVn }
+\cs_generate_variant:Nn \mfw_leq_check:nn { Vx }
+
+\NewDocumentEnvironment { liveequation } { O{} +b } { \mfw_leq:nnn {#1} {#2} { equation } } { }
+% The kernel's displaymath, not amsmath's equation*: the package does not load
+% amsmath.
+\NewDocumentEnvironment { liveequation* } { O{} +b } { \mfw_leq:nnn {#1} {#2} { displaymath } } { }
+
+% #1 the options, #2 the body, #3 the environment it typesets as.
+\cs_new_protected:Npn \mfw_leq:nnn #1 #2 #3 {
+  \int_gincr:N \g_mfw_leq_count_int
+  \tl_clear:N \l_mfw_leq_id_tl
+  \tl_clear:N \l_mfw_leq_alt_tl
+  \tl_set:Nn \l_mfw_leq_mode_tl { inline }
+  \keys_set:nn { mfw/liveequation } {#1}
+  \tl_if_empty:NT \l_mfw_leq_id_tl
+    { \tl_set:Nx \l_mfw_leq_id_tl { eq- \int_use:N \g_mfw_leq_count_int } }
+  \exp_args:NV \mfw_valid:n \l_mfw_leq_id_tl
+  \ifmfw@ok \else
+    \mfw_leq_error:n { liveequation~id~`\l_mfw_leq_id_tl'~is~not~a~lowercase~slug }
+  \fi
+  \exp_args:NV \tl_if_in:nnT \l_mfw_leq_alt_tl { | }
+    { \mfw_leq_error:n { character~`|'~is~not~allowed~in~alt } }
+  % Pass 1: collect the params and the label.
+  \seq_gclear:N \g_mfw_leq_params_seq
+  \clist_map_inline:nn { default, min, max, step, places, shown }
+    { \prop_gclear:c { g_mfw_leq_##1_prop } }
+  \tl_gclear:N \g_mfw_leq_label_tl
+  \bool_set_true:N \l_mfw_leq_in_bool
+  \bool_set_true:N \l_mfw_leq_scan_bool
+  \hbox_set:Nn \l_tmpa_box {
+    \cs_set:Npn \label ##1 { \tl_gset:Nn \g_mfw_leq_label_tl {##1} }
+    $ \displaystyle #2 $
+  }
+  \seq_if_empty:NT \g_mfw_leq_params_seq
+    {
+      \mfw_leq_error:n
+        {
+          liveequation~\l_mfw_leq_id_tl \space declares~no~param:~give~one~as~
+          \token_to_str:N \maleficiumparam {name}{default}[min,max,step]
+        }
+    }
+  \tl_clear:N \l_mfw_leq_defaults_tl
+  \seq_map_inline:Nn \g_mfw_leq_params_seq
+    { \tl_put_right:Nx \l_mfw_leq_defaults_tl { ##1 = \mfw_leq_field:nn {##1} { default } , } }
+  % Pass 2: the equation itself.
+  \bool_set_false:N \l_mfw_leq_scan_bool
+  \int_gzero:N \g_mfw_leq_result_int
+  \seq_gclear:N \g_mfw_leq_results_seq
+  \use:c {#3} #2 \use:c { end#3 }
+  \bool_set_false:N \l_mfw_leq_in_bool
+  \mfw_leq_record:n {#3}
+  \seq_map_inline:Nn \g_mfw_leq_results_seq { \mfw_leq_sweep_result:nnnn ##1 }
+}
+
+% \maleficiumparam{name} then, only when a brace group follows at once, the
+% default and the optional range.
+\NewDocumentCommand \maleficiumparam { m } {
+  \bool_if:NF \l_mfw_leq_in_bool
+    { \mfw_leq_error:n { \token_to_str:N \maleficiumparam \space is~only~allowed~inside~liveequation } }
+  \str_set:Nx \l_mfw_leq_name_str { \tl_trim_spaces:n {#1} }
+  \peek_catcode:NTF \c_group_begin_token { \mfw_leq_param_declared:wn } { \mfw_leq_param:nn { } { } }
+}
+\NewDocumentCommand \mfw_leq_param_declared:wn { m o } { \mfw_leq_param:nn { {#1} } { {#2} } }
+% #1 empty or {default}, #2 empty or {range} (that range -NoValue- when not given).
+\cs_new_protected:Npn \mfw_leq_param:nn #1 #2 {
+  \bool_if:NTF \l_mfw_leq_scan_bool
+    { \tl_if_empty:nF {#1} { \mfw_leq_declare:nn #1 #2 } }
+    {
+      \prop_if_in:cVTF { g_mfw_leq_shown_prop } \l_mfw_leq_name_str
+        { \mfw_leq_typeset:x { \mfw_leq_field:Vn \l_mfw_leq_name_str { shown } } }
+        {
+          \mfw_leq_error:n
+            {
+              param~`\l_mfw_leq_name_str'~has~no~default~in~this~equation:~give~it~once~as~
+              \token_to_str:N \maleficiumparam {\l_mfw_leq_name_str}{default}[min,max,step]
+            }
+        }
+    }
+}
+% Declare param \l_mfw_leq_name_str with default #1 and range #2 (or -NoValue-).
+\cs_new_protected:Npn \mfw_leq_declare:nn #1 #2 {
+  \regex_match:nVF { \A[A-Za-z][A-Za-z0-9]*\Z } \l_mfw_leq_name_str
+    { \mfw_leq_error:n { param~name~`\l_mfw_leq_name_str'~is~not~letters,~then~letters~or~digits } }
+  \exp_args:Nxx \str_if_in:nnT { , \clist_use:Nn \c_mfw_leq_fns_clist { , } , pi , }
+    { , \l_mfw_leq_name_str , }
+    { \mfw_leq_error:n { param~name~`\l_mfw_leq_name_str'~is~a~function~or~pi } }
+  \prop_if_in:cVT { g_mfw_leq_default_prop } \l_mfw_leq_name_str
+    { \mfw_leq_error:n { param~`\l_mfw_leq_name_str'~is~declared~twice~in~this~equation } }
+  \IfNoValueTF {#2}
+    { \mfw_leq_error:n { param~`\l_mfw_leq_name_str'~needs~its~range:~[min,max,step] } }
+    {
+      \seq_set_from_clist:Nn \l_tmpa_seq {#2}
+      \int_compare:nNnTF { \seq_count:N \l_tmpa_seq } = { 3 }
+        {
+          \use:x
+            {
+              \exp_not:N \mfw_leq_range:nnnn { \tl_trim_spaces:n {#1} }
+                { \seq_item:Nn \l_tmpa_seq { 1 } } { \seq_item:Nn \l_tmpa_seq { 2 } }
+                { \seq_item:Nn \l_tmpa_seq { 3 } }
+            }
+        }
+        { \mfw_leq_error:n { param~`\l_mfw_leq_name_str'~range~is~[min,max,step],~three~numbers } }
+    }
+}
+% #1 default, #2 min, #3 max, #4 step, as written.
+\cs_new_protected:Npn \mfw_leq_range:nnnn #1 #2 #3 #4 {
+  \bool_set_true:N \l_tmpa_bool
+  \tl_map_inline:nn { {#1} {#2} {#3} {#4} }
+    {
+      \regex_match:nnF { \A[+\-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z } {##1}
+        { \bool_set_false:N \l_tmpa_bool }
+    }
+  \bool_if:NTF \l_tmpa_bool
+    {
+      \fp_compare:nNnF {#2} < {#3}
+        { \mfw_leq_error:n { param~`\l_mfw_leq_name_str':~min~#2~is~not~below~max~#3 } }
+      \fp_compare:nNnF {#4} > { 0 }
+        { \mfw_leq_error:n { param~`\l_mfw_leq_name_str':~step~#4~is~not~positive } }
+      \fp_compare:nF { #2 <= #1 <= #3 }
+        { \mfw_leq_error:n { param~`\l_mfw_leq_name_str':~default~#1~is~outside~[#2,#3] } }
+      \mfw_leq_places:nN {#1} \l_tmpa_int
+      \mfw_leq_places:nN {#4} \l_tmpb_int
+      \int_set:Nn \l_mfw_leq_places_int { \int_max:nn { \l_tmpa_int } { \l_tmpb_int } }
+      \mfw_leq_eval:nnn {#1} { } { \int_use:N \l_mfw_leq_places_int }
+      \seq_gput_right:NV \g_mfw_leq_params_seq \l_mfw_leq_name_str
+      \prop_gput:cVx { g_mfw_leq_default_prop } \l_mfw_leq_name_str {#1}
+      \prop_gput:cVx { g_mfw_leq_min_prop } \l_mfw_leq_name_str {#2}
+      \prop_gput:cVx { g_mfw_leq_max_prop } \l_mfw_leq_name_str {#3}
+      \prop_gput:cVx { g_mfw_leq_step_prop } \l_mfw_leq_name_str {#4}
+      \prop_gput:cVx { g_mfw_leq_places_prop } \l_mfw_leq_name_str
+        { \int_use:N \l_mfw_leq_places_int }
+      \prop_gput:cVx { g_mfw_leq_shown_prop } \l_mfw_leq_name_str { \l_mfw_leq_out_tl }
+    }
+    {
+      \mfw_leq_error:n
+        { param~`\l_mfw_leq_name_str':~default,~min,~max~and~step~must~be~plain~decimals }
+    }
+}
+% The digits after the point of plain decimal #1, into #2.
+\cs_new_protected:Npn \mfw_leq_places:nN #1 #2 {
+  \int_zero:N #2
+  \regex_extract_once:nnNT { \.([0-9]*) } {#1} \l_tmpb_seq
+    { \int_set:Nn #2 { \str_count:e { \seq_item:Nn \l_tmpb_seq { 2 } } } }
+}
+\cs_generate_variant:Nn \str_count:n { e }
+
+\NewDocumentCommand \liveresult { O{} m } {
+  \bool_if:NF \l_mfw_leq_in_bool
+    { \mfw_leq_error:n { \token_to_str:N \liveresult \space is~only~allowed~inside~liveequation } }
+  \bool_if:NF \l_mfw_leq_scan_bool
+    {
+      \tl_set:Nn \l_mfw_leq_digits_tl { 2 }
+      \keys_set:nn { mfw/liveresult } {#1}
+      \regex_match:nVF { \A[0-9]{1,2}\Z } \l_mfw_leq_digits_tl
+        {
+          \mfw_leq_error:n { digits=\l_mfw_leq_digits_tl \space is~not~a~whole~number~up~to~99 }
+          \tl_set:Nn \l_mfw_leq_digits_tl { 2 }
+        }
+      \int_gincr:N \g_mfw_leq_result_int
+      \str_set:Nn \l_mfw_leq_formula_str {#2}
+      \regex_replace_all:nnN { \s+ } { \  } \l_mfw_leq_formula_str
+      \mfw_leq_check:Vx \l_mfw_leq_formula_str { \seq_use:Nn \g_mfw_leq_params_seq { , } }
+      \str_if_empty:NTF \l_mfw_leq_err_str
+        {
+          \mfw_leq_eval:VVn \l_mfw_leq_formula_str \l_mfw_leq_defaults_tl
+            { \l_mfw_leq_digits_tl }
+          \tl_if_empty:NT \l_mfw_leq_out_tl
+            {
+              \mfw_leq_error:n
+                {
+                  result~\int_use:N \g_mfw_leq_result_int \space of~\l_mfw_leq_id_tl \space
+                  is~undefined~at~the~defaults:~`\l_mfw_leq_formula_str'
+                }
+            }
+        }
+        {
+          \mfw_leq_error:n
+            {
+              result~\int_use:N \g_mfw_leq_result_int \space of~\l_mfw_leq_id_tl :~
+              \l_mfw_leq_err_str \space in~`\l_mfw_leq_formula_str'
+            }
+          \tl_clear:N \l_mfw_leq_out_tl
+        }
+      \mfw_leq_typeset:x { \l_mfw_leq_out_tl }
+      \seq_gput_right:Nx \g_mfw_leq_results_seq
+        {
+          { \int_use:N \g_mfw_leq_result_int } { \l_mfw_leq_digits_tl } { \l_mfw_leq_out_tl }
+          { \l_mfw_leq_formula_str }
+        }
+    }
+}
+% A value in the equation: upright digits after a math minus, ? for none.
+\cs_new_protected:Npn \mfw_leq_typeset:n #1 {
+  \tl_if_empty:nTF {#1} { \mathrm { ? } }
+    {
+      \tl_if_head_eq_charcode:nNTF {#1} -
+        { - \mathrm { \tl_tail:n {#1} } }
+        { \mathrm {#1} }
+    }
+}
+\cs_generate_variant:Nn \mfw_leq_typeset:n { x }
+
+% #1 the environment the body typeset as.
+\cs_new_protected:Npn \mfw_leq_record:n #1 {
+  \mfw@open@sidecar
+  \str_set:Nx \l_tmpa_str { \tl_to_str:N \l_mfw_leq_alt_tl }
+  \regex_replace_all:nnN { \s+ } { \  } \l_tmpa_str
+  \iow_now:Nx \mfw@sidecar
+    {
+      liveeq | \l_mfw_leq_id_tl | \tl_to_str:N \g_mfw_leq_label_tl |
+      \str_if_eq:nnF {#1} { displaymath } { \theequation } | \l_mfw_leq_mode_tl | \l_tmpa_str
+    }
+  \seq_map_inline:Nn \g_mfw_leq_params_seq
+    {
+      \iow_now:Nx \mfw@sidecar
+        {
+          param | \l_mfw_leq_id_tl | ##1
+          | \mfw_leq_field:nn {##1} { default } | \mfw_leq_field:nn {##1} { min }
+          | \mfw_leq_field:nn {##1} { max } | \mfw_leq_field:nn {##1} { step }
+          | \mfw_leq_field:nn {##1} { places } | \mfw_leq_field:nn {##1} { shown }
+        }
+    }
+  \seq_map_inline:Nn \g_mfw_leq_results_seq { \mfw_leq_record_result:nnnn ##1 }
+}
+\cs_new_protected:Npn \mfw_leq_record_result:nnnn #1 #2 #3 #4
+  { \iow_now:Nx \mfw@sidecar { result | \l_mfw_leq_id_tl | #1 | #2 | #3 | #4 } }
+
+% Result #1 (places #2, static text #3, formula #4) over each param's range.
+\cs_new_protected:Npn \mfw_leq_sweep_result:nnnn #1 #2 #3 #4 {
+  \seq_map_inline:Nn \g_mfw_leq_params_seq { \mfw_leq_sweep:nnnnn {#1} {#2} {#3} {#4} {##1} }
+}
+% ... over param #5's range: warn once per kind.
+\cs_new_protected:Npn \mfw_leq_sweep:nnnnn #1 #2 #3 #4 #5 {
+  \bool_set_false:N \l_mfw_leq_undef_bool
+  \bool_set_false:N \l_mfw_leq_room_bool
+  \fp_set:Nn \l_tmpa_fp { \mfw_leq_field:nn {#5} { min } }
+  \fp_set:Nn \l_tmpb_fp { \mfw_leq_field:nn {#5} { max } }
+  \int_set:Nn \l_tmpa_int
+    {
+      \fp_eval:n
+        {
+          min ( floor ( ( \l_tmpb_fp - \l_tmpa_fp ) / ( \mfw_leq_field:nn {#5} { step } ) + 1e-9 ) + 1 ,
+            \c_mfw_leq_samples_int )
+        }
+    }
+  \int_step_inline:nn { \l_tmpa_int }
+    {
+      \tl_set:Nx \l_mfw_leq_at_tl
+        {
+          \fp_eval:n
+            {
+              \l_tmpa_fp + ( ##1 - 1 ) *
+                ( \int_compare:nNnTF { \l_tmpa_int } = { \c_mfw_leq_samples_int }
+                  { ( \l_tmpb_fp - \l_tmpa_fp ) / ( \c_mfw_leq_samples_int - 1 ) }
+                  { ( \mfw_leq_field:nn {#5} { step } ) } )
+            }
+        }
+      \tl_clear:N \l_mfw_leq_assign_tl
+      \seq_map_inline:Nn \g_mfw_leq_params_seq
+        {
+          \tl_put_right:Nx \l_mfw_leq_assign_tl
+            {
+              ####1 =
+              \str_if_eq:nnTF {####1} {#5} { \l_mfw_leq_at_tl } { \mfw_leq_field:nn {####1} { default } } ,
+            }
+        }
+      \mfw_leq_eval:nVn {#4} \l_mfw_leq_assign_tl {#2}
+      \tl_if_empty:NTF \l_mfw_leq_out_tl
+        {
+          \bool_if:NF \l_mfw_leq_undef_bool
+            {
+              \bool_set_true:N \l_mfw_leq_undef_bool
+              \mfw_leq_warning:n
+                { result~#1~of~\l_mfw_leq_id_tl \space is~undefined~at~#5~=~\l_mfw_leq_at_tl :~`#4' }
+            }
+        }
+        {
+          \bool_set_false:N \l_mfw_leq_grows_bool
+          \int_compare:nNnT { \tl_count:N \l_mfw_leq_out_tl } > { \tl_count:n {#3} }
+            { \bool_set_true:N \l_mfw_leq_grows_bool }
+          \tl_if_head_eq_charcode:VNT \l_mfw_leq_out_tl -
+            { \tl_if_head_eq_charcode:nNF {#3} - { \bool_set_true:N \l_mfw_leq_grows_bool } }
+          \fp_compare:nT { \l_mfw_leq_out_tl = 0 && abs ( \g_mfw_leq_raw_tl ) > 0 }
+            { \bool_set_true:N \l_mfw_leq_grows_bool }
+          \bool_lazy_and:nnT { \l_mfw_leq_grows_bool } { ! \l_mfw_leq_room_bool }
+            {
+              \bool_set_true:N \l_mfw_leq_room_bool
+              \mfw_leq_warning:n
+                {
+                  result~#1~of~\l_mfw_leq_id_tl \space shows~\l_mfw_leq_out_tl \space at~#5~=~
+                  \l_mfw_leq_at_tl ,~more~room~than~its~static~#3 ;~raise~digits=~or~narrow~the~range
+                }
+            }
+        }
+    }
+}
+\prg_generate_conditional_variant:Nnn \tl_if_head_eq_charcode:nN { VN } { T }
 \ExplSyntaxOff
 
 % The float's own label, and only that: entering a float clears it, labels

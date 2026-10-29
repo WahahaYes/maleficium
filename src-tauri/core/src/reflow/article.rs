@@ -6,7 +6,8 @@
 //! 3. [`join`] pairs the widget placeholders with the sidecar and
 //!    [`join::apply`] leaves a `<!--mount:ID-->` marker in each one's place;
 //! 4. the markers become mount units ([`mount_unit`]) right away, before
-//!    anything that drops comments;
+//!    anything that drops comments, and the live equations get the values
+//!    the PDF typeset ([`equations::apply`]);
 //! 5. post-processing: the article element alone (no latexml page chrome),
 //!    a contents list after the abstract, in-page links (citations to the
 //!    bibliography, references to figures) made `#fragment` links and dead
@@ -17,6 +18,7 @@
 //! sections stay unnumbered. None of the problems found stops the article:
 //! each becomes an [`Issue`] for the export report.
 
+use super::equations;
 use super::figures::{self, FigureWarning};
 use super::join::{self, JoinError};
 use super::sanitize;
@@ -62,6 +64,8 @@ pub enum Issue {
     /// Elements latexml marked `ltx_ERROR` (an undefined macro shows as its
     /// raw TeX), grouped by macro name with the spots each one owns.
     Undefined(Vec<UndefinedMacro>),
+    /// The live equations and the sidecar disagree: their results show `?`.
+    Equations(String),
 }
 
 /// One undefined macro and how many article spots show its raw TeX.
@@ -248,6 +252,20 @@ pub fn build(input: Input) -> Result<Article, String> {
         .iter()
         .filter(|m| !placed.contains(m.id))
         .collect();
+
+    // Live equations: the values the PDF typeset, from the sidecar.
+    let equations = input
+        .sidecar
+        .and_then(|t| crate::widgets::parse_sidecar(t).ok())
+        .map(|s| s.equations)
+        .unwrap_or_default();
+    html = match equations::apply(&html, &equations) {
+        Ok(html) => html,
+        Err((html, why)) => {
+            issues.push(Issue::Equations(why));
+            html
+        }
+    };
 
     let (post, undefined) = post_process(&html, input.title, &unplaced);
     if !undefined.is_empty() {

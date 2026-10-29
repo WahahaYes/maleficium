@@ -313,7 +313,7 @@ export type ExportBundleParams = { rootId: string, mainRel: string, dest: string
 
 export type ExportCancelParams = Record<symbol, never>;
 
-export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata" | "conversion" | "widget-join" | "figure" | "runtime" | "runtime-digest-changed" | "reader-style";
+export type BundleWarningKind = "size-cap" | "unfolded-files" | "external-reference" | "fold-limit" | "metadata" | "conversion" | "widget-join" | "figure" | "runtime" | "runtime-digest-changed" | "reader-style" | "live-equation";
 
 export type BundleWarning = { kind: BundleWarningKind, message: string, };
 

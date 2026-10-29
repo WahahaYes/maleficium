@@ -106,6 +106,9 @@ pub enum BundleWarningKind {
     /// The author's reader stylesheet was refused (a remote or escaping
     /// url(), @import, or script); the page keeps the theme alone.
     ReaderStyle,
+    /// The article's live equations and the sidecar disagree; their results
+    /// show `?` and stay static.
+    LiveEquation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
@@ -1736,6 +1739,10 @@ fn article_warnings(
                 kind: BundleWarningKind::WidgetJoin,
                 message: format!("the widgets could not be placed in the article ({e}); they are listed at its end"),
             },
+            Issue::Equations(why) => BundleWarning {
+                kind: BundleWarningKind::LiveEquation,
+                message: format!("the live equations could not be filled in ({why}); their results show ?"),
+            },
             Issue::Figure(w) => BundleWarning {
                 kind: BundleWarningKind::Figure,
                 message: if w.file.is_empty() {
@@ -2283,6 +2290,20 @@ fn export_inner(
         "widgets".into(),
         Value::Array(planned.iter().map(|p| p.json.clone()).collect()),
     );
+    let equations = sidecar
+        .as_deref()
+        .and_then(|t| crate::widgets::parse_sidecar(t).ok())
+        .map(|s| s.equations)
+        .unwrap_or_default();
+    if !equations.is_empty() {
+        manifest.insert(
+            "equations".into(),
+            equations
+                .iter()
+                .map(crate::liveeq::Equation::to_json)
+                .collect(),
+        );
+    }
     if !plan.runtime_entries.is_empty() {
         manifest.insert(
             "runtimes".into(),
@@ -2307,6 +2328,12 @@ fn export_inner(
     let _ = std::fs::remove_file(&stage);
     let mut total = 0u64;
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())? + "\n";
+
+    // The live-equation widget, once, when some equation runs as one.
+    let liveeq_doc = equations
+        .iter()
+        .any(|e| e.mode == crate::liveeq::Mode::Widget)
+        .then(|| fold::widget_document(reader::LIVEEQ, &fold::widget_policy(None)));
 
     // Every frame origin some widget declared: the reader's own frame-src.
     let frames: Vec<String> = planned
@@ -2334,10 +2361,13 @@ fn export_inner(
                         .into(),
                 );
             }
-            let widgets: Map<String, Value> = planned
+            let mut widgets: Map<String, Value> = planned
                 .iter()
                 .filter_map(|p| p.doc.clone().map(|d| (p.id.clone(), d.into())))
                 .collect();
+            if let Some(doc) = &liveeq_doc {
+                widgets.insert(reader::LIVEEQ_REF.into(), doc.clone().into());
+            }
             let islands = [
                 island("mfw-manifest", &manifest),
                 island("mfw-widgets", &Value::Object(widgets)),
@@ -2356,6 +2386,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                equations: !equations.is_empty(),
                 plates: &plates,
             });
             std::fs::write(&stage, html.as_bytes())
@@ -2387,6 +2418,9 @@ fn export_inner(
                         &mut total,
                     )?;
                 }
+            }
+            if let Some(doc) = &liveeq_doc {
+                put(&stage, reader::LIVEEQ_ENTRY, doc.as_bytes(), &mut total)?;
             }
             let mut inline = Map::new();
             let mut stored = BTreeSet::new();
@@ -2444,6 +2478,7 @@ fn export_inner(
                 theme: &theme,
                 theme_css: &theme_css,
                 author_css: &author_css,
+                equations: !equations.is_empty(),
                 plates: &plates,
             });
             put(&stage, "index.html", html.as_bytes(), &mut total)?;

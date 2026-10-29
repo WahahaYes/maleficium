@@ -8,7 +8,8 @@ import { RUNTIMES } from '../vite.config';
 type Output = { output: { fileName: string; source?: string; code?: string }[] };
 
 describe('committed widget runtimes', () => {
-  it.each(RUNTIMES)(
+  // liveeq has no runtime.json (the reader mounts it), but ships the same way.
+  it.each([...RUNTIMES, 'liveeq'])(
     '%s/index.html matches a fresh build of its source',
     async (name) => {
       const out = (await build({
@@ -48,12 +49,15 @@ describe('committed widget runtimes', () => {
     ).toBe(true);
   }, 60_000);
 
-  // The `model@1` fork the scaffold writes: vendored three.js with its
-  // licence, and the viewer as a classic script over it.
+  // The `model@1` fork the scaffold writes (vendored three.js with its
+  // licence, and the viewer as a classic script over it), and the reader's
+  // formula interpreter.
   it.each([
     ['fork-three', 'three.js', 'model-fork/vendor/three/three.js'],
     ['fork-three', 'LICENSE', 'model-fork/vendor/three/LICENSE'],
     ['fork-viewer', 'viewer.js', 'model-fork/viewer.js'],
+    // The formula interpreter the reader inlines for live equations.
+    ['expr', 'expr.js', 'expr/expr.js'],
   ])(
     '%s: %s matches a fresh build',
     async (mode, file, path) => {
