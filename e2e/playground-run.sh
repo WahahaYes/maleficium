@@ -4,10 +4,10 @@
 # e2e/fixtures/playground/, compiles main.tex, and asserts both that the PDF
 # builds cleanly (bibliography resolved, no undefined references) and that
 # the MCP `widgets` tool lists every widget the paper declares and the
-# sidecar its live equations. Then exports
-# the single-file bundle and drives its article (folding proofs, citation
-# cards, live equations) in Chromium, Firefox and WebKit with e2e/article-run.mjs, and its
-# frame under the app window's CSP with e2e/article-frame-run.mjs.
+# sidecar its live equations. Then exports the single-file bundle and drives
+# its article in each browser with e2e/article-run.mjs (whose header says
+# what it checks), and its frame under the app window's CSP with
+# e2e/article-frame-run.mjs.
 set -euo pipefail
 
 DEVROOT="$(cd "$(dirname "$0")/.." && pwd)"

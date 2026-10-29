@@ -1,6 +1,6 @@
-// Builds every widget runtime (each embed-runtime/src/<name>/ with a
-// runtime.json), the live-equation widget, the bridge, the reader's formula
-// interpreter and the fork scripts, one vite build each.
+// Builds every committed embed-runtime output, one vite build per mode of
+// embed-runtime/vite.config.ts: each widget runtime (an embed-runtime/src/<name>/
+// with a runtime.json), then the other modes listed below.
 import { existsSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';

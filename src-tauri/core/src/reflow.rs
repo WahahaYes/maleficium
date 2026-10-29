@@ -1,7 +1,6 @@
-//! The reflowed reader's Rust side: the main file converted to HTML, its
-//! figures made self-contained, its widgets joined to the manifest and
-//! mounted, its live equations given the values the PDF typeset, and the
-//! result sanitized (see [`article`] for the order).
+//! The reflowed reader's Rust side: the main file converted to HTML and taken
+//! through the reader pipeline, one module per step. [`article`] lists the
+//! steps in order.
 
 pub mod article;
 pub mod convert;

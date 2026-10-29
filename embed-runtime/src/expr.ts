@@ -3,7 +3,8 @@
 // Formulas are data, never code: no eval, so no policy needs unsafe-eval.
 // Hostile input is bounded by MAX_LENGTH and MAX_DEPTH and never throws.
 // The shared vectors (expr.vectors.json) hold this interpreter and the .sty's
-// l3fp path to one answer.
+// l3fp path to one answer. docs/INTERACTIVE-PAPERS.md lists the names and
+// functions for authors: change it with FUNCTIONS.
 //
 // Loosest to tightest:
 //   expr  := or ('?' expr ':' expr)?             right-assoc

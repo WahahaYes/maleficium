@@ -1,15 +1,7 @@
 // Article check: a headless browser (Firefox unless --browser says otherwise)
 // loads the single-file export of the playground paper from file:// and
-// drives the article's own interactivity. Proofs arrive as open <details>
-// (open with scripts off), start folded with scripts on, toggle by click and
-// keyboard, open for print, and open when the page lands on something inside
-// them. Citations show their bibliography entry in a card on hover and on
-// keyboard focus (no ids, no "Cited by" back-links), hide on leave and
-// Escape, and still jump to the entry on click. Live equations show the
-// PDF's values with scripts off. With scripts on an inline one gets
-// controls (a slider recomputes, reset restores) and a mode=widget one
-// mounts the liveeq@1 frame (a typed value is clamped, every copy of a
-// param follows). No CSP violation throughout.
+// drives the article's own interactivity, one `// ----` section per feature,
+// each saying what it checks. No CSP violation throughout.
 //
 //   node e2e/article-run.mjs --single <file.html> [--browser chromium|firefox|webkit]
 //
@@ -64,6 +56,7 @@ const proofsOf = (page) =>
   );
 
 // ---- scripts off: proofs read open ----
+// Proofs are <details> that stay open without scripts.
 {
   const { ctx, page } = await open('', { javaScriptEnabled: false });
   const p = await proofsOf(page);
@@ -80,6 +73,8 @@ const proofsOf = (page) =>
 }
 
 // ---- proofs ----
+// With scripts on they start folded, toggle by click and keyboard, and open
+// for print.
 {
   const { ctx, page } = await open();
   let p = await proofsOf(page);
@@ -154,6 +149,9 @@ const proofsOf = (page) =>
 }
 
 // ---- citation cards ----
+// A citation shows its bibliography entry in a card on hover and on keyboard
+// focus (no ids, no "Cited by" back-links), hides on leave and Escape, and
+// still jumps to the entry on click.
 {
   const { ctx, page } = await open();
   const cardState = () =>
@@ -248,6 +246,10 @@ const proofsOf = (page) =>
 }
 
 // ---- live equations ----
+// With scripts off they show the PDF's values. With scripts on an inline one
+// gets controls (a slider recomputes, reset restores) and a mode=widget one
+// mounts the liveeq@1 frame (a typed value is clamped, every copy of a param
+// follows).
 const liveOf = (page) =>
   page.evaluate(() => {
     const m = document.querySelector('math.m-liveeq-eq-binary-entropy');
