@@ -1,0 +1,32 @@
+rules:
+  manifest-runtime-closed-keys:
+    command: python3 necro/manifest_keys.py
+    message: Unknown top-level key in runtime.json
+    why: runtime.json is a closed schema. ManifestFile carries deny_unknown_fields (src-tauri/core/src/runtimes.rs:355) and docs/RUNTIMES.md:27 lists the only legal keys, with poster allowed on built-ins only.
+    fix: Remove the unknown key. Keep prose in README.md, not in the manifest.
+
+  manifest-runtime-reserved-names:
+    command: "necro grep '\"(kit|params|extends)\"\\s*:' -- '**/runtime.json'"
+    message: Reserved runtime.json key from a later contract
+    why: kit, params and extends are reserved for the composable-widgets contract. They are refused at src-tauri/core/src/runtimes.rs:589-591, documented at docs/RUNTIMES.md:37 and tested at src-tauri/core/src/runtimes/tests.rs:371-379.
+    fix: Drop the key until that contract lands.
+
+  manifest-widget-origin-rules:
+    command: 'necro grep "http://|\*|localhost|127\.|''self''|https?://[^\"]*/" -- ''**/widget.json'''
+    message: Widget origin must be a bare https origin
+    why: Widget origins land verbatim in a content security policy. origin_ok (src-tauri/core/src/widgets.rs:631) accepts only https with a lowercase host or IPv4 address and an optional port, at most 16 origins (docs/VIDEO-EMBEDS.md:72-81).
+    fix: Declare each origin as https://lowercase-host[:port] with no scheme downgrade, wildcard, CSP keyword, path, query, credentials or uppercase letters.
+    examples:
+      bad:
+        - http://example.org/embed
+        - https://*.example.org
+        - "'self'"
+      good:
+        - https://www.youtube-nocookie.com
+        - https://player.vimeo.com
+
+  manifest-single-source-version:
+    command: "necro grep '\"(version|Version)\"\\s*:\\s*\"[0-9]+\\.' -- src src-tauri/src index.html README.md docs"
+    message: Hardcoded version outside the release manifests
+    why: The version lives in exactly package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml, synced by scripts/release-meta.py and scripts/release.sh. Copies anywhere else go stale on every bump (STALE_PATHS at scripts/release-meta.py:34).
+    fix: Read the version from a manifest at build time instead of copying the number.

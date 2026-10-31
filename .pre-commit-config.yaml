@@ -85,3 +85,12 @@ repos:
         language: pygrep
         args: [-i]
         stages: [commit-msg]
+  - repo: local
+    hooks:
+      - id: necro
+        name: necro house rules
+        entry: necro
+        language: python
+        additional_dependencies: ['necronomicon>=0.1,<0.2']
+        pass_filenames: false
+        always_run: true
