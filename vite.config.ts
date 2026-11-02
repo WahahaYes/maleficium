@@ -137,5 +137,9 @@ export default defineConfig(() => ({
     include: ['src/**/*.test.{ts,tsx}', 'embed-runtime/**/*.test.ts'],
     pool: 'forks',
     testTimeout: 5_000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+    },
   },
 }));

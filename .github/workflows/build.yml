@@ -112,30 +112,32 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install prek (the pre-commit runner; the pin lives here)
+        run: uv tool install "prek==0.5.9"
       - uses: ./.github/actions/npm
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
         run: rustup toolchain install
       # A version written into the app or docs goes stale at the next bump.
       - name: No hardcoded versions
         run: uv run --no-project scripts/release-meta.py stale
-      - name: Pre-commit environments cache
-        id: pc-cache
+      - name: Prek cache
+        id: prek-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Hooks (all files)
         # gitleaks scans staged changes, which CI has none of; it runs below
         # over the pushed commits instead.
         env:
           SKIP: gitleaks,cargo-clippy
-        run: uvx pre-commit@4.6.1 run --all-files --show-diff-on-failure
-      - name: Pre-commit environments cache save
-        if: github.ref == 'refs/heads/main' && steps.pc-cache.outputs.cache-hit != 'true'
+        run: prek run --all-files --show-diff-on-failure
+      - name: Prek cache save
+        if: github.ref == 'refs/heads/main' && steps.prek-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Secrets (gitleaks, pushed commits)
         env:
           RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
@@ -156,7 +158,7 @@ jobs:
         run: |
           for sha in $(git rev-list --no-merges "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
             git log -1 --format=%B "$sha" > "$RUNNER_TEMP/msg"
-            uvx pre-commit@4.6.1 run no-ai-attribution --hook-stage commit-msg --commit-msg-filename "$RUNNER_TEMP/msg" || { echo "bad message in $sha"; exit 1; }
+            prek run no-ai-attribution --hook-stage commit-msg --commit-msg-filename "$RUNNER_TEMP/msg" || { echo "bad message in $sha"; exit 1; }
           done
 
   package:
@@ -272,7 +274,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/npm
       - name: Unit tests
-        run: npx vitest run
+        run: npx vitest run --coverage
+      # Coverage is a signal, not a gate: a failed upload never fails the job.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
 
   fixture_papers:
     needs: [changes, precommit]
