@@ -283,6 +283,7 @@ jobs:
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   fixture_papers:
     needs: [changes, precommit]
