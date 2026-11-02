@@ -31,6 +31,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "sh scripts/clean.sh",
+    "clean-cache": "sh scripts/clean.sh --cache",
     "build:runtimes": "node scripts/build-runtimes.mjs"
   },
   "dependencies": {

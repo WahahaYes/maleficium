@@ -56,6 +56,25 @@ sh scripts/package.sh             # packages land in out/
 
 `package.sh` refuses to run without the engine or the dumps. The installed engine finds the dumps in the app's resources; `--dumps` or `MALEFICIUM_DUMP_DIR` points it elsewhere.
 
+### Generated files
+
+Every build output has a tier, a fresh size, and a command that removes it:
+
+| Path | Tier | Fresh size | Rebuild |
+| --- | --- | --- | --- |
+| `src-tauri/binaries/` | input, pinned by `scripts/engine-key.sh` | 114 MB | `sh scripts/build-engine.sh` (engine release build; tens of minutes) |
+| `src-tauri/resources/dumps/` | input, pinned by `scripts/dumps-key.sh` | 3 MB | dump step of `build-engine.sh` (~3 min, ~11 MB bundle download) |
+| `node_modules/` | cache | ~760 MB | `npm ci` (~15 s warm) |
+| `src-tauri/target/`, `src-tauri/engine/target/` | cache | ~1.6 GB after `cargo check` | rebuilt on demand |
+| `/var/tmp/maleficium-harness-target` (`HARNESS_TARGET_DIR`) | cache | grows like `src-tauri/target` | harness rebuilds |
+| `embed-runtime/built/` | result (committed) | 4 MB | `npm run build:runtimes` |
+| `e2e/fixtures/`, `examples/` | input (tracked) | 5 MB / 5 MB | `git checkout` (media bits: `python3 e2e/fixtures/gen-media.py`) |
+| `dist/` | intermediate | — | `npm run build` (before every `tauri build`) |
+| `out/` | intermediate | — | `sh scripts/package.sh` (CI package legs: ~11–32 min per OS) |
+| `coverage/` | intermediate | — | `npx vitest run --coverage` |
+
+`npm run clean` removes the intermediates; `npm run clean-cache` also removes the caches (`--all` removes the target dirs and `node_modules` outright; `--dry-run` sizes first). Neither touches the pinned inputs above.
+
 `maleficium-engine convert` needs no TeX installation: it resolves every file latexml asks for from the pinned bundle. `e2e/convert-run.sh` proves this with the host TeX hidden.
 
 On Linux, `package.sh` repacks the AppImage without the `libwayland-*` libraries the bundler copies in. They clash with a newer host Mesa and leave the window blank.
