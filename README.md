@@ -2,7 +2,7 @@
 
 > **maleficium** _(n.)_: an act of evil sorcery. Also known as debugging LaTeX. This makes the ritual easier.
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/wahahayes-maleficium-11vtyi)](https://m8ven.ai/mcp/wahahayes-maleficium-11vtyi?s=readme) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+[![M8ven Score](https://m8ven.ai/badge/mcp/wahahayes-maleficium-11vtyi)](https://m8ven.ai/mcp/wahahayes-maleficium-11vtyi?s=readme) [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE) [![codecov](https://codecov.io/gh/wahahayes/maleficium/graph/badge.svg)](https://codecov.io/gh/wahahayes/maleficium)
 
 A fully local LaTeX editor, built in Rust and Tauri. It has an MCP server so AI agents can work alongside you, and it turns the same source into both the PDF and an interactive web paper.
 
