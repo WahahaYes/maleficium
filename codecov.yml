@@ -1,0 +1,17 @@
+# Coverage is a signal, never a gate: no status blocks a merge. Uploads come
+# from build.yml (vitest on the Linux fast_check leg). Carryforward keeps the
+# report stable on runs where that job is skipped.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+comment:
+  layout: 'condensed_header, diff, flags, files'
+  require_changes: false
+flag_management:
+  default_rules:
+    carryforward: true
