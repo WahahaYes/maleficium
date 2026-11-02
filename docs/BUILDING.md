@@ -36,11 +36,11 @@ A host build links against the host's glibc. For packages meant for other machin
 
 ### macOS
 
-Install Xcode Command Line Tools (`xcode-select --install`) and git, plus the engine's libraries from Homebrew (the `brew install` line in `.github/workflows/build.yml`). Build on the architecture you target. The app is ad-hoc signed, which Apple silicon requires before it runs a binary.
+Install Xcode Command Line Tools (`xcode-select --install`) and git, plus the engine's libraries from Homebrew (`xargs brew install < scripts/macos-brew.txt`). Build on the architecture you target. The app is ad-hoc signed, which Apple silicon requires before it runs a binary.
 
 ### Windows
 
-Install Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg with the static triplet `x64-windows-static`, which links the C runtime in as well, so the engine needs no Visual C++ Redistributable. The ports and environment variables are in `.github/workflows/build.yml`.
+Install Rust's MSVC toolchain (Visual Studio Build Tools, "Desktop development with C++") and Git Bash. The engine's C libraries come from vcpkg with the static triplet `x64-windows-static`, which links the C runtime in as well, so the engine needs no Visual C++ Redistributable. The ports are listed in `scripts/vcpkg-ports.txt`; the triplet and environment variables are wired in `.github/workflows/build.yml`.
 
 ### Build
 
@@ -73,7 +73,7 @@ python3 e2e/package-smoke.py out  # install out/'s packages and prove they run
 
 [`.github/workflows/build.yml`](../.github/workflows/build.yml) runs on pull requests and on pushes to `main`. It skips the jobs a change cannot affect, based on the paths it touches.
 
-- Each release target builds on its own OS: `package.sh`, then `package-smoke.py`, then `npm run check`. Only toolchain setup differs between them. Each uploads its packages and a screenshot of the smoke launch.
+- Each release target builds on its own OS: `package.sh`, then `package-smoke.py`, then `npm run check:platform`. Only toolchain setup differs between them. Each uploads its packages and a screenshot of the smoke launch. (`check:platform` covers only what can differ per OS; lint, format, types and the full vitest run already ran once in the precommit and fast_check jobs.)
 - An e2e job runs the interactive-papers suites on Linux, the same way `scripts/ci-e2e.sh` runs them locally.
 - Changed vendored papers and examples are recompiled.
 - A final `ci` job passes only if every job the change needed passed.
