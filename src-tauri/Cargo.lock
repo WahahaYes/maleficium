@@ -2225,7 +2225,7 @@ dependencies = [
 name = "maleficium-core"
 version = "0.4.2"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "dirs",
  "dom_query",
  "dunce",
@@ -2273,7 +2273,7 @@ name = "maleficium-mcp"
 version = "0.4.2"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "dunce",
  "maleficium-core",
  "maleficium-events",
