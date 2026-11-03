@@ -73,4 +73,4 @@ Appearance settings flow through `AppearancePrefs` into the theme factory. Bundl
 
 Tests are product code: unit tests sit beside their modules (`*.test.ts`) and in `src/test/`; end-to-end harnesses live in `e2e/`. Harness output stays outside the repo and is never committed. Each harness says in its header what it proves and how to run it; [e2e/README.md](../e2e/README.md) covers the conventions.
 
-Rust build caches grow without limit. `npm run clean` drops the incremental caches; add `-- --all` to remove the target dirs, or `-- --dry-run` to see sizes first.
+Rust build caches grow without limit. `npm run clean` removes the intermediates (`dist/`, `out/`, `coverage/`); `npm run clean-cache` also removes the caches (cargo incremental sessions, the harness target dir). Either takes `-- --dry-run` to see sizes first; `clean-cache -- --all` removes the target dirs and `node_modules` outright. The engine sidecar and format dumps are pinned inputs: clean never touches them. See "Generated files" in [BUILDING.md](./BUILDING.md).
