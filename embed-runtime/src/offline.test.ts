@@ -119,18 +119,32 @@ describe('vendored licenses', () => {
   ]);
   type Lock = {
     packages: Record<string, { license?: string; dependencies?: Record<string, string> }>;
+    dependencies?: Record<string, { license?: string; requires?: Record<string, string> }>;
   };
   const lock = JSON.parse(readFileSync('package-lock.json', 'utf8')) as Lock;
 
   /** Every package reachable from the roots through the lockfile's dependencies. */
   function closure(roots: string[]): Map<string, string> {
+    // A dependency may live only on a nested hoist path (e.g. ansi-styles
+    // under wrap-ansi when nothing needs it at the top level), or in the
+    // legacy lockfile `dependencies` section: fall back to both.
+    const resolveEntry = (name: string) => {
+      const exact = lock.packages[`node_modules/${name}`];
+      if (exact) return exact;
+      const nested = Object.keys(lock.packages).find((k) => k.endsWith(`node_modules/${name}`));
+      if (nested) return lock.packages[nested];
+      const legacy = lock.dependencies?.[name];
+      if (legacy) return { license: legacy.license, dependencies: legacy.requires };
+      return undefined;
+    };
     const seen = new Map<string, string>();
     const queue = [...roots];
     while (queue.length) {
       const name = queue.pop()!;
       if (seen.has(name)) continue;
-      const entry = lock.packages[`node_modules/${name}`];
+      const entry = resolveEntry(name);
       expect(entry, `${name} is in the lockfile`).toBeDefined();
+      if (!entry) continue;
       seen.set(name, entry.license ?? 'MISSING');
       queue.push(...Object.keys(entry.dependencies ?? {}));
     }
