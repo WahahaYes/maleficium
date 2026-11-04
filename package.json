@@ -44,7 +44,7 @@
     "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/ext-apps": "^2.0.3",
     "@mui/icons-material": "^9.4.0",
-    "@mui/material": "^9.4.0",
+    "@mui/material": "^9.5.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-fs": "^2.5.2",
