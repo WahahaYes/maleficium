@@ -25,7 +25,7 @@ name = "maleficium_lib"
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "2.12.4", features = [] }
 tauri-plugin-fs = { version = "2.5.2" }
 tauri-plugin-dialog = "2.7.3"
 serde = { version = "1.0.229", features = ["derive"] }
