@@ -511,7 +511,7 @@ def macos(dir):
 # Windows, so it fails here (it would start with 0xC0000135).
 WINDOWS_SYSTEM = {
     "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "combase.dll", "comctl32.dll", "crypt32.dll",
-    "dwmapi.dll", "gdi32.dll", "kernel32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "shell32.dll",
+    "dwmapi.dll", "gdi32.dll", "imm32.dll", "kernel32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "shell32.dll",
     "shlwapi.dll", "user32.dll", "userenv.dll", "ws2_32.dll",
 }
 

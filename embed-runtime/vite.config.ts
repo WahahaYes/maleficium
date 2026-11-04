@@ -22,6 +22,7 @@ const CLASSIC = ['model', 'video'];
 function classicScript(): Plugin {
   return {
     name: 'classic-script',
+    enforce: 'post',
     generateBundle: {
       order: 'post',
       handler(_o, bundle) {
