@@ -34,7 +34,7 @@ notify = "8"
 jsonschema = { version = "0.58", default-features = false }
 # The reader's sanitizer and article post-processing parse HTML with
 # html5ever through this DOM (already in the tree via tauri-utils).
-dom_query = { version = "0.27", default-features = false }
+dom_query = { version = "0.28", default-features = false }
 
 [build-dependencies]
 serde_json = "1.0.151"
