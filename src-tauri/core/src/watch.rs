@@ -83,7 +83,10 @@ fn key_of(abs: &Path) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn sig_of(path: &Path) -> Sig {
