@@ -68,7 +68,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^16.5.0",
-    "playwright-core": "^1.63.0",
+    "playwright-core": "^1.65.0",
     "plotly.js": "4.1.1",
     "prettier": "^3.9.8",
     "three": "0.186.1",
