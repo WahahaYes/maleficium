@@ -50,7 +50,7 @@
     "@tauri-apps/plugin-fs": "^2.5.2",
     "codemirror": "^6.0.2",
     "pdfjs-dist": "^5.5.207",
-    "react": "^19.3.0",
+    "react": "^19.3.1",
     "react-dom": "^19.3.0",
     "temml": "0.13.5"
   },
