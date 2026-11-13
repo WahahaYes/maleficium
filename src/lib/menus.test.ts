@@ -253,7 +253,7 @@ describe('command registry', () => {
       .find((c) => c.id === 'file.recent')!;
     expect(withRecents.enabled).toBe(true);
     expect(withRecents.children?.map((k) => k.label)).toEqual(['thesis', 'paper', 'Clear Recents']);
-    expect(withRecents.children?.at(-1)?.id).toBe('file.recent-clear');
+    expect(withRecents.children?.[withRecents.children.length - 1]?.id).toBe('file.recent-clear');
     let cleared = 0;
     buildMenus(
       { ...baseCtx, recentProjects: ['/a/paper'] },
