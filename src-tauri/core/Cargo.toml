@@ -17,7 +17,7 @@ schemars = "1.2.2"
 ts-rs = "12.0.1"
 dirs = "7.0.0"
 dunce = "1.0.5"
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 libc = { version = "0.2.189", optional = true }
 maleficium-structure = { path = "../structure" }
 maleficium-events = { path = "../events" }
