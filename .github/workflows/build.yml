@@ -248,6 +248,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ./.github/actions/npm
       - uses: ./.github/actions/engine
+        env:
+          CI_ENGINE_LOGS: ${{ runner.temp }}/engine-logs
 
       # The same on every OS from here.
       - name: Package
@@ -258,12 +260,23 @@ jobs:
           path: out/*
           if-no-files-found: error
       - name: Smoke the installed packages
+        env:
+          CI_SMOKE_LOGS: ${{ runner.temp }}/smoke-logs
         run: python e2e/package-smoke.py out
       # Lint, format, types and vitest run once, in precommit and fast_check;
       # here only what can differ by platform: path handling and the Rust crates.
       - name: Platform checks (path tests, clippy, cargo test)
         if: ${{ !cancelled() }}
         run: npm run check:platform
+      - name: Upload smoke and engine logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-logs-${{ matrix.artifact }}
+          path: |
+            ${{ runner.temp }}/engine-logs/*.log
+            ${{ runner.temp }}/smoke-logs/*.log
+          if-no-files-found: ignore
 
   fast_check:
     needs: [changes, precommit]

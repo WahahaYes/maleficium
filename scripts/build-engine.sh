@@ -17,6 +17,10 @@
 # binary is stamped with the current scripts/engine-key.sh (CI restores it from
 # a cache keyed on that).
 # Needs network, cargo (via rustup), a C and C++ compiler, and libclang headers.
+# CI_ENGINE_LOGS=<dir> keeps each noisy build step's output as <step>.log
+# (default: a temp dir, removed on exit); it still streams to the console
+# through tee, so a failure needs no re-run to be seen. Each step's status is
+# captured past the tee, as in scripts/ci-e2e.sh.
 # POSIX sh.
 set -eu
 unset CDPATH
@@ -26,6 +30,14 @@ BIN="$ROOT/src-tauri/binaries"
 die() { echo "build-engine: $1" >&2; exit 1; }
 say() { echo "build-engine: $1"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
+
+if [ -n "${CI_ENGINE_LOGS:-}" ]; then
+    ELOGS=$CI_ENGINE_LOGS
+    mkdir -p "$ELOGS"
+else
+    ELOGS=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-engine-logs-XXXXXX")
+    trap 'rm -rf "$ELOGS"' EXIT
+fi
 
 case "$(uname -s) $(uname -m)" in
     ("Linux x86_64") TRIPLE=x86_64-unknown-linux-gnu; EXE="" ;;
@@ -82,7 +94,15 @@ if [ "$(uname -s)" = Darwin ] || [ "$(uname -s)" = Linux ]; then
         cmake -S "$g2/graphite2-1.3.14" -B "$g2/build" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_INSTALL_PREFIX="$static_prefix" || die "graphite2 configure failed"
-        cmake --build "$g2/build" >/dev/null && cmake --install "$g2/build" >/dev/null || die "graphite2 build failed"
+        # The build and install logs stream through tee; the status is captured
+        # past the tee so die still fires on failure.
+        {
+            st=0
+            (cmake --build "$g2/build" && cmake --install "$g2/build") 2>&1 || st=$?
+            echo "$st" >"$ELOGS/graphite2.status"
+        } | tee "$ELOGS/graphite2.log"
+        st=$(cat "$ELOGS/graphite2.status")
+        [ "$st" -eq 0 ] || die "graphite2 build failed (log $ELOGS/graphite2.log)"
         rm -rf "$g2"
     fi
     # Linux: libxml2 and libxslt. pkg-config will not link a library statically from a
@@ -98,13 +118,25 @@ if [ "$(uname -s)" = Darwin ] || [ "$(uname -s)" = Linux ]; then
                 c3d8c0c34aa39098f66576fe51969db12a5100b956233dc56506f7a8679be995 "$xs"
             fetch_source https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.42.tar.xz \
                 85ca62cac0d41fc77d3f6033da9df6fd73d20ea2fc18b0a3609ffb4110e1baeb "$xs"
-            (cd "$xs/libxml2-2.12.10" && ./configure --prefix="$static_prefix" --disable-shared --enable-static --with-pic \
-                --without-python --without-icu --without-lzma --without-zlib >/dev/null \
-                && make -j"${CARGO_BUILD_JOBS:-2}" >/dev/null && make install >/dev/null) || die "libxml2 build failed"
-            (cd "$xs/libxslt-1.1.42" && PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" ./configure --prefix="$static_prefix" \
-                --disable-shared --enable-static --with-pic --with-libxml-prefix="$static_prefix" \
-                --without-crypto --without-python --without-plugins --without-debugger >/dev/null \
-                && make -j"${CARGO_BUILD_JOBS:-2}" >/dev/null && make install >/dev/null) || die "libxslt build failed"
+            {
+                st=0
+                (cd "$xs/libxml2-2.12.10" && ./configure --prefix="$static_prefix" --disable-shared --enable-static --with-pic \
+                    --without-python --without-icu --without-lzma --without-zlib \
+                    && make -j"${CARGO_BUILD_JOBS:-2}" && make install) 2>&1 || st=$?
+                echo "$st" >"$ELOGS/libxml2.status"
+            } | tee "$ELOGS/libxml2.log"
+            st=$(cat "$ELOGS/libxml2.status")
+            [ "$st" -eq 0 ] || die "libxml2 build failed (log $ELOGS/libxml2.log)"
+            {
+                st=0
+                (cd "$xs/libxslt-1.1.42" && PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" ./configure --prefix="$static_prefix" \
+                    --disable-shared --enable-static --with-pic --with-libxml-prefix="$static_prefix" \
+                    --without-crypto --without-python --without-plugins --without-debugger \
+                    && make -j"${CARGO_BUILD_JOBS:-2}" && make install) 2>&1 || st=$?
+                echo "$st" >"$ELOGS/libxslt.status"
+            } | tee "$ELOGS/libxslt.log"
+            st=$(cat "$ELOGS/libxslt.status")
+            [ "$st" -eq 0 ] || die "libxslt build failed (log $ELOGS/libxslt.log)"
             rm -rf "$xs"
         fi
     fi
@@ -148,17 +180,33 @@ else
     say "generating format dumps ($dumps_key)"
     mkdir -p "$DUMPS"
     rm -f "$DUMPS"/*.dump.txt "$DUMPS"/*.version "$DUMPS/.stamp"
-    "$engine" dump --out "$DUMPS" --bundle "$bundle_url" \
-        --cache "$ROOT/src-tauri/engine/target/dump-cache" >/dev/null 2>&1 || die "dump failed"
+    {
+        st=0
+        "$engine" dump --out "$DUMPS" --bundle "$bundle_url" \
+            --cache "$ROOT/src-tauri/engine/target/dump-cache" 2>&1 || st=$?
+        echo "$st" >"$ELOGS/dump.status"
+    } | tee "$ELOGS/dump.log"
+    st=$(cat "$ELOGS/dump.status")
+    [ "$st" -eq 0 ] || die "dump failed (log $ELOGS/dump.log)"
     ls "$DUMPS"/plain.*.dump.txt "$DUMPS"/latex.*.dump.txt "$DUMPS"/texlive.*.version >/dev/null \
         || die "dump wrote no dumps"
     printf '%s\n' "$dumps_key" >"$DUMPS/.stamp"
 fi
 
 doc=$(mktemp -d "${TMPDIR:-/tmp}/maleficium-engine-smoke-XXXXXX")
-trap 'rm -rf "$doc"' EXIT
+if [ -n "${CI_ENGINE_LOGS:-}" ]; then
+    trap 'rm -rf "$doc"' EXIT
+else
+    trap 'rm -rf "$doc" "$ELOGS"' EXIT
+fi
 printf '\\documentclass{article}\n\\begin{document}\nfirst page\n\\newpage\nsecond page\n\\end{document}\n' >"$doc/smoke.tex"
-(cd "$doc" && "$engine" compile smoke.tex --synctex >/dev/null 2>&1) || die "smoke compile failed"
+{
+    st=0
+    (cd "$doc" && "$engine" compile smoke.tex --synctex) 2>&1 || st=$?
+    echo "$st" >"$ELOGS/smoke-compile.status"
+} | tee "$ELOGS/smoke-compile.log"
+st=$(cat "$ELOGS/smoke-compile.status")
+[ "$st" -eq 0 ] || die "smoke compile failed (log $ELOGS/smoke-compile.log)"
 # Queried as the app does (core/synctex.rs): from inside the output dir,
 # absolute tex path, relative pdf. pwd -W gives MSYS2 the native C:/ form,
 # which a native Windows binary needs. tr: Windows output ends in CRLF.
@@ -172,7 +220,13 @@ edit=$(cd "$doc" && "$engine" synctex edit -o "1:100:100:smoke.pdf" | tr -d '\r'
 # Convert with no TeX installed: the engine answers latexml's kpsewhich calls
 # from the pinned bundle.
 printf '\\documentclass{article}\n\\begin{document}\n\\section{Smoke}\nHello $x^2$.\n\\end{document}\n' >"$doc/convert.tex"
-(cd "$doc" && "$engine" convert convert.tex --out convert.html --bundle "$bundle_url" \
-    --cache "$ROOT/src-tauri/engine/target/dump-cache" --dumps "$DUMPS" >/dev/null 2>&1) || die "smoke convert failed"
+{
+    st=0
+    (cd "$doc" && "$engine" convert convert.tex --out convert.html --bundle "$bundle_url" \
+        --cache "$ROOT/src-tauri/engine/target/dump-cache" --dumps "$DUMPS") 2>&1 || st=$?
+    echo "$st" >"$ELOGS/smoke-convert.status"
+} | tee "$ELOGS/smoke-convert.log"
+st=$(cat "$ELOGS/smoke-convert.status")
+[ "$st" -eq 0 ] || die "smoke convert failed (log $ELOGS/smoke-convert.log)"
 grep -q 'ltx_title_section' "$doc/convert.html" || die "smoke convert produced no section"
 say "$TRIPLE: smoke ok"

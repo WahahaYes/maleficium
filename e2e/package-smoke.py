@@ -31,7 +31,7 @@ Usage: python3 e2e/package-smoke.py <artifact-dir> [--image IMAGE | --in-contain
 Needs: python3 3.9+; Linux: docker. A first launch needs no recent
 projects, so macOS and Windows expect a fresh user (CI runners are).
 """
-import argparse, contextlib, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
+import argparse, atexit, contextlib, glob, json, os, platform, plistlib, shutil, signal, subprocess, sys, tempfile, time
 
 from mcp_client import McpClient
 
@@ -40,6 +40,15 @@ REQUIRED = ["log.open", "template.welcome", "project.open", "index.open", "file.
 EVENTS_WAIT = 60  # seconds for the first launch to log REQUIRED
 ALIVE = 20  # seconds a launch must survive
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# CI_SMOKE_LOGS=<dir> keeps each probe's full output as <target>.log (default: a
+# temp dir, removed on exit); failures still print only the tail, like ci-e2e.sh.
+SMOKE_LOGS = os.environ.get("CI_SMOKE_LOGS")
+if SMOKE_LOGS:
+    os.makedirs(SMOKE_LOGS, exist_ok=True)
+else:
+    SMOKE_LOGS = tempfile.mkdtemp(prefix="smoke-logs-")
+    atexit.register(lambda: shutil.rmtree(SMOKE_LOGS, ignore_errors=True))
 
 
 def say(msg):
@@ -88,7 +97,10 @@ def compile_probe(cmd, scratch, env=None):
     while rec["status"] == "running" and time.time() < deadline:
         rec = call("compile_poll", {"job_id": job, "tail_lines": 5, "wait_ms": 30000})
     if rec["status"] != "success":
-        fail("compile %s: %s" % (rec["status"], str(rec)[:300]))
+        path = os.path.join(SMOKE_LOGS, "compile-%s.log" % os.path.basename(cmd[0]))
+        with open(path, "w") as f:
+            f.write(str(rec))
+        fail("compile %s: %s (log %s)" % (rec["status"], str(rec)[:300], path))
     hit = call("synctex_forward", {"root_id": "smoke", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
     mcp.close()
     if hit.get("page") != 1:
@@ -117,7 +129,7 @@ def wait_for_welcome(path):
     while True:
         events = read_events(path)
         actions = [e["event"].get("action") for e in events if isinstance(e.get("event"), dict)]
-        errors = [e.get("message", "")[:200] for e in events if e.get("kind") == "error"]
+        errors = [e.get("message", "") for e in events if e.get("kind") == "error"]
         missing = [a for a in REQUIRED if a not in actions]
         if errors or not missing or time.time() > deadline:
             break
@@ -128,7 +140,10 @@ def wait_for_welcome(path):
     if not events:
         return "no event log at %s (the UI never started recording)" % path
     if errors:
-        return "error events: %s" % "; ".join(errors)
+        path = os.path.join(SMOKE_LOGS, "welcome-errors.log")
+        with open(path, "w") as f:
+            f.write("\n".join(errors))
+        return "error events: %s (log %s)" % ("; ".join(m[:200] for m in errors), path)
     if missing:
         return "event log lacks %s (has %s)" % (missing, sorted(set(actions)))
     say("launch events ok: %d events, %s" % (len(events), ",".join(REQUIRED)))
@@ -155,11 +170,15 @@ def launch(name, cmd, events=None, env=None):
         alive = p.poll() is None
     finally:
         stop(p)
+    log.seek(0)
+    data = log.read().decode(errors="replace")
+    path = os.path.join(SMOKE_LOGS, "launch-%s.log" % name)
+    with open(path, "w") as f:
+        f.write(data)
     if why or not alive:
-        log.seek(0)
-        print(log.read().decode(errors="replace")[-3000:])
-        fail("%s: %s" % (name, why or "exited early (code %s)" % p.returncode))
-    say("%s launch ok" % name)
+        print(data[-3000:])
+        fail("%s: %s (log %s)" % (name, why or "exited early (code %s)" % p.returncode, path))
+    say("%s launch ok (log %s)" % (name, path))
 
 
 # ---- object files ----------------------------------------------------------
