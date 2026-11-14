@@ -112,6 +112,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # The necro rust/* checks link through pkg-config (gio-2.0/glib-2.0),
+      # so the precommit runner needs the same system libraries as the build.
+      - name: Linux system libraries
+        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
       - name: Install prek (the hook runner; the pin lives here)
         run: uv tool install "prek==0.5.10"
       - uses: ./.github/actions/npm
