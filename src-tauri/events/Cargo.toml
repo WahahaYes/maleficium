@@ -2,7 +2,7 @@
 name = "maleficium-events"
 version = "0.1.0"
 license = "AGPL-3.0-only"
-edition = "2021"
+edition = "2024"
 description = "App event catalog: the one definition of every bus payload (pure, wasm32-ready); TypeScript is generated from it"
 
 [dependencies]

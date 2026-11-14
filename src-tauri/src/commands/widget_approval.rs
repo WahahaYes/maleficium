@@ -122,13 +122,13 @@ pub fn runtime_install(
         ));
     }
     let parent = root.join(maleficium_core::runtimes::RUNTIMES_DIR);
-    if let Ok(meta) = std::fs::symlink_metadata(&parent) {
-        if meta.file_type().is_symlink() || !meta.is_dir() {
-            return Err(format!(
-                "{} is a link or not a folder: install a copy of the runtime there",
-                maleficium_core::runtimes::RUNTIMES_DIR
-            ));
-        }
+    if let Ok(meta) = std::fs::symlink_metadata(&parent)
+        && (meta.file_type().is_symlink() || !meta.is_dir())
+    {
+        return Err(format!(
+            "{} is a link or not a folder: install a copy of the runtime there",
+            maleficium_core::runtimes::RUNTIMES_DIR
+        ));
     }
     std::fs::create_dir_all(&dest).map_err(|e| format!("cannot create {rel}: {e}"))?;
     let canon = dunce::canonicalize(&dest).map_err(|e| format!("cannot create {rel}: {e}"))?;

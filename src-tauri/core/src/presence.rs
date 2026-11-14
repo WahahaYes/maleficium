@@ -301,12 +301,12 @@ pub(crate) fn request_open_at(
     if !canon.is_dir() {
         return Err(format!("`{project}` is not a folder"));
     }
-    if let Ok(data) = dunce::canonicalize(app_data) {
-        if canon.starts_with(&data) || data.starts_with(&canon) {
-            return Err(format!(
-                "`{project}` holds Maleficium's own data, not a project"
-            ));
-        }
+    if let Ok(data) = dunce::canonicalize(app_data)
+        && (canon.starts_with(&data) || data.starts_with(&canon))
+    {
+        return Err(format!(
+            "`{project}` holds Maleficium's own data, not a project"
+        ));
     }
     let file = match file.map(str::trim).filter(|f| !f.is_empty()) {
         None => None,

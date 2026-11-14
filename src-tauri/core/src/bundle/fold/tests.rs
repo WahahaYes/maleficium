@@ -114,10 +114,10 @@ fn a_widget_document_reports_its_size_behind_the_policy_and_charset() {
         );
         // Never between the policy and an added charset, and before the
         // document's own scripts.
-        if let Some(c) = out.find(CHARSET_META) {
-            if label != "own charset" {
-                assert!(c < reporter, "{label}: {out}");
-            }
+        if let Some(c) = out.find(CHARSET_META)
+            && label != "own charset"
+        {
+            assert!(c < reporter, "{label}: {out}");
         }
         if let Some(own) = out.find("own()") {
             assert!(reporter < own, "{label}");

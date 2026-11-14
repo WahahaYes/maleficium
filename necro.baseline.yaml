@@ -125,57 +125,29 @@ entries:
     fingerprint: ''
     line: 0
   - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 9
-  - rule: 'rust/cargo-manifest'
     path: 'src-tauri/core/Cargo.toml'
     fingerprint: ''
     line: 0
-  - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/core/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 5
   - rule: 'rust/cargo-manifest'
     path: 'src-tauri/engine/Cargo.toml'
     fingerprint: ''
     line: 0
   - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/engine/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 7
-  - rule: 'rust/cargo-manifest'
     path: 'src-tauri/events/Cargo.toml'
     fingerprint: ''
     line: 0
-  - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/events/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 5
   - rule: 'rust/cargo-manifest'
     path: 'src-tauri/index/Cargo.toml'
     fingerprint: ''
     line: 0
   - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/index/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 5
-  - rule: 'rust/cargo-manifest'
     path: 'src-tauri/mcp/Cargo.toml'
     fingerprint: ''
     line: 0
   - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/mcp/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 5
-  - rule: 'rust/cargo-manifest'
     path: 'src-tauri/structure/Cargo.toml'
     fingerprint: ''
     line: 0
-  - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/structure/Cargo.toml'
-    fingerprint: 'edition = "2021"'
-    line: 5
   - rule: 'rust/lint-override-reason'
     path: 'src-tauri/core/src/lib.rs'
     fingerprint: '#[allow(unused_mut)]'

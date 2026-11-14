@@ -132,19 +132,18 @@ pub fn extract_placeholders(html: &str) -> Result<Vec<Placeholder>, JoinError> {
             i = tag.end;
             if matches!(tag.name.as_str(), "script" | "style" | "textarea" | "title") {
                 i = raw_text_end(html, tag.end, &tag.name);
-            } else if tag.name == "span" {
-                if let Some(class) = tag.class.as_deref() {
-                    if let Some(kind) = placeholder_kind(class, lt)? {
-                        let end = placeholder_end(html, &tag, lt)?;
-                        out.push(Placeholder {
-                            index: out.len(),
-                            kind,
-                            start: lt,
-                            end,
-                        });
-                        i = end;
-                    }
-                }
+            } else if tag.name == "span"
+                && let Some(class) = tag.class.as_deref()
+                && let Some(kind) = placeholder_kind(class, lt)?
+            {
+                let end = placeholder_end(html, &tag, lt)?;
+                out.push(Placeholder {
+                    index: out.len(),
+                    kind,
+                    start: lt,
+                    end,
+                });
+                i = end;
             }
         } else {
             i = lt + 1;

@@ -96,10 +96,10 @@ impl<'a> Resolver<'a> {
     pub fn resolve(&mut self, name: &str) -> Option<PathBuf> {
         let base = name.rsplit(['/', '\\']).next().filter(|b| !b.is_empty())?;
         let with_tex = format!("{base}.tex");
-        let found = [base, with_tex.as_str()]
+
+        [base, with_tex.as_str()]
             .into_iter()
-            .find_map(|cand| self.resolve_exact(cand));
-        found
+            .find_map(|cand| self.resolve_exact(cand))
     }
 
     fn resolve_exact(&mut self, name: &str) -> Option<PathBuf> {

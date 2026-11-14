@@ -182,10 +182,10 @@ pub fn ordered<'a>(index: &'a ProjectIndex, main: Option<&str>) -> Vec<&'a str> 
     let mut seen = std::collections::HashSet::new();
     if let Some(main) = main {
         for rel in Document::walk(index, main).files {
-            if let Some(f) = index.get(&rel) {
-                if seen.insert(f.rel) {
-                    out.push(f.rel);
-                }
+            if let Some(f) = index.get(&rel)
+                && seen.insert(f.rel)
+            {
+                out.push(f.rel);
             }
         }
     }
