@@ -139,7 +139,7 @@ pub(crate) fn add_record(out: &mut Vec<Equation>, n: usize, line: &str) -> Resul
                 m => {
                     return Err(at(format!(
                         "equation {id}: mode `{m}` is not inline or widget"
-                    )))
+                    )));
                 }
             };
             out.push(Equation {

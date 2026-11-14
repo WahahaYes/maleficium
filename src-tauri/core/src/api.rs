@@ -15,10 +15,10 @@ use crate::Core;
 use maleficium_events::{
     BatchFile, BundleProfile, BusEvent, OfflineReadiness, RecordOutcome, RetentionInfo, Revision,
 };
+use maleficium_index::ProjectMacro;
 use maleficium_index::definition::Lookup;
 use maleficium_index::replace::{ReplaceApplied, ReplacePreview};
 use maleficium_index::search::{FileMatch, Query, Ranked, SearchResult};
-use maleficium_index::ProjectMacro;
 use maleficium_structure::{Diagnostic, Outline};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

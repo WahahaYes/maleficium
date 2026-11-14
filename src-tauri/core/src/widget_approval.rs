@@ -31,9 +31,9 @@
 //! package is never judged. [`check_runtime`] returns the snapshot it
 //! judged, and the exporter folds exactly those files.
 
+use crate::Core;
 use crate::runtimes::RuntimeManifest;
 use crate::widgets::{Widget, WidgetCsp, WidgetType};
-use crate::Core;
 
 pub use maleficium_events::RuntimeDecision;
 use maleficium_events::{Actor, AppEvent, BusEvent, EventKind, EventScope, WidgetApprovalCause};
@@ -699,7 +699,7 @@ fn load(base: &Path, root: &Path) -> (Store, Option<String>) {
             return (
                 Store::empty(root),
                 Some(format!("approval store unreadable: {e}")),
-            )
+            );
         }
     };
     match serde_json::from_slice::<Store>(&raw) {
@@ -1259,7 +1259,7 @@ pub fn snapshot_runtime(
             return Ok(invalid(
                 dir,
                 format!("{path} is a link or not a folder: install a copy of the runtime there"),
-            ))
+            ));
         }
     }
     let mut files = BTreeMap::new();
@@ -1372,7 +1372,9 @@ fn judge_runtime(
         })
     };
     let need = |cause: WidgetApprovalCause| {
-        let ask = format!("Ask the user to open {PANEL} in Maleficium, review the runtime and click Allow; until then its widgets export as posters only.");
+        let ask = format!(
+            "Ask the user to open {PANEL} in Maleficium, review the runtime and click Allow; until then its widgets export as posters only."
+        );
         let message = match cause {
             WidgetApprovalCause::NeverApproved => format!(
                 "Runtime '{reference}' (used by {}) has not been allowed in this project. {ask}",

@@ -31,11 +31,13 @@ pub fn run() {
                 .set_poster_renderer(std::sync::Arc::new(renderer));
             // What this window has open, kept fresh for the MCP server's
             // read view (the frontend publishes it; this keeps it alive).
-            std::thread::spawn(|| loop {
-                std::thread::sleep(std::time::Duration::from_millis(
-                    maleficium_core::presence::HEARTBEAT_MS,
-                ));
-                maleficium_core::presence::heartbeat();
+            std::thread::spawn(|| {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        maleficium_core::presence::HEARTBEAT_MS,
+                    ));
+                    maleficium_core::presence::heartbeat();
+                }
             });
             Ok(())
         })

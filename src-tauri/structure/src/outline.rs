@@ -10,7 +10,7 @@ use regex::Regex;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::text::{base_name, strip_comments, Lines};
+use crate::text::{Lines, base_name, strip_comments};
 
 /// Rows past this cap are counted in `Outline::truncated`, not returned.
 pub const MAX_OUTLINE_ENTRIES: usize = 1000;
@@ -354,9 +354,11 @@ mod tests {
 
     #[test]
     fn unterminated_float_is_not_a_row() {
-        assert!(outline("\\begin{figure}\n\\caption{C}\n")
-            .entries
-            .is_empty());
+        assert!(
+            outline("\\begin{figure}\n\\caption{C}\n")
+                .entries
+                .is_empty()
+        );
         let far = format!(
             "\\begin{{figure}}{}\\end{{figure}}",
             "x".repeat(FLOAT_BODY_MAX + 1)

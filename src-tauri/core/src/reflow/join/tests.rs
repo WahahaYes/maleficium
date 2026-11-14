@@ -70,9 +70,10 @@ fn several_widgets_join_in_document_order() {
     ];
     let j = join_sidecar(&html, &sidecar(&rows)).unwrap();
     assert_eq!(ids(&j), ["a-chart", "b-table", "c-html"]);
-    assert!(j
-        .windows(2)
-        .all(|w| w[0].placeholder.end <= w[1].placeholder.start));
+    assert!(
+        j.windows(2)
+            .all(|w| w[0].placeholder.end <= w[1].placeholder.start)
+    );
     let out = apply(&html, &j).unwrap();
     assert!(out.contains(
         "<p><!--mount:a-chart--></p><p><!--mount:b-table--></p><p><!--mount:c-html--></p>"

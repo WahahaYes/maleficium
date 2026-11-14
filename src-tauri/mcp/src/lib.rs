@@ -6,10 +6,10 @@
 //! text-only hosts read the same JSON in `content`).
 
 use rmcp::{
+    ServiceExt,
     handler::server::wrapper::{Json, Parameters},
     tool, tool_handler, tool_router,
     transport::stdio,
-    ServiceExt,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1965,14 +1965,18 @@ mod tests {
         props.sort();
         assert_eq!(props, ["main_rel", "root_id"]);
         assert_eq!(schema["additionalProperties"], false);
-        assert!(serde_json::from_value::<DocumentParams>(
-            serde_json::json!({"root_id": "r", "main_rel": "main.tex"})
-        )
-        .is_ok());
-        assert!(serde_json::from_value::<DocumentParams>(
-            serde_json::json!({"root_id": "r", "main_rel": "main.tex", "approve": true})
-        )
-        .is_err());
+        assert!(
+            serde_json::from_value::<DocumentParams>(
+                serde_json::json!({"root_id": "r", "main_rel": "main.tex"})
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<DocumentParams>(
+                serde_json::json!({"root_id": "r", "main_rel": "main.tex", "approve": true})
+            )
+            .is_err()
+        );
 
         let m = Maleficium::default();
         let dir = core::test_scratch::dir("mcp-document");
@@ -2031,10 +2035,12 @@ mod tests {
             .map(String::as_str)
             .collect();
         assert_eq!(props, ["main_rel", "root_id"]);
-        assert!(serde_json::from_value::<PreviewBundleParams>(
-            serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
-        )
-        .is_err());
+        assert!(
+            serde_json::from_value::<PreviewBundleParams>(
+                serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -2159,14 +2165,18 @@ mod tests {
         assert_eq!(props, ["reference", "replace", "root_id"]);
         assert_eq!(schema["additionalProperties"], false);
 
-        assert!(serde_json::from_value::<RuntimeScaffoldParams>(
-            serde_json::json!({"name": "orbit-view", "from": "model@1"})
-        )
-        .is_ok());
-        assert!(serde_json::from_value::<RuntimeValidateParams>(
-            serde_json::json!({"reference": "orbit-view@1"})
-        )
-        .is_ok());
+        assert!(
+            serde_json::from_value::<RuntimeScaffoldParams>(
+                serde_json::json!({"name": "orbit-view", "from": "model@1"})
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<RuntimeValidateParams>(
+                serde_json::json!({"reference": "orbit-view@1"})
+            )
+            .is_ok()
+        );
         for extra in ["approve", "allow", "decide", "digest", "revoke", "mode"] {
             let mut v = serde_json::json!({"name": "orbit-view"});
             v[extra] = serde_json::json!(true);
@@ -2188,20 +2198,22 @@ mod tests {
             );
         }
         let m = Maleficium::default();
-        assert!(m
-            .runtime_scaffold(Parameters(
+        assert!(
+            m.runtime_scaffold(Parameters(
                 serde_json::from_value(serde_json::json!({"name": "nope!"})).unwrap()
             ))
-            .is_err());
+            .is_err()
+        );
         // An ungranted project: nothing to install into.
-        assert!(m
-            .runtime_install(Parameters(
+        assert!(
+            m.runtime_install(Parameters(
                 serde_json::from_value(
                     serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
                 )
                 .unwrap()
             ))
-            .is_err());
+            .is_err()
+        );
     }
 
     /// The app-windows view is read-only and takes no arguments: it lists
@@ -2218,9 +2230,11 @@ mod tests {
         assert_eq!(a.destructive_hint, Some(false));
         assert_eq!(a.open_world_hint, Some(false));
         let schema = serde_json::to_value(&*t.input_schema).unwrap();
-        assert!(schema["properties"]
-            .as_object()
-            .is_none_or(|p| p.is_empty()));
+        assert!(
+            schema["properties"]
+                .as_object()
+                .is_none_or(|p| p.is_empty())
+        );
         assert_eq!(schema["additionalProperties"], false);
         assert!(
             serde_json::from_value::<AppWindowsParams>(serde_json::json!({"open": true})).is_err()
@@ -2446,7 +2460,7 @@ mod tests {
     /// The dashboard's poll reports the phase and downloads it renders.
     #[test]
     fn progress_follows_phase_and_fetch_signals() {
-        use maleficium_structure::{line_signal, CompilePhase};
+        use maleficium_structure::{CompilePhase, line_signal};
         let mut p = core::Progress::default();
         for line in [
             "note: downloading article.cls",
@@ -2628,31 +2642,34 @@ mod tests {
             .unwrap();
         assert!(read.0.text.contains("\\section{Hi}"));
 
-        assert!(m
-            .compile_run(Parameters(CompileRunParams {
+        assert!(
+            m.compile_run(Parameters(CompileRunParams {
                 root_id: "nope".into(),
                 rel: Some("main.tex".into()),
                 networked: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-        assert!(rt
-            .block_on(m.compile_poll(Parameters(CompilePollParams {
+        assert!(
+            rt.block_on(m.compile_poll(Parameters(CompilePollParams {
                 job_id: "nope".into(),
                 tail_lines: None,
                 wait_ms: Some(0),
             })))
-            .is_err());
+            .is_err()
+        );
 
-        assert!(m
-            .offline_readiness(Parameters(RootParams {
+        assert!(
+            m.offline_readiness(Parameters(RootParams {
                 root_id: "cov".into()
             }))
-            .is_ok());
+            .is_ok()
+        );
 
         let stamp = m
             .output_stamp(Parameters(MainParams {
@@ -2663,13 +2680,14 @@ mod tests {
         assert!(stamp.0.stamp.is_none());
 
         let pdf_dest = dir.join("out.pdf").to_string_lossy().to_string();
-        assert!(m
-            .export_pdf(Parameters(ExportPdfParams {
+        assert!(
+            m.export_pdf(Parameters(ExportPdfParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 dest: pdf_dest,
             }))
-            .is_err());
+            .is_err()
+        );
 
         let zip_parent = core::test_scratch::dir("cov-zip");
         std::fs::create_dir_all(&zip_parent).unwrap();
@@ -2695,26 +2713,29 @@ mod tests {
                 name: "proj1".into(),
             }))
             .unwrap();
-        assert!(std::path::Path::new(&created.0.root)
-            .join(&created.0.main)
-            .is_file());
+        assert!(
+            std::path::Path::new(&created.0.root)
+                .join(&created.0.main)
+                .is_file()
+        );
 
         let cancel = m.compile_cancel(Parameters(CancelParams {
             job_id: "nope".into(),
         }));
         assert_eq!(cancel.err(), Some("unknown job: nope".to_string()));
 
-        assert!(m
-            .synctex_forward(Parameters(ForwardParams {
+        assert!(
+            m.synctex_forward(Parameters(ForwardParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 tex_rel: "main.tex".into(),
                 line: 1,
             }))
-            .is_err());
+            .is_err()
+        );
 
-        assert!(m
-            .snippet(Parameters(SnippetParams {
+        assert!(
+            m.snippet(Parameters(SnippetParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 tex_rel: None,
@@ -2723,27 +2744,30 @@ mod tests {
                 page: Some(1),
                 with_image: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
-        assert!(m
-            .snippet_render(Parameters(SnippetRenderParams {
+        assert!(
+            m.snippet_render(Parameters(SnippetRenderParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 page: 1,
                 region: None,
                 scale: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
-        assert!(m
-            .synctex_inverse(Parameters(InverseParams {
+        assert!(
+            m.synctex_inverse(Parameters(InverseParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 page: 1,
                 x: None,
                 y: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
         std::fs::write(dir.join("victim.txt"), "bye").unwrap();
         let unconfirmed = m.delete(Parameters(DeleteParams {
@@ -2774,38 +2798,43 @@ mod tests {
             "bye"
         );
 
-        assert!(m
-            .log_tail(Parameters(LogTailParams {
+        assert!(
+            m.log_tail(Parameters(LogTailParams {
                 root_id: "cov".into(),
                 rel: "main.tex".into(),
                 max_lines: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
-        assert!(m
-            .outline(Parameters(FileParams {
+        assert!(
+            m.outline(Parameters(FileParams {
                 root_id: "cov".into(),
                 rel: "main.tex".into()
             }))
-            .is_ok());
-        assert!(m
-            .file_graph(Parameters(MainParams {
+            .is_ok()
+        );
+        assert!(
+            m.file_graph(Parameters(MainParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into()
             }))
-            .is_ok());
-        assert!(m
-            .labels_refs(Parameters(MainParams {
+            .is_ok()
+        );
+        assert!(
+            m.labels_refs(Parameters(MainParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into()
             }))
-            .is_ok());
-        assert!(m
-            .citations(Parameters(MainParams {
+            .is_ok()
+        );
+        assert!(
+            m.citations(Parameters(MainParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into()
             }))
-            .is_ok());
+            .is_ok()
+        );
         m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
         let doc = m
             .document_structure(Parameters(DocumentParams {
@@ -2815,12 +2844,13 @@ mod tests {
             .unwrap();
         assert_eq!(doc.0.sections.len(), 2);
         assert_eq!(doc.0.widgets.len(), 5);
-        assert!(m
-            .precompile_checks(Parameters(MainParams {
+        assert!(
+            m.precompile_checks(Parameters(MainParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into()
             }))
-            .is_ok());
+            .is_ok()
+        );
 
         let search = m
             .search(Parameters(SearchParams {
@@ -2854,9 +2884,11 @@ mod tests {
             }))
             .unwrap();
         assert!(applied.0.written.contains(&"main.tex".to_string()));
-        assert!(std::fs::read_to_string(canon.join("main.tex"))
-            .unwrap()
-            .contains("Hello"));
+        assert!(
+            std::fs::read_to_string(canon.join("main.tex"))
+                .unwrap()
+                .contains("Hello")
+        );
         let undone = m
             .replace_undo(Parameters(ReplaceUndoParams {
                 root_id: "cov".into(),
@@ -2864,9 +2896,11 @@ mod tests {
             }))
             .unwrap();
         assert!(undone.0.restored.iter().any(|f| f.rel == "main.tex"));
-        assert!(std::fs::read_to_string(canon.join("main.tex"))
-            .unwrap()
-            .contains("\\section{Hi}"));
+        assert!(
+            std::fs::read_to_string(canon.join("main.tex"))
+                .unwrap()
+                .contains("\\section{Hi}")
+        );
 
         let definition = m
             .definition(Parameters(DefinitionParams {
@@ -2890,13 +2924,14 @@ mod tests {
             .unwrap();
         assert!(!found.0.files.is_empty());
 
-        assert!(m
-            .diagnostics(Parameters(DiagnosticsParams {
+        assert!(
+            m.diagnostics(Parameters(DiagnosticsParams {
                 root_id: "cov".into(),
                 main_rel: "main.tex".into(),
                 max: None,
             }))
-            .is_err());
+            .is_err()
+        );
 
         // Never compiled: the widget tools fail closed, none returns an empty list.
         let main = |extra: serde_json::Value| {
@@ -2906,57 +2941,65 @@ mod tests {
                 .extend(extra.as_object().unwrap().clone());
             v
         };
-        assert!(m
-            .widgets(Parameters(
+        assert!(
+            m.widgets(Parameters(
                 serde_json::from_value(main(serde_json::json!({}))).unwrap()
             ))
-            .is_err());
-        assert!(m
-            .widgets_status(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.widgets_status(Parameters(
                 serde_json::from_value(main(serde_json::json!({}))).unwrap()
             ))
-            .is_err());
-        assert!(m
-            .widget_check(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.widget_check(Parameters(
                 serde_json::from_value(main(serde_json::json!({"widget": "w"}))).unwrap()
             ))
-            .is_err());
-        assert!(m
-            .preview_bundle(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.preview_bundle(Parameters(
                 serde_json::from_value(main(serde_json::json!({}))).unwrap()
             ))
-            .is_err());
-        assert!(m
-            .export_bundle(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.export_bundle(Parameters(
                 serde_json::from_value(main(
                     serde_json::json!({"dest": "/tmp/maleficium-cov-bundle", "profile": "folder"})
                 ))
                 .unwrap()
             ))
-            .is_err());
+            .is_err()
+        );
 
         // The runtime authoring tools: the scaffold refuses a bad name
         // before touching the library, and the validator fails closed on
         // an ungranted root or a missing library copy. Neither writes to
         // a project, and neither can approve.
-        assert!(m
-            .runtime_scaffold(Parameters(
+        assert!(
+            m.runtime_scaffold(Parameters(
                 serde_json::from_value(serde_json::json!({"name": "Model"})).unwrap()
             ))
-            .is_err());
-        assert!(m
-            .runtime_validate(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.runtime_validate(Parameters(
                 serde_json::from_value(
                     serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
                 )
                 .unwrap()
             ))
-            .is_err());
-        assert!(m
-            .runtime_validate(Parameters(
+            .is_err()
+        );
+        assert!(
+            m.runtime_validate(Parameters(
                 serde_json::from_value(serde_json::json!({"reference": "nope@1"})).unwrap()
             ))
-            .is_err());
+            .is_err()
+        );
 
         let covered = [
             "grant",

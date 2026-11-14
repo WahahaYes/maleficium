@@ -364,9 +364,11 @@ mod tests {
         assert!(!cwd.join("stray-beamer").exists());
         std::fs::write(parent.join("file"), "x").unwrap();
         let not_dir = parent.join("file").to_string_lossy().to_string();
-        assert!(instantiate("article", &not_dir, "p")
-            .unwrap_err()
-            .contains("not a folder"));
+        assert!(
+            instantiate("article", &not_dir, "p")
+                .unwrap_err()
+                .contains("not a folder")
+        );
         assert!(instantiate("no-such", &parent.to_string_lossy(), "p").is_err());
         assert!(instantiate("../etc", &parent.to_string_lossy(), "p").is_err());
     }
@@ -389,10 +391,12 @@ mod tests {
         };
         let saved = import_folder_in(&base, &proj.to_string_lossy(), info.clone()).unwrap();
         assert!(saved.user);
-        assert!(list_in(&base)
-            .templates
-            .iter()
-            .any(|t| t.id == id && t.user));
+        assert!(
+            list_in(&base)
+                .templates
+                .iter()
+                .any(|t| t.id == id && t.user)
+        );
         assert!(
             import_folder_in(&base, &proj.to_string_lossy(), info.clone())
                 .unwrap_err()
