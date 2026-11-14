@@ -1,0 +1,122 @@
+version: 1
+entries:
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/components/Preview.tsx'
+    fingerprint: "backgroundColor: 'rgba(128, 128, 128, 0.12)',"
+    line: 277
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/components/WidgetsPanel.tsx'
+    fingerprint: "add: 'rgba(46,160,67,0.22)',"
+    line: 49
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/components/WidgetsPanel.tsx'
+    fingerprint: "del: 'rgba(248,81,73,0.22)',"
+    line: 50
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/appearance.test.ts'
+    fingerprint: "expect(theme.palette.background?.default).toBe('#1a1b26');"
+    line: 32
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/appearance.test.ts'
+    fingerprint: "expect(theme.palette.background?.default).toBe('#fafafa');"
+    line: 42
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/appearance.test.ts'
+    fingerprint: "expect(theme.palette.background?.paper).toBe('#24283b');"
+    line: 31
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/appearance.test.ts'
+    fingerprint: "expect(theme.palette.background?.paper).toBe('#ffffff');"
+    line: 41
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "const lifted = readable('#5a3d7a', '#24283b', true);"
+    line: 60
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "const lifted = readable('#5a3d7a', '#24283b', true);"
+    line: 60
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "expect(getContrastRatio(lifted, '#24283b')).toBeGreaterThanOrEqual(MIN_CONTRAST);"
+    line: 61
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "expect(readable('#ffffff', '#000000', true)).toBe('#ffffff');"
+    line: 59
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "expect(readable('#ffffff', '#000000', true)).toBe('#ffffff');"
+    line: 59
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "expect(readable('#ffffff', '#000000', true)).toBe('#ffffff');"
+    line: 59
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/editorTheme.test.ts'
+    fingerprint: "expect(s.background).toBe('#24283b');"
+    line: 14
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: '"editor.background": "#282A36",'
+    line: 9
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: '"editor.foreground": "#F8F8F2",'
+    line: 10
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: '"editorError.foreground": "#FF5555",'
+    line: 11
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.background).toBe('#282A36');"
+    line: 21
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.blue).toBe('#7aa2f7');"
+    line: 30
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.foreground).toBe('#F8F8F2');"
+    line: 22
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.green).toBe('#50FA7B');"
+    line: 24
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.red).toBe('#FF5555');"
+    line: 23
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: "expect(t1.yellow).toBe('#e0af68');"
+    line: 31
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.test.ts'
+    fingerprint: '{ "scope": "string, constant", "settings": { "foreground": "#50FA7B" } },'
+    line: 14
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "background: '#1a1b26',"
+    line: 29
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "blue: '#7aa2f7',"
+    line: 33
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "foreground: '#a9b1d1',"
+    line: 30
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "green: '#9ece6a',"
+    line: 32
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "red: '#f7768e',"
+    line: 31
+  - rule: 'manifest-theme-tokens-only'
+    path: 'src/lib/vscodeTheme.ts'
+    fingerprint: "yellow: '#e0af68',"
+    line: 34

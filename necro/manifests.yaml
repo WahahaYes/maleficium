@@ -31,3 +31,10 @@ rules:
     message: Hardcoded version outside the release manifests
     why: The version lives in exactly package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml, synced by scripts/release-meta.py and scripts/release.sh. Copies anywhere else go stale on every bump (STALE_PATHS at scripts/release-meta.py:34).
     fix: Read the version from a manifest at build time instead of copying the number.
+
+  manifest-theme-tokens-only:
+    command: 'necro grep "#[0-9a-fA-F]{6}|rgba?\(" -- src/components src/lib'
+    exclude: { glob: 'src/lib/theme.ts' }
+    message: Hardcoded color outside the theme
+    why: src/lib/theme.ts is the single source for the palette; a literal elsewhere freezes one mode's value and drifts from the theme on the next palette change.
+    fix: Read the color from the MUI theme or a var(--m-*) token instead of copying the value.
