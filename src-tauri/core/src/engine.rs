@@ -108,10 +108,10 @@ pub fn bundle_files(cache: &Path) -> Option<Arc<HashSet<String>>> {
     let meta = std::fs::metadata(&path).ok()?;
     let key = (path.clone(), meta.len(), meta.modified().ok());
     let mut memo = INDEX.get_or_init(|| Mutex::new(None)).lock().unwrap();
-    if let Some((k, names)) = memo.as_ref() {
-        if *k == key {
-            return Some(names.clone());
-        }
+    if let Some((k, names)) = memo.as_ref()
+        && *k == key
+    {
+        return Some(names.clone());
     }
     let text = std::fs::read_to_string(&path).ok()?;
     let names: Arc<HashSet<String>> = Arc::new(
@@ -313,17 +313,17 @@ fn compile_with(
             )));
             missing = missing.map(ms::offline_reading);
         }
-        if missing.is_none() {
-            if let DigestCheck::Changed(d) = check_digest(cache) {
-                on_line(&status_line(format!(
-                    "TeX bundle changed: {} now resolves to {d}",
-                    bundle_url()
-                )));
-                missing = Some(MissingDependency {
-                    file: None,
-                    reason: MissingReason::BundleChanged,
-                });
-            }
+        if missing.is_none()
+            && let DigestCheck::Changed(d) = check_digest(cache)
+        {
+            on_line(&status_line(format!(
+                "TeX bundle changed: {} now resolves to {d}",
+                bundle_url()
+            )));
+            missing = Some(MissingDependency {
+                file: None,
+                reason: MissingReason::BundleChanged,
+            });
         }
         return Ok(Compiled {
             status,

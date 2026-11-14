@@ -317,15 +317,15 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Some(v) = s
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Some(v) = s
                 .get(i + 1..i + 3)
                 .and_then(|h| u8::from_str_radix(h, 16).ok())
-            {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        {
+            out.push(v);
+            i += 3;
+            continue;
         }
         out.push(b[i]);
         i += 1;
@@ -459,10 +459,10 @@ pub fn fold_bundle(files: &BTreeMap<String, Vec<u8>>, policy: &str) -> Result<Fo
         .replace_all(&html, |c: &Captures| {
             let mut attrs = format!(" {}", c[2].trim().trim_end_matches('/'));
             for name in ["src", "poster"] {
-                if let Some(v) = attr_value(&attrs, name) {
-                    if let Some(d) = f.as_data_url(&entry_dir, &v) {
-                        attrs = without_attr(&attrs, name) + &format!(" {name}=\"{d}\"");
-                    }
+                if let Some(v) = attr_value(&attrs, name)
+                    && let Some(d) = f.as_data_url(&entry_dir, &v)
+                {
+                    attrs = without_attr(&attrs, name) + &format!(" {name}=\"{d}\"");
                 }
             }
             format!("<{}{}>", &c[1], attrs)

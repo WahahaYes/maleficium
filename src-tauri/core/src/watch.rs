@@ -140,10 +140,10 @@ pub fn is_echo(cx: &Core, abs: &Path) -> bool {
         return true;
     }
     // A newer own write may have replaced the record meanwhile: keep that one.
-    if let Ok(mut o) = own_of(cx).lock() {
-        if o.get(&key) == Some(&want) {
-            o.remove(&key);
-        }
+    if let Ok(mut o) = own_of(cx).lock()
+        && o.get(&key) == Some(&want)
+    {
+        o.remove(&key);
     }
     false
 }

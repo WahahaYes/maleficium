@@ -307,10 +307,10 @@ fn refine(
         return (page, region);
     }
     for back in 1..=LOOK_BACK_LINES.min(line.saturating_sub(1)) {
-        if let Ok(Some((p, r))) = placed(cx, root_id, main_rel, tex_rel, line - back) {
-            if r.height < BODY_FRACTION * page_h(p) {
-                return (p, r);
-            }
+        if let Ok(Some((p, r))) = placed(cx, root_id, main_rel, tex_rel, line - back)
+            && r.height < BODY_FRACTION * page_h(p)
+        {
+            return (p, r);
         }
     }
     (page, region)

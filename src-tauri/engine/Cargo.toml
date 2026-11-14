@@ -4,7 +4,8 @@ version = "0.3.0"
 license = "AGPL-3.0-only"
 description = "The compile and convert engines, run as a child of the app"
 authors = ["Ethan Wilson"]
-edition = "2021"
+edition = "2024"
+rust-version = "1.100"
 
 # Not a member of ../Cargo.toml: it has its own toolchain pin and lockfile.
 [workspace]

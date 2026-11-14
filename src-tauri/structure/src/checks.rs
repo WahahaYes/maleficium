@@ -90,10 +90,11 @@ pub fn precompile_checks(files: &[(String, &Symbols)], env: &CheckEnv) -> Vec<Fi
     for (path, s) in files {
         for p in &s.packages {
             let file = format!("{}.{}", p.name, if p.class { "cls" } else { "sty" });
-            if let Some(in_bundle) = env.in_bundle {
-                if !(env.in_project)(&file) && !in_bundle(&file) {
-                    push(at(CheckKind::NotInBundle, &file, path, p.line, None));
-                }
+            if let Some(in_bundle) = env.in_bundle
+                && !(env.in_project)(&file)
+                && !in_bundle(&file)
+            {
+                push(at(CheckKind::NotInBundle, &file, path, p.line, None));
             }
             if !p.class && p.name == "biblatex" {
                 let backend = biblatex_backend(p.options.as_deref());
