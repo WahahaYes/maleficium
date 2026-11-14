@@ -1,6 +1,7 @@
 rules:
   manifest-runtime-closed-keys:
     command: python3 necro/manifest_keys.py
+    files: '(^|/)runtime\.json$'
     message: Unknown top-level key in runtime.json
     why: runtime.json is a closed schema. ManifestFile carries deny_unknown_fields (src-tauri/core/src/runtimes.rs:355) and docs/RUNTIMES.md:27 lists the only legal keys, with poster allowed on built-ins only.
     fix: Remove the unknown key. Keep prose in README.md, not in the manifest.
