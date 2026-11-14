@@ -1,5 +1,5 @@
 (function(three, three_addons_loaders_GLTFLoader_js, three_addons_controls_OrbitControls_js, embed_runtime_src_bridge) {
-	//#region embed-runtime/src/model/core.ts
+	// embed-runtime/src/model/core.ts
 	var GLB_MAGIC = 1179937895;
 	var JSON_CHUNK = 1313821514;
 	var UNSUPPORTED = [
@@ -79,8 +79,7 @@
 			far: d + r * 2
 		};
 	}
-	//#endregion
-	//#region embed-runtime/src/model/main.ts
+	// embed-runtime/src/model/main.ts
 	var FOV = 40;
 	var host = document.getElementById("view");
 	var note = document.getElementById("msg");
@@ -256,5 +255,4 @@
 	});
 	window.addEventListener("resize", resize);
 	new ResizeObserver(resize).observe(host);
-	//#endregion
 })(THREE, THREE, THREE, mfwBridge);
