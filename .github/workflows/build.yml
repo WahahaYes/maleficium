@@ -104,7 +104,7 @@ jobs:
   # it. Formatters rewrite files, so a hook that changes anything fails here.
   precommit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GITLEAKS_VERSION: 8.30.1
     steps:
@@ -121,6 +121,20 @@ jobs:
       - uses: ./.github/actions/npm
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
         run: rustup toolchain install
+      # The engine is its own workspace with its own (nightly) pin.
+      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
+        working-directory: src-tauri/engine
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The necro rust/* checks run clippy, whose tauri build script needs the
+      # bundled engine binary; restore it from the shared cache (main seeds it)
+      # before prek runs. fast_check runs vitest only.
+      - uses: ./.github/actions/engine
       # A version written into the app or docs goes stale at the next bump.
       - name: No hardcoded versions
         run: uv run --no-project scripts/release-meta.py stale
