@@ -99,24 +99,48 @@ jobs:
           fi
           echo "matrix={\"include\":[$m]}" >> "$GITHUB_OUTPUT"
 
-  # Every pre-commit hook except clippy (heavy; the package jobs run it in
+  # Every hook except clippy (heavy; the package jobs run it in
   # npm run check), as the first and cheapest gate: the other jobs wait for
   # it. Formatters rewrite files, so a hook that changes anything fails here.
   precommit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GITLEAKS_VERSION: 8.30.1
+      # The necro rust/* checks clippy the engine workspace too, whose
+      # kpathsea crate needs libkpathsea or a kpsewhich at build time. The
+      # product ships no TeX distribution, so build without either, as
+      # scripts/build-engine.sh does; the package jobs never clippy the
+      # engine, which is why linux-deps.txt needs no TeX in it.
+      KPATHSEA_SKIP_TOOLCHAIN_CHECK: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Install prek (the pre-commit runner; the pin lives here)
-        run: uv tool install "prek==0.5.9"
+      # The necro rust/* checks link through pkg-config (gio-2.0/glib-2.0),
+      # so the precommit runner needs the same system libraries as the build.
+      - name: Linux system libraries
+        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
+      - name: Install prek (the hook runner; the pin lives here)
+        run: uv tool install "prek==0.5.10"
       - uses: ./.github/actions/npm
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
         run: rustup toolchain install
+      # The engine is its own workspace with its own (nightly) pin.
+      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
+        working-directory: src-tauri/engine
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The necro rust/* checks run clippy, whose tauri build script needs the
+      # bundled engine binary; restore it from the shared cache (main seeds it)
+      # before prek runs. fast_check runs vitest only.
+      - uses: ./.github/actions/engine
       # A version written into the app or docs goes stale at the next bump.
       - name: No hardcoded versions
         run: uv run --no-project scripts/release-meta.py stale

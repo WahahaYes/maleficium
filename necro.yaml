@@ -1,2 +1,2 @@
 version: 0
-include: [necro/manifests.yaml]
+include: [necro/manifests.yaml, necro:rust]

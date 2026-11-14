@@ -18,7 +18,7 @@ The browser suites run headless, but headless Firefox has no WebGL without a dis
 
 ## Harnesses that spend model credits
 
-`agent-run.py`, `codrive-run.py` and `showreel/run.py` drive a real model. They run by hand only, never in CI or pre-commit. Each takes `--budget` and stops starting runs once the reported cost reaches it. `agent-run.py --self-test` and `codrive-run.py --runner script` check the harness with no model.
+`agent-run.py`, `codrive-run.py` and `showreel/run.py` drive a real model. They run by hand only, never in CI or hooks. Each takes `--budget` and stops starting runs once the reported cost reaches it. `agent-run.py --self-test` and `codrive-run.py --runner script` check the harness with no model.
 
 Two runners are supported: `opencode` (signed in to the model's provider) and `claude`. Both need `bwrap`. The claude runner needs a token from `claude setup-token`, in `CLAUDE_CODE_OAUTH_TOKEN` or in `~/.config/maleficium/claude-oauth-token` with mode 0600. Results go to `--out`, by default a timestamped dir under `/var/tmp`. Each run streams the runner's transcript to `events.jsonl`, so a stalled run is visible before it times out.
 
