@@ -89,8 +89,8 @@ repos:
     hooks:
       - id: necro
         name: necro house rules
-        entry: necro
+        entry: necro --fix
         language: python
-        additional_dependencies: ['necronomicon>=0.1,<0.2']
-        pass_filenames: false
+        additional_dependencies: ['necronomicon==0.5.*']
         always_run: true
+        require_serial: true
