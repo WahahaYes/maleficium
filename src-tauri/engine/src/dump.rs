@@ -57,7 +57,10 @@ fn execute(args: Vec<OsString>) -> Result<(), String> {
         .map_err(|e| format!("cannot enter {}: {e}", work.display()))?;
     // Read by the engine's format loading to stop after the bootstrap pool;
     // must be set before the session is prepared.
-    std::env::set_var("LATEXML_INI_MODE", "1");
+    // SAFETY: set before the dump worker threads spawn, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("LATEXML_INI_MODE", "1");
+    }
 
     for init in ["plain.tex", "latex.ltx"] {
         let written = dump_one(init)?;

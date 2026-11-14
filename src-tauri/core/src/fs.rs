@@ -392,10 +392,11 @@ pub fn save(
     let abs = resolve_write(cx, id, rel)?;
     let current = std::fs::read(&abs).ok();
     // A missing file writes fresh, as the frontend's null-disk read does.
-    if let (Some(want), Some(cur)) = (base, current.as_deref()) {
-        if cur != want && cur != bytes {
-            return Err("changed on disk: reload or keep your edits first".to_string());
-        }
+    if let (Some(want), Some(cur)) = (base, current.as_deref())
+        && cur != want
+        && cur != bytes
+    {
+        return Err("changed on disk: reload or keep your edits first".to_string());
     }
     std::fs::write(&abs, bytes).map_err(|e| format!("write failed: {}", e))?;
     super::watch::mark_written(cx, &abs, bytes);

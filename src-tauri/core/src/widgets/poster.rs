@@ -390,10 +390,10 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
         };
         (size, Some(size))
     } else {
-        if let Some(key) = params::option_with(w.kind, OptionFormat::Scale) {
-            if !options.contains_key(key) {
-                options.insert(key.into(), DEFAULT_DENSITY.into());
-            }
+        if let Some(key) = params::option_with(w.kind, OptionFormat::Scale)
+            && !options.contains_key(key)
+        {
+            options.insert(key.into(), DEFAULT_DENSITY.into());
         }
         ((clamp_side(rect_css.0), clamp_side(rect_css.1)), None)
     };
@@ -474,12 +474,12 @@ fn html_job(
     let target = WidgetTarget::of(&req.main_rel, w)?
         .ok_or_else(|| format!("widget {id}: an html widget has no bundle folder"))?;
     let checked = widget_approval::check_at(base, cx, &req.root_id, &target)?;
-    if let Some(want) = &req.digest {
-        if *want != checked.snapshot.digest {
-            return Err(format!(
+    if let Some(want) = &req.digest
+        && *want != checked.snapshot.digest
+    {
+        return Err(format!(
                 "widget {id}: its folder changed since the poster was asked for; the next compile renders it"
             ));
-        }
     }
     match checked.status {
         WidgetApprovalStatus::ApprovalRequired(r) => Ok(Prepared::ApprovalRequired(Box::new(r))),
@@ -547,12 +547,12 @@ fn custom_job(
             .unwrap_or(reason);
         format!("widget {id}: runtime {reference} is invalid ({reason})")
     })?;
-    if let Some(want) = &req.digest {
-        if *want != snap.digest {
-            return Err(format!(
+    if let Some(want) = &req.digest
+        && *want != snap.digest
+    {
+        return Err(format!(
                 "widget {id}: its runtime changed since the poster was asked for; the next compile renders it"
             ));
-        }
     }
     match checked.status {
         None => Err(format!("widget {id}: runtime {reference} cannot be judged")),
@@ -705,13 +705,13 @@ pub fn finish(job: &PosterJob, data_url: &str) -> Result<PosterRendered, String>
     let png = snapshot_bytes(&job.widget_id, data_url, None)?;
     let (width, height) = png_size(&png)
         .ok_or_else(|| format!("widget {}: the snapshot is not a PNG", job.widget_id))?;
-    if let Some((ew, eh)) = job.expect {
-        if (width, height) != (ew, eh) {
-            return Err(format!(
-                "widget {}: the snapshot is {width}x{height}, expected {ew}x{eh}",
-                job.widget_id
-            ));
-        }
+    if let Some((ew, eh)) = job.expect
+        && (width, height) != (ew, eh)
+    {
+        return Err(format!(
+            "widget {}: the snapshot is {width}x{height}, expected {ew}x{eh}",
+            job.widget_id
+        ));
     }
     if job.seek {
         // A frame read back blank (transparent, or one flat colour) is a
@@ -840,12 +840,12 @@ pub fn finish_pair(
             "widget {id}: its light and dark snapshots match, so it ignores the theme; no poster was written"
         ));
     }
-    if let Some((ew, eh)) = job.expect {
-        if (lw, lh) != (ew, eh) {
-            return Err(format!(
-                "widget {id}: the light snapshot is {lw}x{lh}, expected {ew}x{eh}"
-            ));
-        }
+    if let Some((ew, eh)) = job.expect
+        && (lw, lh) != (ew, eh)
+    {
+        return Err(format!(
+            "widget {id}: the light snapshot is {lw}x{lh}, expected {ew}x{eh}"
+        ));
     }
     write_png(job, &light, lw, lh)
 }

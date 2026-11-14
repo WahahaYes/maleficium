@@ -111,7 +111,10 @@ pub fn prepare(o: &Options) -> Result<Session, String> {
         let cache = std::path::absolute(cache).map_err(|e| format!("bad --cache: {e}"))?;
         fs::create_dir_all(&cache)
             .map_err(|e| format!("cannot create {}: {e}", cache.display()))?;
-        std::env::set_var("TECTONIC_CACHE_DIR", cache);
+        // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+        unsafe {
+            std::env::set_var("TECTONIC_CACHE_DIR", cache);
+        }
     }
     let cached_only =
         o.cached_only || std::env::var("MALEFICIUM_CACHED_ONLY").as_deref() == Ok("1");
@@ -151,17 +154,35 @@ pub fn prepare(o: &Options) -> Result<Session, String> {
         &std::env::var_os("PATH").unwrap_or_default(),
     ));
     let path: OsString = std::env::join_paths(path).map_err(|e| format!("bad PATH: {e}"))?;
-    std::env::set_var("PATH", path);
-    std::env::set_var("KPSEWHICH", &link);
-    for var in ["TMPDIR", "TEMP", "TMP"] {
-        std::env::set_var(var, &tmp);
+    // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("PATH", path);
     }
-    std::env::set_var("MALEFICIUM_SCRATCH", &scratch);
-    std::env::set_var("MALEFICIUM_BUNDLE_URL", bundle);
-    std::env::set_var(
-        "MALEFICIUM_CACHED_ONLY",
-        if cached_only { "1" } else { "0" },
-    );
+    // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("KPSEWHICH", &link);
+    }
+    for var in ["TMPDIR", "TEMP", "TMP"] {
+        // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+        unsafe {
+            std::env::set_var(var, &tmp);
+        }
+    }
+    // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("MALEFICIUM_SCRATCH", &scratch);
+    }
+    // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("MALEFICIUM_BUNDLE_URL", bundle);
+    }
+    // SAFETY: prepare runs before any worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var(
+            "MALEFICIUM_CACHED_ONLY",
+            if cached_only { "1" } else { "0" },
+        );
+    }
     Ok(session)
 }
 
@@ -208,10 +229,10 @@ fn prune(root: &Path) {
 fn stale(dir: &Path) -> bool {
     if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
         let pid = name.split('-').next().and_then(|p| p.parse::<u32>().ok());
-        if let Some(pid) = pid {
-            if !process_alive(pid) {
-                return true;
-            }
+        if let Some(pid) = pid
+            && !process_alive(pid)
+        {
+            return true;
         }
     }
     dir.metadata()

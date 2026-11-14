@@ -131,23 +131,23 @@ fn execute(args: Vec<OsString>, status: &mut dyn StatusBackend) -> Result<()> {
 
     let mut sess = sb.create(status)?;
     let result = sess.run(status);
-    if let Err(e) = &result {
-        if let Some(err) = e.downcast_ref::<EngineError>() {
-            let output = sess.get_stdout_content();
-            if output.is_empty() {
-                tt_error!(
-                    status,
-                    "something bad happened inside {}, but no output was logged",
-                    err.engine()
-                );
-            } else {
-                tt_error!(
-                    status,
-                    "something bad happened inside {}; its output follows:\n",
-                    err.engine()
-                );
-                status.dump_error_logs(&output);
-            }
+    if let Err(e) = &result
+        && let Some(err) = e.downcast_ref::<EngineError>()
+    {
+        let output = sess.get_stdout_content();
+        if output.is_empty() {
+            tt_error!(
+                status,
+                "something bad happened inside {}, but no output was logged",
+                err.engine()
+            );
+        } else {
+            tt_error!(
+                status,
+                "something bad happened inside {}; its output follows:\n",
+                err.engine()
+            );
+            status.dump_error_logs(&output);
         }
     }
     result

@@ -406,10 +406,10 @@ impl RuntimeManifest {
 /// `options.<k>`'s rules, the default included.
 fn check_option(k: &str, o: &OptionSpec) -> Result<(), String> {
     let bad = |rule: &str| Err(format!("options.{k}: {rule}"));
-    if let Some(d) = &o.description {
-        if !plain_text(d, 0, MAX_STRING) {
-            return bad("description must be at most 200 characters, no control characters");
-        }
+    if let Some(d) = &o.description
+        && !plain_text(d, 0, MAX_STRING)
+    {
+        return bad("description must be at most 200 characters, no control characters");
     }
     if let Some(f) = o.format.filter(|f| f.kind() != o.kind) {
         let applies = match f.kind() {
@@ -428,20 +428,20 @@ fn check_option(k: &str, o: &OptionSpec) -> Result<(), String> {
     if (o.minimum.is_some() || o.maximum.is_some()) && !numeric {
         return bad("minimum and maximum apply to number and integer options only");
     }
-    if let Some(n) = o.max_length {
-        if !(1..=MAX_STRING).contains(&n) {
-            return bad("maxLength must be 1 to 200");
-        }
+    if let Some(n) = o.max_length
+        && !(1..=MAX_STRING).contains(&n)
+    {
+        return bad("maxLength must be 1 to 200");
     }
     for v in [o.minimum, o.maximum].into_iter().flatten() {
         if !v.is_finite() || (o.kind == OptionType::Integer && v.fract() != 0.0) {
             return bad("minimum and maximum must be finite, and whole for an integer");
         }
     }
-    if let (Some(lo), Some(hi)) = (o.minimum, o.maximum) {
-        if lo > hi {
-            return bad("minimum is above maximum");
-        }
+    if let (Some(lo), Some(hi)) = (o.minimum, o.maximum)
+        && lo > hi
+    {
+        return bad("minimum is above maximum");
     }
     if let Some(c) = &o.choices {
         if c.is_empty() || c.len() > MAX_ENUM {
@@ -490,10 +490,10 @@ fn check_value(k: &str, o: &OptionSpec, v: &Value, raw: &str) -> Result<(), Stri
             if s.chars().count() > max {
                 return Err(format!("option {k} is longer than {max} characters"));
             }
-            if let Some(c) = &o.choices {
-                if !c.iter().any(|x| x == s) {
-                    return Err(format!("option {k}={s} is not one of {}", c.join(", ")));
-                }
+            if let Some(c) = &o.choices
+                && !c.iter().any(|x| x == s)
+            {
+                return Err(format!("option {k}={s} is not one of {}", c.join(", ")));
             }
         }
         (OptionType::Boolean, Value::Bool(_)) => {}
@@ -593,10 +593,10 @@ fn parse_inner(reference: &str, text: &str, origin: Origin) -> Result<RuntimeMan
         Origin::Package => CONTRACT,
         Origin::Builtin => BUILTIN_CONTRACT,
     };
-    if let Some(c) = raw.get("contract") {
-        if c.as_u64() != Some(contract) {
-            return Err(format!("contract must be {contract}, found {c}"));
-        }
+    if let Some(c) = raw.get("contract")
+        && c.as_u64() != Some(contract)
+    {
+        return Err(format!("contract must be {contract}, found {c}"));
     }
     let f: ManifestFile = serde_json::from_value(raw).map_err(|e| format!("{MANIFEST}: {e}"))?;
     if origin == Origin::Package {
@@ -657,12 +657,12 @@ fn parse_inner(reference: &str, text: &str, origin: Origin) -> Result<RuntimeMan
                 "sources.{r}: maxBytes must be 1 to {MAX_MAX_BYTES}"
             ));
         }
-        if let Some(d) = &s.description {
-            if !plain_text(d, 0, MAX_STRING) {
-                return Err(format!(
-                    "sources.{r}: description must be at most 200 characters, no control characters"
-                ));
-            }
+        if let Some(d) = &s.description
+            && !plain_text(d, 0, MAX_STRING)
+        {
+            return Err(format!(
+                "sources.{r}: description must be at most 200 characters, no control characters"
+            ));
         }
     }
     let primaries: Vec<&String> = f
@@ -705,13 +705,13 @@ fn parse_inner(reference: &str, text: &str, origin: Origin) -> Result<RuntimeMan
             }
             // A vocabulary key has its one format; a package (contract 1)
             // states none and gets it.
-            if let Some(f) = crate::widgets::params::vocabulary_format(k) {
-                if spec.format.is_some_and(|g| g != f) || spec.kind != f.kind() {
-                    return Err(format!(
-                        "options.{k}: `{k}` is the package's {} option",
-                        f.kind_word()
-                    ));
-                }
+            if let Some(f) = crate::widgets::params::vocabulary_format(k)
+                && (spec.format.is_some_and(|g| g != f) || spec.kind != f.kind())
+            {
+                return Err(format!(
+                    "options.{k}: `{k}` is the package's {} option",
+                    f.kind_word()
+                ));
             }
             check_option(k, spec)?;
         }

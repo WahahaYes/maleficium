@@ -915,10 +915,10 @@ pub fn read(
     let mut theme = sidecar.theme.unwrap_or_else(crate::theme::Theme::house);
     // The reader stylesheet's tokens reach the widgets and their posters as
     // they reach the page; one the page refuses changes nothing here either.
-    if let Some(style) = theme.style.clone() {
-        if let Ok(css) = crate::reader_style::load(cx, root_id, &main_dir_rel, &style) {
-            theme = theme.restyled(&crate::reader_style::tokens(&css));
-        }
+    if let Some(style) = theme.style.clone()
+        && let Ok(css) = crate::reader_style::load(cx, root_id, &main_dir_rel, &style)
+    {
+        theme = theme.restyled(&crate::reader_style::tokens(&css));
     }
     for (r, m) in join(sidecar.records, found).map_err(|e| format!("{main_rel}: {e}"))? {
         let csp = match r.kind {

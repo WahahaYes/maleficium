@@ -13,7 +13,7 @@ use libz_sys as _;
 type Scanner = *mut c_void;
 type Node = *mut c_void;
 
-extern "C" {
+unsafe extern "C" {
     fn synctex_scanner_new_with_output_file(
         output: *const c_char,
         build_directory: *const c_char,

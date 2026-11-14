@@ -2,7 +2,7 @@
 name = "maleficium-mcp"
 version.workspace = true
 license = "AGPL-3.0-only"
-edition = "2021"
+edition = "2024"
 description = "The stdio MCP server over maleficium-core: no Tauri"
 authors = ["Ethan Wilson"]
 repository = "https://github.com/WahahaYes/maleficium"

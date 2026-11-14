@@ -121,7 +121,10 @@ fn execute(args: Vec<OsString>) -> Result<(), String> {
     }
 
     let _session = session::prepare(&a.session)?;
-    std::env::set_var("LATEXML_DUMP_DIR", &dumps);
+    // SAFETY: set before the conversion worker thread spawns, so nothing else touches the environment concurrently.
+    unsafe {
+        std::env::set_var("LATEXML_DUMP_DIR", &dumps);
+    }
     std::env::set_current_dir(&source_dir)
         .map_err(|e| format!("cannot enter {}: {e}", source_dir.display()))?;
 

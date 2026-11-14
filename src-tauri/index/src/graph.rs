@@ -93,10 +93,10 @@ impl Document {
             if let Some(s) = index.get(&rel).and_then(|f| f.symbols) {
                 for input in &s.inputs {
                     let to = resolve_input(&doc.main_dir, &input.command, &input.target);
-                    if let Some(to) = &to {
-                        if seen.insert(to.clone()) {
-                            queue.push_back(to.clone());
-                        }
+                    if let Some(to) = &to
+                        && seen.insert(to.clone())
+                    {
+                        queue.push_back(to.clone());
                     }
                     doc.edges.push(GraphEdge {
                         from: rel.clone(),

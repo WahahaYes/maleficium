@@ -400,10 +400,8 @@ fn kept_attrs(
         && ns == HTML_NS
         && get("data-widget").is_some_and(|id| mounts.contains(id) && !mounted.contains(id))
         && get("data-type").is_some_and(|t| crate::widgets::WidgetType::parse(t).is_some());
-    if mount {
-        if let Some(id) = get("data-widget") {
-            mounted.insert(id.to_string());
-        }
+    if mount && let Some(id) = get("data-widget") {
+        mounted.insert(id.to_string());
     }
     let mut out: Vec<(&'static str, String)> = Vec::new();
     for (raw, value) in attrs {

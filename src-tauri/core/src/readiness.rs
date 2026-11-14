@@ -86,10 +86,10 @@ pub fn next(prev: Option<Record>, o: Outcome) -> Option<Record> {
         }
         (JobStatus::Failed, Some(m)) => {
             let mut tools = prev.tools;
-            if m.reason == MissingReason::ExternalTool {
-                if let Some(t) = m.file.as_ref().filter(|t| !tools.contains(t)) {
-                    tools.push(t.clone());
-                }
+            if m.reason == MissingReason::ExternalTool
+                && let Some(t) = m.file.as_ref().filter(|t| !tools.contains(t))
+            {
+                tools.push(t.clone());
             }
             Some(Record {
                 digest: BUNDLE_DIGEST.into(),

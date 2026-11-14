@@ -72,7 +72,7 @@ mod linux {
 
     // The feature list API (WebKitGTK 2.42) is not in the webkit2gtk crate.
     #[link(name = "webkit2gtk-4.1")]
-    extern "C" {
+    unsafe extern "C" {
         fn webkit_settings_get_all_features() -> *mut FeatureList;
         fn webkit_feature_list_get_length(list: *mut FeatureList) -> usize;
         fn webkit_feature_list_get(list: *mut FeatureList, index: usize) -> *mut Feature;

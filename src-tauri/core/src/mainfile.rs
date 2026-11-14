@@ -196,26 +196,25 @@ fn resolve_with(root: &Path, assoc_rel: Option<&str>, opened_abs: Option<&str>) 
     }
 
     // 2) magic comment in the opened file
-    if let Some(opened) = opened_abs {
-        if let Ok(content) = std::fs::read_to_string(opened) {
-            if let Some(magic) = parse_magic_comment(&content) {
-                let base = Path::new(opened)
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| root.to_path_buf());
-                let resolved = if Path::new(&magic).is_absolute() {
-                    clean(Path::new(&magic))
-                } else {
-                    clean(&base.join(&magic))
-                };
-                return MainResolution {
-                    main: Some(resolved.to_string_lossy().to_string()),
-                    source: MainSource::Magic,
-                    candidates: Vec::new(),
-                };
-            }
-        }
+    if let Some(opened) = opened_abs
+        && let Ok(content) = std::fs::read_to_string(opened)
+        && let Some(magic) = parse_magic_comment(&content)
+    {
+        let base = Path::new(opened)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| root.to_path_buf());
+        let resolved = if Path::new(&magic).is_absolute() {
+            clean(Path::new(&magic))
+        } else {
+            clean(&base.join(&magic))
+        };
+        return MainResolution {
+            main: Some(resolved.to_string_lossy().to_string()),
+            source: MainSource::Magic,
+            candidates: Vec::new(),
+        };
     }
 
     // 3) scan for \documentclass (deterministic: sorted, first wins)

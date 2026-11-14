@@ -212,10 +212,10 @@ pub fn external_needs<S: AsRef<str>>(lines: &[S]) -> ExternalNeeds {
         } else {
             (&*ABSOLUTE_PATH, &mut needs.files)
         };
-        if let Some(m) = re.captures(l) {
-            if !list.iter().any(|x| x == &m[1]) {
-                list.push(m[1].to_string());
-            }
+        if let Some(m) = re.captures(l)
+            && !list.iter().any(|x| x == &m[1])
+        {
+            list.push(m[1].to_string());
         }
     }
     needs
@@ -312,14 +312,13 @@ pub fn missing_dependency<S: AsRef<str>>(
     if let Some(pkg) = first(&lines, &SHELL_ESCAPE) {
         return found(Some(pkg), MissingReason::ShellEscapeRequired);
     }
-    if lines.iter().any(|l| l.trim() == TOOL_NOT_FOUND) {
-        if let Some(tool) = lines
+    if lines.iter().any(|l| l.trim() == TOOL_NOT_FOUND)
+        && let Some(tool) = lines
             .iter()
             .rev()
             .find_map(|l| EXTERNAL_TOOL.captures(l).map(|m| m[1].to_string()))
-        {
-            return found(Some(tool), MissingReason::ExternalTool);
-        }
+    {
+        return found(Some(tool), MissingReason::ExternalTool);
     }
     let failed_fetch = first(&lines, &FETCH_FAILED);
     // TeX's own miss (a file or a font's metrics), or the engine's miss of a

@@ -20,10 +20,10 @@ fn xml_graphics(xml: &str) -> Vec<String> {
             .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
             .next()
             .unwrap_or("");
-        if name == "graphics" || name == "ltx:graphics" {
-            if let Some(v) = attr(tag, "graphic") {
-                out.push(unescape(v));
-            }
+        if (name == "graphics" || name == "ltx:graphics")
+            && let Some(v) = attr(tag, "graphic")
+        {
+            out.push(unescape(v));
         }
         at = end;
     }

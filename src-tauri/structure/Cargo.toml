@@ -2,7 +2,7 @@
 name = "maleficium-structure"
 version = "0.1.0"
 license = "AGPL-3.0-only"
-edition = "2021"
+edition = "2024"
 description = "Document structure of LaTeX text: pure, no I/O, no Tauri (wasm32-ready)"
 
 [dependencies]

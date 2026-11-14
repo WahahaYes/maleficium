@@ -174,10 +174,9 @@ pub fn failure_text(c: &engine::Compiled) -> String {
         file: Some(file),
         reason: MissingReason::NotInBundle,
     }) = &c.missing
+        && (file.ends_with(".sty") || file.ends_with(".cls"))
     {
-        if file.ends_with(".sty") || file.ends_with(".cls") {
-            return missing_package_text(file);
-        }
+        return missing_package_text(file);
     }
     if c.lines.is_empty() {
         return String::from("no TeX support files are cached yet and there is no network");

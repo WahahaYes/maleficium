@@ -766,12 +766,12 @@ impl Plan<'_> {
                 (sha_of(&data), data.len() as u64, None)
             }
         };
-        if let Some(d) = declared_sha {
-            if !d.eq_ignore_ascii_case(&sha) {
-                return Err(format!(
-                    "widget {widget}: sha256 {d} does not match the {role} file (computed {sha})"
-                ));
-            }
+        if let Some(d) = declared_sha
+            && !d.eq_ignore_ascii_case(&sha)
+        {
+            return Err(format!(
+                "widget {widget}: sha256 {d} does not match the {role} file (computed {sha})"
+            ));
         }
         let a = Asset {
             mode: Mode::Remote,
@@ -1167,10 +1167,10 @@ fn plan_widget(
             p.add_local(poster_key.clone(), &id, &rel.to_string_lossy(), inline_opt)?
         }
         _ => {
-            if w.kind == WidgetType::Custom {
-                if let Some(msg) = stale_custom_poster(p, w) {
-                    p.warn(BundleWarningKind::RuntimeDigestChanged, msg);
-                }
+            if w.kind == WidgetType::Custom
+                && let Some(msg) = stale_custom_poster(p, w)
+            {
+                p.warn(BundleWarningKind::RuntimeDigestChanged, msg);
             }
             let png = crop_png(pdf, w.page, &w.rect).map_err(|e| format!("widget {id}: {e}"))?;
             p.add_mem(poster_key.clone(), "png", png, inline_opt)?;
@@ -1395,10 +1395,10 @@ pub fn validate_manifest(m: &Value) -> Result<(), String> {
         }
         // Document order: page, then top to bottom.
         let top = r[3];
-        if let Some((lp, lt)) = last {
-            if page < lp || (page == lp && top > lt) {
-                return Err(format!("widget {id} is out of document order"));
-            }
+        if let Some((lp, lt)) = last
+            && (page < lp || (page == lp && top > lt))
+        {
+            return Err(format!("widget {id} is out of document order"));
         }
         last = Some((page, top));
         if profile == "single-file" && w.get("entry").is_some() {

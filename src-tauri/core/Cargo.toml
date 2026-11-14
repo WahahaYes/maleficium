@@ -2,7 +2,7 @@
 name = "maleficium-core"
 version.workspace = true
 license = "AGPL-3.0-only"
-edition = "2021"
+edition = "2024"
 description = "Application core shared by the desktop app and the MCP server: no Tauri"
 
 [features]

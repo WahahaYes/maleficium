@@ -292,13 +292,13 @@ fn summary_list(log: &str, singular: &str, plural: &str) -> Vec<String> {
             while let Some(at) = rest.find(kind) {
                 rest = &rest[at + kind.len()..];
                 let bracket = rest.trim_start();
-                if let Some(inner) = bracket.strip_prefix('[') {
-                    if let Some(end) = inner.find(']') {
-                        for name in inner[..end].split(',') {
-                            let name = name.trim().to_string();
-                            if !name.is_empty() && !out.contains(&name) {
-                                out.push(name);
-                            }
+                if let Some(inner) = bracket.strip_prefix('[')
+                    && let Some(end) = inner.find(']')
+                {
+                    for name in inner[..end].split(',') {
+                        let name = name.trim().to_string();
+                        if !name.is_empty() && !out.contains(&name) {
+                            out.push(name);
                         }
                     }
                 }
