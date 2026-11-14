@@ -755,9 +755,11 @@ fn an_html_widget_gets_an_auto_poster_only_while_approved() {
     .unwrap();
     let lines = before(cx);
     assert!(!mapped(), "{lines:?}");
-    assert!(lines
-        .iter()
-        .any(|l| l.starts_with("poster fig-demo: approval_required (revoked)")));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("poster fig-demo: approval_required (revoked)"))
+    );
     assert!(!marker.exists());
     let _ = std::fs::remove_dir_all(&base);
 }
@@ -805,9 +807,11 @@ fn an_html_widget_has_no_runtime_key() {
     let (id, _root) = project(cx, "htmlkey");
     let l = widgets(cx, &id, "main.tex").unwrap();
     let demo = l.widgets.iter().find(|w| w.id == "fig-demo").unwrap();
-    assert!(poster_key(cx, &id, "main.tex", demo, &Theme::house())
-        .unwrap_err()
-        .contains("approval digest"));
+    assert!(
+        poster_key(cx, &id, "main.tex", demo, &Theme::house())
+            .unwrap_err()
+            .contains("approval digest")
+    );
     let a = html_key(demo, "widgets/demo", &"a".repeat(64), &Theme::house());
     assert_ne!(
         a,

@@ -58,7 +58,7 @@ pub fn off<R: Runtime>(win: &WebviewWindow<R>) {
 #[cfg(target_os = "linux")]
 mod linux {
     use super::SPECULATIVE;
-    use std::ffi::{c_char, c_int, CStr};
+    use std::ffi::{CStr, c_char, c_int};
     use webkit2gtk::WebViewExt;
 
     #[repr(C)]

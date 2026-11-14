@@ -360,15 +360,19 @@ fn the_single_file_profile_is_one_file_with_everything_inline() {
     assert_eq!(m["profile"], "single-file");
     assert_eq!(m["sizeCapBytes"], DEFAULT_SIZE_CAP_BYTES);
     assert!(m["pdf"]["path"].is_null());
-    assert!(m["widgets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|w| w.get("entry").is_none()));
+    assert!(
+        m["widgets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w.get("entry").is_none())
+    );
     let assets = m["assets"].as_object().unwrap();
-    assert!(assets
-        .values()
-        .all(|a| a["mode"] == "inline" && a["path"].is_null()));
+    assert!(
+        assets
+            .values()
+            .all(|a| a["mode"] == "inline" && a["path"].is_null())
+    );
 
     let blobs = island_json(&html, "mfw-assets");
     let engine = base64::engine::general_purpose::STANDARD;
@@ -391,10 +395,12 @@ fn the_single_file_profile_is_one_file_with_everything_inline() {
     assert!(!html.contains("mfw-pdf"));
     let widgets = island_json(&html, "mfw-widgets");
     assert_eq!(widgets.as_object().unwrap().len(), 5);
-    assert!(widgets["fig-demo"]
-        .as_str()
-        .unwrap()
-        .contains("demo widget"));
+    assert!(
+        widgets["fig-demo"]
+            .as_str()
+            .unwrap()
+            .contains("demo widget")
+    );
     // The reader carries the single-file policy, and a document string can
     // never close its island.
     assert!(html.contains("<meta http-equiv=\"Content-Security-Policy\""));
@@ -411,9 +417,11 @@ fn the_hosted_profile_is_a_folder_marked_hosted() {
     let m = manifest_of(Path::new(&d));
     validate_manifest(&m).unwrap();
     assert_eq!(m["profile"], "hosted");
-    assert!(PathBuf::from(&d)
-        .join("widgets/fig-mesh/index.html")
-        .is_file());
+    assert!(
+        PathBuf::from(&d)
+            .join("widgets/fig-mesh/index.html")
+            .is_file()
+    );
 }
 
 #[test]
@@ -490,9 +498,11 @@ fn a_destination_inside_the_project_is_refused_and_nothing_is_written() {
     assert_eq!(files_under(&p.root), before);
     assert!(!p.root.join("export").exists());
     // Relative destinations never validate.
-    assert!(export(&p, "out/paper", BundleProfile::Folder)
-        .unwrap_err()
-        .contains("absolute"));
+    assert!(
+        export(&p, "out/paper", BundleProfile::Folder)
+            .unwrap_err()
+            .contains("absolute")
+    );
 }
 
 #[cfg(unix)]
@@ -655,9 +665,11 @@ fn a_remote_asset_with_a_local_copy_is_hashed_locally_and_not_stored() {
         "remote=http://media.example.org/clip.mp4,sha256=|",
     );
     let p = project("remote-http", &http);
-    assert!(export(&p, &dest(&p, "h"), BundleProfile::Folder)
-        .unwrap_err()
-        .contains("https"));
+    assert!(
+        export(&p, &dest(&p, "h"), BundleProfile::Folder)
+            .unwrap_err()
+            .contains("https")
+    );
     // Only a runtime with a remote role takes one.
     let table = REAL_SIDECAR.replace("pdfrows=2|", "pdfrows=2,remote=https://example.org/r.csv|");
     let p = project("remote-table", &table);
@@ -681,14 +693,18 @@ fn the_inline_option_puts_a_widgets_assets_inside_the_reader_page() {
     assert_eq!(m["assets"]["fig-mesh-model"]["mode"], "bundled");
     let html = std::fs::read_to_string(PathBuf::from(&d).join("index.html")).unwrap();
     let blobs = island_json(&html, "mfw-assets");
-    assert!(blobs
-        .get(m["assets"]["tab-results-data"]["sha256"].as_str().unwrap())
-        .is_some());
-    assert!(m["widgets"][1]
-        .get("options")
-        .unwrap()
-        .get("inline")
-        .is_none());
+    assert!(
+        blobs
+            .get(m["assets"]["tab-results-data"]["sha256"].as_str().unwrap())
+            .is_some()
+    );
+    assert!(
+        m["widgets"][1]
+            .get("options")
+            .unwrap()
+            .get("inline")
+            .is_none()
+    );
 }
 
 #[test]
@@ -811,10 +827,12 @@ fn the_schema_rejects_what_the_note_forbids() {
         f(&mut m);
         validate_manifest(&m).unwrap_err()
     };
-    assert!(bad(&|m| {
-        m.as_object_mut().unwrap().remove("theme");
-    })
-    .contains("schema"));
+    assert!(
+        bad(&|m| {
+            m.as_object_mut().unwrap().remove("theme");
+        })
+        .contains("schema")
+    );
     assert!(bad(&|m| m["formatVersion"] = 1.into()).contains("schema"));
     assert!(bad(&|m| m["extra"] = true.into()).contains("schema"));
     assert!(bad(&|m| m["pdf"]["sha256"] = "XYZ".into()).contains("schema"));
@@ -826,14 +844,18 @@ fn the_schema_rejects_what_the_note_forbids() {
     );
     // Invariants the schema cannot express.
     assert!(bad(&|m| m["widgets"][1]["id"] = "fig-mesh".into()).contains("twice"));
-    assert!(bad(&|m| m["widgets"][0]["poster"] = "no-such-asset".into()).contains("does not exist"));
+    assert!(
+        bad(&|m| m["widgets"][0]["poster"] = "no-such-asset".into()).contains("does not exist")
+    );
     assert!(bad(&|m| m["widgets"][0]["page"] = 99.into()).contains("page"));
     assert!(bad(&|m| m["widgets"][0]["rect"] = json!([10, 10, 5, 20])).contains("rect"));
-    assert!(bad(&|m| {
-        let w = m["widgets"].as_array_mut().unwrap();
-        w.swap(0, 2);
-    })
-    .contains("order"));
+    assert!(
+        bad(&|m| {
+            let w = m["widgets"].as_array_mut().unwrap();
+            w.swap(0, 2);
+        })
+        .contains("order")
+    );
     assert!(bad(&|m| m["profile"] = "single-file".into()).contains("single-file"));
 }
 
@@ -937,9 +959,11 @@ fn a_preview_lands_in_a_scratch_folder_outside_the_project_and_the_next_run_repl
     assert!(html.is_file());
     assert!(!html.starts_with(&p.root), "never inside the project");
     assert!(html.starts_with(&base));
-    assert!(std::fs::read_to_string(&html)
-        .unwrap()
-        .contains("mfw-manifest"));
+    assert!(
+        std::fs::read_to_string(&html)
+            .unwrap()
+            .contains("mfw-manifest")
+    );
     assert_eq!(files_under(&p.root), before, "the project is untouched");
 
     // A stray file in the project's scratch folder is gone after the next run.
@@ -1202,13 +1226,17 @@ fn the_reader_is_the_article_and_the_pdf_a_download() {
     // The conversion's scratch folder is gone, and nothing was written into
     // the project.
     let o = crate::outputs::outputs_of(&p.cx, &p.id, "main.tex").unwrap();
-    assert!(!std::fs::read_dir(&o.outdir)
-        .unwrap()
-        .flatten()
-        .any(|e| e.file_name().to_string_lossy().starts_with("reader-export")));
-    assert!(!files_under(&p.root)
-        .iter()
-        .any(|f| f.ends_with(".html") && !f.starts_with("widgets/")));
+    assert!(
+        !std::fs::read_dir(&o.outdir)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("reader-export"))
+    );
+    assert!(
+        !files_under(&p.root)
+            .iter()
+            .any(|f| f.ends_with(".html") && !f.starts_with("widgets/"))
+    );
 }
 
 // ---- reader flags -------------------------------------------------------
@@ -2060,9 +2088,11 @@ fn a_denied_or_invalid_runtime_exports_as_its_poster_and_an_unapproved_one_runs(
             "{name}"
         );
         assert!(m["runtimes"].get("heatmap@1").is_some(), "{name}");
-        assert!(PathBuf::from(&d)
-            .join("widgets/fig-chart/index.html")
-            .is_file());
+        assert!(
+            PathBuf::from(&d)
+                .join("widgets/fig-chart/index.html")
+                .is_file()
+        );
         assert_eq!(runtime_warnings(&r), [STL_MISSING], "{name}");
     };
     live("unapproved");
@@ -2070,7 +2100,10 @@ fn a_denied_or_invalid_runtime_exports_as_its_poster_and_an_unapproved_one_runs(
     c.decide(crate::widget_approval::RuntimeDecision::Denied);
     let (why, warns, _) = run("denied");
     assert_eq!(why, "denied");
-    assert_eq!(warns[0], "runtime heatmap@1 is denied in this project: fig-chart export as posters only. Allow it in View > Widgets to export it live.");
+    assert_eq!(
+        warns[0],
+        "runtime heatmap@1 is denied in this project: fig-chart export as posters only. Allow it in View > Widgets to export it live."
+    );
 
     // Allowed, then changed with auto off: unapproved again, and live.
     c.allow();
@@ -2124,7 +2157,12 @@ fn a_bind_error_refuses_the_export_approved_or_not() {
     let e = c
         .export(&dest(&c.p, "paper"), BundleProfile::Folder)
         .unwrap_err();
-    assert!(e.contains("source data: `data/results.json` has extension `.json`; runtime heatmap@1 accepts .csv"), "{e}");
+    assert!(
+        e.contains(
+            "source data: `data/results.json` has extension `.json`; runtime heatmap@1 accepts .csv"
+        ),
+        "{e}"
+    );
     // A source over its role's cap refuses the live export.
     let c = custom_project("rt-bind-size", HEAT_LINE);
     let m = c.rt().join("runtime.json");
@@ -2157,10 +2195,12 @@ fn a_single_file_export_carries_only_live_documents() {
     validate_manifest(&m).unwrap();
     assert!(widget_json(&m, "fig-chart").get("entry").is_none());
     let docs = island_json(&html, "mfw-widgets");
-    assert!(docs["fig-chart"]
-        .as_str()
-        .unwrap()
-        .contains("<!-- Licences:"));
+    assert!(
+        docs["fig-chart"]
+            .as_str()
+            .unwrap()
+            .contains("<!-- Licences:")
+    );
     assert!(docs.get("fig-demo").is_none(), "a fallback has no document");
     assert!(m["runtimes"]["heatmap@1"].is_object());
 }
@@ -2235,10 +2275,12 @@ fn the_manifest_invariants_for_custom_runtimes_hold_and_their_breaks_are_named()
         f(&mut m);
         validate_manifest(&m).unwrap_err()
     };
-    assert!(bad(&|m| {
-        m.as_object_mut().unwrap().remove("runtimes");
-    })
-    .contains("which the manifest does not list"));
+    assert!(
+        bad(&|m| {
+            m.as_object_mut().unwrap().remove("runtimes");
+        })
+        .contains("which the manifest does not list")
+    );
     assert!(
         bad(&|m| m["runtimes"]["other@1"] = m["runtimes"]["heatmap@1"].clone())
             .contains("no live widget runs it")
@@ -2261,25 +2303,33 @@ fn the_manifest_invariants_for_custom_runtimes_hold_and_their_breaks_are_named()
     assert!(bad(&|m| m["runtimes"]["heatmap@1"]["license"] = "GPL-3.0".into()).contains("schema"));
     assert!(bad(&|m| m["runtimes"]["heatmap@1"]["path"] = "runtimes/x".into()).contains("schema"));
     // Built-ins are flagged and run their own kind; a package is not one.
-    assert!(bad(&|m| {
-        m["runtimes"]["heatmap@1"]
-            .as_object_mut()
-            .unwrap()
-            .remove("builtin");
-    })
-    .contains("schema"));
+    assert!(
+        bad(&|m| {
+            m["runtimes"]["heatmap@1"]
+                .as_object_mut()
+                .unwrap()
+                .remove("builtin");
+        })
+        .contains("schema")
+    );
     assert!(
         bad(&|m| m["runtimes"]["heatmap@1"]["builtin"] = true.into())
             .contains("which runtime heatmap@1 does not run")
     );
-    assert!(bad(&|m| m["runtimes"]["model@1"]["builtin"] = false.into())
-        .contains("which runtime model@1 does not run"));
-    assert!(bad(&|m| m["widgets"][0]["runtime"] = "table@1".into())
-        .contains("is a model widget, which runtime table@1 does not run"));
-    assert!(bad(&|m| {
-        m["runtimes"].as_object_mut().unwrap().remove("model@1");
-    })
-    .contains("runs runtime model@1, which the manifest does not list"));
+    assert!(
+        bad(&|m| m["runtimes"]["model@1"]["builtin"] = false.into())
+            .contains("which runtime model@1 does not run")
+    );
+    assert!(
+        bad(&|m| m["widgets"][0]["runtime"] = "table@1".into())
+            .contains("is a model widget, which runtime table@1 does not run")
+    );
+    assert!(
+        bad(&|m| {
+            m["runtimes"].as_object_mut().unwrap().remove("model@1");
+        })
+        .contains("runs runtime model@1, which the manifest does not list")
+    );
 }
 
 /// Writes the single-file WASM proof bundle (the WASM-declaring runtime
@@ -2861,9 +2911,11 @@ fn a_widget_mode_equation_ships_the_liveeq_widget_once() {
     let s = dest(&p, "s.html");
     export(&p, &s, BundleProfile::SingleFile).unwrap();
     let docs = island_json(&reader_html(&s, BundleProfile::SingleFile), "mfw-widgets");
-    assert!(docs[reader::LIVEEQ_REF]
-        .as_str()
-        .is_some_and(|d| d.contains("Live equation")));
+    assert!(
+        docs[reader::LIVEEQ_REF]
+            .as_str()
+            .is_some_and(|d| d.contains("Live equation"))
+    );
 
     let inline = live_project("liveeq-inline-only", LIVEEQ_SIDECAR);
     let d = dest(&inline, "f");

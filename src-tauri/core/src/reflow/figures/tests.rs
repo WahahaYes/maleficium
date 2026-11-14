@@ -374,10 +374,11 @@ fn real_latexml_output_has_no_path_and_every_figure_is_flagged() {
     let (root, _) = project("real");
     let e = single(PROBE, &root, &Options::default());
     assert_eq!(e.warnings.len(), 8);
-    assert!(e
-        .warnings
-        .iter()
-        .all(|w| w.reason == FigureReason::NoSource));
+    assert!(
+        e.warnings
+            .iter()
+            .all(|w| w.reason == FigureReason::NoSource)
+    );
     assert!(!e.html.contains("<img"));
     assert_eq!(e.html.matches("ltx_missing_figure").count(), 8);
     // Captions and structure survive.
@@ -471,9 +472,10 @@ fn folder_mode_writes_hash_named_files_and_deduplicates() {
     assert_eq!(srcs.len(), 5);
     assert_eq!(srcs[0], srcs[1], "byte-identical files share one name");
     assert_eq!(srcs[0], srcs[4]);
-    assert!(srcs
-        .iter()
-        .all(|s| s.starts_with("figures/") && !s.contains("..")));
+    assert!(
+        srcs.iter()
+            .all(|s| s.starts_with("figures/") && !s.contains(".."))
+    );
     assert!(srcs[2].ends_with(".jpg"));
     assert!(srcs[3].ends_with(".png"), "a pdf figure is stored as png");
     let mut files: Vec<String> = fs::read_dir(out.join("figures"))
@@ -517,9 +519,10 @@ fn the_figure_file_names_do_not_come_from_the_author() {
     .unwrap();
     assert!(e.warnings.is_empty(), "{:?}", e.warnings);
     let src = src_of(&e.html);
-    assert!(src
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.')));
+    assert!(
+        src.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.'))
+    );
 }
 
 #[test]
@@ -535,18 +538,22 @@ fn a_hostile_file_name_cannot_break_out_of_the_placeholder_markup() {
 #[test]
 fn an_unusable_root_is_an_error() {
     let (root, _) = project("badroot");
-    assert!(embed(
-        "",
-        &root.join("nope"),
-        &Mode::SingleFile,
-        &Options::default()
-    )
-    .is_err());
-    assert!(embed(
-        "",
-        Path::new("relative"),
-        &Mode::SingleFile,
-        &Options::default()
-    )
-    .is_err());
+    assert!(
+        embed(
+            "",
+            &root.join("nope"),
+            &Mode::SingleFile,
+            &Options::default()
+        )
+        .is_err()
+    );
+    assert!(
+        embed(
+            "",
+            Path::new("relative"),
+            &Mode::SingleFile,
+            &Options::default()
+        )
+        .is_err()
+    );
 }

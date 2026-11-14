@@ -132,7 +132,9 @@ fn malformed_live_equation_records_are_refused() {
     }
     let clash =
         format!("mfw 1\n{widget}\nliveeq|eq-decay|||inline|\nparam|eq-decay|k|1|0|2|1|0|1\n");
-    assert!(parse_sidecar(&clash)
-        .unwrap_err()
-        .contains("also a widget's"));
+    assert!(
+        parse_sidecar(&clash)
+            .unwrap_err()
+            .contains("also a widget's")
+    );
 }

@@ -26,16 +26,16 @@ mod flags;
 pub(crate) mod fold;
 mod reader;
 
+use crate::Core;
 use crate::reflow;
 use crate::widgets::poster::PosterSource;
 use crate::widgets::{Widget, WidgetRect, WidgetSource, WidgetType};
-use crate::Core;
 
 pub use maleficium_events::BundleProfile;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
@@ -798,8 +798,8 @@ fn json_number_or_string(v: &str) -> Value {
 /// The rendered region of a page, as a PNG: what a table's typeset rows look
 /// like in the pdf of record.
 fn crop_png(pdf: &hayro::hayro_syntax::Pdf, page: u32, r: &WidgetRect) -> Result<Vec<u8>, String> {
-    use hayro::vello_cpu::color::palette::css::WHITE;
     use hayro::vello_cpu::Pixmap;
+    use hayro::vello_cpu::color::palette::css::WHITE;
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let p = &pdf.pages()[page as usize - 1];
         let (_, page_h) = p.render_dimensions();

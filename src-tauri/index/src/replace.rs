@@ -6,7 +6,7 @@
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::search::{compile, hit_parts, line_starts, matches, ordered, Query};
+use crate::search::{Query, compile, hit_parts, line_starts, matches, ordered};
 use crate::{ProjectIndex, Source};
 
 /// One replacement as the preview shows it: the line before and after.

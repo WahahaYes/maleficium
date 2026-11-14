@@ -12,9 +12,9 @@ use crate::Core;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-pub use maleficium_index::graph::GraphEdge;
-use maleficium_index::graph::{join_rel, Document};
 use maleficium_index::ProjectIndex;
+pub use maleficium_index::graph::GraphEdge;
+use maleficium_index::graph::{Document, join_rel};
 use maleficium_structure as ms;
 use serde::Serialize;
 use ts_rs::TS;

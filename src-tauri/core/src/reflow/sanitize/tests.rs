@@ -218,7 +218,9 @@ fn comment_hidden_payloads_do_not_survive() {
 #[test]
 fn page_owned_ids_cannot_be_shadowed() {
     assert_eq!(
-        clean("<span id=\"mfw-manifest\">{}</span><span id=\"MFW-assets\"></span><a id=\"pdf-link\">x</a><p id=\"S1.p1\">y</p>"),
+        clean(
+            "<span id=\"mfw-manifest\">{}</span><span id=\"MFW-assets\"></span><a id=\"pdf-link\">x</a><p id=\"S1.p1\">y</p>"
+        ),
         "<span>{}</span><span></span><a>x</a><p id=\"S1.p1\">y</p>"
     );
 }
@@ -226,7 +228,9 @@ fn page_owned_ids_cannot_be_shadowed() {
 #[test]
 fn a_mount_unit_survives_once_per_known_widget() {
     let unit = |id: &str, ar: &str| {
-        format!("<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"model\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>")
+        format!(
+            "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"model\" style=\"--ar:{ar}\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>"
+        )
     };
     let good = unit("fig-a", "200.00 / 100.00");
     assert_eq!(clean(&good), good, "the mount unit passes unchanged");
@@ -314,7 +318,9 @@ fn unknown_elements_are_unwrapped_and_dangerous_ones_removed_whole() {
     assert_eq!(clean("<font color=red><blink>kept</blink></font>"), "kept");
     assert_eq!(clean("<main><center>x</center></main>"), "x");
     assert_eq!(
-        clean("<form action=\"https://evil.example/\"><input name=a value=b><button formaction=x>go</button></form>after"),
+        clean(
+            "<form action=\"https://evil.example/\"><input name=a value=b><button formaction=x>go</button></form>after"
+        ),
         "after"
     );
     assert_eq!(
@@ -322,7 +328,12 @@ fn unknown_elements_are_unwrapped_and_dangerous_ones_removed_whole() {
         ""
     );
     assert_eq!(clean("<object data=x><embed src=y>fallback</object>"), "");
-    assert_eq!(clean("<base href=\"https://evil.example/\"><link rel=stylesheet href=x><meta http-equiv=refresh content=0;url=x>z"), "z");
+    assert_eq!(
+        clean(
+            "<base href=\"https://evil.example/\"><link rel=stylesheet href=x><meta http-equiv=refresh content=0;url=x>z"
+        ),
+        "z"
+    );
 }
 
 #[test]
@@ -350,7 +361,9 @@ fn deep_nesting_does_not_overflow() {
 #[test]
 fn a_custom_mount_unit_survives_once_for_a_known_id_and_never_otherwise() {
     let unit = |id: &str, kind: &str| {
-        format!("<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>")
+        format!(
+            "<figure id=\"{id}\" data-widget=\"{id}\" data-type=\"{kind}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>"
+        )
     };
     let good = unit("fig-a", "custom");
     assert_eq!(clean(&good), good, "a custom mount unit passes unchanged");
@@ -376,7 +389,9 @@ fn a_custom_mount_unit_survives_once_for_a_known_id_and_never_otherwise() {
 #[test]
 fn a_fallback_note_survives_as_text_only() {
     let note = |text: &str| {
-        format!("<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"custom\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption><p class=\"m-widget-note\">{text}</p></figure>")
+        format!(
+            "<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"custom\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption><p class=\"m-widget-note\">{text}</p></figure>"
+        )
     };
     let plain =
         note("Interactive version not included in this copy: runtime heat@1 is not installed.");
@@ -402,7 +417,9 @@ fn a_fallback_note_survives_as_text_only() {
 #[test]
 fn data_approval_passes_only_as_required_on_a_mount_figure() {
     let unit = |approval: &str| {
-        format!("<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"html\" data-approval=\"{approval}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>")
+        format!(
+            "<figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"html\" data-approval=\"{approval}\" style=\"--ar:4.00 / 3.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>c</figcaption></figure>"
+        )
     };
     let good = unit("required");
     assert_eq!(clean(&good), good, "the held-back marker passes unchanged");

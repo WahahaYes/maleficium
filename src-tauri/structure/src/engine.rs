@@ -793,16 +793,43 @@ error: main.tex:3: ! LaTeX Error: File `booktabs.sty' not found.";
             })
         };
         let run = [
-            ("note: generating format \"latex\"", phase(CompilePhase::Format, None)),
+            (
+                "note: generating format \"latex\"",
+                phase(CompilePhase::Format, None),
+            ),
             ("note: Running TeX ...", phase(CompilePhase::Tex, None)),
-            ("note: Running BibTeX on main.aux ...", phase(CompilePhase::Bibliography, Some("bibtex"))),
-            ("note: Rerunning TeX because bibtex was run ...", phase(CompilePhase::Tex, Some("bibtex was run"))),
-            ("note: Rerunning TeX because \"main.aux\" changed ...", phase(CompilePhase::Tex, Some("\"main.aux\" changed"))),
-            ("note: Running external tool biber ...", phase(CompilePhase::Bibliography, Some("biber"))),
-            ("note: Running xdvipdfmx ...", phase(CompilePhase::Xdvipdfmx, None)),
-            ("note: Writing `/tmp/x/out/main.pdf` (32.79 KiB)", phase(CompilePhase::Writing, Some("main.pdf"))),
-            ("note: Skipped writing 3 intermediate files (use --keep-intermediates to keep them)", None),
-            ("note: \"version 2\" Tectonic command-line interface activated", None),
+            (
+                "note: Running BibTeX on main.aux ...",
+                phase(CompilePhase::Bibliography, Some("bibtex")),
+            ),
+            (
+                "note: Rerunning TeX because bibtex was run ...",
+                phase(CompilePhase::Tex, Some("bibtex was run")),
+            ),
+            (
+                "note: Rerunning TeX because \"main.aux\" changed ...",
+                phase(CompilePhase::Tex, Some("\"main.aux\" changed")),
+            ),
+            (
+                "note: Running external tool biber ...",
+                phase(CompilePhase::Bibliography, Some("biber")),
+            ),
+            (
+                "note: Running xdvipdfmx ...",
+                phase(CompilePhase::Xdvipdfmx, None),
+            ),
+            (
+                "note: Writing `/tmp/x/out/main.pdf` (32.79 KiB)",
+                phase(CompilePhase::Writing, Some("main.pdf")),
+            ),
+            (
+                "note: Skipped writing 3 intermediate files (use --keep-intermediates to keep them)",
+                None,
+            ),
+            (
+                "note: \"version 2\" Tectonic command-line interface activated",
+                None,
+            ),
         ];
         for (text, want) in run {
             assert_eq!(line_signal(text), want, "{text}");

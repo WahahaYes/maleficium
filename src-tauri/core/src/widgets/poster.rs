@@ -32,14 +32,14 @@
 //! Poster precedence for a widget is [`poster_source`]: an explicit
 //! `poster=` always wins, then a cached auto-poster, then a placeholder.
 
-use super::{params, read, Widget, WidgetSource, WidgetType};
+use super::{Widget, WidgetSource, WidgetType, params, read};
+use crate::Core;
 use crate::bundle::{fold, role_keys, runtime_options, sha_of};
 use crate::runtimes::{OptionFormat, PosterStrategy};
 use crate::theme::{Mode, Theme};
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
-use crate::Core;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -326,7 +326,7 @@ pub(crate) fn prepare_at(base: &Path, cx: &Core, req: &PosterRequest) -> Result<
                 return Err(format!(
                     "widget {id}: {} posters are cropped from the PDF, nothing to render",
                     b.reference
-                ))
+                ));
             }
             PosterStrategy::Author if poster_moment(w).is_some() => {}
             PosterStrategy::Author => {
@@ -478,8 +478,8 @@ fn html_job(
         && *want != checked.snapshot.digest
     {
         return Err(format!(
-                "widget {id}: its folder changed since the poster was asked for; the next compile renders it"
-            ));
+            "widget {id}: its folder changed since the poster was asked for; the next compile renders it"
+        ));
     }
     match checked.status {
         WidgetApprovalStatus::ApprovalRequired(r) => Ok(Prepared::ApprovalRequired(Box::new(r))),
@@ -551,8 +551,8 @@ fn custom_job(
         && *want != snap.digest
     {
         return Err(format!(
-                "widget {id}: its runtime changed since the poster was asked for; the next compile renders it"
-            ));
+            "widget {id}: its runtime changed since the poster was asked for; the next compile renders it"
+        ));
     }
     match checked.status {
         None => Err(format!("widget {id}: runtime {reference} cannot be judged")),

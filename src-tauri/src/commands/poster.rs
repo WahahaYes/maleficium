@@ -9,12 +9,12 @@
 //! a wedged webview main thread there cannot freeze the editor.
 
 use crate::poster;
-use maleficium_core::widgets::poster::cache::{PosterRenderer, ProcessRenderer};
-use maleficium_core::widgets::poster::{needs_process, PosterOutcome, PosterRequest};
 use maleficium_core::Core;
+use maleficium_core::widgets::poster::cache::{PosterRenderer, ProcessRenderer};
+use maleficium_core::widgets::poster::{PosterOutcome, PosterRequest, needs_process};
 use std::process::Child;
-use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use tauri::{AppHandle, Runtime, State};
 
 /// Prepare, render and write one poster in this process. Blocks a worker

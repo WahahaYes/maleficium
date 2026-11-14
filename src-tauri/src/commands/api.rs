@@ -5,8 +5,8 @@
 //! consumer). Streaming compiles and raw history bytes stay dedicated until
 //! their services move into core.
 
-use maleficium_core::api::{Request, Response};
 use maleficium_core::Core;
+use maleficium_core::api::{Request, Response};
 use tauri::State;
 
 /// Run one core operation.

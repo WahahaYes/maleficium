@@ -1,3 +1,2 @@
-# Language edition moved to 2024; keep the 2021 formatting style so the
-# migration stays reviewable. A style-edition bump is a separate commit.
-style_edition = "2021"
+# Edition 2024 with matching 2024 formatting style.
+style_edition = "2024"

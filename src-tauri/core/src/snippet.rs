@@ -351,8 +351,8 @@ fn render(
     region: Option<Region>,
     base_scale: f32,
 ) -> Result<(Vec<u8>, u32, u32), String> {
-    use hayro::vello_cpu::color::palette::css::WHITE;
     use hayro::vello_cpu::Pixmap;
+    use hayro::vello_cpu::color::palette::css::WHITE;
 
     let p = &pdf.pages()[page as usize - 1];
     let (page_w, page_h) = p.render_dimensions();

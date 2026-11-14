@@ -41,21 +41,21 @@
 //! for and what to map.
 
 use super::{
-    poster_source, read_sources, PosterOutcome, PosterRequest, PosterSource, CUSTOM_TIMEOUT_MS,
-    HTML_RUNTIME,
+    CUSTOM_TIMEOUT_MS, HTML_RUNTIME, PosterOutcome, PosterRequest, PosterSource, poster_source,
+    read_sources,
 };
+use crate::Core;
 use crate::bundle::fold;
 use crate::theme::Theme;
 use crate::widget_approval::{self, ApprovalRequired, WidgetApprovalStatus, WidgetTarget};
-use crate::widgets::{read, sidecar_guards, widgets, Widget, WidgetType};
-use crate::Core;
+use crate::widgets::{Widget, WidgetType, read, sidecar_guards, widgets};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 
 /// The project folder the app owns, beside the main file.
@@ -199,13 +199,13 @@ pub fn poster_key(
             return Err(format!(
                 "widget {}: an html widget's poster is keyed by its approval digest",
                 w.id
-            ))
+            ));
         }
         WidgetType::Custom => {
             return Err(format!(
                 "widget {}: a custom widget's poster is keyed by its runtime digest",
                 w.id
-            ))
+            ));
         }
     };
     let runtime = w.runtime.as_deref().unwrap_or("");
@@ -456,7 +456,7 @@ impl Cache {
                     return Err(format!(
                         "{} is not a folder; the poster cache is not written",
                         d.display()
-                    ))
+                    ));
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir(d)
                     .map_err(|e| format!("cannot create {}: {e}", d.display()))?,

@@ -528,9 +528,10 @@ mod tests {
             assert_eq!(args[b + 1], BUNDLE_URL);
             assert_eq!(args.iter().any(|a| a == "-C"), cached_only);
             let env: Vec<_> = cmd.get_envs().collect();
-            assert!(env
-                .iter()
-                .any(|(k, v)| *k == "TECTONIC_CACHE_DIR" && *v == Some(cache.as_os_str())));
+            assert!(
+                env.iter()
+                    .any(|(k, v)| *k == "TECTONIC_CACHE_DIR" && *v == Some(cache.as_os_str()))
+            );
             assert_eq!(cmd.get_current_dir(), Some(Path::new("/home/u/paper")));
         }
     }

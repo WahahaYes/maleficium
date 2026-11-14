@@ -8,8 +8,8 @@ use maleficium_events::{OfflineReadiness, OfflineState};
 use maleficium_structure::{ExternalNeeds, MissingDependency, MissingReason};
 use serde::{Deserialize, Serialize};
 
-use super::engine::{DigestCheck, BUNDLE_DIGEST};
 use super::JobStatus;
+use super::engine::{BUNDLE_DIGEST, DigestCheck};
 
 /// What the project's compiles have shown about its dependencies.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,18 +145,18 @@ pub fn assess(
                     OfflineState::NeedsNetwork,
                     named(m, "TeX support files"),
                     missing,
-                )
+                );
             }
             MissingReason::CacheEmpty | MissingReason::BundleUnreachable => {
-                return view(OfflineState::NeedsNetwork, support(), missing)
+                return view(OfflineState::NeedsNetwork, support(), missing);
             }
             MissingReason::SystemFont => {
-                return view(OfflineState::NeedsFont, named(m, "a font"), missing)
+                return view(OfflineState::NeedsFont, named(m, "a font"), missing);
             }
             MissingReason::NotInBundle
             | MissingReason::ShellEscapeRequired
             | MissingReason::BundleInvalid => {
-                return view(OfflineState::Blocked, named(m, "TeX bundle"), missing)
+                return view(OfflineState::Blocked, named(m, "TeX bundle"), missing);
             }
             MissingReason::ExternalTool | MissingReason::BundleChanged => {}
         }

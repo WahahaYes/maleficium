@@ -1,6 +1,6 @@
 //! One red and one green file per scan rule, plus the sample packages.
 
-use super::{scan, Finding};
+use super::{Finding, scan};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn files(pairs: &[(&str, &str)]) -> BTreeMap<String, Vec<u8>> {
