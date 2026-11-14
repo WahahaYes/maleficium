@@ -99,7 +99,7 @@ jobs:
           fi
           echo "matrix={\"include\":[$m]}" >> "$GITHUB_OUTPUT"
 
-  # Every pre-commit hook except clippy (heavy; the package jobs run it in
+  # Every hook except clippy (heavy; the package jobs run it in
   # npm run check), as the first and cheapest gate: the other jobs wait for
   # it. Formatters rewrite files, so a hook that changes anything fails here.
   precommit:
@@ -112,7 +112,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Install prek (the pre-commit runner; the pin lives here)
+      - name: Install prek (the hook runner; the pin lives here)
         run: uv tool install "prek==0.5.9"
       - uses: ./.github/actions/npm
       - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
