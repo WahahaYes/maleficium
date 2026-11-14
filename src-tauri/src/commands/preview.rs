@@ -3,9 +3,9 @@
 //! only sandbox. The webview never names the file to open: it names a project
 //! and a main file, and the path opened is the one the core just wrote.
 
+use maleficium_core::Core;
 use maleficium_core::article_shelf::{self, ArticleServed};
 use maleficium_core::bundle::{self, BundleExported};
-use maleficium_core::Core;
 use tauri::State;
 
 #[tauri::command]

@@ -31,8 +31,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tectonic_bundles::detect_bundle;
-use tectonic_io_base::app_dirs;
 use tectonic_io_base::OpenResult;
+use tectonic_io_base::app_dirs;
 use tectonic_status_base::NoopStatusBackend;
 
 include!(concat!(env!("OUT_DIR"), "/embedded.rs"));

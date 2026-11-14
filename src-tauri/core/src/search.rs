@@ -4,9 +4,9 @@
 
 use crate::Core;
 
+use maleficium_index::ProjectMacro;
 use maleficium_index::definition::{self, Lookup, RefAt};
 use maleficium_index::search::{self, FileMatch, Query, SearchResult};
-use maleficium_index::ProjectMacro;
 
 /// Hits one search returns by default.
 pub const MAX_HITS: usize = 1000;
@@ -121,9 +121,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(d.definitions[0].rel, "ch/a.tex");
-        assert!(definition_at(cx, "search-t", "plain words", 3, None)
-            .unwrap()
-            .is_none());
+        assert!(
+            definition_at(cx, "search-t", "plain words", 3, None)
+                .unwrap()
+                .is_none()
+        );
         let at = DefinitionTarget::At {
             rel: "main.tex".into(),
             line: 1,

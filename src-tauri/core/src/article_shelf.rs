@@ -13,8 +13,8 @@
 //! an HTTP route in a web build (which should also scope tokens to the
 //! session). No path ever reaches the webview.
 
-use crate::bundle::ArticleAnchor;
 use crate::Core;
+use crate::bundle::ArticleAnchor;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

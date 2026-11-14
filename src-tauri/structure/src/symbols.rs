@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::Serialize;
 
-use crate::text::{strip_comments, Lines};
+use crate::text::{Lines, strip_comments};
 
 /// A key (or path, as written) and the 1-based line it appears on.
 #[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]

@@ -167,7 +167,9 @@ pub fn failure_text(c: &engine::Compiled) -> String {
                  which compiles from the bundle alone",
             )
         } else {
-            format!("{tool} is not installed: the engine runs it to finish this document. Install {tool} and compile again")
+            format!(
+                "{tool} is not installed: the engine runs it to finish this document. Install {tool} and compile again"
+            )
         };
     }
     if let Some(MissingDependency {
@@ -286,9 +288,7 @@ pub fn report(
                 timeout_secs
             ),
         ),
-        JobStatus::Cancelled | JobStatus::Running => {
-            return Err(String::from("compile cancelled"))
-        }
+        JobStatus::Cancelled | JobStatus::Running => return Err(String::from("compile cancelled")),
     })
 }
 
@@ -398,7 +398,7 @@ pub fn run_blocking(
                 missing: None,
                 message,
                 approvals: Vec::new(),
-            })
+            });
         }
     };
     settle(cx, root_id, main_rel, &out, &c);

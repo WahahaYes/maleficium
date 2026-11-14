@@ -4,11 +4,11 @@
 //! contract, so nothing that dispatches `api::Request` (and no MCP tool)
 //! can reach them. Reading status and reviewing go through the contract.
 
+use maleficium_core::Core;
 use maleficium_core::widget_approval::{
     self, RuntimeDecisionParams, WidgetApprovalStatus, WidgetApproveParams,
     WidgetAutoApproveParams, WidgetReview, WidgetRevokeParams,
 };
-use maleficium_core::Core;
 use tauri::State;
 
 fn log(event: maleficium_events::BusEvent) {

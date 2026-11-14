@@ -247,16 +247,20 @@ fn a_folder_with_a_symlink_or_special_file_is_never_approvable() {
     std::fs::remove_file(p.demo().join("alias.html")).unwrap();
 
     std::os::unix::fs::symlink("/etc/hostname", p.demo().join("secret.txt")).unwrap();
-    assert!(check_at(&p.base, &p.cx, &p.id, &p.target())
-        .unwrap_err()
-        .contains("symlink"));
+    assert!(
+        check_at(&p.base, &p.cx, &p.id, &p.target())
+            .unwrap_err()
+            .contains("symlink")
+    );
     std::fs::remove_file(p.demo().join("secret.txt")).unwrap();
 
     std::fs::create_dir_all(p.demo().join("sub")).unwrap();
     std::os::unix::fs::symlink("/etc", p.demo().join("sub/etc")).unwrap();
-    assert!(check_at(&p.base, &p.cx, &p.id, &p.target())
-        .unwrap_err()
-        .contains("symlink"));
+    assert!(
+        check_at(&p.base, &p.cx, &p.id, &p.target())
+            .unwrap_err()
+            .contains("symlink")
+    );
     std::fs::remove_file(p.demo().join("sub/etc")).unwrap();
 
     let fifo = std::ffi::CString::new(p.demo().join("pipe").to_string_lossy().as_bytes()).unwrap();
@@ -544,10 +548,12 @@ fn approvals_live_outside_the_project_and_nothing_in_it_counts() {
     .unwrap_err();
     assert!(e.contains("inside the project"), "{e}");
     assert!(!inside.join("approvals").exists());
-    assert!(!check_at(&inside, &p.cx, &p.id, &p.target())
-        .unwrap()
-        .status
-        .is_approved());
+    assert!(
+        !check_at(&inside, &p.cx, &p.id, &p.target())
+            .unwrap()
+            .status
+            .is_approved()
+    );
 }
 
 #[test]
@@ -1087,7 +1093,10 @@ fn judge_row_denied_stays_denied_at_any_digest_and_with_auto_on() {
             ));
             let r = required(&s);
             assert_eq!(r.cause, WidgetApprovalCause::Revoked);
-            assert_eq!(r.message, "The user denied runtime 'heatmap@1' in this project. Only the user can allow it, in View > Widgets.");
+            assert_eq!(
+                r.message,
+                "The user denied runtime 'heatmap@1' in this project. Only the user can allow it, in View > Widgets."
+            );
             assert!(r.approved_digest.is_none());
         }
     }
@@ -1134,9 +1143,10 @@ fn judge_row_licence_or_vendored_change_always_needs_the_user() {
                 "{license} {auto}"
             );
             assert_eq!(r.approved_digest.as_deref(), Some(other.as_str()));
-            assert!(r
-                .message
-                .contains("that always needs the user, even with auto-approval on"));
+            assert!(
+                r.message
+                    .contains("that always needs the user, even with auto-approval on")
+            );
         }
     }
 }
@@ -1215,10 +1225,12 @@ fn decide_runtime_allows_denies_and_refuses_what_it_cannot_bind() {
             )
         );
     }
-    assert!(!project_dir(&p.base, &p.root)
-        .unwrap()
-        .join(STORE_FILE)
-        .exists());
+    assert!(
+        !project_dir(&p.base, &p.root)
+            .unwrap()
+            .join(STORE_FILE)
+            .exists()
+    );
     let s = p.decide(&d, RuntimeDecision::Allowed).unwrap();
     assert_eq!(approved(&s).via, ApprovedVia::User);
     // A deny is sticky across digests, auto-approval included.
@@ -1256,7 +1268,10 @@ fn decide_runtime_allows_denies_and_refuses_what_it_cannot_bind() {
     assert!(p.decide(&d, RuntimeDecision::Denied).is_err());
     std::fs::remove_dir_all(p.rt_dir()).unwrap();
     let e = p.decide(&d, RuntimeDecision::Allowed).unwrap_err();
-    assert_eq!(e, "runtime heatmap@1 is not valid (not installed in this project (no runtimes/heatmap@1/runtime.json)); fix it before allowing it");
+    assert_eq!(
+        e,
+        "runtime heatmap@1 is not valid (not installed in this project (no runtimes/heatmap@1/runtime.json)); fix it before allowing it"
+    );
 }
 
 #[test]

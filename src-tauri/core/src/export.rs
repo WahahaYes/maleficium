@@ -286,9 +286,11 @@ mod tests {
         );
         assert_eq!(e.bytes, std::fs::metadata(&out).unwrap().len());
         let inside = root.join("ch/out.zip");
-        assert!(export_zip(cx, &id, &inside.to_string_lossy())
-            .unwrap_err()
-            .contains("inside the project"));
+        assert!(
+            export_zip(cx, &id, &inside.to_string_lossy())
+                .unwrap_err()
+                .contains("inside the project")
+        );
         assert!(export_zip(cx, &id, "relative.zip").is_err());
         let _ = std::fs::remove_file(out);
     }
@@ -336,9 +338,11 @@ mod tests {
         let cx = &Core::default();
         let (id, _root) = project(cx, "pdf");
         let out = crate::test_scratch::dir("export.pdf");
-        assert!(export_pdf(cx, &id, "main.tex", &out.to_string_lossy())
-            .unwrap_err()
-            .contains("compile first"));
+        assert!(
+            export_pdf(cx, &id, "main.tex", &out.to_string_lossy())
+                .unwrap_err()
+                .contains("compile first")
+        );
         let o = super::super::outputs_of(cx, &id, "main.tex").unwrap();
         std::fs::create_dir_all(&o.outdir).unwrap();
         std::fs::write(o.outdir.join(&o.pdf_name), b"%PDF-1.7 test").unwrap();

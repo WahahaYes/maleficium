@@ -10,8 +10,8 @@
 //! runs the package check and the static scan over a folder. Neither
 //! approves anything: approval stays a user action in the app.
 
-use crate::runtimes::{self, RuntimeManifest};
 use crate::Core;
+use crate::runtimes::{self, RuntimeManifest};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

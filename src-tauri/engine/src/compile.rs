@@ -48,7 +48,7 @@ fn parse(args: Vec<OsString>) -> Result<Options> {
             Some("--synctex") => o.synctex = true,
             Some("--keep-logs") => o.keep_logs = true,
             Some(flag) if flag.starts_with('-') && flag != "-" => {
-                return Err(Error::msg(format!("unknown option {flag}")))
+                return Err(Error::msg(format!("unknown option {flag}")));
             }
             _ if o.input.is_empty() => o.input = a.to_string_lossy().into_owned(),
             _ => return Err(Error::msg("exactly one input file")),
@@ -122,7 +122,7 @@ fn execute(args: Vec<OsString>, status: &mut dyn StatusBackend) -> Result<()> {
             None => {
                 return Err(Error::msg(format!(
                     "`{url}` doesn't specify a valid bundle."
-                )))
+                )));
             }
         },
         None => sb.bundle(config.default_bundle(o.only_cached)?),

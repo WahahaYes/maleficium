@@ -553,9 +553,11 @@ mod tests {
         let r = request_open_at(&base, &data, now, None, &p, Some("./ch/intro.tex")).unwrap();
         assert_eq!(r.file.as_deref(), Some("ch/intro.tex"));
         assert_eq!(pending_at(&base, now).as_ref(), Some(&r));
-        assert!(request_open_at(&base, &data, now, None, &p, None)
-            .unwrap_err()
-            .contains("not answered"));
+        assert!(
+            request_open_at(&base, &data, now, None, &p, None)
+                .unwrap_err()
+                .contains("not answered")
+        );
         assert!(answer_at(&base, now, "other", OpenOutcome::Opened).is_err());
         answer_at(&base, now, &r.id, OpenOutcome::Dismissed).unwrap();
         assert!(

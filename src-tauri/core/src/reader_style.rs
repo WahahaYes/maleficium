@@ -456,15 +456,21 @@ mod tests {
                 "{body}: {e}"
             );
         }
-        assert!(load(cx, "rs", Path::new("paper"), "missing.css")
-            .unwrap_err()
-            .contains("cannot be read"));
+        assert!(
+            load(cx, "rs", Path::new("paper"), "missing.css")
+                .unwrap_err()
+                .contains("cannot be read")
+        );
         std::fs::write(dir.join("paper/r.txt"), ".a{}").unwrap();
-        assert!(load(cx, "rs", Path::new("paper"), "r.txt")
-            .unwrap_err()
-            .contains("not a .css file"));
-        assert!(load(cx, "rs", Path::new(""), "../outside.css")
-            .unwrap_err()
-            .contains("outside the project"));
+        assert!(
+            load(cx, "rs", Path::new("paper"), "r.txt")
+                .unwrap_err()
+                .contains("not a .css file")
+        );
+        assert!(
+            load(cx, "rs", Path::new(""), "../outside.css")
+                .unwrap_err()
+                .contains("outside the project")
+        );
     }
 }

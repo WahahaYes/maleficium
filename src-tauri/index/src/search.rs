@@ -427,9 +427,11 @@ mod tests {
             regex: true,
             ..q("(")
         };
-        assert!(search(&i, &bad, None, 100)
-            .unwrap_err()
-            .starts_with("invalid pattern"));
+        assert!(
+            search(&i, &bad, None, 100)
+                .unwrap_err()
+                .starts_with("invalid pattern")
+        );
         assert!(search(&i, &q(""), None, 100).is_err());
     }
 

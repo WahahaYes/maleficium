@@ -244,9 +244,11 @@ fn a_main_that_never_compiled_or_a_bad_pdf_is_an_error() {
         Some(b"not a pdf"),
         Some(REAL_SIDECAR),
     );
-    assert!(widgets(cx, &id, "main.tex")
-        .unwrap_err()
-        .contains("cannot read the pdf"));
+    assert!(
+        widgets(cx, &id, "main.tex")
+            .unwrap_err()
+            .contains("cannot read the pdf")
+    );
     let _ = std::fs::remove_dir_all(out);
 
     assert!(widgets(cx, "nope", "main.tex").is_err());
@@ -716,10 +718,11 @@ fn macro_options_declare_frame_and_resource_origins_joined_with_widget_json() {
     assert_eq!(csp.frame_domains, ["https://a.org", "https://b.org"]);
     assert_eq!(csp.resource_domains, ["https://cdn.org"]);
     // The option itself is kept in canonical form: sorted, deduplicated.
-    assert!(w
-        .options
-        .iter()
-        .any(|o| o.key == "framedomains" && o.value == "https://a.org https://b.org"));
+    assert!(
+        w.options
+            .iter()
+            .any(|o| o.key == "framedomains" && o.value == "https://a.org https://b.org")
+    );
 
     std::fs::write(
         b.join("widget.json"),
@@ -861,18 +864,48 @@ fn a_custom_record_without_a_poster_reads_for_a_proposed_one() {
 #[test]
 fn a_bad_custom_record_fails_the_list_with_its_message() {
     let cases = [
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "||"), "widget fig-part: a custom widget records no runtime"),
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer|"), "widget fig-part: runtime `stl-viewer` is not <name>@<major> (or names a reserved runtime)"),
+        (
+            CUSTOM_LINE.replace("|stl-viewer@1|", "||"),
+            "widget fig-part: a custom widget records no runtime",
+        ),
+        (
+            CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer|"),
+            "widget fig-part: runtime `stl-viewer` is not <name>@<major> (or names a reserved runtime)",
+        ),
         // model@1 is the built-in itself; another major is a reserved name.
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "|model@2|"), "runtime `model@2` is not <name>@<major>"),
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "|m-viewer@1|"), "runtime `m-viewer@1` is not"),
-        (CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer@0|"), "runtime `stl-viewer@0` is not"),
-        (CUSTOM_LINE.replace("primary=models/mesh.glb,", ""), "widget fig-part: a custom widget records no primary source"),
-        (CUSTOM_LINE.replace("texture=", "primary="), "widget fig-part: source role `primary` is given twice"),
-        (CUSTOM_LINE.replace("labels=", "Labels="), "widget fig-part: source role `Labels` is not a plain word"),
-        (CUSTOM_LINE.replace("color=", "col-or="), "widget fig-part: option key `col-or` is not a plain word"),
+        (
+            CUSTOM_LINE.replace("|stl-viewer@1|", "|model@2|"),
+            "runtime `model@2` is not <name>@<major>",
+        ),
+        (
+            CUSTOM_LINE.replace("|stl-viewer@1|", "|m-viewer@1|"),
+            "runtime `m-viewer@1` is not",
+        ),
+        (
+            CUSTOM_LINE.replace("|stl-viewer@1|", "|stl-viewer@0|"),
+            "runtime `stl-viewer@0` is not",
+        ),
+        (
+            CUSTOM_LINE.replace("primary=models/mesh.glb,", ""),
+            "widget fig-part: a custom widget records no primary source",
+        ),
+        (
+            CUSTOM_LINE.replace("texture=", "primary="),
+            "widget fig-part: source role `primary` is given twice",
+        ),
+        (
+            CUSTOM_LINE.replace("labels=", "Labels="),
+            "widget fig-part: source role `Labels` is not a plain word",
+        ),
+        (
+            CUSTOM_LINE.replace("color=", "col-or="),
+            "widget fig-part: option key `col-or` is not a plain word",
+        ),
         // A vocabulary key is checked by its format for custom runtimes too.
-        (CUSTOM_LINE.replace("color=accent", "camera=0 0 1"), "a camera matrix has 16 numbers"),
+        (
+            CUSTOM_LINE.replace("color=accent", "camera=0 0 1"),
+            "a camera matrix has 16 numbers",
+        ),
     ];
     for (line, want) in cases {
         let e = custom(&line).unwrap_err();

@@ -17,17 +17,17 @@ mod outline;
 mod symbols;
 mod text;
 
-pub use checks::{precompile_checks, CheckEnv, CheckKind, Finding};
+pub use checks::{CheckEnv, CheckKind, Finding, precompile_checks};
 pub use diagnostics::{
-    diagnostics, tex_warnings, Diagnostic, Severity, TexWarning, TexWarningKind,
+    Diagnostic, Severity, TexWarning, TexWarningKind, diagnostics, tex_warnings,
 };
 pub use engine::{
-    external_needs, line_signal, missing_dependency, offline_reading, CompilePhase, ExternalNeeds,
-    FetchOutcome, LineSignal, MissingDependency, MissingReason,
+    CompilePhase, ExternalNeeds, FetchOutcome, LineSignal, MissingDependency, MissingReason,
+    external_needs, line_signal, missing_dependency, offline_reading,
 };
-pub use files::{ext_of, is_text_path, TEXT_EXTENSIONS};
-pub use outline::{outline, Outline, OutlineEntry, OutlineKind, MAX_OUTLINE_ENTRIES};
-pub use symbols::{bib_keys, symbols, InputAt, KeyAt, MacroAt, PackageAt, Symbols, MACRO_BODY_MAX};
+pub use files::{TEXT_EXTENSIONS, ext_of, is_text_path};
+pub use outline::{MAX_OUTLINE_ENTRIES, Outline, OutlineEntry, OutlineKind, outline};
+pub use symbols::{InputAt, KeyAt, MACRO_BODY_MAX, MacroAt, PackageAt, Symbols, bib_keys, symbols};
 
 /// The generated TypeScript module for the types the frontend receives
 /// (`src/lib/generated/structure.ts`).

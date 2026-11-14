@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{hash_root, is_hidden_name, FileEntry};
+use super::{FileEntry, hash_root, is_hidden_name};
 
 /// Granted roots, keyed by session id. Roots stay readable until the
 /// `Core` is dropped.

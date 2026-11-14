@@ -303,9 +303,10 @@ fn a_join_error_keeps_the_article_and_lists_the_widgets_at_the_end() {
 fn an_article_without_a_title_gets_the_page_title_and_no_contents_for_one_section() {
     let html = "<html><body><article class=\"ltx_document\"><section id=\"S1\" class=\"ltx_section\"><h2>1 Only</h2><p>x</p></section></article></body></html>";
     let a = build_with(html, Some("mfw 1\n"), figures::Mode::SingleFile);
-    assert!(a
-        .html
-        .contains("<h1 class=\"ltx_title ltx_title_document\">Fallback &lt;Title&gt;</h1>"));
+    assert!(
+        a.html
+            .contains("<h1 class=\"ltx_title ltx_title_document\">Fallback &lt;Title&gt;</h1>")
+    );
     assert!(!a.html.contains("m-contents"));
     // Widgets the article has no placeholders for are still on the page.
     assert_eq!(a.html.matches("data-widget=").count(), 5);
@@ -329,7 +330,9 @@ fn a_proof_final_qed_becomes_a_drawn_mark() {
         "T",
         &[],
     );
-    assert!(html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>"));
+    assert!(
+        html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>")
+    );
     assert!(!html.contains('∎'));
 }
 
@@ -366,7 +369,9 @@ fn a_lone_paragraph_qed_becomes_a_drawn_mark() {
         "T",
         &[],
     );
-    assert!(html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>"));
+    assert!(
+        html.contains("<span class=\"m-qed\" role=\"img\" aria-label=\"End of proof\"></span>")
+    );
     assert!(!html.contains('∎'));
 }
 

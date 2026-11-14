@@ -8,8 +8,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::graph::{dir_of, resolve_input};
 use crate::ProjectIndex;
+use crate::graph::{dir_of, resolve_input};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -316,7 +316,11 @@ mod tests {
         );
         put(&mut i, "p/ch/intro.tex", "\n\\chapter{Intro}\n");
         put(&mut i, "p/ch/dup.tex", "\\label{sec:a}");
-        put(&mut i, "p/refs.bib", "@book{knuth,\n  author = {Donald E. Knuth},\n  title = {The {\\TeX}book},\n  year = 1984\n}\n@misc{other,\n title={X}}\n");
+        put(
+            &mut i,
+            "p/refs.bib",
+            "@book{knuth,\n  author = {Donald E. Knuth},\n  title = {The {\\TeX}book},\n  year = 1984\n}\n@misc{other,\n title={X}}\n",
+        );
         let main = Some("p/main.tex");
         let l = lookup(
             &i,

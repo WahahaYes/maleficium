@@ -144,11 +144,7 @@ pub fn num(v: f64) -> String {
     let v = if v.abs() < 5e-7 { 0.0 } else { v };
     let s = format!("{v:.6}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" {
-        "0".into()
-    } else {
-        s.into()
-    }
+    if s == "-0" { "0".into() } else { s.into() }
 }
 
 /// `WxH` in pixels.
@@ -302,7 +298,9 @@ mod tests {
         let m = camera(id).unwrap();
         assert!(close(
             &m,
-            &[1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+            &[
+                1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.
+            ]
         ));
         // Space separated (what the package records) reads the same.
         assert_eq!(camera(&id.replace(',', " ")).unwrap(), m);
@@ -313,7 +311,9 @@ mod tests {
         let m = camera("2 0 0 0  0 3 0 0  0 0 4 0  1 2 5 1").unwrap();
         assert!(close(
             &m,
-            &[1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 1., 2., 5., 1.]
+            &[
+                1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 1., 2., 5., 1.
+            ]
         ));
     }
 
@@ -323,13 +323,17 @@ mod tests {
         let m = camera("pos=0 0 5 target=0 0 0 up=0 1 0").unwrap();
         assert!(close(
             &m,
-            &[1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 5., 1.]
+            &[
+                1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 5., 1.
+            ]
         ));
         // From +x: the camera's -z points along -x, its x axis along -z.
         let m = camera("pos=3,0,0 target=0,0,0").unwrap();
         assert!(close(
             &m,
-            &[0., 0., -1., 0., 0., 1., 0., 0., 1., 0., 0., 0., 3., 0., 0., 1.]
+            &[
+                0., 0., -1., 0., 0., 1., 0., 0., 1., 0., 0., 0., 3., 0., 0., 1.
+            ]
         ));
         // Commas, extra spaces and key order do not matter.
         assert_eq!(camera("target=0,0,0  pos=3, 0, 0").unwrap(), m);

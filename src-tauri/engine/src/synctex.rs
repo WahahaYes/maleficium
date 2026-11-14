@@ -6,7 +6,7 @@
 //! with no match prints nothing. Unlike upstream's command line tool this has
 //! no `-x` option, so it never runs another program.
 
-use std::ffi::{c_char, c_float, c_int, c_void, CStr, CString, OsString};
+use std::ffi::{CStr, CString, OsString, c_char, c_float, c_int, c_void};
 
 use libz_sys as _;
 

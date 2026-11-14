@@ -39,18 +39,18 @@ pub mod widget_approval;
 pub mod widgets;
 
 pub use compile::{
-    cancel as cancel_job, poll as poll_job, run as run_job, JobRecord, JobStatus, Progress,
+    JobRecord, JobStatus, Progress, cancel as cancel_job, poll as poll_job, run as run_job,
 };
 pub use fs::{
-    grant_project, grant_root, grant_untitled, list_dir, make_dir, read_bytes, read_text,
+    FileStat, grant_project, grant_root, grant_untitled, list_dir, make_dir, read_bytes, read_text,
     remove_path, rename_path, resolve_in, resolve_read, resolve_write, save, session_root,
-    stat_path, trash_file, undo_trash, write_bytes, FileStat,
+    stat_path, trash_file, undo_trash, write_bytes,
 };
 pub use outputs::{
-    clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp, outputs_fresh,
-    outputs_of, tex_log, tex_log_file, write_engine_log, OutputStamp,
+    OutputStamp, clean_outputs, engine_log, log_file, log_tail, output_pdf, output_stamp,
+    outputs_fresh, outputs_of, tex_log, tex_log_file, write_engine_log,
 };
-pub use synctex::{forward, inverse, ForwardHit, InverseHit};
+pub use synctex::{ForwardHit, InverseHit, forward, inverse};
 
 /// Session state one adapter owns: granted roots, compile jobs, live
 /// indexes, and held replace plans. Clones share the same state, so a

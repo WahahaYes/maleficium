@@ -1,5 +1,5 @@
 use super::*;
-use crate::widgets::{widgets, WidgetRect, WidgetSource};
+use crate::widgets::{WidgetRect, WidgetSource, widgets};
 
 const REAL_PDF: &[u8] = include_bytes!("../../../testdata/interactive/main.pdf");
 const REAL_SIDECAR: &str = include_str!("../../../testdata/interactive/main.mfw");
@@ -91,9 +91,10 @@ fn a_model_job_carries_its_camera_size_sources_theme_and_policy() {
     assert_eq!(job.sources.len(), 1);
     assert_eq!(job.sources[0].key, "model");
     assert_eq!(job.sources[0].bytes, GLB);
-    assert!(job
-        .document
-        .contains("Content-Security-Policy\" content=\"default-src 'none'"));
+    assert!(
+        job.document
+            .contains("Content-Security-Policy\" content=\"default-src 'none'")
+    );
     assert!(job.document.contains("connect-src 'none'"));
 }
 
@@ -652,9 +653,11 @@ fn a_request_for_another_digest_than_the_folder_has_is_refused() {
     // A digest on a first-party widget is a mistake, not ignored.
     let mut m = req(&h.id, "fig-mesh", &h.out);
     m.digest = Some("0".repeat(64));
-    assert!(prepare_at(&h.base, &h.cx, &m)
-        .unwrap_err()
-        .contains("html and custom widgets only"));
+    assert!(
+        prepare_at(&h.base, &h.cx, &m)
+            .unwrap_err()
+            .contains("html and custom widgets only")
+    );
 }
 
 #[test]

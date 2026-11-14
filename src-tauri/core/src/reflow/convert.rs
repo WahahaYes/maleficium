@@ -16,8 +16,8 @@
 //! `target/debug/` or the one in `src-tauri/binaries/`), so it passes the dev
 //! tree's `src-tauri/resources/dumps` as `--dumps`. A release build never does.
 
-use crate::compile::JobStatus;
 use crate::Core;
+use crate::compile::JobStatus;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -339,9 +339,10 @@ mod tests {
             ("TECTONIC_CACHE_DIR", "/c"),
             ("MALEFICIUM_CACHED_ONLY", "1"),
         ] {
-            assert!(env
-                .iter()
-                .any(|(ek, ev)| *ek == k && ev.map(|s| s.to_string_lossy() == v) == Some(true)));
+            assert!(
+                env.iter()
+                    .any(|(ek, ev)| *ek == k && ev.map(|s| s.to_string_lossy() == v) == Some(true))
+            );
         }
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/p/paper")));
         let bare = command(
@@ -508,13 +509,17 @@ mod tests {
         assert!(c.errors.is_empty());
         std::fs::remove_file(w.join(OUT)).unwrap();
         assert!(finish(JobStatus::Success, &w).html.is_err());
-        assert!(finish(JobStatus::TimedOut, &w)
-            .html
-            .unwrap_err()
-            .contains("300s"));
-        assert!(finish(JobStatus::Cancelled, &w)
-            .html
-            .unwrap_err()
-            .contains("cancelled"));
+        assert!(
+            finish(JobStatus::TimedOut, &w)
+                .html
+                .unwrap_err()
+                .contains("300s")
+        );
+        assert!(
+            finish(JobStatus::Cancelled, &w)
+                .html
+                .unwrap_err()
+                .contains("cancelled")
+        );
     }
 }

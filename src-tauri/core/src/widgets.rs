@@ -13,8 +13,8 @@ use crate::Core;
 pub mod params;
 pub mod poster;
 
-use hayro::hayro_syntax::object::{Array, Dict, Rect, String as PdfString};
 use hayro::hayro_syntax::Pdf;
+use hayro::hayro_syntax::object::{Array, Dict, Rect, String as PdfString};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use ts_rs::TS;
@@ -360,7 +360,7 @@ pub fn parse_sidecar(text: &str) -> Result<Sidecar, String> {
             return Err(format!(
                 "unsupported widget sidecar: expected `{SIDECAR_HEADER}`, found `{}`",
                 other.unwrap_or("")
-            ))
+            ));
         }
     }
     let mut out: Vec<Record> = Vec::new();
@@ -901,7 +901,11 @@ pub fn read(
             }
             return Err(format!(
                 "{main_rel}: the pdf carries widget annotations ({}) but the compile left no widget sidecar; recompile the document",
-                found.iter().map(|m| m.id.as_str()).collect::<Vec<_>>().join(", ")
+                found
+                    .iter()
+                    .map(|m| m.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
         Err(e) => return Err(format!("{main_rel}: cannot read the widget sidecar: {e}")),

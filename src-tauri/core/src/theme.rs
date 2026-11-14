@@ -401,7 +401,7 @@ impl Lines {
             _ => {
                 return Err(format!(
                     "widget sidecar line {n}: unknown theme mode `{mode}`"
-                ))
+                ));
             }
         };
         if !value_ok(t.kind, value) {

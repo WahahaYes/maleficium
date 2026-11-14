@@ -280,7 +280,9 @@ mod tests {
         );
         // A single-file widget's wrapper frames it with the same sandbox and
         // names only its own frame origins.
-        assert!(script.contains("<iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\""));
+        assert!(
+            script.contains("<iframe sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\"")
+        );
         assert!(script.contains("var WRAP_DIRECTIVE = 'frame-src';"));
     }
 

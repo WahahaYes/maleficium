@@ -28,7 +28,7 @@
 //! `</span>` (whitespace allowed), anything else is [`JoinError::Malformed`];
 //! only `span` elements are placeholders.
 
-use crate::widgets::{parse_sidecar, Record, WidgetType};
+use crate::widgets::{Record, WidgetType, parse_sidecar};
 
 /// The class token every placeholder carries.
 const WIDGET_CLASS: &str = "m-widget";
@@ -98,7 +98,10 @@ impl std::fmt::Display for JoinError {
                 index + 1
             ),
             Self::Malformed { offset, reason } => {
-                write!(f, "unreadable widget placeholder at byte {offset}: {reason}")
+                write!(
+                    f,
+                    "unreadable widget placeholder at byte {offset}: {reason}"
+                )
             }
             Self::Sidecar(e) => f.write_str(e),
             Self::Stale => f.write_str("the joined placeholders do not match this html"),
