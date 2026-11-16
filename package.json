@@ -49,7 +49,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-fs": "^2.5.2",
     "codemirror": "^6.0.2",
-    "pdfjs-dist": "^5.5.207",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "temml": "0.13.5"
