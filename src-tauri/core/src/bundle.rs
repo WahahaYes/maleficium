@@ -805,17 +805,17 @@ fn crop_png(pdf: &hayro::hayro_syntax::Pdf, page: u32, r: &WidgetRect) -> Result
         let (_, page_h) = p.render_dimensions();
         let width_pt = ((r.x1 - r.x0) as f32).max(1.0);
         let scale = 2.0f32.min(1600.0 / width_pt);
-        let settings = hayro::RenderSettings {
+        let pixmap = hayro::PixmapSettings {
             x_scale: scale,
             y_scale: scale,
             bg_color: WHITE,
-            ..Default::default()
         };
         let full = hayro::render(
             p,
             &hayro::RenderCache::new(),
             &hayro::hayro_interpret::InterpreterSettings::default(),
-            &settings,
+            &hayro::RenderSettings::default(),
+            &pixmap,
         );
         let (w, h) = (full.width() as usize, full.height() as usize);
         let px = |v: f32, hi: usize| ((v * scale).max(0.0) as usize).min(hi);
@@ -830,11 +830,16 @@ fn crop_png(pdf: &hayro::hayro_syntax::Pdf, page: u32, r: &WidgetRect) -> Result
         if x1 <= x0 || y1 <= y0 {
             return Err(format!("the widget's rect lies outside page {page}"));
         }
-        let mut buf = Vec::with_capacity((x1 - x0) * (y1 - y0));
+        let raw = full.data_as_u8_slice();
+        let mut buf = Vec::with_capacity((x1 - x0) * (y1 - y0) * 4);
         for row in y0..y1 {
-            buf.extend_from_slice(&full.data()[row * w + x0..row * w + x1]);
+            buf.extend_from_slice(&raw[row * w * 4 + x0 * 4..row * w * 4 + x1 * 4]);
         }
-        Pixmap::from_parts(buf, (x1 - x0) as u16, (y1 - y0) as u16)
+        let w16 = u16::try_from(x1 - x0)
+            .map_err(|_| format!("the widget crop on page {page} is too wide to encode"))?;
+        let h16 = u16::try_from(y1 - y0)
+            .map_err(|_| format!("the widget crop on page {page} is too tall to encode"))?;
+        Pixmap::from_parts(buf, w16, h16, hayro::vello_cpu::PixelMetadata::default())
             .into_png()
             .map_err(|e| format!("cannot encode the table crop: {e}"))
     }))

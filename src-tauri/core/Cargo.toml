@@ -28,7 +28,7 @@ base64 = "0.23.1"
 # theme-responsive; only decoding is used, never encoding.
 png = "0.18.1"
 # Renders pdf pages for snippets. No embedded fonts: Tectonic embeds every font.
-hayro = { version = "0.7", default-features = false }
+hayro = { version = "0.9", default-features = false }
 # The core-owned file watcher (notify thread per session root). No Tauri.
 notify = "8"
 jsonschema = { version = "0.61", default-features = false }
