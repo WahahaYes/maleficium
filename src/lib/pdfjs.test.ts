@@ -91,6 +91,7 @@ describe('pdf worker load failure', () => {
     FakeWorker.instances[0].fireError(new Event('error'));
     await expect(handle).resolves.toBeDefined();
     await expect(pending).rejects.toThrow('pdf worker failed to load');
+    expect(mockGetDocument).toHaveBeenCalledWith({ url: 'asset:///x.pdf' });
     expect(FakeWorker.instances.length).toBe(1);
     expect(loadFailedEvents().length).toBe(1);
   });
@@ -113,6 +114,7 @@ describe('pdf worker load failure', () => {
     mockGetDocument.mockReturnValue({ promise: Promise.resolve({ numPages: 1 }) });
     const doc = await pdfjs.openPdf('https://x/y.pdf');
     expect(doc.numPages).toBe(1);
+    expect(mockGetDocument).toHaveBeenCalledWith({ url: 'https://x/y.pdf' });
     expect(loadFailedEvents().length).toBe(0);
   });
 });

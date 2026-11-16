@@ -87,7 +87,7 @@ export type PdfViewport = PageViewport;
 
 export async function openPdf(url: string): Promise<PDFDocumentProxy> {
   const { pdfJs, workerFailed } = await getPdfJs();
-  return await Promise.race([pdfJs.getDocument(url).promise, workerFailed]);
+  return await Promise.race([pdfJs.getDocument({ url }).promise, workerFailed]);
 }
 
 export async function openPdfFromBytes(data: Uint8Array): Promise<PDFDocumentProxy> {
