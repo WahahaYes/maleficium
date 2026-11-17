@@ -358,17 +358,17 @@ fn render(
     let (page_w, page_h) = p.render_dimensions();
     let mut scale = base_scale.min(MAX_WIDTH_PX / page_w.max(1.0));
     for _ in 0..4 {
-        let settings = hayro::RenderSettings {
+        let pixmap = hayro::PixmapSettings {
             x_scale: scale,
             y_scale: scale,
             bg_color: WHITE,
-            ..Default::default()
         };
         let full = hayro::render(
             p,
             &hayro::RenderCache::new(),
             &hayro::hayro_interpret::InterpreterSettings::default(),
-            &settings,
+            &hayro::RenderSettings::default(),
+            &pixmap,
         );
         let (w, h) = (full.width() as usize, full.height() as usize);
         let (top, bottom) = match region {
@@ -382,8 +382,12 @@ fn render(
             }
             None => (0, h),
         };
-        let band: Vec<_> = full.data()[top * w..bottom * w].to_vec();
-        let bytes = Pixmap::from_parts(band, w as u16, (bottom - top) as u16)
+        let band = full.data_as_u8_slice()[top * w * 4..bottom * w * 4].to_vec();
+        let w16 = u16::try_from(w)
+            .map_err(|_| format!("page {page} renders wider than the encoder takes"))?;
+        let h16 = u16::try_from(bottom - top)
+            .map_err(|_| format!("page {page} region runs taller than the encoder takes"))?;
+        let bytes = Pixmap::from_parts(band, w16, h16, hayro::vello_cpu::PixelMetadata::default())
             .into_png()
             .map_err(|e| format!("cannot encode page {}: {}", page, e))?;
         if bytes.len() <= MAX_PNG_BYTES {
@@ -409,17 +413,17 @@ pub fn pdf_first_page_png(bytes: Vec<u8>, dpi: f32, max_px: u32) -> Result<Vec<u
         return Err("the pdf page has no area".to_string());
     }
     let scale = (dpi / 72.0).min(max_px as f32 / w.max(h));
-    let settings = hayro::RenderSettings {
+    let pixmap = hayro::PixmapSettings {
         x_scale: scale,
         y_scale: scale,
         bg_color: WHITE,
-        ..Default::default()
     };
     hayro::render(
         page,
         &hayro::RenderCache::new(),
         &hayro::hayro_interpret::InterpreterSettings::default(),
-        &settings,
+        &hayro::RenderSettings::default(),
+        &pixmap,
     )
     .into_png()
     .map_err(|e| format!("cannot encode the pdf page: {e}"))
