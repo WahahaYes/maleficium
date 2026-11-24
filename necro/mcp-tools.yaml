@@ -6,7 +6,8 @@ rules:
       lines = open(p).readlines()
       ends = [i for i, l in enumerate(lines) if re.match(r"\s*\)\]\s*$", l)]
       starts = [i for i, l in enumerate(lines) if l.lstrip().startswith("#[tool(")]
-      assert len(starts) == 38, f"expected 38 #[tool( blocks, found {len(starts)}"
+      if len(starts) != 27:
+          print(f"{p}:1: router carries {len(starts)} #[tool( blocks, want 27 (the grouped landing)")
       tools = {}
       for s in starts:
           e = min(x for x in ends if x > s)
@@ -19,23 +20,27 @@ rules:
               if h not in block:
                   print(f"{p}:{line}: tool `{name}` lacks {h}")
       def hv(name, hint):
+          if name not in tools:
+              print(f"{p}:1: tool `{name}` gone: the honesty pin has nothing to check")
+              return None
           m = re.search(hint + r"\s*=\s*(true|false)", tools[name][1])
           return m.group(1) == "true"
       pins = {"search": (True, False), "replace": (False, True), "export_read": (True, False), "export_write": (False, True)}
       for name, (ro, destr) in pins.items():
-          if (hv(name, "read_only_hint"), hv(name, "destructive_hint")) != (ro, destr):
+          got = (hv(name, "read_only_hint"), hv(name, "destructive_hint"))
+          if None not in got and got != (ro, destr):
               print(f"{p}:{tools[name][0]}: tool `{name}` honesty drifted: want read_only={str(ro).lower()} destructive={str(destr).lower()}")
       ow = sorted(n for n in tools if hv(n, "open_world_hint"))
       if ow != ["compile_run"]:
           print(f"{p}:1: open-world tools are {ow}, want only [compile_run]")
       for name in ["widgets_status", "widget_check"]:
-          if not (hv(name, "read_only_hint") and not hv(name, "open_world_hint")):
+          if name in tools and not (hv(name, "read_only_hint") and not hv(name, "open_world_hint")):
               print(f"{p}:{tools[name][0]}: tool `{name}` must stay read-only and closed-world")
       '
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: an MCP tool without explicit worst-case-honest hints
     why: >-
-      every registered tool carries all four annotation hints explicitly, so a new tool without them fails here instead of in a rescan (twin every_tool_carries_all_four_hints at src-tauri/mcp/src/lib.rs:3115). Worst-case honesty is pinned where the regroup decided it: search and export_read read, replace and export_write destroy, and only compile_run (the fetcher) is open-world; widgets_status and widget_check stay read-only and closed-world (twins at src-tauri/mcp/src/lib.rs:2375,2837).
+      every registered tool carries all four annotation hints explicitly, so a new tool without them fails here instead of in a rescan (twin every_tool_carries_all_four_hints at src-tauri/mcp/src/lib.rs:3949). Worst-case honesty is pinned where the regroup decided it: search and export_read read, replace and export_write destroy, and only compile_run (the fetcher) is open-world; widgets_status and widget_check stay read-only and closed-world (twin no_tool_can_approve_revoke_or_change_auto_approval at src-tauri/mcp/src/lib.rs:3653).
     fix: >-
       name all four hints on the #[tool] attribute with the effect the worst action can have, and keep network use on compile_run alone.
 
@@ -50,16 +55,16 @@ rules:
       if routed != covered:
           only_tool = [t for t in routed if t not in covered]
           only_list = [t for t in covered if t not in routed]
-          print(f"{p}:3633: router/list drift: unlisted {only_tool}, unrouted {only_list}")
-      if len(routed) != 38:
-          print(f"{p}:3979: router carries {len(routed)} tools, want 38 (the search/replace + export split landing)")
+          print(f"{p}:4485: router/list drift: unlisted {only_tool}, unrouted {only_list}")
+      if len(routed) != 27:
+          print(f"{p}:5550: router carries {len(routed)} tools, want 27 (the grouped landing)")
       '
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: the registered-tool coverage list drifted from the router
     why: >-
-      every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:3147) enumerates its covered list (src-tauri/mcp/src/lib.rs:3633) and fails on any tool without a case, while grouped_tools_stay_under_token_budget (src-tauri/mcp/src/lib.rs:3977) pins the count at 38 after the search/replace and export splits.
+      every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:3981) enumerates its covered list (src-tauri/mcp/src/lib.rs:4485) and fails on any tool without a case, while grouped_tools_stay_under_token_budget (src-tauri/mcp/src/lib.rs:5550) pins the count at 27 after the session/file/structure/sync regroup.
     fix: >-
-      register the tool once, add its case beside the others, and keep the count at 38 (or move the pin deliberately with the twins).
+      register the tool once, add its case beside the others, and keep the count at 27 (or move the pin deliberately with the twins).
 
   mcp-no-approval-words:
     command: |-
@@ -140,16 +145,16 @@ rules:
           m = re.search(r"meta = ui_meta\((.*?)\)\s*,?\s*$", "".join(lines[s:e + 1]), re.S | re.M)
           if m:
               got[name] = (s + 1, re.sub(r"\s+", "", m.group(1)))
-      want = {"compile_run": None, "snippet": None, "snippet_render": None}
+      want = {"compile_run": None, "sync_view": None, "sync_render": None}
       for name in sorted(set(got) - set(want)):
           print(f"{p}:{got[name][0]}: `{name}` carries ui meta, want only {sorted(want)}")
       for name in sorted(set(want) - set(got)):
-          print(f"{p}:2249: `{name}` lost its ui meta, want {sorted(want)}")
+          print(f"{p}:3021: `{name}` lost its ui meta, want {sorted(want)}")
       '
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: a View attached to a tool outside the allowlist
     why: >-
-      only the snippet tools and compile_run name a View; the re-render tool is hidden from the model, and dashboard calls (compile_poll, compile_cancel, diagnostics, offline_readiness) stay plain tools so text-only hosts see them as before (twin only_the_view_tools_carry_ui_meta at src-tauri/mcp/src/lib.rs:2249, unchanged by the regroup).
+      only sync_view, sync_render and compile_run name a View: the model reads pages through sync_view's snippet action, and the app-only re-render lives on sync_render (twin only_the_view_tools_carry_ui_meta at src-tauri/mcp/src/lib.rs:3021, moved by the regroup). Dashboard calls (compile_poll, compile_cancel, diagnostics, offline_readiness) stay plain tools so text-only hosts see them as before.
     fix: >-
       drop the meta = ui_meta line, or move the pin deliberately with the twin when a new View lands.
 
@@ -158,21 +163,32 @@ rules:
       python3 -c 'import re
       p = "src-tauri/mcp/src/lib.rs"
       src = open(p).read()
-      pins = ["without confirm it is refused", "apply requires `token`", "undo requires `batch`", "run runtime_validate first", "core::runtime_author::install("]
+      pins = ["without confirm it is refused", "apply requires `token`", "undo requires `batch`", "run runtime_validate first", "core::trash_file(", "core::runtime_author::install("]
       for pin in pins:
           if pin not in src:
               print(f"{p}:1: trust gate lost: `{pin}`")
-      m = re.search(r"struct DeleteParams \{(.*?)\n\}", src, re.S)
-      if "confirm" not in m.group(1):
-          print(f"{p}:1: DeleteParams lost its confirm field")
+      m = re.search(r"struct FileMutateParams \{(.*?)\n\}", src, re.S)
+      if m is None:
+          print(f"{p}:1: FileMutateParams gone: the delete|undo gate has no params")
+      elif re.search(r"\bconfirm\b", m.group(1)) is None or re.search(r"\btrash_path\b", m.group(1)) is None:
+          print(f"{p}:1: FileMutateParams lost its confirm/trash_path fields")
+      a = re.search(r"enum FileMutateAction \{(.*?)\n\}", src, re.S)
+      if a is None:
+          print(f"{p}:1: FileMutateAction gone: the delete|undo gate has no closed action")
+      else:
+          got = re.findall(r"^    ([A-Z]\w*),?\s*$", a.group(1), re.M)
+          if got != ["Delete", "Undo"]:
+              print(f"{p}:1: FileMutateAction carries {got}, want closed [Delete, Undo]")
       m = re.search(r"struct ReplaceParams \{(.*?)\n\}", src, re.S)
-      if not ("token" in m.group(1) and "batch" in m.group(1)):
+      if m is None:
+          print(f"{p}:1: ReplaceParams gone: the token/batch gate has no params")
+      elif not ("token" in m.group(1) and "batch" in m.group(1)):
           print(f"{p}:1: ReplaceParams lost its token/batch fields")
       '
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: a gated write lost its gate
     why: >-
-      delete needs the absolute path back as confirm before it trashes (two calls), replace applies only by preview token and undoes only by batch, and install copies only a draft that validates (run runtime_validate first). The twins pin each gate: delete/undo in every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:3359), the token state machine in replace_token_flow (src-tauri/mcp/src/lib.rs:3775), install-never-approves in runtime_tools_are_library_scoped_and_cannot_approve (src-tauri/mcp/src/lib.rs:2654).
+      file_mutate's delete needs the absolute path back as confirm before it trashes (two calls) and undo restores only by trash_path, replace applies only by preview token and undoes only by batch, and install copies only a draft that validates (run runtime_validate first). The twins pin each gate: the two-call confirm in file_mutate_keeps_the_two_call_confirm_gate (src-tauri/mcp/src/lib.rs:4719) with delete/undo cases in every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:3981), the token state machine in replace_token_flow (src-tauri/mcp/src/lib.rs:5347), install-never-approves in runtime_tools_are_library_scoped_and_cannot_approve (src-tauri/mcp/src/lib.rs:3448).
     fix: >-
       restore the two-call confirm, the token/batch threading, or the validate-before-install wording and call.
 
