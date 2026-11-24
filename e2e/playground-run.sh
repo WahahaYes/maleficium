@@ -112,12 +112,19 @@ rows = [l.split("|") for l in lines[1:] if l.startswith("widget|")]
 
 EXPECT = {  # id: (type, runtime, label)
     "fig-model": ("model", "model@1", "fig:model"),
+    "fig-model-pose": ("model", "model@1", "fig:model-pose"),
     "fig-video": ("video", "video@1", "fig:video"),
+    "fig-video-remote": ("video", "video@1", "fig:video-remote"),
     "tab-results": ("table", "table@1", "tab:results"),
     "fig-chart": ("chart", "chart@1", "fig:chart"),
+    "fig-chart-split": ("chart", "chart@1", "fig:chart-split"),
+    "fig-chart-styled": ("chart", "chart@1", "fig:chart-styled"),
     "fig-plotly-tradeoff": ("plotly", "plotly@1", "fig:plotly-tradeoff"),
     "fig-plotly-latency": ("plotly", "plotly@1", "fig:plotly-latency"),
     "fig-html": ("html", "", "fig:html"),
+    "fig-bridge": ("html", "", "fig:bridge"),
+    "fig-framed": ("html", "", "fig:framed"),
+    "fig-wave": ("custom", "wave@1", "fig:wave"),
     "chart-bare": ("chart", "chart@1", ""),
     "chart-inline": ("chart", "chart@1", ""),
     "fig-pair-a": ("chart", "chart@1", ""),
@@ -134,7 +141,7 @@ def listed_type(rec):
     name = rec[3].split("@")[0]
     return name if rec[2] == "custom" and name in BUILTINS else rec[2]
 check("every widget type is covered",
-      {listed_type(w) for w in rows} == {"model", "video", "table", "chart", "plotly", "html"}, str({w[2] for w in rows}))
+      {listed_type(w) for w in rows} == {"model", "video", "table", "chart", "plotly", "html", "custom"}, str({w[2] for w in rows}))
 check("every widget has alt text", all(len(w) == 11 and w[10].strip() for w in rows), str([w[-1] for w in rows]))
 for wid, (typ, rt, label) in EXPECT.items():
     w = by_id.get(wid)
@@ -168,8 +175,8 @@ check("widget list shows the compiled paper", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
 check("widget list returns every widget",
       sorted(x["id"] for x in wl) == sorted(EXPECT), str([x["id"] for x in wl]))
-check("widget list covers all six types",
-      {x["type"] for x in wl} == {"model", "video", "table", "chart", "plotly", "html"}, str({x["type"] for x in wl}))
+check("widget list covers all seven types",
+      {x["type"] for x in wl} == {"model", "video", "table", "chart", "plotly", "html", "custom"}, str({x["type"] for x in wl}))
 check("widget list entries follow the pdf, page by page",
       [x["page"] for x in wl] == sorted(x["page"] for x in wl), str([(x["id"], x["page"]) for x in wl]))
 check("widget pages and rects are well-formed",
@@ -181,9 +188,48 @@ check("widget sources and options are typed",
       and wby["fig-html"]["sources"][0]["role"] == "bundle"
       and wby["fig-pair-a"]["sources"] == [{"role": "spec", "path": "charts/ablation.vl.json"}]
       and wby["fig-pair-b"]["sources"] == wby["fig-pair-a"]["sources"], str(wl)[:300])
-check("the html widget declares the origin it wants, nothing else does",
+opt = lambda wid: {o["key"]: o["value"] for o in wby[wid]["options"]}
+check("the posed model carries its camera, size and background",
+      wby["fig-model-pose"]["sources"] == [{"role": "model", "path": "models/mesh.glb"}]
+      and opt("fig-model-pose").get("size") == "640x480"
+      and opt("fig-model-pose").get("background") == "#ffffff"
+      and len(opt("fig-model-pose").get("camera", "").split()) == 16, str(opt("fig-model-pose")))
+check("the quiet clip loops muted",
+      opt("fig-video").get("loop") == "true" and opt("fig-video").get("muted") == "true", str(opt("fig-video")))
+check("the remote clip names its hosted copy and moment",
+      opt("fig-video-remote").get("remote") == "https://example.org/media/clip.mp4"
+      and opt("fig-video-remote").get("sha256") == "20ae41ca929a117aa92fd403bff6fd7734b5d97ff223d91f7873d7d62050f738"
+      and opt("fig-video-remote").get("at") == "1", str(opt("fig-video-remote")))
+check("the table carries its live options",
+      opt("tab-results").get("sort") == "accuracy desc"
+      and opt("tab-results").get("filter") == "ours"
+      and opt("tab-results").get("columns") == "method;accuracy;latency"
+      and opt("tab-results").get("format") == "accuracy=fixed:2;latency=fixed:0"
+      and opt("tab-results").get("maxrows") == "3", str(opt("tab-results")))
+check("chart and plotly scales are typed",
+      opt("fig-chart").get("scale") == "2"
+      and opt("fig-plotly-tradeoff").get("scale") == "2", str((opt("fig-chart"), opt("fig-plotly-tradeoff"))))
+check("the split chart binds two data files",
+      wby["fig-chart-split"]["sources"] == [{"role": "spec", "path": "charts/compare.vl.json"},
+                                            {"role": "data", "path": "data/accuracy.csv"},
+                                            {"role": "data", "path": "data/latency.csv"}], str(wby["fig-chart-split"]["sources"]))
+check("the styled chart carries poster, width and plate",
+      wby["fig-chart-styled"].get("poster") == "figures/chart-poster.png"
+      and wby["fig-chart-styled"].get("plate") == "#FFF4E0"
+      and "width" in opt("fig-chart-styled"), str(wby["fig-chart-styled"]))
+check("the custom runtime binds its greeting",
+      wby["fig-wave"]["sources"] == [{"role": "primary", "path": "words/greeting.txt"}]
+      and wby["fig-wave"].get("plate") == "#1A1233"
+      and "width" in opt("fig-wave"), str(wby["fig-wave"]))
+check("the bridge widget takes the author's poster and no origins",
+      wby["fig-bridge"].get("poster") == "figures/bridge-poster.png"
+      and "csp" not in wby["fig-bridge"], str(wby["fig-bridge"]))
+check("origins stay with the widgets that declare them",
       wby["fig-html"].get("csp", {}).get("connectDomains") == ["https://example.org"]
-      and all("csp" not in wby[i] for i in wby if i != "fig-html"), str(wby["fig-html"].get("csp")))
+      and wby["fig-framed"].get("csp", {}).get("frameDomains") == ["https://example.org"]
+      and wby["fig-framed"].get("csp", {}).get("resourceDomains") == ["https://cdn.example.org"]
+      and all("csp" not in wby[i] for i in wby if i not in ("fig-html", "fig-framed")),
+      str({i: wby[i].get("csp") for i in ("fig-html", "fig-framed", "fig-bridge")}))
 check("uncaptioned and floatless widgets list no label",
       all("label" not in wby[i] for i in ("chart-bare", "chart-inline")), str([wby[i] for i in ("chart-bare", "chart-inline")]))
 check("subfigure widgets sit side by side",

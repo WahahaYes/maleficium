@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>playground origins widget</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg, #ffffff);
+        color: var(--m-figure-ink, #000000);
+        font-family: var(--m-font-body, system-ui, sans-serif);
+        font-size: var(--m-size-base, 1rem);
+      }
+      main {
+        padding: var(--m-space-3, 1rem);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>
+        This widget declares the origins it may frame or load from: see its
+        <code>widget.json</code> beside the macro's <code>framedomains=</code> and
+        <code>resourcedomains=</code>. It fetches nothing.
+      </p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>playground bridge widget</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--m-figure-bg, #ffffff);
+        color: var(--m-figure-ink, #000000);
+        font-family: var(--m-font-body, system-ui, sans-serif);
+        font-size: var(--m-size-base, 1rem);
+      }
+      main {
+        padding: var(--m-space-3, 1rem);
+      }
+      canvas {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="view" width="640" height="200" role="img" aria-label="Theme swatches"></canvas>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var canvas = document.getElementById('view');
+        var ctx = canvas.getContext('2d');
+        var seenInit = false;
+
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        // The paper's tokens, drawn so the reader stylesheet visibly reaches
+        // the widget: the plate and ink, the reader accent, and four palette
+        // steps. Anything the theme withholds keeps its fallback.
+        function draw() {
+          var ink = token('--m-figure-ink', '#000000');
+          ctx.fillStyle = token('--m-figure-bg', '#ffffff');
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = token('--m-figure-surface', '#eeeeee');
+          ctx.fillRect(16, 16, canvas.width - 32, 56);
+          ctx.fillStyle = ink;
+          ctx.font = '20px ' + token('--m-font-body', 'sans-serif');
+          ctx.textBaseline = 'middle';
+          ctx.fillText('the bridge is up', 28, 44);
+          var chips = [
+            token('--m-color-accent', '#5b2a86'),
+            token('--m-cat-1', '#2a78d6'),
+            token('--m-cat-2', '#eb6834'),
+            token('--m-cat-3', '#1baf7a'),
+            token('--m-cat-4', '#eda100'),
+          ];
+          for (var i = 0; i < chips.length; i++) {
+            ctx.fillStyle = chips[i];
+            ctx.fillRect(16 + i * 124, 88, 116, 64);
+          }
+          ctx.fillStyle = ink;
+          ctx.font = '14px ' + token('--m-font-body', 'sans-serif');
+          ctx.fillText('accent, then four palette steps', 16, 172);
+        }
+        function applyTheme(t) {
+          var tokens = (t && t.tokens) || {};
+          var root = document.documentElement;
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          draw();
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            seenInit = true;
+            applyTheme(d.theme);
+            canvas.setAttribute('aria-label', d.alt || 'Theme swatches');
+            post({ type: 'status', state: 'loading' });
+            draw();
+            post({ type: 'status', state: 'loaded' });
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (!seenInit) {
+              return;
+            }
+            var png = canvas.toDataURL('image/png');
+            if (png.length < 8 * 1024 * 1024) {
+              post({ type: 'snapshot', requestId: d.requestId, png: png });
+            }
+          }
+        });
+        draw();
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

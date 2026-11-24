@@ -1,0 +1,6 @@
+method,latency
+baseline,12
+ours-small,15
+ours-base,21
+ours-large,34
+ours-xl,58
