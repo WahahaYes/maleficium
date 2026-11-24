@@ -19,8 +19,8 @@ use maleficium_core as core;
 /// deletes `/v1` in the same change.
 const SNIPPET_VIEW_URI: &str = "ui://maleficium/snippet/v1";
 const SNIPPET_VIEW_HTML: &str = include_str!("../views/snippet.html");
-/// The compile dashboard View: a `compile_run` job's status, phase, log
-/// tail, findings and a cancel button, polled through `compile_poll`.
+/// The compile dashboard View: a `paper` start job's status, phase, log
+/// tail, findings and a cancel button, polled through `paper` poll.
 const COMPILE_VIEW_URI: &str = "ui://maleficium/compile/v1";
 const COMPILE_VIEW_HTML: &str = include_str!("../views/compile.html");
 /// Every View, by the URI its tools name.
@@ -110,11 +110,6 @@ struct SessionParams {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct PathOut {
     path: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct RootParams {
-    root_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
@@ -337,14 +332,72 @@ struct TextOut {
     text: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum PaperAction {
+    Start,
+    Poll,
+    Cancel,
+    Diagnostics,
+    Prechecks,
+    Readiness,
+    Output,
+}
+
+impl<'de> Deserialize<'de> for PaperAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "start" => Ok(Self::Start),
+            "poll" => Ok(Self::Poll),
+            "cancel" => Ok(Self::Cancel),
+            "diagnostics" => Ok(Self::Diagnostics),
+            "prechecks" => Ok(Self::Prechecks),
+            "readiness" => Ok(Self::Readiness),
+            "output" => Ok(Self::Output),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &[
+                    "start",
+                    "poll",
+                    "cancel",
+                    "diagnostics",
+                    "prechecks",
+                    "readiness",
+                    "output",
+                ],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a paper call names an action and the fields
+/// that action needs. `start` compiles (optionally fetching first), `poll`
+/// and `cancel` name a job, the readings name a project and main file, and
+/// `readiness` names only a project.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct CompileRunParams {
-    root_id: String,
-    /// Main file rel; absent resolves the same main file the app would.
-    rel: Option<String>,
-    /// Fetch everything online first, then prove it compiles from the cache
-    /// alone (the app's Make Available Offline).
+#[serde(deny_unknown_fields)]
+struct PaperParams {
+    action: PaperAction,
+    /// Required iff action is start, diagnostics, prechecks, readiness or
+    /// output.
+    root_id: Option<String>,
+    /// Required iff action is poll or cancel: the job id from `start`.
+    job_id: Option<String>,
+    /// Iff action is start: the main file; absent resolves the same main
+    /// file the app would. Required iff action is diagnostics, prechecks or
+    /// output.
+    main_rel: Option<String>,
+    /// Iff action is start: fetch everything online first, then prove it
+    /// compiles from the cache alone (the app's Make Available Offline).
     networked: Option<bool>,
+    /// Iff action is poll: how many lines back to report (default 50).
+    tail_lines: Option<usize>,
+    /// Iff action is poll: wait up to this long (ms, at most 60000) for a
+    /// running job to finish before answering.
+    wait_ms: Option<u64>,
+    /// Iff action is diagnostics: cap rows (default 100).
+    max: Option<usize>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -352,15 +405,6 @@ struct CompileRunOut {
     job_id: String,
     /// The main file the job compiles (root-relative).
     main_rel: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct CompilePollParams {
-    job_id: String,
-    tail_lines: Option<usize>,
-    /// Wait up to this long (ms, at most 60000) for a running job to finish
-    /// before answering.
-    wait_ms: Option<u64>,
 }
 
 /// The longest a poll waits for a running job, and how often it looks.
@@ -377,6 +421,37 @@ struct CompilePollOut {
     missing: Option<maleficium_structure::MissingDependency>,
     /// The phase the run is in (or last reached) and the files it downloaded.
     progress: core::Progress,
+}
+
+/// The `paper` result for one action, verbatim: `start` the job id and main
+/// file, `poll` the job's status and lines so far, `cancel` what stopped,
+/// `diagnostics` the last compile's errors and warnings, `prechecks` the
+/// blockers before compiling, `readiness` the offline state, `output` the
+/// compiled pdf's stamp (or null).
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum PaperOut {
+    Started(CompileRunOut),
+    Polled(CompilePollOut),
+    Cancelled(CancelOut),
+    Diagnostics(core::structure::Diagnostics),
+    Prechecks(core::structure::Precheck),
+    Readiness(maleficium_events::OfflineReadiness),
+    Stamped(OutputStampOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for PaperOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PaperOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `start` returns the job id and main file, `poll` the job's status and lines, `cancel` what stopped, `diagnostics` the last compile's errors, `prechecks` the blockers, `readiness` the offline state, `output` the pdf stamp or null.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -508,45 +583,132 @@ impl schemars::JsonSchema for ScaffoldOut {
     }
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct CancelParams {
-    job_id: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum WidgetAction {
+    List,
+    Status,
+    Check,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct WidgetsParams {
-    root_id: String,
-    main_rel: String,
+impl<'de> Deserialize<'de> for WidgetAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "list" => Ok(Self::List),
+            "status" => Ok(Self::Status),
+            "check" => Ok(Self::Check),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["list", "status", "check"],
+            ))),
+        }
+    }
 }
 
 /// Unknown fields are refused: there is no approval argument for an agent
-/// to pass, so an `approve` (or anything like it) is an error.
+/// to pass, so an `approve` (or anything like it) is an error. A widget
+/// call names a project, an action and the main file that action reads;
+/// only `check` names one widget, as `list` lists it.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct WidgetsStatusParams {
+struct WidgetParams {
     root_id: String,
+    action: WidgetAction,
     main_rel: String,
+    /// Required iff action is check: the widget id, as `list` lists it.
+    widget: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct WidgetCheckParams {
-    root_id: String,
-    main_rel: String,
-    /// The widget id, as `widgets` lists it.
-    widget: String,
+/// The `widget` result for one action, verbatim: `list` the widgets in
+/// document order, `status` the approval state of each, `check` whether one
+/// widget may run (or approval_required as a normal result).
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum WidgetOut {
+    Listed(core::widgets::WidgetList),
+    Status(Box<core::widget_approval::WidgetsStatus>),
+    Checked(Box<WidgetCheckOut>),
 }
 
-/// Unknown fields are refused: the scaffold takes a name and an
-/// optional `--from`, nothing that could approve or install.
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for WidgetOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "WidgetOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `list` returns the widgets, `status` their approval state, `check` whether one widget may run.",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeReadAction {
+    Scaffold,
+    Validate,
+}
+
+impl<'de> Deserialize<'de> for RuntimeReadAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "scaffold" => Ok(Self::Scaffold),
+            "validate" => Ok(Self::Validate),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["scaffold", "validate"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a runtime read names an action and the draft
+/// or package it needs, nothing that could approve, install or allow.
+/// `scaffold` takes a name and an optional `--from`, never a session root:
+/// drafts are global. `validate` takes the package ref, and with it the
+/// project's installed copy, without it the library's.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RuntimeScaffoldParams {
-    /// The new runtime's name (`<name>` of `<name>@1`).
-    name: String,
-    /// Fork a built-in: only `model@1` (its viewer as an editable
-    /// `viewer.js` over vendored three.js).
+struct RuntimeReadParams {
+    action: RuntimeReadAction,
+    /// Required iff action is scaffold: the new draft's name (`<name>` of
+    /// `<name>@1`).
+    name: Option<String>,
+    /// Iff action is scaffold: fork a built-in: only `model@1` (its viewer
+    /// as an editable `viewer.js` over vendored three.js).
     from: Option<String>,
+    /// Required iff action is validate: the package ref (`<name>@<major>`).
+    reference: Option<String>,
+    /// Iff action is validate: with it, the project's installed copy;
+    /// without it, the user library's.
+    root_id: Option<String>,
+}
+
+/// The `runtime_read` result for one action, verbatim: `scaffold` the new
+/// draft's reference and path, `validate` the package's errors and warnings.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum RuntimeReadOut {
+    Scaffolded(RuntimeScaffoldOut),
+    Validated(RuntimeValidateOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for RuntimeReadOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "RuntimeReadOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `scaffold` returns the draft's reference and path, `validate` returns its errors and warnings.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -561,17 +723,6 @@ struct RuntimeScaffoldOut {
 pub struct WidgetCheckOut {
     #[serde(flatten)]
     pub status: core::widget_approval::WidgetApprovalStatus,
-}
-
-/// Unknown fields are refused: the validator reads one package, nothing
-/// that could approve, install or allow.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct RuntimeValidateParams {
-    /// The package ref (`<name>@<major>`).
-    reference: String,
-    /// With it, the project's installed copy; without it, the library's.
-    root_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
@@ -683,6 +834,17 @@ fn cluster_actions(cluster: &str) -> Option<&'static [&'static str]> {
         "replace" => Some(&["preview", "apply", "undo"]),
         "export_read" => Some(&["stamp", "status", "cancel"]),
         "export_write" => Some(&["pdf", "zip", "bundle", "preview", "open"]),
+        "widget" => Some(&["list", "status", "check"]),
+        "runtime_read" => Some(&["scaffold", "validate"]),
+        "paper" => Some(&[
+            "start",
+            "poll",
+            "cancel",
+            "diagnostics",
+            "prechecks",
+            "readiness",
+            "output",
+        ]),
         _ => None,
     }
 }
@@ -823,6 +985,54 @@ fn action_notes(cluster: &str, action: &str) -> Option<(&'static str, serde_json
             "open takes only `main_rel`: previews, then opens the path in the OS browser.",
             json!({"root_id": "agent", "action": "open", "main_rel": "main.tex"}),
         ),
+        ("widget", "list") => (
+            "list takes only `main_rel`: every widget of the last compile in document order, empty when the document declares none.",
+            json!({"root_id": "agent", "action": "list", "main_rel": "main.tex"}),
+        ),
+        ("widget", "status") => (
+            "status takes only `main_rel`: the approval state of each html widget and runtime, so you can ask the user about all of them at once.",
+            json!({"root_id": "agent", "action": "status", "main_rel": "main.tex"}),
+        ),
+        ("widget", "check") => (
+            "check needs `main_rel` and `widget` (the id, as list shows it): whether it may run, or approval_required as a normal result. Do not poll it: it only changes when the user acts.",
+            json!({"root_id": "agent", "action": "check", "main_rel": "main.tex", "widget": "fig-demo"}),
+        ),
+        ("runtime_read", "scaffold") => (
+            "scaffold needs `name` (the draft's name); `from` is optional, only model@1: it writes only to the user library, never to a project.",
+            json!({"action": "scaffold", "name": "orbit-view"}),
+        ),
+        ("runtime_read", "validate") => (
+            "validate needs `reference` (the package ref); with `root_id` the project's installed copy, without it the user library's. Read-only: it never approves or installs.",
+            json!({"action": "validate", "reference": "orbit-view@1"}),
+        ),
+        ("paper", "start") => (
+            "start needs `root_id`; `main_rel` is optional (without it the job compiles the same main file the app would). Returns the job id; poll it.",
+            json!({"root_id": "agent", "action": "start", "main_rel": "main.tex"}),
+        ),
+        ("paper", "poll") => (
+            "poll needs only `job_id`; `tail_lines` and `wait_ms` (up to 60000) are optional. A running job reports lines so far; poll again or wait.",
+            json!({"action": "poll", "job_id": "job-1"}),
+        ),
+        ("paper", "cancel") => (
+            "cancel takes only `job_id`: it stops the running job. A settled job reports nothing to cancel.",
+            json!({"action": "cancel", "job_id": "job-1"}),
+        ),
+        ("paper", "diagnostics") => (
+            "diagnostics needs `main_rel`: the last compile's errors and warnings, capped by `max` (default 100).",
+            json!({"root_id": "agent", "action": "diagnostics", "main_rel": "main.tex"}),
+        ),
+        ("paper", "prechecks") => (
+            "prechecks needs only `main_rel`: the blockers before compiling (missing packages, biber, shell-escape, fonts).",
+            json!({"root_id": "agent", "action": "prechecks", "main_rel": "main.tex"}),
+        ),
+        ("paper", "readiness") => (
+            "readiness takes only `root_id`: whether the project compiles offline (ready, needs-network, needs-tool, needs-font, blocked or unverified).",
+            json!({"root_id": "agent", "action": "readiness"}),
+        ),
+        ("paper", "output") => (
+            "output needs only `main_rel`: the compiled pdf's stamp, or null before any compile; it changes whenever anyone recompiles.",
+            json!({"root_id": "agent", "action": "output", "main_rel": "main.tex"}),
+        ),
         _ => return None,
     };
     Some(note)
@@ -867,7 +1077,7 @@ fn cluster_notes(cluster: &str) -> (Vec<String>, Vec<serde_json::Value>, String)
         ),
         "sync_view" => (
             vec![
-                "Compile first (compile_run, then poll): forward and inverse need the synctex file, snippet needs the pdf.",
+                "Compile first (paper start, then poll): forward and inverse need the synctex file, snippet needs the pdf.",
                 "Prefer label targets for figures and tables; use with_image only for layout questions.",
             ],
             vec![json!({"root_id": "agent", "action": "snippet", "main_rel": "main.tex", "label": "tab:results"})],
@@ -928,6 +1138,33 @@ fn cluster_notes(cluster: &str) -> (Vec<String>, Vec<serde_json::Value>, String)
             ],
             vec![json!({"root_id": "agent", "action": "pdf", "main_rel": "main.tex", "dest": "/abs/paper.pdf"})],
             "Each action writes outside the project. preview writes to a scratch folder and returns its path; open previews then opens it.".to_string(),
+        ),
+        "widget" => (
+            vec![
+                "Three views of one reading: compile first (paper start, then poll); the list reads the records, status and check read the approval store.",
+                "check returns approval_required as a normal result, never an error: relay its message and userAction, do not poll it.",
+                "Review-like reads map here: list and status show what the user reviews; validate a runtime package with runtime_read, and only the user approves in View > Widgets.",
+            ],
+            vec![json!({"root_id": "agent", "action": "status", "main_rel": "main.tex"})],
+            "Stateless readings of the last compile. status covers every widget and runtime at once; check covers one widget by id.".to_string(),
+        ),
+        "runtime_read" => (
+            vec![
+                "The non-destructive half of runtime authoring: drafts live in the library, reviewed in the app before anything installs.",
+                "scaffold takes only name and from (no session root); validate takes reference, with root_id for a project's installed copy.",
+                "Validate before install (runtime_install copies only a draft that validates, and installing never approves: ask the user to allow it in View > Widgets).",
+            ],
+            vec![json!({"action": "validate", "reference": "orbit-view@1"})],
+            "scaffold returns reference and library path; validate by reference, or by reference with root_id for the installed copy. install stays a separate trust-gated tool.".to_string(),
+        ),
+        "paper" => (
+            vec![
+                "One cluster for the whole compile loop: start a job, poll or cancel it, then read the last run back without compiling.",
+                "start returns job_id and main_rel; poll by job_id (wait_ms up to 60000) until the status leaves running; cancel by job_id.",
+                "The readings map the old tools one-to-one: diagnostics reads the last compile's errors, prechecks the blockers, readiness the offline state, output the pdf stamp.",
+            ],
+            vec![json!({"root_id": "agent", "action": "start", "main_rel": "main.tex"})],
+            "start returns a job_id to poll or cancel. poll waits up to wait_ms for a running job; the readings (diagnostics, prechecks, readiness, output) are stateless.".to_string(),
         ),
         _ => (
             vec!["Single-purpose tool: its description and schema are the whole contract."],
@@ -1248,19 +1485,6 @@ struct LogTailParams {
     root_id: String,
     rel: String,
     max_lines: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct MainParams {
-    root_id: String,
-    main_rel: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct DiagnosticsParams {
-    root_id: String,
-    main_rel: String,
-    max: Option<usize>,
 }
 
 /// A u64 param narrowed for the core, which counts lines, columns, pages
@@ -1590,119 +1814,229 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Start a compile job; poll for the result. Offline-first: compiles from cached TeX files, fetching what the cache lacks only when the machine has network. rel optional: without it the job compiles the same main file the app would",
+        description = "Compile main_rel and read back everything about the run, in one place. `start` begins a job (defaulting to the app's main file when main_rel is absent) and returns its job id; `poll` waits for or reports the running job's lines so far; `cancel` stops a running job. `diagnostics`, `prechecks`, `readiness` and `output` read the last run's errors, pre-compile blockers, offline state and pdf stamp without compiling.",
         meta = ui_meta(Some(COMPILE_VIEW_URI), &["model", "app"])
     ,
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
     )]
-    fn compile_run(
+    async fn paper(
         &self,
-        Parameters(p): Parameters<CompileRunParams>,
-    ) -> Result<Json<CompileRunOut>, String> {
-        self.tool("compile_run", || {
-            let rel = match p.rel {
-                Some(r) => r,
-                None => {
-                    let resolved = core::mainfile::resolve(&self.cx, &p.root_id, None)?;
-                    let abs = resolved
-                        .main
-                        .ok_or_else(|| format!("no main file resolved for root {}", p.root_id))?;
-                    let root = core::session_root(&self.cx, &p.root_id)?;
-                    std::path::Path::new(&abs)
-                        .strip_prefix(&root)
-                        .map_err(|_| format!("resolved main file is outside the project: {abs}"))?
-                        .to_string_lossy()
-                        .to_string()
+        Parameters(p): Parameters<PaperParams>,
+    ) -> Result<Json<PaperOut>, String> {
+        self.tool_async("paper", async {
+            match p.action {
+                PaperAction::Start => {
+                    if p.job_id.is_some() {
+                        return Err(
+                            "start takes no `job_id`: it begins a job and returns one".to_string(),
+                        );
+                    }
+                    if p.tail_lines.is_some() {
+                        return Err(
+                            "start takes no `tail_lines`: it begins a job; `poll` reports its lines"
+                                .to_string(),
+                        );
+                    }
+                    if p.wait_ms.is_some() {
+                        return Err(
+                            "start takes no `wait_ms`: it begins a job; `poll` waits on it".to_string(),
+                        );
+                    }
+                    if p.max.is_some() {
+                        return Err(
+                            "start takes no `max`: it begins a job; `diagnostics` caps its rows"
+                                .to_string(),
+                        );
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "start requires `root_id`: the granted project to compile".to_string()
+                    })?;
+                    let rel = match p.main_rel {
+                        Some(r) => r,
+                        None => {
+                            let resolved = core::mainfile::resolve(&self.cx, root_id, None)?;
+                            let abs = resolved
+                                .main
+                                .ok_or_else(|| format!("no main file resolved for root {root_id}"))?;
+                            let root = core::session_root(&self.cx, root_id)?;
+                            std::path::Path::new(&abs)
+                                .strip_prefix(&root)
+                                .map_err(|_| format!("resolved main file is outside the project: {abs}"))?
+                                .to_string_lossy()
+                                .to_string()
+                        }
+                    };
+                    let job_id = core::run_job(
+                        &self.cx,
+                        root_id,
+                        &rel,
+                        p.networked.unwrap_or(false),
+                        core::compile::COMPILE_TIMEOUT_SECS,
+                    )?;
+                    Ok(Json(PaperOut::Started(CompileRunOut {
+                        job_id,
+                        main_rel: rel,
+                    })))
                 }
-            };
-            let job_id = core::run_job(
-                &self.cx,
-                &p.root_id,
-                &rel,
-                p.networked.unwrap_or(false),
-                core::compile::COMPILE_TIMEOUT_SECS,
-            )?;
-            Ok(Json(CompileRunOut {
-                job_id,
-                main_rel: rel,
-            }))
-        })
-    }
-
-    #[tool(
-        description = "Poll a compile job; running jobs report lines so far. Pass wait_ms (up to 60000) to wait for the job to finish instead of polling in a loop. pdf_url locates the output: treat it as opaque. missing names the dependency a finished run lacked (a file, font, tool or package) and why: not-cached, fetch-failed, not-in-bundle, cache-empty, bundle-unreachable, bundle-invalid, bundle-changed, system-font, external-tool, shell-escape-required",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    async fn compile_poll(
-        &self,
-        Parameters(p): Parameters<CompilePollParams>,
-    ) -> Result<Json<CompilePollOut>, String> {
-        self.tool_async("compile_poll", async {
-            let tail = p.tail_lines.unwrap_or(50);
-            let wait =
-                std::time::Duration::from_millis(p.wait_ms.unwrap_or(0).min(MAX_POLL_WAIT_MS));
-            let deadline = tokio::time::Instant::now() + wait;
-            let mut r = core::poll_job(&self.cx, &p.job_id, tail)?;
-            while r.status == core::JobStatus::Running && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + POLL_STEP))
-                    .await;
-                r = core::poll_job(&self.cx, &p.job_id, tail)?;
+                PaperAction::Poll => {
+                    for (name, set) in [
+                        ("root_id", p.root_id.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("max", p.max.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "poll takes only `job_id` with `tail_lines` and `wait_ms`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let job_id = p.job_id.as_deref().ok_or_else(|| {
+                        "poll requires `job_id`: the job id from `start`".to_string()
+                    })?;
+                    let tail = p.tail_lines.unwrap_or(50);
+                    let wait =
+                        std::time::Duration::from_millis(p.wait_ms.unwrap_or(0).min(MAX_POLL_WAIT_MS));
+                    let deadline = tokio::time::Instant::now() + wait;
+                    let mut r = core::poll_job(&self.cx, job_id, tail)?;
+                    while r.status == core::JobStatus::Running
+                        && tokio::time::Instant::now() < deadline
+                    {
+                        tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + POLL_STEP))
+                            .await;
+                        r = core::poll_job(&self.cx, job_id, tail)?;
+                    }
+                    Ok(Json(PaperOut::Polled(CompilePollOut {
+                        status: r.status.as_str().to_string(),
+                        pdf_url: r.pdf_url,
+                        log: r.log,
+                        lines: r.lines,
+                        missing: r.missing,
+                        progress: r.progress,
+                    })))
+                }
+                PaperAction::Cancel => {
+                    for (name, set) in [
+                        ("root_id", p.root_id.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                        ("max", p.max.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "cancel takes only `job_id`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let job_id = p.job_id.as_deref().ok_or_else(|| {
+                        "cancel requires `job_id`: the job id from `start`".to_string()
+                    })?;
+                    let status = core::cancel_job(&self.cx, job_id)?;
+                    Ok(Json(PaperOut::Cancelled(CancelOut { status })))
+                }
+                PaperAction::Diagnostics => {
+                    for (name, set) in [
+                        ("job_id", p.job_id.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "diagnostics takes only `root_id`, `main_rel` and `max`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "diagnostics requires `root_id`: the granted project to read".to_string()
+                    })?;
+                    let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                        "diagnostics requires `main_rel`: the main file whose last compile to read"
+                            .to_string()
+                    })?;
+                    Ok(Json(PaperOut::Diagnostics(core::structure::diagnostics(
+                        &self.cx,
+                        root_id,
+                        main_rel,
+                        p.max.unwrap_or(100),
+                    )?)))
+                }
+                PaperAction::Prechecks => {
+                    for (name, set) in [
+                        ("job_id", p.job_id.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                        ("max", p.max.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "prechecks takes only `root_id` and `main_rel`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "prechecks requires `root_id`: the granted project to check".to_string()
+                    })?;
+                    let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                        "prechecks requires `main_rel`: the main file to check".to_string()
+                    })?;
+                    Ok(Json(PaperOut::Prechecks(
+                        core::structure::precompile_checks(&self.cx, root_id, main_rel)?,
+                    )))
+                }
+                PaperAction::Readiness => {
+                    for (name, set) in [
+                        ("job_id", p.job_id.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                        ("max", p.max.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "readiness takes only `root_id`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "readiness requires `root_id`: the granted project to assess".to_string()
+                    })?;
+                    Ok(Json(PaperOut::Readiness(core::compile::offline_readiness(
+                        &self.cx, root_id,
+                    )?)))
+                }
+                PaperAction::Output => {
+                    for (name, set) in [
+                        ("job_id", p.job_id.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                        ("max", p.max.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "output takes only `root_id` and `main_rel`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "output requires `root_id`: the granted project to read".to_string()
+                    })?;
+                    let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                        "output requires `main_rel`: the main file whose compiled pdf to stamp"
+                            .to_string()
+                    })?;
+                    Ok(Json(PaperOut::Stamped(OutputStampOut {
+                        stamp: core::output_stamp(&self.cx, root_id, main_rel)?,
+                    })))
+                }
             }
-            Ok(Json(CompilePollOut {
-                status: r.status.as_str().to_string(),
-                pdf_url: r.pdf_url,
-                log: r.log,
-                lines: r.lines,
-                missing: r.missing,
-                progress: r.progress,
-            }))
         })
         .await
-    }
-
-    #[tool(
-        description = "Offline readiness of a project: ready (its last compile succeeded from cached TeX files alone, and every tool and system font it used is present), needs-network, needs-tool, needs-font, blocked or unverified, with what it needs and the dependency its last compile lacked",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn offline_readiness(
-        &self,
-        Parameters(p): Parameters<RootParams>,
-    ) -> Result<Json<maleficium_events::OfflineReadiness>, String> {
-        self.tool("offline_readiness", || {
-            Ok(Json(core::compile::offline_readiness(
-                &self.cx, &p.root_id,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Stamp of main_rel's compiled pdf (mtimeMs, bytes), or null before any compile: it changes whenever anyone recompiles, so a viewer polls it to refresh",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn output_stamp(
-        &self,
-        Parameters(p): Parameters<MainParams>,
-    ) -> Result<Json<OutputStampOut>, String> {
-        self.tool("output_stamp", || {
-            Ok(Json(OutputStampOut {
-                stamp: core::output_stamp(&self.cx, &p.root_id, &p.main_rel)?,
-            }))
-        })
     }
 
     #[tool(
@@ -1799,7 +2133,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "The interactive widgets of main_rel's last compile: for each, its page, rect (PDF units, origin bottom-left), type, runtime, sources, options, alt, float label and figure number, and declared csp origins, in document order. Empty when the document declares none. Fails (isError) when main_rel was never compiled, or when the widget sidecar and the pdf disagree (recompile), or when a widget bundle's widget.json is invalid.",
+        description = "Three views of one thing: the interactive widgets of main_rel's last compile. `list` shows every widget in document order; `status` reports the approval state of each html widget and runtime so you can ask the user about all of them at once; `check` reports whether one widget may run. Read-only: only the user approves, in the app's View > Widgets.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1807,97 +2141,78 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn widgets(
-        &self,
-        Parameters(p): Parameters<WidgetsParams>,
-    ) -> Result<Json<core::widgets::WidgetList>, String> {
-        self.tool("widgets", || {
-            let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
-            let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
-                &p.main_rel,
-                &r,
-                maleficium_events::Actor::Agent,
-            )));
-            Ok(Json(r?))
-        })
-    }
-
-    #[tool(
-        description = "Approval state of every html widget (author code) of main_rel's last compile, so you can ask the user about all of them at once. approved: runs as is (via user, or via auto when the project's auto-approval covers a content change). approval_required: a normal result, not an error, with cause (never_approved, changed_since_approval, declared_origins_changed, revoked), digest, declaredOrigins, whatHappens, userAction, agentMustNot and a message to relay. unavailable: the folder cannot be approved (a symlink, a special file, too large). exempt: first-party widgets that need no approval. Custom runtimes the document uses are listed in runtimes, one entry per ref carrying the package facts (runtime) the user reviews; missing or invalid ones are in unavailable. autoApprove is the project's setting. Only the user approves, revokes or changes auto-approval, in the app's View > Widgets: no tool can, and nothing written into the project counts.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn widgets_status(
-        &self,
-        Parameters(p): Parameters<WidgetsStatusParams>,
-    ) -> Result<Json<core::widget_approval::WidgetsStatus>, String> {
-        self.tool("widgets_status", || {
-            let s = core::widget_approval::widgets_status(&self.cx, &p.root_id, &p.main_rel)?;
-            let changed: Vec<_> = s
-                .widgets
-                .iter()
-                .chain(s.runtimes.iter())
-                .filter_map(|w| {
-                    core::widget_approval::digest_changed_event(
-                        &p.root_id,
-                        w,
-                        maleficium_events::Actor::Agent,
-                    )
-                })
-                .collect();
-            let _ = core::eventlog::append(&changed);
-            Ok(Json(s))
-        })
-    }
-
-    #[tool(
-        description = "Whether one html widget of main_rel may run: status approved, or status approval_required as a normal result (not an error) carrying the widget id, path, digest, cause, declaredOrigins, whatHappens, userAction (the user approves it in the app's View > Widgets), agentMustNot and a message to relay. Do not poll it in a loop: it only changes when the user acts. Fails (isError) for an unknown or first-party widget, which needs no approval, and for a folder that cannot be approved (a symlink, a special file, outside the project, too large).",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn widget_check(
-        &self,
-        Parameters(p): Parameters<WidgetCheckParams>,
-    ) -> Result<Json<WidgetCheckOut>, String> {
-        self.tool("widget_check", || {
-            let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
-            let w = list
-                .widgets
-                .iter()
-                .find(|w| w.id == p.widget)
-                .ok_or_else(|| format!("{} has no widget {}", p.main_rel, p.widget))?;
-            let target =
-                core::widget_approval::WidgetTarget::of(&p.main_rel, w)?.ok_or_else(|| {
-                    format!(
-                        "widget {} runs a first-party runtime: it needs no approval",
-                        p.widget
-                    )
-                })?;
-            let checked =
-                core::widget_approval::check_widget_approval(&self.cx, &p.root_id, &target)?;
-            if let Some(e) = core::widget_approval::digest_changed_event(
-                &p.root_id,
-                &checked.status,
-                maleficium_events::Actor::Agent,
-            ) {
-                let _ = core::eventlog::append(std::slice::from_ref(&e));
+    fn widget(&self, Parameters(p): Parameters<WidgetParams>) -> Result<Json<WidgetOut>, String> {
+        self.tool("widget", || match p.action {
+            WidgetAction::List => {
+                if p.widget.is_some() {
+                    return Err(
+                        "list takes no `widget`: it lists every widget; `check` reads one"
+                            .to_string(),
+                    );
+                }
+                let r = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel);
+                let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event(
+                    &p.main_rel,
+                    &r,
+                    maleficium_events::Actor::Agent,
+                )));
+                Ok(Json(WidgetOut::Listed(r?)))
             }
-            Ok(Json(WidgetCheckOut {
-                status: checked.status,
-            }))
+            WidgetAction::Status => {
+                if p.widget.is_some() {
+                    return Err(
+                        "status takes no `widget`: it reports every widget; `check` reads one"
+                            .to_string(),
+                    );
+                }
+                let s = core::widget_approval::widgets_status(&self.cx, &p.root_id, &p.main_rel)?;
+                let changed: Vec<_> = s
+                    .widgets
+                    .iter()
+                    .chain(s.runtimes.iter())
+                    .filter_map(|w| {
+                        core::widget_approval::digest_changed_event(
+                            &p.root_id,
+                            w,
+                            maleficium_events::Actor::Agent,
+                        )
+                    })
+                    .collect();
+                let _ = core::eventlog::append(&changed);
+                Ok(Json(WidgetOut::Status(Box::new(s))))
+            }
+            WidgetAction::Check => {
+                let widget = p.widget.as_deref().ok_or_else(|| {
+                    "check requires `widget`: the widget id, as `list` lists it".to_string()
+                })?;
+                let list = core::widgets::widgets(&self.cx, &p.root_id, &p.main_rel)?;
+                let w = list
+                    .widgets
+                    .iter()
+                    .find(|w| w.id == widget)
+                    .ok_or_else(|| format!("{} has no widget {}", p.main_rel, widget))?;
+                let target =
+                    core::widget_approval::WidgetTarget::of(&p.main_rel, w)?.ok_or_else(|| {
+                        format!("widget {widget} runs a first-party runtime: it needs no approval")
+                    })?;
+                let checked =
+                    core::widget_approval::check_widget_approval(&self.cx, &p.root_id, &target)?;
+                if let Some(e) = core::widget_approval::digest_changed_event(
+                    &p.root_id,
+                    &checked.status,
+                    maleficium_events::Actor::Agent,
+                ) {
+                    let _ = core::eventlog::append(std::slice::from_ref(&e));
+                }
+                Ok(Json(WidgetOut::Checked(Box::new(WidgetCheckOut {
+                    status: checked.status,
+                }))))
+            }
         })
     }
 
     #[tool(
-        description = "Scaffold a custom widget runtime draft in the user library (maleficium-runtimes/<name>@1): a caption-overlay-shaped package (runtime.json, a classic index.html loading the built bridge.js, a sample for the required role, LICENSE), or with from model@1 a fork of the built-in model viewer (viewer.js, the viewer as a readable classic script to edit in place, over three.js vendored under vendor/). Refused when the draft folder exists and is not empty. Writes only to the library, never to a project, and never approves anything: the user reviews and allows the draft in the app.",
+        description = "The non-destructive half of custom widget runtime authoring: drafts live in the user library, never in a project. `scaffold` starts a draft from scratch or forks the built-in model viewer; `validate` checks a package's manifest, entry, vendored files and static scan, in the library or in a project's installed copy. Nothing here approves or installs: the user reviews and allows the draft in the app (View > Widgets), and only a draft that validates installs.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1905,20 +2220,67 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn runtime_scaffold(
+    fn runtime_read(
         &self,
-        Parameters(p): Parameters<RuntimeScaffoldParams>,
-    ) -> Result<Json<RuntimeScaffoldOut>, String> {
-        self.tool("runtime_scaffold", || {
-            let dir = core::runtime_author::scaffold(&p.name, p.from.as_deref())?;
-            let reference = dir
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default();
-            Ok(Json(RuntimeScaffoldOut {
-                reference,
-                path: path_string(dir),
-            }))
+        Parameters(p): Parameters<RuntimeReadParams>,
+    ) -> Result<Json<RuntimeReadOut>, String> {
+        self.tool("runtime_read", || match p.action {
+            RuntimeReadAction::Scaffold => {
+                for (name, set) in [
+                    ("reference", p.reference.is_some()),
+                    ("root_id", p.root_id.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "scaffold takes only `name` and `from`; remove `{name}` (use action `validate` to check a package)"
+                        ));
+                    }
+                }
+                let name = p.name.as_deref().ok_or_else(|| {
+                    "scaffold requires `name`: the new draft's name".to_string()
+                })?;
+                let dir = core::runtime_author::scaffold(name, p.from.as_deref())?;
+                let reference = dir
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                Ok(Json(RuntimeReadOut::Scaffolded(RuntimeScaffoldOut {
+                    reference,
+                    path: path_string(dir),
+                })))
+            }
+            RuntimeReadAction::Validate => {
+                for (name, set) in [
+                    ("name", p.name.is_some()),
+                    ("from", p.from.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "validate takes only `reference` and `root_id`; remove `{name}` (use action `scaffold` to start a draft)"
+                        ));
+                    }
+                }
+                let reference = p.reference.as_deref().ok_or_else(|| {
+                    "validate requires `reference`: the package ref".to_string()
+                })?;
+                let v = match &p.root_id {
+                    Some(root_id) => {
+                        core::runtime_author::validate_project(&self.cx, root_id, reference)?
+                    }
+                    None => core::runtime_author::validate_library(reference)?,
+                };
+                let valid = v.valid();
+                Ok(Json(RuntimeReadOut::Validated(RuntimeValidateOut {
+                    reference: v.reference,
+                    path: v.path,
+                    valid,
+                    errors: v.errors,
+                    warnings: v.warnings,
+                    manifest: v
+                        .manifest
+                        .map(|m| serde_json::to_value(&m).unwrap_or(serde_json::Value::Null)),
+                })))
+            }
         })
     }
 
@@ -2135,40 +2497,6 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Validate a custom widget runtime package: the manifest, entry, vendored files and samples, plus the static scan (remote loads, eval, module imports, network APIs, workers, storage, undeclared WebAssembly, dangling references). With root_id it reads the project's installed runtimes/<ref>/ copy; without it the user library's copy. Read-only: it reports errors and warnings and never approves, installs or changes anything.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn runtime_validate(
-        &self,
-        Parameters(p): Parameters<RuntimeValidateParams>,
-    ) -> Result<Json<RuntimeValidateOut>, String> {
-        self.tool("runtime_validate", || {
-            let v = match &p.root_id {
-                Some(root_id) => {
-                    core::runtime_author::validate_project(&self.cx, root_id, &p.reference)?
-                }
-                None => core::runtime_author::validate_library(&p.reference)?,
-            };
-            let valid = v.valid();
-            Ok(Json(RuntimeValidateOut {
-                reference: v.reference,
-                path: v.path,
-                valid,
-                errors: v.errors,
-                warnings: v.warnings,
-                manifest: v
-                    .manifest
-                    .map(|m| serde_json::to_value(&m).unwrap_or(serde_json::Value::Null)),
-            }))
-        })
-    }
-
-    #[tool(
         description = "Write an export outside the project, never into it: `pdf` copies main_rel's compiled pdf to dest, `zip` packs the sources to dest, `bundle` writes a paper bundle at dest, `preview` writes the single-file bundle to a scratch folder and returns its path without opening anything, `open` previews then opens that path in the OS browser. Every dest is absolute and outside the project; re-exporting over an earlier bundle replaces it, a foreign folder is refused.",
         annotations(
             read_only_hint = false,
@@ -2307,25 +2635,6 @@ impl Maleficium {
                     .map_err(|e| format!("cannot open {} in the browser: {e}", r.path))?;
                 Ok(Json(ExportWriteOut::Bundle(r)))
             }
-        })
-    }
-
-    #[tool(
-        description = "Cancel a running compile job",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = false,
-            open_world_hint = false
-        )
-    )]
-    fn compile_cancel(
-        &self,
-        Parameters(p): Parameters<CancelParams>,
-    ) -> Result<Json<CancelOut>, String> {
-        self.tool("compile_cancel", || {
-            let status = core::cancel_job(&self.cx, &p.job_id)?;
-            Ok(Json(CancelOut { status }))
         })
     }
 
@@ -2684,28 +2993,6 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Dependency checks over the whole document from main_rel, before compiling: every package or class neither the project nor the TeX bundle provides (all at once), biblatex needing biber (suggests backend=bibtex), shell-escape packages and \\write18, and fontspec fonts not installed. bundleChecked is false until a first compile has cached the bundle index.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn precompile_checks(
-        &self,
-        Parameters(p): Parameters<MainParams>,
-    ) -> Result<Json<core::structure::Precheck>, String> {
-        self.tool("precompile_checks", || {
-            Ok(Json(core::structure::precompile_checks(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-            )?))
-        })
-    }
-
-    #[tool(
         description = "Search project text or find files by name: `search` hunts a label, reference or string across saved files, `find_files` locates a file by fuzzy name. Hits reachable from `main_rel` rank first for `search`. Cap results with `max`.",
         annotations(
             read_only_hint = true,
@@ -2870,29 +3157,6 @@ impl Maleficium {
             }
         })
     }
-
-    #[tool(
-        description = "Structured diagnostics from main_rel's last compile: the engine's errors, and TeX's warnings for undefined references and citations and duplicate labels (placed on the line that uses or defines the key), each with root-relative path, line, message, severity. Entries outside the project are flagged external and carry no path. missing names the dependency that compile lacked and why. max caps rows (default 100).",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn diagnostics(
-        &self,
-        Parameters(p): Parameters<DiagnosticsParams>,
-    ) -> Result<Json<core::structure::Diagnostics>, String> {
-        self.tool("diagnostics", || {
-            Ok(Json(core::structure::diagnostics(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                p.max.unwrap_or(100),
-            )?))
-        })
-    }
 }
 
 // Named explicitly: rmcp's default server info is its own crate name and
@@ -3013,10 +3277,10 @@ mod tests {
         assert!(ext.contains_key(UI_EXTENSION), "{ext:?}");
     }
 
-    /// Only the sync tools and compile_run name a View; the re-render
-    /// tool is hidden from the model, and the dashboard's own calls
-    /// (compile_poll, compile_cancel, diagnostics, offline_readiness) stay
-    /// plain tools so text-only hosts see them as before.
+    /// Only the sync tools and paper name a View; the re-render
+    /// tool is hidden from the model, and paper's own readings
+    /// (poll, cancel, diagnostics, prechecks, readiness, output) stay plain
+    /// actions so text-only hosts see them as before.
     #[test]
     fn only_the_view_tools_carry_ui_meta() {
         let tools = Maleficium::tool_router().list_all();
@@ -3032,7 +3296,7 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
         with.sort();
-        assert_eq!(with, ["compile_run", "sync_render", "sync_view"]);
+        assert_eq!(with, ["paper", "sync_render", "sync_view"]);
         let get = |n: &str| ui(tools.iter().find(|t| t.name == n).unwrap()).unwrap();
         assert!(get("sync_view").contains(SNIPPET_VIEW_URI) && get("sync_view").contains("model"));
         assert_eq!(
@@ -3040,33 +3304,95 @@ mod tests {
             format!(r#"{{"resourceUri":"{SNIPPET_VIEW_URI}","visibility":["app"]}}"#)
         );
         assert_eq!(
-            get("compile_run"),
+            get("paper"),
             format!(r#"{{"resourceUri":"{COMPILE_VIEW_URI}","visibility":["model","app"]}}"#)
         );
     }
 
-    /// The widget list only reads: hosts may call it without confirmation.
-    /// Its failures reach the client as tool errors, never as an empty list.
+    /// Grouped `widget` folds the three views of one reading: `list` the
+    /// widgets, `status` their approval state, `check` one widget. Every
+    /// action only reads, so the tool stays honestly read-only, and an
+    /// unknown action names the valid list with a did-you-mean hint. Its
+    /// failures reach the client as tool errors, never as an empty list.
     #[test]
-    fn widgets_is_a_read_only_tool_and_failures_are_errors() {
+    fn widget_validates_per_action() {
         let tools = Maleficium::tool_router().list_all();
-        let t = tools.iter().find(|t| t.name == "widgets").expect("widgets");
+        let t = tools.iter().find(|t| t.name == "widget").expect("widget");
         let a = t.annotations.as_ref().expect("annotations");
         assert_eq!(a.read_only_hint, Some(true));
         assert_eq!(a.destructive_hint, Some(false));
         assert_eq!(a.idempotent_hint, Some(true));
         assert_eq!(a.open_world_hint, Some(false));
         assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "main_rel", "root_id", "widget"]);
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(
+            serde_json::from_value::<WidgetParams>(
+                serde_json::json!({"root_id": "r", "action": "list", "main_rel": "m.tex"})
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<WidgetParams>(
+                serde_json::json!({"root_id": "r", "action": "list", "main_rel": "m.tex", "approve": true})
+            )
+            .is_err()
+        );
 
         let m = Maleficium::default();
-        let err = m
-            .widgets(Parameters(WidgetsParams {
+        let list = |widget: Option<&str>| {
+            m.widget(Parameters(WidgetParams {
                 root_id: "nope".into(),
+                action: WidgetAction::List,
                 main_rel: "main.tex".into(),
+                widget: widget.map(Into::into),
+            }))
+        };
+        let err = list(None).err().expect("an ungranted root fails");
+        assert!(!err.is_empty());
+        let err = list(Some("w")).err().expect("list rejects a widget");
+        assert!(err.contains("takes no `widget`"), "{err}");
+
+        let err = m
+            .widget(Parameters(WidgetParams {
+                root_id: "nope".into(),
+                action: WidgetAction::Status,
+                main_rel: "main.tex".into(),
+                widget: Some("w".into()),
             }))
             .err()
-            .expect("an ungranted root fails");
-        assert!(!err.is_empty());
+            .expect("status rejects a widget");
+        assert!(err.contains("takes no `widget`"), "{err}");
+
+        let err = m
+            .widget(Parameters(WidgetParams {
+                root_id: "nope".into(),
+                action: WidgetAction::Check,
+                main_rel: "main.tex".into(),
+                widget: None,
+            }))
+            .err()
+            .expect("check without a widget fails");
+        assert!(err.contains("widget"), "{err}");
+
+        let err = serde_json::from_value::<WidgetParams>(serde_json::json!({
+            "root_id": "r", "action": "chek", "main_rel": "m.tex", "widget": "w",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `check`?"), "{err}");
+        let err = serde_json::from_value::<WidgetParams>(serde_json::json!({
+            "root_id": "r", "action": "stats", "main_rel": "m.tex",
+        }))
+        .expect_err("an unknown action fails");
+        assert!(err.to_string().contains("[list, status, check]"), "{err}");
     }
 
     /// The structure tool only reads: hosts may call it without
@@ -3439,23 +3765,25 @@ mod tests {
         assert!(err.to_string().contains("did you mean `bundle`?"), "{err}");
     }
 
-    /// The runtime authoring tools stay on their side of the approval
-    /// boundary: the scaffold writes only to the user library, the
-    /// validator only reads, the install only copies a validated draft into
-    /// a granted project, and none takes a parameter that approves or
-    /// allows.
+    /// Grouped `runtime_read` stays on its side of the approval boundary:
+    /// the scaffold writes only to the user library, the validator only
+    /// reads, and the install (a separate, trust-gated tool) only copies a
+    /// validated draft into a granted project. None takes a parameter that
+    /// approves or allows, and an unknown action names the valid list with
+    /// a did-you-mean hint.
     #[test]
-    fn runtime_tools_are_library_scoped_and_cannot_approve() {
+    fn runtime_read_stays_library_scoped_and_cannot_approve() {
         let tools = Maleficium::tool_router().list_all();
         let t = tools
             .iter()
-            .find(|t| t.name == "runtime_scaffold")
-            .expect("runtime_scaffold");
+            .find(|t| t.name == "runtime_read")
+            .expect("runtime_read");
         let a = t.annotations.as_ref().expect("annotations");
         assert_eq!(a.read_only_hint, Some(false));
         assert_eq!(a.destructive_hint, Some(false));
         assert_eq!(a.idempotent_hint, Some(false));
         assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
         let schema = serde_json::to_value(&*t.input_schema).unwrap();
         let mut props: Vec<&str> = schema["properties"]
             .as_object()
@@ -3464,27 +3792,7 @@ mod tests {
             .map(String::as_str)
             .collect();
         props.sort();
-        assert_eq!(props, ["from", "name"]);
-        assert_eq!(schema["additionalProperties"], false);
-
-        let t = tools
-            .iter()
-            .find(|t| t.name == "runtime_validate")
-            .expect("runtime_validate");
-        let a = t.annotations.as_ref().expect("annotations");
-        assert_eq!(a.read_only_hint, Some(true));
-        assert_eq!(a.destructive_hint, Some(false));
-        assert_eq!(a.idempotent_hint, Some(true));
-        assert_eq!(a.open_world_hint, Some(false));
-        let schema = serde_json::to_value(&*t.input_schema).unwrap();
-        let mut props: Vec<&str> = schema["properties"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        props.sort();
-        assert_eq!(props, ["reference", "root_id"]);
+        assert_eq!(props, ["action", "from", "name", "reference", "root_id"]);
         assert_eq!(schema["additionalProperties"], false);
 
         let t = tools
@@ -3508,28 +3816,28 @@ mod tests {
         assert_eq!(schema["additionalProperties"], false);
 
         assert!(
-            serde_json::from_value::<RuntimeScaffoldParams>(
-                serde_json::json!({"name": "orbit-view", "from": "model@1"})
+            serde_json::from_value::<RuntimeReadParams>(
+                serde_json::json!({"action": "scaffold", "name": "orbit-view", "from": "model@1"})
             )
             .is_ok()
         );
         assert!(
-            serde_json::from_value::<RuntimeValidateParams>(
-                serde_json::json!({"reference": "orbit-view@1"})
+            serde_json::from_value::<RuntimeReadParams>(
+                serde_json::json!({"action": "validate", "reference": "orbit-view@1"})
             )
             .is_ok()
         );
         for extra in ["approve", "allow", "decide", "digest", "revoke", "mode"] {
-            let mut v = serde_json::json!({"name": "orbit-view"});
+            let mut v = serde_json::json!({"action": "scaffold", "name": "orbit-view"});
             v[extra] = serde_json::json!(true);
             assert!(
-                serde_json::from_value::<RuntimeScaffoldParams>(v).is_err(),
+                serde_json::from_value::<RuntimeReadParams>(v).is_err(),
                 "{extra}"
             );
-            let mut v = serde_json::json!({"reference": "orbit-view@1"});
+            let mut v = serde_json::json!({"action": "validate", "reference": "orbit-view@1"});
             v[extra] = serde_json::json!(true);
             assert!(
-                serde_json::from_value::<RuntimeValidateParams>(v).is_err(),
+                serde_json::from_value::<RuntimeReadParams>(v).is_err(),
                 "{extra}"
             );
             let mut v = serde_json::json!({"root_id": "r", "reference": "orbit-view@1"});
@@ -3541,8 +3849,9 @@ mod tests {
         }
         let m = Maleficium::default();
         assert!(
-            m.runtime_scaffold(Parameters(
-                serde_json::from_value(serde_json::json!({"name": "nope!"})).unwrap()
+            m.runtime_read(Parameters(
+                serde_json::from_value(serde_json::json!({"action": "scaffold", "name": "nope!"}))
+                    .unwrap()
             ))
             .is_err()
         );
@@ -3556,6 +3865,40 @@ mod tests {
             ))
             .is_err()
         );
+
+        let err = serde_json::from_value::<RuntimeReadParams>(serde_json::json!({
+            "action": "validat", "reference": "orbit-view@1",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(
+            err.to_string().contains("did you mean `validate`?"),
+            "{err}"
+        );
+
+        // Per-action extras die in the handler, on an ungranted root or the
+        // library: nothing is touched to learn the fields do not belong.
+        let err = m
+            .runtime_read(Parameters(RuntimeReadParams {
+                action: RuntimeReadAction::Scaffold,
+                name: None,
+                from: None,
+                reference: Some("orbit-view@1".into()),
+                root_id: None,
+            }))
+            .err()
+            .expect("scaffold rejects a reference");
+        assert!(err.contains("scaffold takes only"), "{err}");
+        let err = m
+            .runtime_read(Parameters(RuntimeReadParams {
+                action: RuntimeReadAction::Validate,
+                name: Some("orbit-view".into()),
+                from: None,
+                reference: Some("orbit-view@1".into()),
+                root_id: None,
+            }))
+            .err()
+            .expect("validate rejects a name");
+        assert!(err.contains("validate takes only"), "{err}");
     }
 
     /// The presence tool reads windows but can prompt the user, so it is
@@ -3669,14 +4012,12 @@ mod tests {
                 );
             }
         }
-        for name in ["widgets_status", "widget_check"] {
-            let t = tools.iter().find(|t| t.name == name).expect(name);
-            let a = t.annotations.as_ref().expect("annotations");
-            assert_eq!(a.read_only_hint, Some(true), "{name}");
-            assert_eq!(a.open_world_hint, Some(false), "{name}");
-            let schema = serde_json::to_value(&*t.input_schema).unwrap();
-            assert_eq!(schema["additionalProperties"], false, "{name}");
-        }
+        let t = tools.iter().find(|t| t.name == "widget").expect("widget");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true), "widget");
+        assert_eq!(a.open_world_hint, Some(false), "widget");
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        assert_eq!(schema["additionalProperties"], false, "widget");
         // Every output schema is an object, so `opencode mcp list` accepts the server.
         for t in &tools {
             if let Some(out) = t.output_schema.as_ref() {
@@ -3684,8 +4025,8 @@ mod tests {
                 assert_eq!(schema["type"], "object", "tool {}", t.name);
             }
         }
-        let base = serde_json::json!({"root_id": "r", "main_rel": "main.tex", "widget": "w"});
-        assert!(serde_json::from_value::<WidgetCheckParams>(base.clone()).is_ok());
+        let base = serde_json::json!({"root_id": "r", "action": "check", "main_rel": "main.tex", "widget": "w"});
+        assert!(serde_json::from_value::<WidgetParams>(base.clone()).is_ok());
         for extra in [
             "approve",
             "approved",
@@ -3697,13 +4038,14 @@ mod tests {
             let mut v = base.clone();
             v[extra] = serde_json::json!(true);
             assert!(
-                serde_json::from_value::<WidgetCheckParams>(v).is_err(),
+                serde_json::from_value::<WidgetParams>(v).is_err(),
                 "{extra}"
             );
-            let mut v = serde_json::json!({"root_id": "r", "main_rel": "main.tex"});
+            let mut v =
+                serde_json::json!({"root_id": "r", "action": "status", "main_rel": "main.tex"});
             v[extra] = serde_json::json!(true);
             assert!(
-                serde_json::from_value::<WidgetsStatusParams>(v).is_err(),
+                serde_json::from_value::<WidgetParams>(v).is_err(),
                 "{extra}"
             );
         }
@@ -3728,7 +4070,7 @@ mod tests {
     /// A widget nobody approved is a normal result naming what the user
     /// must do, never a tool error; a first-party one is an error.
     #[test]
-    fn widget_check_returns_approval_required_as_a_normal_result() {
+    fn widget_check_action_returns_approval_required_as_a_normal_result() {
         let m = Maleficium::default();
         let dir = core::test_scratch::dir("mcp-approval");
         let _ = std::fs::remove_dir_all(&dir);
@@ -3750,13 +4092,17 @@ mod tests {
         )
         .unwrap();
         let p = |widget: &str| {
-            Parameters(WidgetCheckParams {
+            Parameters(WidgetParams {
                 root_id: "ap".into(),
+                action: WidgetAction::Check,
                 main_rel: "main.tex".into(),
-                widget: widget.into(),
+                widget: Some(widget.into()),
             })
         };
-        let r = m.widget_check(p("fig-demo")).expect("a normal result").0;
+        let r = m.widget(p("fig-demo")).expect("a normal result").0;
+        let WidgetOut::Checked(r) = r else {
+            panic!("check returns whether the widget may run");
+        };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["status"], "approval_required", "{v}");
         assert_eq!(v["widget"], "fig-demo");
@@ -3764,15 +4110,20 @@ mod tests {
         assert_eq!(v["cause"], "never_approved");
         assert_eq!(v["digest"].as_str().unwrap().len(), 64);
         assert!(v["userAction"].as_str().unwrap().contains("View > Widgets"));
-        assert!(m.widget_check(p("fig-mesh")).is_err());
-        assert!(m.widget_check(p("nope")).is_err());
+        assert!(m.widget(p("fig-mesh")).is_err());
+        assert!(m.widget(p("nope")).is_err());
         let s = m
-            .widgets_status(Parameters(WidgetsStatusParams {
+            .widget(Parameters(WidgetParams {
                 root_id: "ap".into(),
+                action: WidgetAction::Status,
                 main_rel: "main.tex".into(),
+                widget: None,
             }))
             .expect("status")
             .0;
+        let WidgetOut::Status(s) = s else {
+            panic!("status returns the approval state");
+        };
         assert_eq!(s.pending, 1);
         assert_eq!(s.exempt.len(), 4);
         let _ = std::fs::remove_dir_all(&o.outdir);
@@ -4035,42 +4386,66 @@ mod tests {
         };
         assert!(read.text.contains("\\section{Hi}"));
 
-        assert!(
-            m.compile_run(Parameters(CompileRunParams {
-                root_id: "nope".into(),
-                rel: Some("main.tex".into()),
-                networked: None,
-            }))
-            .is_err()
-        );
-
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-        assert!(
-            rt.block_on(m.compile_poll(Parameters(CompilePollParams {
-                job_id: "nope".into(),
-                tail_lines: None,
-                wait_ms: Some(0),
-            })))
-            .is_err()
-        );
+        // One cluster for the whole compile loop: `start` resolves the main
+        // file and returns a job id, `poll`/`cancel` name the job, and the
+        // readings name the project and main file. A bad root, an unknown
+        // job and a never-compiled project all fail closed.
+        let paper = |p: PaperParams| rt.block_on(m.paper(Parameters(p)));
+        let base = |action: PaperAction| PaperParams {
+            action,
+            root_id: None,
+            job_id: None,
+            main_rel: None,
+            networked: None,
+            tail_lines: None,
+            wait_ms: None,
+            max: None,
+        };
+        let mut start = base(PaperAction::Start);
+        start.root_id = Some("nope".into());
+        start.main_rel = Some("main.tex".into());
+        assert!(paper(start).is_err());
 
-        assert!(
-            m.offline_readiness(Parameters(RootParams {
-                root_id: "cov".into()
-            }))
-            .is_ok()
-        );
+        let mut poll = base(PaperAction::Poll);
+        poll.job_id = Some("nope".into());
+        poll.wait_ms = Some(0);
+        assert!(paper(poll).is_err());
 
-        let stamp = m
-            .output_stamp(Parameters(MainParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-            }))
-            .unwrap();
-        assert!(stamp.0.stamp.is_none());
+        let mut cancel = base(PaperAction::Cancel);
+        cancel.job_id = Some("nope".into());
+        assert_eq!(paper(cancel).err(), Some("unknown job: nope".to_string()));
+
+        let mut readiness = base(PaperAction::Readiness);
+        readiness.root_id = Some("cov".into());
+        assert!(paper(readiness).is_ok());
+
+        let mut output = base(PaperAction::Output);
+        output.root_id = Some("cov".into());
+        output.main_rel = Some("main.tex".into());
+        let stamped = paper(output).unwrap().0;
+        let PaperOut::Stamped(stamped) = stamped else {
+            panic!("output returns its stamp");
+        };
+        assert!(stamped.stamp.is_none());
+
+        let mut prechecks = base(PaperAction::Prechecks);
+        prechecks.root_id = Some("cov".into());
+        prechecks.main_rel = Some("main.tex".into());
+        assert!(paper(prechecks).is_ok());
+
+        let mut diagnostics = base(PaperAction::Diagnostics);
+        diagnostics.root_id = Some("cov".into());
+        diagnostics.main_rel = Some("main.tex".into());
+        assert!(paper(diagnostics).is_err());
+
+        let mut stray = base(PaperAction::Start);
+        stray.job_id = Some("job-1".into());
+        let err = paper(stray).err().expect("start rejects a job id");
+        assert!(err.contains("takes no `job_id`"), "{err}");
 
         let pdf_dest = dir.join("out.pdf").to_string_lossy().to_string();
         assert!(
@@ -4164,11 +4539,7 @@ mod tests {
                 .is_file()
         );
 
-        let cancel = m.compile_cancel(Parameters(CancelParams {
-            job_id: "nope".into(),
-        }));
-        assert_eq!(cancel.err(), Some("unknown job: nope".to_string()));
-
+        // The sync_view actions fail like the core's on a never-compiled project.
         let view = |action: SyncViewAction| {
             let mut p = SyncViewParams {
                 root_id: "cov".into(),
@@ -4295,13 +4666,6 @@ mod tests {
         assert_eq!(doc.widgets.len(), 5);
         let defined = structure(StructureAction::Definition).unwrap();
         assert!(matches!(defined.0, StructureOut::Definition(ref d) if d.lookup.is_some()));
-        assert!(
-            m.precompile_checks(Parameters(MainParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into()
-            }))
-            .is_ok()
-        );
 
         let search = m
             .search(Parameters(SearchParams {
@@ -4398,41 +4762,24 @@ mod tests {
             .unwrap();
         assert!(matches!(found.0, SearchOut::Files(ref f) if !f.files.is_empty()));
 
-        assert!(
-            m.diagnostics(Parameters(DiagnosticsParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-                max: None,
-            }))
-            .is_err()
-        );
+        // Never compiled: the `paper` diagnostics reading fails like the core's.
+        let mut diag = base(PaperAction::Diagnostics);
+        diag.root_id = Some("cov".into());
+        diag.main_rel = Some("main.tex".into());
+        assert!(paper(diag).is_err());
 
-        // Never compiled: the widget tools fail closed, none returns an empty list.
-        let main = |extra: serde_json::Value| {
-            let mut v = serde_json::json!({"root_id": "cov", "main_rel": "main.tex"});
-            v.as_object_mut()
-                .unwrap()
-                .extend(extra.as_object().unwrap().clone());
-            v
+        // Never compiled: the widget actions fail closed, none returns an empty list.
+        let widget = |action: WidgetAction, widget: Option<&str>| {
+            m.widget(Parameters(WidgetParams {
+                root_id: "cov".into(),
+                action,
+                main_rel: "main.tex".into(),
+                widget: widget.map(Into::into),
+            }))
         };
-        assert!(
-            m.widgets(Parameters(
-                serde_json::from_value(main(serde_json::json!({}))).unwrap()
-            ))
-            .is_err()
-        );
-        assert!(
-            m.widgets_status(Parameters(
-                serde_json::from_value(main(serde_json::json!({}))).unwrap()
-            ))
-            .is_err()
-        );
-        assert!(
-            m.widget_check(Parameters(
-                serde_json::from_value(main(serde_json::json!({"widget": "w"}))).unwrap()
-            ))
-            .is_err()
-        );
+        assert!(widget(WidgetAction::List, None).is_err());
+        assert!(widget(WidgetAction::Status, None).is_err());
+        assert!(widget(WidgetAction::Check, Some("w")).is_err());
         assert!(
             m.export_write(Parameters(ExportWriteParams {
                 root_id: "cov".into(),
@@ -4456,29 +4803,37 @@ mod tests {
             .is_err()
         );
 
-        // The runtime authoring tools: the scaffold refuses a bad name
+        // The runtime read: the scaffold refuses a bad name
         // before touching the library, and the validator fails closed on
         // an ungranted root or a missing library copy. Neither writes to
         // a project, and neither can approve.
+        let read = |p: RuntimeReadParams| m.runtime_read(Parameters(p));
+        let scaffold = |name: Option<&str>| RuntimeReadParams {
+            action: RuntimeReadAction::Scaffold,
+            name: name.map(Into::into),
+            from: None,
+            reference: None,
+            root_id: None,
+        };
+        assert!(read(scaffold(Some("Model"))).is_err());
         assert!(
-            m.runtime_scaffold(Parameters(
-                serde_json::from_value(serde_json::json!({"name": "Model"})).unwrap()
-            ))
+            read(RuntimeReadParams {
+                action: RuntimeReadAction::Validate,
+                name: None,
+                from: None,
+                reference: Some("orbit-view@1".into()),
+                root_id: Some("nope".into()),
+            })
             .is_err()
         );
         assert!(
-            m.runtime_validate(Parameters(
-                serde_json::from_value(
-                    serde_json::json!({"root_id": "nope", "reference": "orbit-view@1"})
-                )
-                .unwrap()
-            ))
-            .is_err()
-        );
-        assert!(
-            m.runtime_validate(Parameters(
-                serde_json::from_value(serde_json::json!({"reference": "nope@1"})).unwrap()
-            ))
+            read(RuntimeReadParams {
+                action: RuntimeReadAction::Validate,
+                name: None,
+                from: None,
+                reference: Some("nope@1".into()),
+                root_id: None,
+            })
             .is_err()
         );
 
@@ -4486,27 +4841,18 @@ mod tests {
             "session",
             "file",
             "file_mutate",
-            "compile_run",
-            "compile_poll",
-            "offline_readiness",
-            "output_stamp",
+            "paper",
             "export_read",
             "export_write",
             "scaffold",
-            "compile_cancel",
             "sync_view",
             "sync_render",
             "log_tail",
             "structure",
-            "precompile_checks",
             "search",
             "replace",
-            "diagnostics",
-            "widgets",
-            "widgets_status",
-            "widget_check",
-            "runtime_scaffold",
-            "runtime_validate",
+            "widget",
+            "runtime_read",
             "runtime_install",
             "presence",
             "describe",
@@ -5541,15 +5887,154 @@ mod tests {
         assert!(err.contains("apply takes only `token`"), "{err}");
     }
 
+    /// Grouped `paper` validates per action: `start` compiles a project
+    /// and returns a job id, `poll` and `cancel` name that job, and the
+    /// readings name the project they read. Each action rejects the rest
+    /// before touching the project, and an unknown action names the valid
+    /// list with a did-you-mean hint. `start` can fetch, so the tool is
+    /// honestly open-world; nothing it does is destructive.
+    #[test]
+    fn paper_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "paper").expect("paper");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(true));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(
+            props,
+            [
+                "action",
+                "job_id",
+                "main_rel",
+                "max",
+                "networked",
+                "root_id",
+                "tail_lines",
+                "wait_ms"
+            ]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(
+            serde_json::from_value::<PaperParams>(
+                serde_json::json!({"action": "start", "root_id": "r", "main_rel": "m.tex"})
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<PaperParams>(
+                serde_json::json!({"action": "poll", "job_id": "job-1", "approve": true})
+            )
+            .is_err()
+        );
+
+        let m = Maleficium::default();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let paper = |p: PaperParams| rt.block_on(m.paper(Parameters(p)));
+        let base = |action: PaperAction| PaperParams {
+            action,
+            root_id: None,
+            job_id: None,
+            main_rel: None,
+            networked: None,
+            tail_lines: None,
+            wait_ms: None,
+            max: None,
+        };
+        // Per-action extras die in the handler: no project is touched to
+        // learn the fields do not belong.
+        let mut start = base(PaperAction::Start);
+        start.job_id = Some("job-1".into());
+        let err = paper(start).err().expect("start rejects a job id");
+        assert!(err.contains("takes no `job_id`"), "{err}");
+
+        let mut start = base(PaperAction::Start);
+        start.root_id = Some("nope".into());
+        start.main_rel = Some("main.tex".into());
+        start.max = Some(10);
+        let err = paper(start).err().expect("start rejects a max");
+        assert!(err.contains("takes no `max`"), "{err}");
+
+        let err = paper(base(PaperAction::Poll))
+            .err()
+            .expect("poll without a job fails");
+        assert!(err.contains("job_id"), "{err}");
+
+        let mut poll = base(PaperAction::Poll);
+        poll.job_id = Some("job-1".into());
+        poll.root_id = Some("r".into());
+        let err = paper(poll).err().expect("poll rejects a root");
+        assert!(err.contains("poll takes only"), "{err}");
+
+        let mut cancel = base(PaperAction::Cancel);
+        cancel.root_id = Some("r".into());
+        cancel.job_id = Some("job-1".into());
+        let err = paper(cancel).err().expect("cancel rejects a root");
+        assert!(err.contains("cancel takes only"), "{err}");
+
+        let err = paper(base(PaperAction::Diagnostics))
+            .err()
+            .expect("diagnostics without a root fails");
+        assert!(err.contains("root_id"), "{err}");
+
+        let mut prechecks = base(PaperAction::Prechecks);
+        prechecks.root_id = Some("r".into());
+        prechecks.main_rel = Some("m.tex".into());
+        prechecks.max = Some(10);
+        let err = paper(prechecks).err().expect("prechecks rejects a max");
+        assert!(err.contains("prechecks takes only"), "{err}");
+
+        let mut readiness = base(PaperAction::Readiness);
+        readiness.root_id = Some("r".into());
+        readiness.main_rel = Some("m.tex".into());
+        let err = paper(readiness)
+            .err()
+            .expect("readiness rejects a main file");
+        assert!(err.contains("readiness takes only"), "{err}");
+
+        let mut output = base(PaperAction::Output);
+        output.main_rel = Some("m.tex".into());
+        let err = paper(output).err().expect("output without a root fails");
+        assert!(err.contains("root_id"), "{err}");
+
+        let err = serde_json::from_value::<PaperParams>(serde_json::json!({
+            "action": "pol", "job_id": "job-1",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `poll`?"), "{err}");
+        let err = serde_json::from_value::<PaperParams>(serde_json::json!({
+            "action": "cancelled", "job_id": "job-1",
+        }))
+        .expect_err("an unknown action fails");
+        assert!(
+            err.to_string()
+                .contains("[start, poll, cancel, diagnostics, prechecks, readiness, output]"),
+            "{err}"
+        );
+    }
+
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count lands the phase at 27 tools: 38 minus the 20
-    /// folded, plus the 9 grouped nouns.
+    /// rescan. The count lands the phase at 18 tools: 27 minus the 12
+    /// folded, plus the 3 grouped nouns.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 27, "the phase lands at 27 tools");
+        assert_eq!(tools.len(), 18, "the phase lands at 18 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
