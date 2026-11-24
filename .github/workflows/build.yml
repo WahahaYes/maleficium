@@ -21,6 +21,12 @@ on:
     # labeled: adding full-ci to a PR starts the full platform matrix.
     types: [opened, synchronize, reopened, labeled]
   workflow_call:
+    inputs:
+      skip_tests:
+        description: 'Skip the test-only jobs: the caller already knows this commit passed them (a release tag on a commit main built)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -273,7 +279,7 @@ jobs:
 
   fast_check:
     needs: [changes, precommit]
-    if: needs.changes.outputs.src == 'true'
+    if: needs.changes.outputs.src == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -293,7 +299,7 @@ jobs:
 
   fixture_papers:
     needs: [changes, precommit]
-    if: needs.changes.outputs.fixtures == 'true'
+    if: needs.changes.outputs.fixtures == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -337,7 +343,7 @@ jobs:
   # needs the debug-only hanging runtime).
   e2e:
     needs: [changes, precommit]
-    if: needs.changes.outputs.e2e == 'true'
+    if: needs.changes.outputs.e2e == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -455,12 +461,29 @@ jobs:
     if: always()
     steps:
       - name: Gate on source and fixture changes
+        env:
+          SKIP_TESTS: ${{ inputs.skip_tests }}
         run: |
           SRC="${{ needs.changes.outputs.src }}"
           E2E="${{ needs.changes.outputs.e2e }}"
           FIX="${{ needs.changes.outputs.fixtures }}"
           PURGE="${{ needs.purge_caches.result }}"
           FAIL=0
+          # A test suite skipped by the caller (a release tag on a commit
+          # main already built) passes here; any other skip is a failure.
+          suite() {
+            case "$2" in
+              success) echo "$1: $2" ;;
+              skipped)
+                if [ "$SKIP_TESTS" = true ]; then
+                  echo "$1: skipped, already passed on main"
+                else
+                  echo "$1: skipped unexpectedly"
+                  FAIL=1
+                fi ;;
+              *) echo "$1: $2"; FAIL=1 ;;
+            esac
+          }
           echo "precommit: ${{ needs.precommit.result }}"
           if [ "${{ needs.precommit.result }}" != "success" ]; then FAIL=1; fi
           if [ "$SRC" != "true" ] && [ "$E2E" != "true" ] && [ "$FIX" != "true" ]; then
@@ -471,15 +494,13 @@ jobs:
             echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
             if [ "${{ needs.package.result }}" = "cancelled" ]; then echo "package was cancelled: a job hit its timeout-minutes, not a test failure"; fi
             if [ "${{ needs.package.result }}" != "success" ]; then FAIL=1; fi
-            if [ "${{ needs.fast_check.result }}" != "success" ]; then FAIL=1; fi
+            suite fast_check "${{ needs.fast_check.result }}"
           fi
           if [ "$E2E" = "true" ]; then
-            echo "e2e: ${{ needs.e2e.result }}"
-            if [ "${{ needs.e2e.result }}" != "success" ]; then FAIL=1; fi
+            suite e2e "${{ needs.e2e.result }}"
           fi
           if [ "$FIX" = "true" ]; then
-            echo "fixture_papers: ${{ needs.fixture_papers.result }}"
-            if [ "${{ needs.fixture_papers.result }}" != "success" ]; then FAIL=1; fi
+            suite fixture_papers "${{ needs.fixture_papers.result }}"
           fi
           if [ "$PURGE" != "skipped" ] && [ "$PURGE" != "success" ]; then
             echo "purge_caches: $PURGE"
