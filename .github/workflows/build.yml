@@ -462,19 +462,30 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # The TeX bundle the suites compile against, fetched on first use and
-      # content-addressed by the pinned digest.
+      # content-addressed by the pinned digest. The key carries the tectonic
+      # version too, so a toolchain bump starts a new entry instead of
+      # reusing a stale one; the prefix fallbacks let a bumped key still
+      # reuse the same bytes (a prefix hit saves under the new exact key,
+      # so the cache grows forward). A restored older bundle is safe: the
+      # engine records the digest it resolved and refetches on mismatch.
       - name: TeX bundle key
         id: bundle-key
         run: |
           d=$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' src-tauri/core/src/engine.rs)
           [ -n "$d" ] || { echo "BUNDLE_DIGEST not found in src-tauri/core/src/engine.rs"; exit 1; }
+          t=$(sed -n 's/^tectonic = "=\(.*\)"$/\1/p' src-tauri/engine/Cargo.toml)
+          [ -n "$t" ] || { echo "tectonic pin not found in src-tauri/engine/Cargo.toml"; exit 1; }
           echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "tectonic=$t" >> "$GITHUB_OUTPUT"
       - name: TeX bundle cache
         id: tex-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
-          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-${{ steps.bundle-key.outputs.digest }}
+          restore-keys: |
+            tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-
+            tex-bundle-
       - name: Interactive-papers suites
         env:
           CI_E2E_LOGS: ${{ runner.temp }}/e2e-logs
@@ -484,7 +495,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
-          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-${{ steps.bundle-key.outputs.digest }}
       - name: Upload suite logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
