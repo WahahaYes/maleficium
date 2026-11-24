@@ -430,7 +430,8 @@ struct CompilePollOut {
 
 /// The `paper` result for one action, verbatim: `start` the job id and main
 /// file, `poll` the job's status and lines so far, `cancel` what stopped,
-/// `diagnostics` the last compile's errors and warnings, `prechecks` the
+/// `diagnostics` the last compile's errors and warnings (compiled:false with
+/// empty diagnostics before any compile), `prechecks` the
 /// blockers before compiling, `readiness` the offline state, `output` the
 /// compiled pdf's stamp (or null), `log` the engine log tail.
 #[derive(Debug, Serialize)]
@@ -1025,7 +1026,7 @@ fn action_notes(cluster: &str, action: &str) -> Option<(&'static str, serde_json
             json!({"action": "cancel", "job_id": "job-1"}),
         ),
         ("paper", "diagnostics") => (
-            "diagnostics needs `main_rel`: the last compile's errors and warnings, capped by `max` (default 100).",
+            "diagnostics needs `main_rel`: the last compile's errors and warnings, capped by `max` (default 100). Before any compile it returns compiled:false with empty diagnostics; run start then poll first.",
             json!({"root_id": "agent", "action": "diagnostics", "main_rel": "main.tex"}),
         ),
         ("paper", "prechecks") => (
@@ -1818,7 +1819,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Compile main_rel and read back everything about the run, in one place. `start` begins a job (defaulting to the app's main file when main_rel is absent) and returns its job id; `poll` waits for or reports the running job's lines so far; `cancel` stops a running job. `diagnostics`, `prechecks`, `readiness`, `output` and `log` read the last run's errors, pre-compile blockers, offline state, pdf stamp and engine log tail without compiling.",
+        description = "Compile main_rel and read back everything about the run, in one place. `start` begins a job (defaulting to the app's main file when main_rel is absent) and returns its job id; `poll` waits for or reports the running job's lines so far; `cancel` stops a running job. `diagnostics`, `prechecks`, `readiness`, `output` and `log` read the last run's errors, pre-compile blockers, offline state, pdf stamp and engine log tail without compiling. `diagnostics` before any compile returns compiled:false with empty diagnostics; run `start` then `poll` first.",
         meta = ui_meta(Some(COMPILE_VIEW_URI), &["model", "app"])
     ,
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
@@ -4404,8 +4405,9 @@ mod tests {
             .unwrap();
         // One cluster for the whole compile loop: `start` resolves the main
         // file and returns a job id, `poll`/`cancel` name the job, and the
-        // readings name the project and main file. A bad root, an unknown
-        // job and a never-compiled project all fail closed.
+        // readings name the project and main file. A bad root and an unknown
+        // job fail closed; a never-compiled project's diagnostics reports
+        // not-compiled.
         let paper = |p: PaperParams| rt.block_on(m.paper(Parameters(p)));
         let base = |action: PaperAction| PaperParams {
             action,
@@ -4452,7 +4454,12 @@ mod tests {
         let mut diagnostics = base(PaperAction::Diagnostics);
         diagnostics.root_id = Some("cov".into());
         diagnostics.main_rel = Some("main.tex".into());
-        assert!(paper(diagnostics).is_err());
+        let diagnosed = paper(diagnostics).unwrap().0;
+        let PaperOut::Diagnostics(diagnosed) = diagnosed else {
+            panic!("diagnostics returns its record");
+        };
+        assert!(!diagnosed.compiled);
+        assert!(diagnosed.diagnostics.is_empty());
 
         let mut stray = base(PaperAction::Start);
         stray.job_id = Some("job-1".into());
@@ -4772,11 +4779,16 @@ mod tests {
             .unwrap();
         assert!(matches!(found.0, SearchOut::Files(ref f) if !f.files.is_empty()));
 
-        // Never compiled: the `paper` diagnostics reading fails like the core's.
+        // Never compiled: the `paper` diagnostics reading reports not-compiled.
         let mut diag = base(PaperAction::Diagnostics);
         diag.root_id = Some("cov".into());
         diag.main_rel = Some("main.tex".into());
-        assert!(paper(diag).is_err());
+        let diagnosed = paper(diag).unwrap().0;
+        let PaperOut::Diagnostics(diagnosed) = diagnosed else {
+            panic!("diagnostics returns its record");
+        };
+        assert!(!diagnosed.compiled);
+        assert!(diagnosed.diagnostics.is_empty());
 
         // Never compiled: the widget actions fail closed, none returns an empty list.
         let widget = |action: WidgetAction, widget: Option<&str>| {
