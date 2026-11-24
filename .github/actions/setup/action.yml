@@ -78,7 +78,7 @@ runs:
         install-recommends: 'false'
     - name: macOS engine libraries
       if: inputs.with-system-deps == 'true' && runner.os == 'macOS'
-      uses: gerlero/brew-install@f21af2da1f07ad75501992da36996ddb7afe0cedb # v1.1.6
+      uses: gerlero/brew-install@f21af2da1f07ad75501992d36996ddb7afe0cedb # v1.1.6
       with:
         packages: ${{ steps.syspkgs.outputs.packages }}
         cache: 'true'
@@ -91,12 +91,12 @@ runs:
       shell: bash
       run: python -m pip install ${{ inputs.python-packages }}
     - name: Rust toolchain (rust-toolchain.toml)
-      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40c036ff682cc2c8 # v1
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
       with:
         toolchain: ${{ steps.pins.outputs.channel }}
         components: ${{ steps.pins.outputs.components }}
     - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
-      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40c036ff682cc2c8 # v1
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
       with:
         toolchain: ${{ steps.pins.outputs.engine-channel }}
         components: ${{ steps.pins.outputs.engine-components }}
