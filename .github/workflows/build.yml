@@ -423,9 +423,7 @@ jobs:
       # export run's offline cells (unshare -rn) would print skip:.
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
+      - uses: ./.github/actions/npm
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -442,11 +440,12 @@ jobs:
             src-tauri
             src-tauri/engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: npm ci
       # Before any cargo build: tauri-build copies this engine into
       # target/debug, and ci-e2e.sh checks the copy matches.
       - uses: ./.github/actions/engine
       # The browsers belong to the playwright-core version in the lockfile.
+      # A cache hit restores the browsers, but their system libraries are
+      # not cacheable, so they install on every run; a miss downloads both.
       - name: Playwright browsers cache
         id: playwright-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -454,7 +453,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Playwright browsers and their system libraries
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright-core install --with-deps chromium firefox webkit
+      - name: Playwright system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright-core install-deps chromium firefox webkit
       - name: Playwright browsers cache save
         if: github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
