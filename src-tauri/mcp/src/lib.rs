@@ -2470,7 +2470,9 @@ impl Maleficium {
                 .and_then(|action| action_notes(&p.cluster, action))
             {
                 hints.insert(0, hint.to_string());
-                examples.insert(0, example);
+                if !examples.contains(&example) {
+                    examples.insert(0, example);
+                }
             }
             Ok(Json(DescribeOut {
                 cluster: p.cluster,
@@ -5610,6 +5612,16 @@ mod tests {
                     assert_eq!(out.action.as_deref(), Some(*action));
                     assert!(!out.hints.is_empty(), "{} {action}", tool.name);
                     assert!(!out.examples.is_empty(), "{} {action}", tool.name);
+                    {
+                        let mut seen = std::collections::HashSet::new();
+                        for e in &out.examples {
+                            assert!(
+                                seen.insert(e.to_string()),
+                                "duplicate example in {} {action}",
+                                tool.name
+                            );
+                        }
+                    }
                     assert!(action_notes(&tool.name, action).is_some());
                     noted += 1;
                 }
