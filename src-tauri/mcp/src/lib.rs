@@ -506,45 +506,169 @@ struct DiagnosticsParams {
     max: Option<usize>,
 }
 
+/// Edit distance over action names, for did-you-mean suggestions.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, &ca) in a.iter().enumerate() {
+        let mut prev = i;
+        row[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            let next = (row[j + 1] + 1).min((row[j] + 1).min(prev + cost));
+            prev = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
+}
+
+/// The closest valid action name within distance 2, if any.
+fn did_you_mean<'a>(got: &str, valid: &[&'a str]) -> Option<&'a str> {
+    valid
+        .iter()
+        .copied()
+        .filter(|v| edit_distance(got, v) <= 2)
+        .min_by_key(|v| edit_distance(got, v))
+}
+
+fn unknown_action(got: &str, valid: &[&str]) -> String {
+    let mut msg = format!(
+        "unknown action `{got}`; valid actions: [{}]",
+        valid.join(", ")
+    );
+    if let Some(s) = did_you_mean(got, valid) {
+        msg.push_str(&format!("; did you mean `{s}`?"));
+    }
+    msg
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SearchAction {
+    Search,
+    FindFiles,
+}
+
+impl<'de> Deserialize<'de> for SearchAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "search" => Ok(Self::Search),
+            "find_files" => Ok(Self::FindFiles),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["search", "find_files"],
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct SearchParams {
     root_id: String,
-    /// Literal text, or a regular expression when `regex` is true.
-    pattern: String,
+    action: SearchAction,
+    /// Required iff action == search. Literal text, or regex when `regex`.
+    pattern: Option<String>,
+    /// Required iff action == find_files. Fuzzy-name query string.
+    query: Option<String>,
     regex: Option<bool>,
     case_sensitive: Option<bool>,
     whole_word: Option<bool>,
-    /// Files reachable from this main file rank first.
+    /// Files reachable from this main file rank first (search only).
     main_rel: Option<String>,
-    /// Hits returned (default 1000).
+    /// Hit cap. Defaults: 1000 (search), 50 (find_files).
     max: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ReplaceAction {
+    Preview,
+    Apply,
+    Undo,
+}
+
+impl<'de> Deserialize<'de> for ReplaceAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "preview" => Ok(Self::Preview),
+            "apply" => Ok(Self::Apply),
+            "undo" => Ok(Self::Undo),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["preview", "apply", "undo"],
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ReplacePreviewParams {
+#[serde(deny_unknown_fields)]
+struct ReplaceParams {
     root_id: String,
-    /// Literal text, or a regular expression when `regex` is true.
-    pattern: String,
-    /// Inserted as written; with regex=true, `$1` / `${name}` expand groups.
-    replacement: String,
+    action: ReplaceAction,
+    /// Required iff preview. Same pattern and flags as `search`; no cap.
+    pattern: Option<String>,
+    /// Required iff preview. `$1` / `${name}` expand under regex=true.
+    replacement: Option<String>,
     regex: Option<bool>,
     case_sensitive: Option<bool>,
     whole_word: Option<bool>,
     main_rel: Option<String>,
+    /// Required iff apply. The token from `preview`.
+    token: Option<String>,
+    /// Required iff undo. The batch id from `apply`.
+    batch: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ReplaceApplyParams {
-    root_id: String,
-    /// The token from replace_preview.
-    token: String,
+/// The `search` result for one action, verbatim: `search` returns the hit
+/// list, `find_files` the file list.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum SearchOut {
+    Hits(maleficium_index::search::SearchResult),
+    Files(FindFilesOut),
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ReplaceUndoParams {
-    root_id: String,
-    /// The batch from replace_apply.
-    batch: String,
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for SearchOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SearchOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `search` returns the hit list, `find_files` returns the file list.",
+        })
+    }
+}
+
+/// The `replace` result for one action, verbatim: `preview` the plan plus
+/// token, `apply` the batch plus files written, `undo` the files restored.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ReplaceOut {
+    Preview(maleficium_index::replace::ReplacePreview),
+    Applied(maleficium_index::replace::ReplaceApplied),
+    Undone(ReplaceUndoOut),
+}
+
+// Same object-shape naming as `SearchOut`: the union serializes as the
+// bare per-action record.
+impl schemars::JsonSchema for ReplaceOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ReplaceOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `preview` returns the plan plus token, `apply` the batch plus files written, `undo` the files restored.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -571,13 +695,6 @@ struct DefinitionParams {
 struct DefinitionOut {
     /// `None` when nothing referable sits at the position.
     lookup: Option<maleficium_index::definition::Lookup>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct FindFilesParams {
-    root_id: String,
-    query: String,
-    max: Option<usize>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -1575,7 +1692,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Search every text file of the project for literal text (default, case-insensitive) or a regex (regex=true; may span lines). Hits carry root-relative path, 1-based line, UTF-16 column and length, and the line as preview; each file carries its revision. Files reachable from main_rel rank first. Reads saved files. truncated counts hits past max (default 1000); unsearched counts files with no text (binary, over 2 MB, not UTF-8).",
+        description = "Search project text or find files by name: `search` hunts a label, reference or string across saved files, `find_files` locates a file by fuzzy name. Hits reachable from `main_rel` rank first for `search`. Cap results with `max`.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1583,82 +1700,65 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn search(
-        &self,
-        Parameters(p): Parameters<SearchParams>,
-    ) -> Result<Json<maleficium_index::search::SearchResult>, String> {
+    fn search(&self, Parameters(p): Parameters<SearchParams>) -> Result<Json<SearchOut>, String> {
         self.tool("search", || {
-            let q = maleficium_index::search::Query {
-                pattern: p.pattern,
-                regex: p.regex.unwrap_or(false),
-                case_sensitive: p.case_sensitive.unwrap_or(false),
-                whole_word: p.whole_word.unwrap_or(false),
-            };
-            Ok(Json(core::search::search(
-                &self.cx,
-                &p.root_id,
-                &q,
-                p.main_rel.as_deref(),
-                p.max.unwrap_or(core::search::MAX_HITS),
-            )?))
+            match p.action {
+                SearchAction::Search => {
+                    let pattern = p.pattern.ok_or_else(|| {
+                        "search requires `pattern`: the label, reference or string to hunt across saved files".to_string()
+                    })?;
+                    if p.query.is_some() {
+                        return Err(
+                            "search takes no `query`; use action `find_files` to locate a file by fuzzy name"
+                                .to_string(),
+                        );
+                    }
+                    let q = maleficium_index::search::Query {
+                        pattern,
+                        regex: p.regex.unwrap_or(false),
+                        case_sensitive: p.case_sensitive.unwrap_or(false),
+                        whole_word: p.whole_word.unwrap_or(false),
+                    };
+                    Ok(Json(SearchOut::Hits(core::search::search(
+                        &self.cx,
+                        &p.root_id,
+                        &q,
+                        p.main_rel.as_deref(),
+                        p.max.unwrap_or(core::search::MAX_HITS),
+                    )?)))
+                }
+                SearchAction::FindFiles => {
+                    let query = p.query.ok_or_else(|| {
+                        "find_files requires `query`: the fuzzy file-name string".to_string()
+                    })?;
+                    for (name, set) in [
+                        ("pattern", p.pattern.is_some()),
+                        ("regex", p.regex.is_some()),
+                        ("case_sensitive", p.case_sensitive.is_some()),
+                        ("whole_word", p.whole_word.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "find_files takes only query + max; remove `{name}` (use action `search` for text search)"
+                            ));
+                        }
+                    }
+                    Ok(Json(SearchOut::Files(FindFilesOut {
+                        files: core::search::find_files(
+                            &self.cx,
+                            &p.root_id,
+                            &query,
+                            p.max.unwrap_or(core::search::MAX_FILE_MATCHES),
+                        )?,
+                    })))
+                }
+            }
         })
     }
 
     #[tool(
-        description = "Preview replacing every match of a search (same pattern and flags as search; no cap) across the project's saved files. Writes nothing. Returns each file's revision, replacement count and before/after lines, plus a token for replace_apply. Regex replacements expand $1 / ${name}.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn replace_preview(
-        &self,
-        Parameters(p): Parameters<ReplacePreviewParams>,
-    ) -> Result<Json<maleficium_index::replace::ReplacePreview>, String> {
-        self.tool("replace_preview", || {
-            let q = maleficium_index::search::Query {
-                pattern: p.pattern,
-                regex: p.regex.unwrap_or(false),
-                case_sensitive: p.case_sensitive.unwrap_or(false),
-                whole_word: p.whole_word.unwrap_or(false),
-            };
-            Ok(Json(core::replace::preview(
-                &self.cx,
-                &p.root_id,
-                &q,
-                &p.replacement,
-                p.main_rel.as_deref(),
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Apply a previewed replace by its token. Refused whole, with nothing written, if any file changed since the preview (preview again). Each file's prior content is kept as one history batch; returns the batch for replace_undo and the files written.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = true,
-            idempotent_hint = false,
-            open_world_hint = false
-        )
-    )]
-    fn replace_apply(
-        &self,
-        Parameters(p): Parameters<ReplaceApplyParams>,
-    ) -> Result<Json<maleficium_index::replace::ReplaceApplied>, String> {
-        self.tool("replace_apply", || {
-            Ok(Json(core::replace::apply(
-                &self.cx,
-                &p.root_id,
-                &p.token,
-                &[],
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Undo an applied replace: every file of the batch back as it was before (the replaced state is kept in history too). Returns the files restored.",
+        description = "Preview, apply or undo a project-wide replace: `preview` dry-runs across saved files and returns per-file revisions plus a token, `apply` writes by token and is refused whole if any file changed since the preview, `undo` restores a batch. Always preview before apply; keep the batch to undo.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1666,14 +1766,94 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn replace_undo(
+    fn replace(
         &self,
-        Parameters(p): Parameters<ReplaceUndoParams>,
-    ) -> Result<Json<ReplaceUndoOut>, String> {
-        self.tool("replace_undo", || {
-            Ok(Json(ReplaceUndoOut {
-                restored: core::replace::undo(&self.cx, &p.root_id, &p.batch)?,
-            }))
+        Parameters(p): Parameters<ReplaceParams>,
+    ) -> Result<Json<ReplaceOut>, String> {
+        self.tool("replace", || {
+            match p.action {
+                ReplaceAction::Preview => {
+                    let pattern = p.pattern.ok_or_else(|| {
+                        "preview requires `pattern`: the same text or regex `search` would hunt"
+                            .to_string()
+                    })?;
+                    let replacement = p.replacement.ok_or_else(|| {
+                        "preview requires `replacement`: the text to write (`$1` / `${name}` expand under regex=true)".to_string()
+                    })?;
+                    for (name, set) in [
+                        ("token", p.token.is_some()),
+                        ("batch", p.batch.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "preview takes no `{name}`; it dry-runs and returns a token for `apply`"
+                            ));
+                        }
+                    }
+                    let q = maleficium_index::search::Query {
+                        pattern,
+                        regex: p.regex.unwrap_or(false),
+                        case_sensitive: p.case_sensitive.unwrap_or(false),
+                        whole_word: p.whole_word.unwrap_or(false),
+                    };
+                    Ok(Json(ReplaceOut::Preview(core::replace::preview(
+                        &self.cx,
+                        &p.root_id,
+                        &q,
+                        &replacement,
+                        p.main_rel.as_deref(),
+                    )?)))
+                }
+                ReplaceAction::Apply => {
+                    let token = p.token.ok_or_else(|| {
+                        "apply requires `token`: the token from `preview`".to_string()
+                    })?;
+                    for (name, set) in [
+                        ("pattern", p.pattern.is_some()),
+                        ("replacement", p.replacement.is_some()),
+                        ("regex", p.regex.is_some()),
+                        ("case_sensitive", p.case_sensitive.is_some()),
+                        ("whole_word", p.whole_word.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                        ("batch", p.batch.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "apply takes only `token`; remove `{name}` (preview again to change the plan)"
+                            ));
+                        }
+                    }
+                    Ok(Json(ReplaceOut::Applied(core::replace::apply(
+                        &self.cx,
+                        &p.root_id,
+                        &token,
+                        &[],
+                    )?)))
+                }
+                ReplaceAction::Undo => {
+                    let batch = p.batch.ok_or_else(|| {
+                        "undo requires `batch`: the batch id from `apply`".to_string()
+                    })?;
+                    for (name, set) in [
+                        ("pattern", p.pattern.is_some()),
+                        ("replacement", p.replacement.is_some()),
+                        ("regex", p.regex.is_some()),
+                        ("case_sensitive", p.case_sensitive.is_some()),
+                        ("whole_word", p.whole_word.is_some()),
+                        ("main_rel", p.main_rel.is_some()),
+                        ("token", p.token.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "undo takes only `batch`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    Ok(Json(ReplaceOut::Undone(ReplaceUndoOut {
+                        restored: core::replace::undo(&self.cx, &p.root_id, &batch)?,
+                    })))
+                }
+            }
         })
     }
 
@@ -1711,31 +1891,6 @@ impl Maleficium {
                     &p.root_id,
                     target,
                     p.main_rel.as_deref(),
-                )?,
-            }))
-        })
-    }
-
-    #[tool(
-        description = "Find project files by fuzzy name: every query character in order, case-insensitive; file-name and segment-start matches rank first. Returns root-relative paths, best first (default 50).",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn find_files(
-        &self,
-        Parameters(p): Parameters<FindFilesParams>,
-    ) -> Result<Json<FindFilesOut>, String> {
-        self.tool("find_files", || {
-            Ok(Json(FindFilesOut {
-                files: core::search::find_files(
-                    &self.cx,
-                    &p.root_id,
-                    &p.query,
-                    p.max.unwrap_or(core::search::MAX_FILE_MATCHES),
                 )?,
             }))
         })
@@ -2855,7 +3010,9 @@ mod tests {
         let search = m
             .search(Parameters(SearchParams {
                 root_id: "cov".into(),
-                pattern: "section".into(),
+                action: SearchAction::Search,
+                pattern: Some("section".into()),
+                query: None,
                 regex: None,
                 case_sensitive: None,
                 whole_word: None,
@@ -2863,39 +3020,67 @@ mod tests {
                 max: None,
             }))
             .unwrap();
-        assert!(search.0.hits >= 1);
+        assert!(matches!(search.0, SearchOut::Hits(ref r) if r.hits >= 1));
 
         let preview = m
-            .replace_preview(Parameters(ReplacePreviewParams {
+            .replace(Parameters(ReplaceParams {
                 root_id: "cov".into(),
-                pattern: "Hi".into(),
-                replacement: "Hello".into(),
+                action: ReplaceAction::Preview,
+                pattern: Some("Hi".into()),
+                replacement: Some("Hello".into()),
                 regex: None,
                 case_sensitive: None,
                 whole_word: None,
                 main_rel: None,
+                token: None,
+                batch: None,
             }))
             .unwrap();
-        assert_eq!(preview.0.replacements, 3);
+        let ReplaceOut::Preview(plan) = preview.0 else {
+            panic!("preview must return its plan");
+        };
+        assert_eq!(plan.replacements, 3);
         let applied = m
-            .replace_apply(Parameters(ReplaceApplyParams {
+            .replace(Parameters(ReplaceParams {
                 root_id: "cov".into(),
-                token: preview.0.token,
+                action: ReplaceAction::Apply,
+                pattern: None,
+                replacement: None,
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+                token: Some(plan.token),
+                batch: None,
             }))
             .unwrap();
-        assert!(applied.0.written.contains(&"main.tex".to_string()));
+        let ReplaceOut::Applied(done) = applied.0 else {
+            panic!("apply must return what it wrote");
+        };
+        assert!(done.written.contains(&"main.tex".to_string()));
         assert!(
             std::fs::read_to_string(canon.join("main.tex"))
                 .unwrap()
                 .contains("Hello")
         );
         let undone = m
-            .replace_undo(Parameters(ReplaceUndoParams {
+            .replace(Parameters(ReplaceParams {
                 root_id: "cov".into(),
-                batch: applied.0.batch,
+                action: ReplaceAction::Undo,
+                pattern: None,
+                replacement: None,
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
+                token: None,
+                batch: Some(done.batch),
             }))
             .unwrap();
-        assert!(undone.0.restored.iter().any(|f| f.rel == "main.tex"));
+        let ReplaceOut::Undone(restored) = undone.0 else {
+            panic!("undo must return what it restored");
+        };
+        assert!(restored.restored.iter().any(|f| f.rel == "main.tex"));
         assert!(
             std::fs::read_to_string(canon.join("main.tex"))
                 .unwrap()
@@ -2916,13 +3101,19 @@ mod tests {
         assert!(definition.0.lookup.is_some());
 
         let found = m
-            .find_files(Parameters(FindFilesParams {
+            .search(Parameters(SearchParams {
                 root_id: "cov".into(),
-                query: "main".into(),
+                action: SearchAction::FindFiles,
+                pattern: None,
+                query: Some("main".into()),
+                regex: None,
+                case_sensitive: None,
+                whole_word: None,
+                main_rel: None,
                 max: None,
             }))
             .unwrap();
-        assert!(!found.0.files.is_empty());
+        assert!(matches!(found.0, SearchOut::Files(ref f) if !f.files.is_empty()));
 
         assert!(
             m.diagnostics(Parameters(DiagnosticsParams {
@@ -3029,11 +3220,8 @@ mod tests {
             "document_structure",
             "precompile_checks",
             "search",
-            "replace_preview",
-            "replace_apply",
-            "replace_undo",
+            "replace",
             "definition",
-            "find_files",
             "diagnostics",
             "widgets",
             "widgets_status",
@@ -3051,6 +3239,322 @@ mod tests {
                 covered.contains(&t.name.as_ref()),
                 "tool `{}` has no coverage case",
                 t.name
+            );
+        }
+    }
+
+    fn search_params(action: SearchAction) -> SearchParams {
+        SearchParams {
+            root_id: "t".into(),
+            action,
+            pattern: None,
+            query: None,
+            regex: None,
+            case_sensitive: None,
+            whole_word: None,
+            main_rel: None,
+            max: None,
+        }
+    }
+
+    fn replace_params(action: ReplaceAction) -> ReplaceParams {
+        ReplaceParams {
+            root_id: "t".into(),
+            action,
+            pattern: None,
+            replacement: None,
+            regex: None,
+            case_sensitive: None,
+            whole_word: None,
+            main_rel: None,
+            token: None,
+            batch: None,
+        }
+    }
+
+    /// Grouped `search` validates per action: `search` needs `pattern`,
+    /// `find_files` needs `query`, each rejects the other's fields, and an
+    /// unknown action names the valid list with a did-you-mean hint. The
+    /// tool stays read-only: only `replace` writes.
+    #[test]
+    fn search_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "search").expect("search");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+
+        let m = Maleficium::default();
+        let err = m
+            .search(Parameters(search_params(SearchAction::Search)))
+            .err()
+            .expect("search without a pattern fails");
+        assert!(err.contains("pattern"), "{err}");
+
+        let err = m
+            .search(Parameters(search_params(SearchAction::FindFiles)))
+            .err()
+            .expect("find_files without a query fails");
+        assert!(err.contains("query"), "{err}");
+
+        let mut query_on_search = search_params(SearchAction::Search);
+        query_on_search.pattern = Some("x".into());
+        query_on_search.query = Some("x".into());
+        let err = m
+            .search(Parameters(query_on_search))
+            .err()
+            .expect("search rejects `query`");
+        assert!(err.contains("find_files"), "{err}");
+
+        let mut pattern_on_files = search_params(SearchAction::FindFiles);
+        pattern_on_files.query = Some("main".into());
+        pattern_on_files.pattern = Some("main".into());
+        let err = m
+            .search(Parameters(pattern_on_files))
+            .err()
+            .expect("find_files rejects `pattern`");
+        assert!(err.contains("find_files takes only query + max"), "{err}");
+
+        let err = serde_json::from_value::<SearchParams>(serde_json::json!({
+            "root_id": "r", "action": "find", "query": "x",
+        }))
+        .expect_err("an unknown action fails");
+        assert!(err.to_string().contains("[search, find_files]"), "{err}");
+
+        let err = serde_json::from_value::<SearchParams>(serde_json::json!({
+            "root_id": "r", "action": "serach", "pattern": "x",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `search`?"), "{err}");
+    }
+
+    /// Grouped `replace` keeps the token state machine across the split:
+    /// preview, apply and undo restore bytes, a token applies once, and a
+    /// plan over files changed since the preview is refused whole. Each
+    /// action names the field it needs. The worst action writes, so the
+    /// tool is honestly destructive.
+    #[test]
+    fn replace_token_flow() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "replace").expect("replace");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-replace-flow");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\section{Hi}\n").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "flow", &root.to_string_lossy()).unwrap();
+        let before = std::fs::read_to_string(root.join("main.tex")).unwrap();
+
+        let mut preview = replace_params(ReplaceAction::Preview);
+        preview.root_id = "flow".into();
+        preview.pattern = Some("Hi".into());
+        preview.replacement = Some("Hello".into());
+        let ReplaceOut::Preview(plan) = m.replace(Parameters(preview)).unwrap().0 else {
+            panic!("preview returns its plan");
+        };
+        assert!(!plan.token.is_empty());
+
+        let mut apply = replace_params(ReplaceAction::Apply);
+        apply.root_id = "flow".into();
+        apply.token = Some(plan.token.clone());
+        let ReplaceOut::Applied(done) = m.replace(Parameters(apply)).unwrap().0 else {
+            panic!("apply returns what it wrote");
+        };
+        assert!(done.written.contains(&"main.tex".to_string()));
+        assert!(
+            std::fs::read_to_string(root.join("main.tex"))
+                .unwrap()
+                .contains("Hello")
+        );
+
+        let mut again = replace_params(ReplaceAction::Apply);
+        again.root_id = "flow".into();
+        again.token = Some(plan.token.clone());
+        let err = m
+            .replace(Parameters(again))
+            .err()
+            .expect("a spent token fails");
+        assert!(err.contains("unknown or expired"), "{err}");
+
+        let mut undo = replace_params(ReplaceAction::Undo);
+        undo.root_id = "flow".into();
+        undo.batch = Some(done.batch);
+        let ReplaceOut::Undone(restored) = m.replace(Parameters(undo)).unwrap().0 else {
+            panic!("undo returns what it restored");
+        };
+        assert!(restored.restored.iter().any(|f| f.rel == "main.tex"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("main.tex")).unwrap(),
+            before
+        );
+
+        // A file changed after the preview refuses the whole plan.
+        let mut preview = replace_params(ReplaceAction::Preview);
+        preview.root_id = "flow".into();
+        preview.pattern = Some("Hi".into());
+        preview.replacement = Some("Hello".into());
+        let ReplaceOut::Preview(stale) = m.replace(Parameters(preview)).unwrap().0 else {
+            panic!("preview returns its plan");
+        };
+        std::fs::write(root.join("main.tex"), "edited elsewhere\n").unwrap();
+        let mut apply = replace_params(ReplaceAction::Apply);
+        apply.root_id = "flow".into();
+        apply.token = Some(stale.token);
+        let err = m
+            .replace(Parameters(apply))
+            .err()
+            .expect("a stale plan is refused");
+        assert!(err.contains("nothing replaced"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("main.tex")).unwrap(),
+            "edited elsewhere\n",
+            "a refused plan writes nothing"
+        );
+
+        let mut no_replacement = replace_params(ReplaceAction::Preview);
+        no_replacement.pattern = Some("x".into());
+        let err = m
+            .replace(Parameters(no_replacement))
+            .err()
+            .expect("preview without a replacement fails");
+        assert!(err.contains("replacement"), "{err}");
+
+        let err = m
+            .replace(Parameters(replace_params(ReplaceAction::Apply)))
+            .err()
+            .expect("apply without a token fails");
+        assert!(err.contains("token"), "{err}");
+
+        let err = m
+            .replace(Parameters(replace_params(ReplaceAction::Undo)))
+            .err()
+            .expect("undo without a batch fails");
+        assert!(err.contains("batch"), "{err}");
+
+        let err = serde_json::from_value::<ReplaceParams>(serde_json::json!({
+            "root_id": "r", "action": "aply", "token": "t",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `apply`?"), "{err}");
+    }
+
+    /// The grouped tools refuse unknown fields at the schema and at the
+    /// action: serde rejects extras (mirroring `app_request_open`), the
+    /// schemas carry `additionalProperties: false`, and the property lists
+    /// stay flat objects. Handler checks catch per-action extras the
+    /// schema cannot see, before touching the project.
+    #[test]
+    fn search_and_replace_reject_unknown_fields() {
+        let tools = Maleficium::tool_router().list_all();
+        let schema_of = |name: &str| {
+            let t = tools.iter().find(|t| t.name == name).expect(name);
+            serde_json::to_value(&*t.input_schema).unwrap()
+        };
+        let search_schema = schema_of("search");
+        let mut search_props: Vec<&str> = search_schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        search_props.sort();
+        assert_eq!(
+            search_props,
+            [
+                "action",
+                "case_sensitive",
+                "main_rel",
+                "max",
+                "pattern",
+                "query",
+                "regex",
+                "root_id",
+                "whole_word"
+            ]
+        );
+        let replace_schema = schema_of("replace");
+        let mut replace_props: Vec<&str> = replace_schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        replace_props.sort();
+        assert_eq!(
+            replace_props,
+            [
+                "action",
+                "batch",
+                "case_sensitive",
+                "main_rel",
+                "pattern",
+                "regex",
+                "replacement",
+                "root_id",
+                "token",
+                "whole_word"
+            ]
+        );
+        for name in ["search", "replace"] {
+            assert_eq!(schema_of(name)["additionalProperties"], false, "{name}");
+        }
+        assert!(
+            serde_json::from_value::<SearchParams>(serde_json::json!({
+                "root_id": "r", "action": "search", "pattern": "x", "token": "t",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ReplaceParams>(serde_json::json!({
+                "root_id": "r", "action": "apply", "token": "t", "approve": true,
+            }))
+            .is_err()
+        );
+
+        // Per-action extras die in the handler, on an ungranted root: no
+        // project is touched to learn the fields do not belong.
+        let m = Maleficium::default();
+        let mut apply = replace_params(ReplaceAction::Apply);
+        apply.token = Some("t".into());
+        apply.batch = Some("b".into());
+        let err = m
+            .replace(Parameters(apply))
+            .err()
+            .expect("apply rejects `batch`");
+        assert!(err.contains("apply takes only `token`"), "{err}");
+    }
+
+    /// Grouped tools stay under the token budget: every registered tool
+    /// costs under 1000 tokens of input schema plus description (chars/4),
+    /// so a later noun tool that creeps over fails here instead of in a
+    /// rescan. The count pins the 43-to-40 split of this phase.
+    #[test]
+    fn grouped_tools_stay_under_token_budget() {
+        let tools = Maleficium::tool_router().list_all();
+        assert_eq!(
+            tools.len(),
+            40,
+            "the search+replace split lands at 40 tools"
+        );
+        for t in &tools {
+            let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
+            let desc = t.description.as_deref().unwrap_or("");
+            let est = (schema.len() + desc.len()) / 4;
+            assert!(
+                est < 1000,
+                "tool `{}` costs ~{est} tokens (input schema {} chars + description {} chars)",
+                t.name,
+                schema.len(),
+                desc.len()
             );
         }
     }
