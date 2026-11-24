@@ -80,15 +80,15 @@ def snap():
     return out
 orig = snap()
 pv = call("replace", {"root_id": "s", "action": "preview", "pattern": r"\\ref\{(sec:\w+)\}", "regex": True, "case_sensitive": True, "replacement": r"\cref{$1}"})
-check("replace_preview plans files and writes nothing", pv["ok"] and pv["replacements"] > 0 and snap() == orig, pv)
+check("replace preview plans files and writes nothing", pv["ok"] and pv["replacements"] > 0 and snap() == orig, pv)
 ap = call("replace", {"root_id": "s", "action": "apply", "token": pv["token"]})
-check("replace_apply writes every planned file", ap["ok"] and sorted(ap["written"]) == sorted(f["rel"] for f in pv["files"]), ap)
+check("replace apply writes every planned file", ap["ok"] and sorted(ap["written"]) == sorted(f["rel"] for f in pv["files"]), ap)
 after = snap()
 changed = [k for k in orig if orig[k] != after[k]]
 check("only planned files changed, with groups expanded", sorted(changed) == sorted(ap["written"]) and b"\\cref{sec:" in after[changed[0]], changed)
 check("a plan applies once", not call("replace", {"root_id": "s", "action": "apply", "token": pv["token"]})["ok"])
 un = call("replace", {"root_id": "s", "action": "undo", "batch": ap["batch"]})
-check("replace_undo restores the exact bytes", un["ok"] and snap() == orig, un)
+check("replace undo restores the exact bytes", un["ok"] and snap() == orig, un)
 
 d = call("structure", {"root_id": "s", "action": "definition", "kind": "label", "key": "sec:intro"})
 check("definition finds a label", d["ok"] and d["lookup"]["definitions"][0]["rel"] == "main.tex", d)

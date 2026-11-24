@@ -68,7 +68,7 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => (out.error ??= `page error: ${e}`));
   await page.exposeFunction('mcpCall', async (params) => {
-    if (params.name === 'snippet_render') out.renderCalls++;
+    if (params.name === 'sync_render') out.renderCalls++;
     return client.callTool({ name: params.name, arguments: params.arguments });
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);

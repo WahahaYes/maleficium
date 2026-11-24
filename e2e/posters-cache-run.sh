@@ -14,7 +14,7 @@
 #   5. porcelain shows only the edited paper and .maleficium/, search and
 #      find_files never list the cache, the watcher never queues it (core
 #      test), and a hand-edited README survives;
-#   6. export_zip carries posters, map and README; the unzipped paper
+#   6. export_write zip carries posters, map and README; the unzipped paper
 #      compiles with its posters through a sidecar with no app beside it
 #      and no display, leaving .maleficium as it was; the bundle export
 #      takes the cached posters.
@@ -215,7 +215,7 @@ check("the bundle export takes the cached posters", b["ok"], str(b)[:300])
 zp = os.path.join(SCRATCH, "paper.zip")
 z = call("export_write", {"root_id": "pc", "action": "zip", "dest": zp})
 files = z.get("files") or []
-check("export_zip carries the posters, the map and the README",
+check("export_write zip carries the posters, the map and the README",
       z["ok"] and ".maleficium/README.md" in files and ".maleficium/posters/auto.map" in files
       and all(f".maleficium/posters/{p}" in files for p in pngs()), str(files)[:400])
 mcp.p.kill()
