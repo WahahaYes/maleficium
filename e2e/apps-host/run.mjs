@@ -2,7 +2,7 @@
 // drives the real maleficium-mcp over stdio, plays a chat client in headless
 // Firefox, and checks what a View shows with and without the model asking
 // for an image, and what it does when the user pages or a compile lands.
-// The compile dashboard (mcp.5) follows a compile_run job to success, to a
+// The compile dashboard (mcp.5) follows a paper start job to success, to a
 // failure with its source line, and to a cancel, polling only while visible.
 //
 //   node e2e/apps-host/run.mjs [--shots <dir>]
@@ -57,9 +57,10 @@ const text = (r) =>
     .join('');
 
 await call('session', { root_id: 'h', action: 'grant', root: proj });
-const job = (await call('compile_run', { root_id: 'h', rel: 'main.tex' })).structuredContent.job_id;
+const job = (await call('paper', { action: 'start', root_id: 'h', main_rel: 'main.tex' }))
+  .structuredContent.job_id;
 for (let i = 0; i < 600; i++) {
-  const s = (await call('compile_poll', { job_id: job, tail_lines: 1 })).structuredContent;
+  const s = (await call('paper', { action: 'poll', job_id: job, tail_lines: 1 })).structuredContent;
   if (s.status !== 'running') {
     check('fixture compiles', s.status === 'success', JSON.stringify(s).slice(0, 200));
     break;
@@ -232,11 +233,12 @@ for (const theme of ['light', 'dark']) {
     (await call('file', { root_id: 'h', action: 'read', rel: 'main.tex' })).structuredContent.text +
       '\n%touch\n',
   );
-  const j = (await call('compile_run', { root_id: 'h', rel: 'main.tex' })).structuredContent.job_id;
+  const j = (await call('paper', { action: 'start', root_id: 'h', main_rel: 'main.tex' }))
+    .structuredContent.job_id;
   for (let i = 0; i < 240; i++) {
     if (
-      (await call('compile_poll', { job_id: j, tail_lines: 1 })).structuredContent.status !==
-      'running'
+      (await call('paper', { action: 'poll', job_id: j, tail_lines: 1 })).structuredContent
+        .status !== 'running'
     )
       break;
     await new Promise((r) => setTimeout(r, 500));
@@ -265,7 +267,7 @@ writeFileSync(
     ' \\advance\\n by 1 \\ifnum\\n<20000 \\repeat\n\\end{document}\n',
 );
 
-// The model calls compile_run; the host renders its View with that result.
+// The model calls paper start; the host renders its View with that result.
 async function openDashboard(rel, theme = 'light') {
   const page = await browser.newPage();
   page.on('pageerror', (e) => check('no page error', false, String(e)));
@@ -274,8 +276,8 @@ async function openDashboard(rel, theme = 'light') {
     return call(params.name, params.arguments);
   });
   await page.goto(url);
-  const args = { root_id: 'h', rel };
-  const toolResult = await call('compile_run', args);
+  const args = { action: 'start', root_id: 'h', main_rel: rel };
+  const toolResult = await call('paper', args);
   await page.evaluate((o) => window.runView(o), {
     html: dashHtml,
     toolInput: { arguments: args },
@@ -301,13 +303,13 @@ async function statuses(view, timeout = 120000) {
   }
   return seen;
 }
-const polls = () => toolCalls.filter((n) => n === 'compile_poll').length;
+const polls = () => toolCalls.filter((n) => n === 'paper').length;
 
 {
   toolCalls.length = 0;
   const { page, view, toolResult } = await openDashboard('main.tex');
   check(
-    'compile_run keeps its text result and names the main file',
+    'paper start keeps its text result and names the main file',
     toolResult.structuredContent.main_rel === 'main.tex' &&
       text(toolResult).includes(toolResult.structuredContent.job_id),
     text(toolResult),
@@ -338,8 +340,8 @@ const polls = () => toolCalls.filter((n) => n === 'compile_poll').length;
   await page.waitForTimeout(3000);
   check('polling stops once the compile settles', polls() === after, `${after} -> ${polls()}`);
   check(
-    'the dashboard reads only tools a text host sees too',
-    toolCalls.every((n) => ['compile_poll', 'offline_readiness', 'diagnostics'].includes(n)),
+    'the dashboard reads only the paper tool a text host sees too',
+    toolCalls.every((n) => ['paper'].includes(n)),
     String([...new Set(toolCalls)]),
   );
   await page.close();
@@ -407,7 +409,7 @@ const polls = () => toolCalls.filter((n) => n === 'compile_poll').length;
   await cancel.click();
   const seen = await statuses(view, 15000);
   check('cancel stops the running compile', seen.includes('cancelled'), seen.join(' -> '));
-  check('cancel went through compile_cancel', toolCalls.includes('compile_cancel'));
+  check('cancel went through paper cancel', toolCalls.includes('paper'));
   check('a cancelled compile hides cancel', !(await cancel.isVisible()));
   check(
     'the dashboard says nothing was written',

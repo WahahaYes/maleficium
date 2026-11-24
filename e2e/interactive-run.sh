@@ -74,14 +74,14 @@ def call(name, args):
     return flat(mcp.tool(name, args))
 
 def compile(rel, rounds=ROUNDS):
-    r = call("compile_run", {"root_id": "ip", "rel": rel})
+    r = call("paper", {"action": "start", "root_id": "ip", "main_rel": rel})
     job = r.get("job_id") or ""
     if not (r["ok"] and job):
         return {"status": "not-started", "log": str(r)}
     rec = {"status": "running"}
     for _ in range(rounds):
         time.sleep(3)
-        rec = call("compile_poll", {"job_id": job, "tail_lines": 5})
+        rec = call("paper", {"action": "poll", "job_id": job, "tail_lines": 5})
         if rec.get("status") != "running":
             break
     return rec
@@ -138,10 +138,10 @@ rects = re.findall(rb"/Rect\s*\[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]", blob)
 check("annotation rects are well-formed", len(rects) >= 5 and all(float(a) < float(c) and float(b) < float(d) for a, b, c, d in rects), str(rects[:6]))
 
 # The core joins the sidecar with the annotation rects: one typed list.
-w = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
-check("widgets lists the compiled fixture", w["ok"], str(w)[:300])
+w = call("widget", {"action": "list", "root_id": "ip", "main_rel": "main.tex"})
+check("widget list shows the compiled fixture", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
-check("widgets returns every widget in document order",
+check("widget list returns every widget in document order",
       # Without the per-widget mark lines both floats fit on page 1, so the
       # pre-caption clip float sorts before the inline widgets that follow.
       [x["id"] for x in wl] == ["fig-mesh", "fig-clip", "tab-results", "fig-chart", "fig-plotly", "fig-demo"],
@@ -153,7 +153,7 @@ BUILTINS = {d for d in os.listdir(src) if os.path.isfile(os.path.join(src, d, "r
 def listed_type(rec):
     name = rec[3].split("@")[0]
     return name if rec[2] == "custom" and name in BUILTINS else rec[2]
-check("widgets agree with the sidecar on type and runtime",
+check("widget list agrees with the sidecar on type and runtime",
       all(x["type"] == listed_type(by_id[x["id"]]) and x.get("runtime", "") == by_id[x["id"]][3] for x in wl),
       str(wl)[:300])
 check("widget rects are the pdf annotation rects",
@@ -175,20 +175,20 @@ check("widgets outside a float list no label or figure",
 # A sidecar that lost track of the pdf is an error, not a shorter list.
 mfw_good = open(mfw).read()
 open(mfw, "w").write(mfw_good + "widget|ghost|chart|chart@1|||house|p.png|spec=a.json|height=1pt|Ghost\n")
-ws = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
+ws = call("widget", {"action": "list", "root_id": "ip", "main_rel": "main.tex"})
 check("stale sidecar is an error naming the id",
       not ws["ok"] and "ghost" in ws["error"] and "recompile" in ws["error"], str(ws)[:300])
 os.remove(mfw)
-wm = call("widgets", {"root_id": "ip", "main_rel": "main.tex"})
+wm = call("widget", {"action": "list", "root_id": "ip", "main_rel": "main.tex"})
 check("missing sidecar beside an annotated pdf is an error",
       not wm["ok"] and "no widget sidecar" in wm["error"], str(wm)[:300])
 open(mfw, "w").write(mfw_good)
-wn = call("widgets", {"root_id": "ip", "main_rel": "bad-id.tex"})
-check("widgets before any compile is an error", not wn["ok"] and "compile it first" in wn["error"], str(wn)[:300])
-wu = call("widgets", {"root_id": "nope", "main_rel": "main.tex"})
-check("widgets refuses unknown roots", not wu["ok"], str(wu)[:200])
-wtool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "widgets"), {})
-check("widgets is advertised read-only and idempotent",
+wn = call("widget", {"action": "list", "root_id": "ip", "main_rel": "bad-id.tex"})
+check("widget list before any compile is an error", not wn["ok"] and "compile it first" in wn["error"], str(wn)[:300])
+wu = call("widget", {"action": "list", "root_id": "nope", "main_rel": "main.tex"})
+check("widget list refuses unknown roots", not wu["ok"], str(wu)[:200])
+wtool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "widget"), {})
+check("widget is advertised read-only and idempotent",
       (wtool.get("annotations") or {}).get("readOnlyHint") is True
       and (wtool.get("annotations") or {}).get("idempotentHint") is True, str(wtool)[:300])
 import shutil
@@ -271,17 +271,17 @@ llog = open(ltex, errors="replace").read() if os.path.isfile(ltex) else ""
 check("a result undefined in its range warns", "result 1 of eq-2 is undefined at x = 0" in llog, ltex)
 check("a result that outgrows its static value warns",
       "result 1 of eq-decay shows 100.0" in llog, ltex)
-lw = call("widgets", {"root_id": "ip", "main_rel": "liveeq.tex"})
+lw = call("widget", {"action": "list", "root_id": "ip", "main_rel": "liveeq.tex"})
 check("the widget list reads live equation records", lw["ok"], str(lw)[:300])
 cr = compile("liveeq-chained.tex")
 check("a formula only the app refuses still compiles", cr.get("status") == "success", str(cr)[:200])
-cw = call("widgets", {"root_id": "ip", "main_rel": "liveeq-chained.tex"})
+cw = call("widget", {"action": "list", "root_id": "ip", "main_rel": "liveeq-chained.tex"})
 check("the widget list refuses it, naming why",
       not cw["ok"] and "chained comparisons are not allowed" in cw.get("error", ""), str(cw)[:300])
 
 pr = compile("plain.tex", rounds=20)
 check("package-free document compiles", pr.get("status") == "success", str(pr)[:200])
-wp = call("widgets", {"root_id": "ip", "main_rel": "plain.tex"})
+wp = call("widget", {"action": "list", "root_id": "ip", "main_rel": "plain.tex"})
 check("package-free document lists no widgets", wp["ok"] and wp.get("widgets") == [], str(wp)[:200])
 
 # A custom runtime widget compiles with no runtimes/ folder in the project and
@@ -318,7 +318,7 @@ check("custom runtime without poster= records an empty poster field",
 # value of the wrong type fails the list, naming the option.
 br = compile("builtin-options.tex", rounds=20)
 check("built-in runtime options compile", br.get("status") == "success", str(br)[:200])
-bw = call("widgets", {"root_id": "ip", "main_rel": "builtin-options.tex"})
+bw = call("widget", {"action": "list", "root_id": "ip", "main_rel": "builtin-options.tex"})
 bby = {w["id"]: {o["key"]: o["value"] for o in w["options"]} for w in bw.get("widgets", [])} if bw["ok"] else {}
 check("video options ride to the widget list",
       bby.get("fig-loop", {}).get("loop") == "true" and bby["fig-loop"].get("muted") == "true", str(bby)[:300])
@@ -328,7 +328,7 @@ check("table options ride to the widget list as written",
       str(bby)[:300])
 tr = compile("builtin-option-type.tex", rounds=20)
 check("a mistyped built-in option still compiles", tr.get("status") == "success", str(tr)[:200])
-tw = call("widgets", {"root_id": "ip", "main_rel": "builtin-option-type.tex"})
+tw = call("widget", {"action": "list", "root_id": "ip", "main_rel": "builtin-option-type.tex"})
 check("...and the widget list names it",
       not tw["ok"] and "fig-yes" in tw["error"] and "option loop=`yes` is not a boolean" in tw["error"], str(tw)[:300])
 # A hookless built-in takes any key the package lets through; its runtime
@@ -337,7 +337,7 @@ for doc, want in [("bad-option.tex", "runtime model@1 has no option `zoom`"),
                   ("bad-param.tex", "camera")]:
     r = compile(doc, rounds=20)
     check(f"{doc} compiles", r.get("status") == "success", str(r)[:200])
-    w = call("widgets", {"root_id": "ip", "main_rel": doc})
+    w = call("widget", {"action": "list", "root_id": "ip", "main_rel": doc})
     check(f"...and the widget list refuses it", not w["ok"] and want in w["error"], str(w)[:300])
 
 mcp.p.kill()

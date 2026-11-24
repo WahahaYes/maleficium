@@ -74,7 +74,7 @@ def one(dir, pattern):
 
 
 def compile_probe(cmd, scratch, env=None):
-    """initialize -> session grant -> compile_run -> compile_poll -> sync_view forward over
+    """initialize -> session grant -> paper start -> paper poll -> sync_view forward over
     the stdio of an installed MCP server, started as `cmd` (a list)."""
     os.makedirs(scratch, exist_ok=True)
     with open(os.path.join(scratch, "main.tex"), "w") as f:
@@ -91,11 +91,11 @@ def compile_probe(cmd, scratch, env=None):
     if who["name"] != "maleficium":
         fail("%s: serverInfo is %s" % (" ".join(cmd), who))
     call("session", {"root_id": "smoke", "action": "grant", "root": scratch})
-    job = call("compile_run", {"root_id": "smoke", "rel": "main.tex"})["job_id"]
+    job = call("paper", {"action": "start", "root_id": "smoke", "main_rel": "main.tex"})["job_id"]
     deadline = time.time() + 300
     rec = {"status": "running"}
     while rec["status"] == "running" and time.time() < deadline:
-        rec = call("compile_poll", {"job_id": job, "tail_lines": 5, "wait_ms": 30000})
+        rec = call("paper", {"action": "poll", "job_id": job, "tail_lines": 5, "wait_ms": 30000})
     if rec["status"] != "success":
         path = os.path.join(SMOKE_LOGS, "compile-%s.log" % os.path.basename(cmd[0]))
         with open(path, "w") as f:

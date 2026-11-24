@@ -155,15 +155,15 @@ def call(name, args):
 
 check("grant project root", call("session", {"root_id": "pp", "action": "grant", "root": ROOT})["ok"])
 before = tree(ROOT)
-r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
+r = call("paper", {"action": "start", "root_id": "pp", "main_rel": "posters.tex"})
 rec = {"status": "not-started", "log": str(r)}
 for _ in range(120 if r.get("job_id") else 0):
     time.sleep(3)
-    rec = call("compile_poll", {"job_id": r["job_id"], "tail_lines": 5})
+    rec = call("paper", {"action": "poll", "job_id": r["job_id"], "tail_lines": 5})
     if rec.get("status") != "running":
         break
 check("posters.tex compiles", rec.get("status") == "success", str(rec)[:400])
-wl = call("widgets", {"root_id": "pp", "main_rel": "posters.tex"})
+wl = call("widget", {"action": "list", "root_id": "pp", "main_rel": "posters.tex"})
 ws = {w["id"]: w for w in wl.get("widgets") or []}
 opt = lambda w, k: next((o["value"] for o in ws.get(w, {}).get("options", []) if o["key"] == k), None)
 check("the pos/target/up camera is recorded as a canonical matrix",
@@ -474,11 +474,11 @@ check("the project is untouched, explicit posters included",
 mcp = McpClient([os.environ["MCP_BIN"]], "posters-compile")
 check("grant project root again", call("session", {"root_id": "pp", "action": "grant", "root": ROOT})["ok"])
 def compile_lines():
-    r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
+    r = call("paper", {"action": "start", "root_id": "pp", "main_rel": "posters.tex"})
     rec = {"status": "not-started", "log": str(r)}
     for _ in range(120 if r.get("job_id") else 0):
         time.sleep(2)
-        rec = call("compile_poll", {"job_id": r["job_id"], "tail_lines": 400})
+        rec = call("paper", {"action": "poll", "job_id": r["job_id"], "tail_lines": 400})
         if rec.get("status") != "running":
             break
     return rec

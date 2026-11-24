@@ -97,11 +97,11 @@ def client(binary, name, env=None):
 mcp, call = client(os.environ["MCP_BIN"], "poster-cache")
 
 def compile(call, root_id, rel="auto.tex"):
-    r = call("compile_run", {"root_id": root_id, "rel": rel})
+    r = call("paper", {"action": "start", "root_id": root_id, "main_rel": rel})
     rec = {"status": "not-started", "log": str(r)}
     for _ in range(160 if r.get("job_id") else 0):
         time.sleep(2)
-        rec = call("compile_poll", {"job_id": r["job_id"], "tail_lines": 400})
+        rec = call("paper", {"action": "poll", "job_id": r["job_id"], "tail_lines": 400})
         if rec.get("status") != "running":
             break
     return rec
@@ -140,7 +140,7 @@ pdf = r1.get("pdf_url") or ""
 check("the first compile renders both posters",
       "posters: 0 cached, 2 rendered, 0 placeholder" in posters_lines(r1), str(posters_lines(r1)))
 imgs = images(pdf)
-wl = call("widgets", {"root_id": "pc", "main_rel": "auto.tex"})
+wl = call("widget", {"action": "list", "root_id": "pc", "main_rel": "auto.tex"})
 ws = {w["id"]: w for w in wl.get("widgets") or []}
 check("both widgets are listed without a poster=",
       set(ws) == {"auto-model", "auto-chart"} and all("poster" not in w for w in ws.values()), str(wl)[:300])

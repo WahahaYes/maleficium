@@ -104,13 +104,13 @@ class Mcp(McpClient):
         return [t["name"] for t in self.request("tools/list", {})["result"]["tools"]]
 
     def compile(self, root_id, rel, timeout=600):
-        ok, job = self.call("compile_run", {"root_id": root_id, "rel": rel})
+        ok, job = self.call("paper", {"action": "start", "root_id": root_id, "main_rel": rel})
         if not ok:
             return {"status": "refused", "error": job}
         deadline = time.time() + timeout
         rec = {"status": "running"}
         while rec.get("status") == "running" and time.time() < deadline:
-            ok, rec = self.call("compile_poll", {"job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
+            ok, rec = self.call("paper", {"action": "poll", "job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
             if not ok:
                 return {"status": "poll-error", "error": rec}
         return rec
@@ -130,7 +130,7 @@ def pdf_stamp(server, home, project, main):
         ok, _ = mcp.call("session", {"root_id": "stamp", "action": "grant", "root": project})
         if not ok:
             return None
-        ok, r = mcp.call("output_stamp", {"root_id": "stamp", "main_rel": main})
+        ok, r = mcp.call("paper", {"action": "output", "root_id": "stamp", "main_rel": main})
         return (r or {}).get("stamp") if ok else None
     finally:
         mcp.close()
@@ -417,7 +417,7 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
 def run_agent_script(scenario, server, run_dir, warm, answer=None, skip=()):
     """No model: the scenario's `script` played by a fake agent. Each step is
     an MCP call (`{"tool", "args"}`, `{project}` filled in) or `{"compile":
-    main}` (compile_run, then compile_poll until done); `answer` is the final
+    main}` (paper start, then paper poll until done); `answer` is the final
     reply, with `{page}`, `{pages}` and `{wrong_page}` taken from the last
     snippet result. It writes a claude stream-json transcript, so the
     oracles and read_events_claude see exactly what a real run gives them.
@@ -446,10 +446,10 @@ def run_agent_script(scenario, server, run_dir, warm, answer=None, skip=()):
     try:
         for step in script["steps"]:
             if "compile" in step:
-                job = call("compile_run", {"root_id": "agent", "rel": step["compile"]})["structuredContent"]
+                job = call("paper", {"action": "start", "root_id": "agent", "main_rel": step["compile"]})["structuredContent"]
                 rec = {"status": "running"}
                 while rec.get("status") == "running":
-                    rec = call("compile_poll", {"job_id": job["job_id"], "wait_ms": 30000})["structuredContent"]
+                    rec = call("paper", {"action": "poll", "job_id": job["job_id"], "wait_ms": 30000})["structuredContent"]
                 continue
             if step["tool"] in skip:
                 continue
@@ -730,7 +730,7 @@ class Judge:
         if rec.get("status") != "success":
             return False, "did not compile"
         m = self.mcp()
-        ok, d = m.call("diagnostics", {"root_id": "judge", "main_rel": main, "max": 200})
+        ok, d = m.call("paper", {"action": "diagnostics", "root_id": "judge", "main_rel": main, "max": 200})
         if not ok:
             return False, "diagnostics refused: " + d
         bad = ["%s:%s %s" % (x.get("path"), x["line"], x["message"][:80]) for x in d["diagnostics"]
@@ -1178,7 +1178,7 @@ def self_test_runtime_authoring(server):
     with tempfile.TemporaryDirectory(dir="/var/tmp") as home:
         mcp = Mcp(server, home)
         try:
-            ok, draft = mcp.call("runtime_scaffold", {"name": "self-test-draft"})
+            ok, draft = mcp.call("runtime_read", {"action": "scaffold", "name": "self-test-draft"})
             check("scaffold", ok, draft if not ok else draft["reference"])
             if ok:
                 want = {"runtime.json", "index.html", "bridge.js", "samples/photo.svg", "LICENSE"}
@@ -1186,7 +1186,7 @@ def self_test_runtime_authoring(server):
                         for r, _, fs in os.walk(draft["path"]) for f in fs}
                 check("draft-shape", draft["reference"] == "self-test-draft@1" and want <= have,
                       sorted(have))
-                ok, valid = mcp.call("runtime_validate", {"reference": draft["reference"]})
+                ok, valid = mcp.call("runtime_read", {"action": "validate", "reference": draft["reference"]})
                 check("draft-validates", ok and valid["valid"] and not valid["errors"]
                       and not valid["warnings"], valid if ok else valid)
             with tempfile.TemporaryDirectory(dir="/var/tmp") as p:
@@ -1194,13 +1194,13 @@ def self_test_runtime_authoring(server):
                                 os.path.join(p, "runtimes", "bad-cdn@1"))
                 ok, _ = mcp.call("session", {"root_id": "rt", "action": "grant", "root": p})
                 check("grant", ok)
-                ok, red = mcp.call("runtime_validate",
-                                   {"root_id": "rt", "reference": "bad-cdn@1"})
+                ok, red = mcp.call("runtime_read",
+                                   {"action": "validate", "root_id": "rt", "reference": "bad-cdn@1"})
                 check("bad-cdn-fails-url-load",
                       ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
                       red if ok else red)
-            ok, fork = mcp.call("runtime_scaffold",
-                                {"name": "self-test-fork", "from": "model@1"})
+            ok, fork = mcp.call("runtime_read",
+                                {"action": "scaffold", "name": "self-test-fork", "from": "model@1"})
             check("fork-scaffold", ok, fork if not ok else fork["reference"])
             if ok:
                 want = {"runtime.json", "index.html", "bridge.js", "viewer.js",
@@ -1213,7 +1213,7 @@ def self_test_runtime_authoring(server):
                 # The fork is the built-in viewer as a readable classic
                 # script over vendored three.js: untouched, it validates
                 # with a silent scan, so it can go straight to install.
-                ok, green = mcp.call("runtime_validate", {"reference": fork["reference"]})
+                ok, green = mcp.call("runtime_read", {"action": "validate", "reference": fork["reference"]})
                 check("fork-validates-untouched",
                       ok and green["valid"] and not green["errors"] and not green["warnings"],
                       green if ok else green)
@@ -1231,7 +1231,7 @@ def self_test_runtime_authoring(server):
                           and inst["path"] == "runtimes/self-test-fork@1"
                           and os.path.isfile(os.path.join(proj, "runtimes", "self-test-fork@1", "viewer.js")),
                           inst)
-                    ok, there = mcp.call("runtime_validate", args)
+                    ok, there = mcp.call("runtime_read", {"action": "validate", **args})
                     check("install-validates-in-project", ok and there["valid"], there)
                     ok, again = mcp.call("runtime_install", args)
                     check("install-again-unchanged", ok and again["outcome"] == "unchanged", again)
@@ -1247,8 +1247,8 @@ def self_test_runtime_authoring(server):
                                 os.path.join(q, "runtimes", "bad-cdn@1"))
                 ok, _ = mcp.call("session", {"root_id": "rt-fix", "action": "grant", "root": q})
                 check("grant-fix", ok)
-                ok, red = mcp.call("runtime_validate",
-                                   {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                ok, red = mcp.call("runtime_read",
+                                   {"action": "validate", "root_id": "rt-fix", "reference": "bad-cdn@1"})
                 check("repair-fails-url-load",
                       ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
                       red if ok else red)
@@ -1258,14 +1258,14 @@ def self_test_runtime_authoring(server):
                 fixed = "\n".join(l for l in text.split("\n") if "cdn.example.com" not in l)
                 with open(entry, "w") as f:
                     f.write(fixed)
-                ok, green = mcp.call("runtime_validate",
-                                     {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                ok, green = mcp.call("runtime_read",
+                                     {"action": "validate", "root_id": "rt-fix", "reference": "bad-cdn@1"})
                 check("repair-fixed-validates",
                       ok and green["valid"] and not green["errors"],
                       green if ok else green)
-            ok, _ = mcp.call("runtime_scaffold", {"name": "nope", "approve": True})
+            ok, _ = mcp.call("runtime_read", {"action": "scaffold", "name": "nope", "approve": True})
             check("scaffold-refuses-approval", not ok)
-            ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
+            ok, _ = mcp.call("runtime_read", {"action": "validate", "reference": "nope@1", "allow": True})
             check("validate-refuses-approval", not ok)
             ok, _ = mcp.call("runtime_install",
                              {"root_id": "rt-inst", "reference": "nope@1", "approve": True})

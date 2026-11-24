@@ -6,7 +6,7 @@
   "timeout_s": 600,
   "oracles": [
     {
-      "called": ["replace", "replace", "compile_run", "replace"]
+      "called": ["replace", "replace", "paper", "replace"]
     },
     {
       "restored": null

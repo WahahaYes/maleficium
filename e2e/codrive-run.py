@@ -160,7 +160,7 @@ def run_script(runner, scenario, server, model, agent_dir, project, home, tl):
             tl.mark("script.edit", file=edit["file"])
             time.sleep(2)
             rec = mcp.compile("script", scenario["codrive"]["main"])
-            calls.append({"tool": "compile_run", "input": {"rel": scenario["codrive"]["main"]},
+            calls.append({"tool": "paper", "input": {"main_rel": scenario["codrive"]["main"]},
                           "ok": rec.get("status") == "success", "status": rec.get("status"), "error": None})
             tl.mark("script.compiled", status=rec.get("status"))
     finally:

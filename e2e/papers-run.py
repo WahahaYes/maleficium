@@ -90,21 +90,21 @@ def run_paper(mcp, paper, scratch):
     ok, g = mcp.tool("session", {"root_id": paper["name"], "action": "grant", "root": proj})
     if not ok:
         return {"status": "grant-failed", "blocker": g}
-    ok, pre = mcp.tool("precompile_checks", {"root_id": paper["name"], "main_rel": paper["main"]})
+    ok, pre = mcp.tool("paper", {"action": "prechecks", "root_id": paper["name"], "main_rel": paper["main"]})
     findings = pre.get("findings", []) if ok else []
     t0 = time.time()
-    ok, job = mcp.tool("compile_run", {"root_id": paper["name"], "rel": paper["main"]})
+    ok, job = mcp.tool("paper", {"action": "start", "root_id": paper["name"], "main_rel": paper["main"]})
     if not ok:
         return {"status": "refused", "blocker": job}
     rec, deadline = {"status": "running"}, t0 + COMPILE_TIMEOUT
     while rec.get("status") == "running" and time.time() < deadline:
-        ok, rec = mcp.tool("compile_poll", {"job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
+        ok, rec = mcp.tool("paper", {"action": "poll", "job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
         if not ok:
             return {"status": "poll-failed", "blocker": rec}
     if rec.get("status") == "running":
-        mcp.tool("compile_cancel", {"job_id": job["job_id"]})
+        mcp.tool("paper", {"action": "cancel", "job_id": job["job_id"]})
         rec["status"] = "timeout"
-    ok, diags = mcp.tool("diagnostics", {"root_id": paper["name"], "main_rel": paper["main"]})
+    ok, diags = mcp.tool("paper", {"action": "diagnostics", "root_id": paper["name"], "main_rel": paper["main"]})
     diags = diags if ok else {}
     found = diags.get("diagnostics", [])
     sev = [d.get("severity") for d in found]

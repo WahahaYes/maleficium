@@ -3,7 +3,7 @@
 # copies the interactive package into a scratch copy of
 # e2e/fixtures/playground/, compiles main.tex, and asserts both that the PDF
 # builds cleanly (bibliography resolved, no undefined references) and that
-# the MCP `widgets` tool lists every widget the paper declares and the
+# the MCP `widget` tool (action list) lists every widget the paper declares and the
 # sidecar its live equations. Then exports the single-file bundle and drives
 # its article in each browser with e2e/article-run.mjs (whose header says
 # what it checks), and its frame under the app window's CSP with
@@ -85,13 +85,13 @@ check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 # subcaption is not in the warm cache on a fresh machine; networked lets the
 # first run fetch it, later runs are offline.
-r = call("compile_run", {"root_id": "pg", "rel": "main.tex", "networked": True})
+r = call("paper", {"action": "start", "root_id": "pg", "main_rel": "main.tex", "networked": True})
 job = r.get("job_id") or ""
 check("compile starts", r["ok"] and bool(job), str(r))
 rec = {"status": "running"}
 for _ in range(ROUNDS):
     time.sleep(3)
-    rec = call("compile_poll", {"job_id": job, "tail_lines": 40})
+    rec = call("paper", {"action": "poll", "job_id": job, "tail_lines": 40})
     if rec.get("status") != "running":
         break
 check("playground compiles", rec.get("status") == "success", str(rec)[:400])
@@ -163,14 +163,14 @@ check("pdf carries one annotation per widget", sorted(marks) == sorted(i.encode(
 uris = re.findall(rb"/URI\s*\(", blob)
 check("the pdf carries no text links", not uris, str(uris))
 
-w = call("widgets", {"root_id": "pg", "main_rel": "main.tex"})
-check("widgets lists the compiled paper", w["ok"], str(w)[:300])
+w = call("widget", {"action": "list", "root_id": "pg", "main_rel": "main.tex"})
+check("widget list shows the compiled paper", w["ok"], str(w)[:300])
 wl = w.get("widgets") or []
-check("widgets returns every widget",
+check("widget list returns every widget",
       sorted(x["id"] for x in wl) == sorted(EXPECT), str([x["id"] for x in wl]))
-check("widgets covers all six types",
+check("widget list covers all six types",
       {x["type"] for x in wl} == {"model", "video", "table", "chart", "plotly", "html"}, str({x["type"] for x in wl}))
-check("widgets follow the pdf, page by page",
+check("widget list entries follow the pdf, page by page",
       [x["page"] for x in wl] == sorted(x["page"] for x in wl), str([(x["id"], x["page"]) for x in wl]))
 check("widget pages and rects are well-formed",
       all(x["page"] >= 1 and x["rect"]["x0"] < x["rect"]["x1"] and x["rect"]["y0"] < x["rect"]["y1"] for x in wl))

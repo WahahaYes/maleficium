@@ -275,10 +275,10 @@ def camera_test(s, server, warm_home, out, procs, preset, bundle_url, fixture):
         try:
             mcp.call("session", {"root_id": "t", "action": "grant", "root": project})
             m = now_ms()
-            ok, job = mcp.call("compile_run", {"root_id": "t", "rel": s["main"], "networked": True})
+            ok, job = mcp.call("paper", {"action": "start", "root_id": "t", "main_rel": s["main"], "networked": True})
             rec = {"status": "running"}
             while ok and rec.get("status") == "running":
-                ok, rec = mcp.call("compile_poll", {"job_id": job["job_id"], "wait_ms": 30000})
+                ok, rec = mcp.call("paper", {"action": "poll", "job_id": job["job_id"], "wait_ms": 30000})
             say("camera test compile: %s" % (rec or {}).get("status"))
         finally:
             mcp.close()

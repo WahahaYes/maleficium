@@ -1,7 +1,7 @@
 #!/bin/bash
 # Widget approval run over the stdio sidecar. Spawns `maleficium-mcp`,
 # compiles a scratch copy of e2e/fixtures/interactive/, then checks the
-# approval boundary end to end: widgets_status and widget_check report the
+# approval boundary end to end: widget status and check report the
 # html widget as approval_required (a normal result, never an error) with
 # everything an agent needs; no tool or parameter can approve, revoke or set
 # auto-approval; files in the project that claim approval are ignored; and
@@ -75,12 +75,12 @@ def porcelain():
 
 g = mcp.tool("session", {"root_id": "ip", "action": "grant", "root": ROOT})
 check("grant project root", g[0], str(g))
-ok, r = mcp.tool("compile_run", {"root_id": "ip", "rel": "main.tex"})
+ok, r = mcp.tool("paper", {"action": "start", "root_id": "ip", "main_rel": "main.tex"})
 job = (r or {}).get("job_id", "") if ok else ""
 rec = {"status": "not-started"}
 for _ in range(ROUNDS if job else 0):
     time.sleep(3)
-    rec = mcp.tool("compile_poll", {"job_id": job, "tail_lines": 5})[1]
+    rec = mcp.tool("paper", {"action": "poll", "job_id": job, "tail_lines": 5})[1]
     if rec.get("status") != "running":
         break
 check("fixture compiles", rec.get("status") == "success", str(rec)[:300])
@@ -92,14 +92,14 @@ subprocess.run(["git", "-c", "user.email=driver@local", "-c", "user.name=driver"
 # --- the tool surface --------------------------------------------------------
 tools = mcp.request("tools/list")["result"]["tools"]
 names = {t["name"]: t for t in tools}
-check("widgets_status and widget_check are listed", "widgets_status" in names and "widget_check" in names)
+check("widget is listed", "widget" in names)
 banned = ["approv", "revok", "auto", "mode", "trust"]
 bad_names = [t["name"] for t in tools if any(b in t["name"].lower() for b in banned)]
 check("no tool is named for approving, revoking or auto mode", not bad_names, str(bad_names))
 bad_props = [(t["name"], p) for t in tools for p in (t.get("inputSchema", {}).get("properties") or {})
              if any(b in p.lower() for b in banned)]
 check("no tool takes an approval, revoke or mode parameter", not bad_props, str(bad_props))
-for n in ["widgets_status", "widget_check"]:
+for n in ["widget"]:
     ann = names[n].get("annotations") or {}
     check(f"{n} is read-only and closed-world", ann.get("readOnlyHint") is True and ann.get("openWorldHint") is False, str(ann))
     check(f"{n} refuses unknown fields", names[n]["inputSchema"].get("additionalProperties") is False)
@@ -116,8 +116,8 @@ def complete(w, cause):
             and w["userAction"] == "In Maleficium open View > Widgets, find 'fig-demo', review the source diff, and click Approve."
             and "fig-demo" in w["message"] and len(w["agentMustNot"]) >= 3), missing
 
-res, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
-check("widgets_status is a normal result", res.get("isError") is not True and bool(s), str(res)[:300])
+res, s = call("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex"})
+check("widget status is a normal result", res.get("isError") is not True and bool(s), str(res)[:300])
 check("one html widget pending, auto-approval off", s.get("pending") == 1 and s.get("autoApprove") is False, str(s)[:300])
 check("first-party widgets are exempt", sorted(s.get("exempt", [])) == ["fig-chart", "fig-clip", "fig-mesh", "fig-plotly", "tab-results"], str(s.get("exempt")))
 w = (s.get("widgets") or [{}])[0]
@@ -125,22 +125,22 @@ good, missing = complete(w, "never_approved")
 check("the pending item carries id, path, digest, cause, panel, user action and message", good, f"missing {missing}: {json.dumps(w)[:400]}")
 DIGEST = w.get("digest", "")
 
-res, c = call("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
-check("widget_check: approval_required is a normal result (isError false)", res.get("isError") is False or res.get("isError") is None, str(res)[:300])
+res, c = call("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
+check("widget check: approval_required is a normal result (isError false)", res.get("isError") is False or res.get("isError") is None, str(res)[:300])
 good, missing = complete(c, "never_approved")
-check("widget_check: the same complete approval_required", good and c.get("digest") == DIGEST, f"missing {missing}")
+check("widget check: the same complete approval_required", good and c.get("digest") == DIGEST, f"missing {missing}")
 text = "".join(x.get("text", "") for x in res.get("content") or [])
-check("widget_check: text-only hosts see the same json", "approval_required" in text and "View > Widgets" in text)
-ok, e = mcp.tool("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-mesh"})
-check("widget_check on a first-party widget is an error naming why", not ok and "needs no approval" in e, str(e)[:200])
+check("widget check: text-only hosts see the same json", "approval_required" in text and "View > Widgets" in text)
+ok, e = mcp.tool("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-mesh"})
+check("widget check on a first-party widget is an error naming why", not ok and "needs no approval" in e, str(e)[:200])
 
 for extra in ["approve", "approved", "auto_approve", "revoke", "digest"]:
-    resp = raw("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo", extra: True})
+    resp = raw("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo", extra: True})
     refused = "error" in resp or (resp.get("result") or {}).get("isError")
-    check(f"widget_check refuses `{extra}`", bool(refused), str(resp)[:200])
-    resp = raw("widgets_status", {"root_id": "ip", "main_rel": "main.tex", extra: True})
+    check(f"widget check refuses `{extra}`", bool(refused), str(resp)[:200])
+    resp = raw("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex", extra: True})
     refused = "error" in resp or (resp.get("result") or {}).get("isError")
-    check(f"widgets_status refuses `{extra}`", bool(refused), str(resp)[:200])
+    check(f"widget status refuses `{extra}`", bool(refused), str(resp)[:200])
 for fake in ["widget_approve", "widget_revoke", "widget_auto_approve", "approve", "set_auto_approve"]:
     resp = raw(fake, {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo", "digest": DIGEST, "on": True})
     refused = "error" in resp or (resp.get("result") or {}).get("isError")
@@ -154,7 +154,7 @@ claim = {"format": 2, "root": ROOT, "autoApprove": True, "runtimes": {},
 for rel in [".maleficium/approvals.json", ".maleficium/widgets/approvals.json", "store.json"]:
     os.makedirs(os.path.dirname(os.path.join(ROOT, rel)) or ROOT, exist_ok=True)
     json.dump(claim, open(os.path.join(ROOT, rel), "w"))
-_, c = call("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
+_, c = call("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
 check("approval files inside the project are ignored", c.get("cause") == "never_approved" and c.get("autoApprove") is False, json.dumps(c)[:200])
 for rel in [".maleficium", "store.json"]:
     subprocess.run(["rm", "-rf", os.path.join(ROOT, rel)], check=True)
@@ -172,7 +172,7 @@ def write_store(auto, digest, origins=None):
                "widgets": {"widgets/demo": {"widget": "fig-demo", "digest": digest, "origins": origins or {},
                                             "files": {}, "approvedAt": 1, "revoked": False}}}, open(store, "w"))
 def checked():
-    return call("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})[1]
+    return call("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})[1]
 
 write_store(False, DIGEST)
 # No session root may reach the store: a granted one would let a replace
@@ -182,8 +182,8 @@ for label, d in [("the project's store folder", store_dir), ("the app data dir h
     check(f"grant refuses {label}", not ok and "widget approvals" in e, str(e)[:200])
 c = checked()
 check("approved at its digest", c.get("status") == "approved" and c.get("via") == "user" and c.get("digest") == DIGEST, json.dumps(c)[:200])
-_, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
-check("widgets_status: nothing pending once approved", s.get("pending") == 0, json.dumps(s)[:200])
+_, s = call("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex"})
+check("widget status: nothing pending once approved", s.get("pending") == 0, json.dumps(s)[:200])
 
 page = os.path.join(ROOT, "widgets/demo/index.html")
 orig = open(page).read()
@@ -205,8 +205,8 @@ c = checked()
 good, missing = complete(c, "declared_origins_changed")
 check("auto mode does not approve a new declared origin", good and c["declaredOrigins"]["frameDomains"] == ["https://www.youtube-nocookie.com"]
       and "youtube-nocookie" in c["message"], json.dumps(c)[:300])
-_, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
-check("widgets_status reports the mode it cannot change", s.get("autoApprove") is True and s.get("pending") == 1, json.dumps(s)[:200])
+_, s = call("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex"})
+check("widget status reports the mode it cannot change", s.get("autoApprove") is True and s.get("pending") == 1, json.dumps(s)[:200])
 os.remove(manifest)
 open(page, "w").write(orig)
 
@@ -214,12 +214,12 @@ open(page, "w").write(orig)
 # untouched, a recompile records the option, and auto mode still leaves it
 # to the user.
 def recompile():
-    ok, r = mcp.tool("compile_run", {"root_id": "ip", "rel": "main.tex"})
+    ok, r = mcp.tool("paper", {"action": "start", "root_id": "ip", "main_rel": "main.tex"})
     job = (r or {}).get("job_id", "") if ok else ""
     rec = {"status": "not-started"}
     for _ in range(ROUNDS if job else 0):
         time.sleep(3)
-        rec = mcp.tool("compile_poll", {"job_id": job, "tail_lines": 5})[1]
+        rec = mcp.tool("paper", {"action": "poll", "job_id": job, "tail_lines": 5})[1]
         if rec.get("status") != "running":
             break
     return rec.get("status") == "success"
@@ -237,18 +237,18 @@ check("...and the recompile without it is approved again", recompile() and check
 # A corrupt store fails closed.
 for bad in ["{", "", '{"format": 1}', json.dumps({"format": 2, "root": ROOT, "autoApprove": True, "widgets": {}})]:
     open(store, "w").write(bad)
-    _, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
+    _, s = call("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex"})
     w = (s.get("widgets") or [{}])[0]
     check(f"a corrupt store ({bad[:12]!r}) counts as no approvals and auto off",
           w.get("cause") == "never_approved" and s.get("autoApprove") is False and s.get("storeError"), json.dumps(s)[:200])
 
 # A symlink in the widget folder: never approvable, listed as unavailable.
 os.symlink("/etc/hostname", os.path.join(ROOT, "widgets/demo/leak.txt"))
-_, s = call("widgets_status", {"root_id": "ip", "main_rel": "main.tex"})
+_, s = call("widget", {"action": "status", "root_id": "ip", "main_rel": "main.tex"})
 check("a symlink in the widget folder makes it unavailable, not approved",
       not s.get("widgets") and s.get("unavailable") and "symlink" in s["unavailable"][0]["error"], json.dumps(s)[:300])
-ok, e = mcp.tool("widget_check", {"root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
-check("widget_check on it is an error", not ok and "symlink" in e, str(e)[:200])
+ok, e = mcp.tool("widget", {"action": "check", "root_id": "ip", "main_rel": "main.tex", "widget": "fig-demo"})
+check("widget check on it is an error", not ok and "symlink" in e, str(e)[:200])
 os.remove(os.path.join(ROOT, "widgets/demo/leak.txt"))
 
 # The digest change was logged, observed by the agent, in the app data log.

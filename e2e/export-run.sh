@@ -103,14 +103,14 @@ def call(name, args):
     return flat(mcp.tool(name, args))
 
 def compile(rel, rounds=ROUNDS):
-    r = call("compile_run", {"root_id": "ip", "rel": rel})
+    r = call("paper", {"action": "start", "root_id": "ip", "main_rel": rel})
     job = r.get("job_id") or ""
     if not (r["ok"] and job):
         return {"status": "not-started", "log": str(r)}
     rec = {"status": "running"}
     for _ in range(rounds):
         time.sleep(3)
-        rec = call("compile_poll", {"job_id": job, "tail_lines": 5})
+        rec = call("paper", {"action": "poll", "job_id": job, "tail_lines": 5})
         if rec.get("status") != "running":
             break
     return rec
@@ -389,11 +389,11 @@ open(os.path.join(ROOT, "embed.tex"), "w").write(r"""\documentclass{article}
 """ % B)
 erec = compile("embed.tex")
 check("embed: the two-widget variant compiles", erec.get("status") == "success", str(erec)[:300])
-wl = call("widgets", {"root_id": "ip", "main_rel": "embed.tex"})
+wl = call("widget", {"action": "list", "root_id": "ip", "main_rel": "embed.tex"})
 csps = {w["id"]: w.get("csp") for w in wl.get("widgets", [])} if wl["ok"] else {}
 check("embed: the widget list carries each widget's own declared origins",
       csps.get("fig-embed", {}).get("frameDomains") == [A] and csps.get("fig-macro", {}).get("frameDomains") == [B], str(wl)[:300])
-st = call("widgets_status", {"root_id": "ip", "main_rel": "embed.tex"})
+st = call("widget", {"action": "status", "root_id": "ip", "main_rel": "embed.tex"})
 listed = {w["widget"]: w for w in st.get("widgets", [])} if st["ok"] else {}
 check("embed: both widgets await approval with their declared origins",
       all(listed.get(i, {}).get("status") == "approval_required" for i in ("fig-embed", "fig-macro"))

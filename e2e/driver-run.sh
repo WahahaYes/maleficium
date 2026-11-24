@@ -193,7 +193,7 @@ check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 e = call("file", {"root_id": "drv", "action": "read", "rel": "../outside.tex"})
 check("escape fails closed", not e["ok"], str(e))
 
-r = call("compile_run", {"root_id": "drv", "rel": "main.tex"})
+r = call("paper", {"action": "start", "root_id": "drv", "main_rel": "main.tex"})
 job = (r.get("job_id") or "")
 check("compile starts", r["ok"] and bool(job), str(r))
 t0 = time.time()
@@ -202,15 +202,15 @@ sc = {"status": "running"}
 for _ in range(ROUNDS):
     time.sleep(4)
     polls += 1
-    sc = call("compile_poll", {"job_id": job, "tail_lines": 3})
+    sc = call("paper", {"action": "poll", "job_id": job, "tail_lines": 3})
     if sc.get("status") != "running":
         break
 compile_ms = (time.time() - t0) * 1000
 check("compile succeeds", sc.get("status") == "success", str(sc)[:200], ms=compile_ms)
-check("compile_run names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
+check("paper start names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
 prog = sc.get("progress") or {}
-check("compile_poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
-again = [call("compile_poll", {"job_id": job, "tail_lines": 3}).get("status") for _ in range(3)]
+check("paper poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
+again = [call("paper", {"action": "poll", "job_id": job, "tail_lines": 3}).get("status") for _ in range(3)]
 check("a finished compile answers later polls the same", again == [sc.get("status")] * 3, str(again))
 check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
 if WARM_ONLY:
@@ -221,15 +221,15 @@ EC = os.environ["ENGINE_CACHE"]
 pinned = os.path.join(EC, "bundles", "hashes", "https,58,,47,,47,data1b.fullyjustified.net,47,tlextras-2022.0r0.tar")
 check("engine cache is app-owned under OS tmp", EC.startswith(tempfile.gettempdir()) and os.path.isdir(EC), EC)
 check("compile resolved the pinned bundle", os.path.isfile(pinned) and open(pinned).read().strip() == os.environ["BUNDLE_DIGEST"], pinned)
-st1 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+st1 = call("paper", {"action": "output", "root_id": "drv", "main_rel": "main.tex"}).get("stamp")
 check("output stamp names the compiled pdf", bool(st1) and st1.get("bytes", 0) > 0, str(st1))
 time.sleep(1.1)
-rj = call("compile_run", {"root_id": "drv", "rel": "main.tex"}).get("job_id") or ""
+rj = call("paper", {"action": "start", "root_id": "drv", "main_rel": "main.tex"}).get("job_id") or ""
 for _ in range(30):
     time.sleep(1)
-    if call("compile_poll", {"job_id": rj, "tail_lines": 1}).get("status") != "running":
+    if call("paper", {"action": "poll", "job_id": rj, "tail_lines": 1}).get("status") != "running":
         break
-st2 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+st2 = call("paper", {"action": "output", "root_id": "drv", "main_rel": "main.tex"}).get("stamp")
 check("an MCP recompile moves the output stamp (what the app polls)", bool(st2) and st2 != st1, f"{st1} -> {st2}")
 pdf = sc.get("pdf_url") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
@@ -265,9 +265,9 @@ check("sync_view snippet refuses two targets", not two["ok"] and "exactly one ta
 
 tl = mcp.request("tools/list")["result"]["tools"]
 ui_of = {t["name"]: (t.get("_meta") or {}).get("ui") for t in tl}
-check("only the sync tools and compile_run carry a View", sorted(k for k, v in ui_of.items() if v) == ["compile_run", "sync_render", "sync_view"], str(sorted(k for k, v in ui_of.items() if v)))
-check("compile_run names the dashboard and stays model-callable", ui_of["compile_run"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["compile_run"]))
-check("the dashboard's own calls stay plain tools", all(ui_of[n] is None for n in ["compile_poll", "compile_cancel", "diagnostics", "offline_readiness"]), str({n: ui_of[n] for n in ["compile_poll", "compile_cancel"]}))
+check("only the sync tools and paper carry a View", sorted(k for k, v in ui_of.items() if v) == ["paper", "sync_render", "sync_view"], str(sorted(k for k, v in ui_of.items() if v)))
+check("paper names the dashboard and stays model-callable", ui_of["paper"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["paper"]))
+check("paper is the only compile-flow tool with a View", [k for k, v in ui_of.items() if v and "compile" in (v.get("resourceUri") or "")] == ["paper"], str(ui_of))
 dash = mcp.request("resources/read", {"uri": "ui://maleficium/compile/v1"})["result"]["contents"][0]
 check("the dashboard is served as an MCP App html page", dash["mimeType"] == "text/html;profile=mcp-app" and dash["text"].lstrip().lower().startswith("<!doctype html>") and (dash.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (dash.get("_meta") or {}).get("ui", {}), str(dash)[:160])
 check("the dashboard is self-contained", "src=\"http" not in dash["text"] and "href=\"http" not in dash["text"] and "@import" not in dash["text"])
@@ -296,7 +296,7 @@ lrf = call("structure", {"root_id": "drv", "action": "labels_refs", "main_rel": 
 check("refs resolve", lrf["ok"] and any(r["key"] == "fig:diagram" and r["resolved"] for r in lrf.get("refs") or []), str(lrf)[:200])
 ci = call("structure", {"root_id": "drv", "action": "citations", "main_rel": "main.tex"})
 check("cites resolve against refs.bib", ci["ok"] and any(c["key"] == "knuth1984texbook" and c["resolved"] for c in ci.get("cites") or []), str(ci)[:200])
-dg = call("diagnostics", {"root_id": "drv", "main_rel": "main.tex"})
+dg = call("paper", {"action": "diagnostics", "root_id": "drv", "main_rel": "main.tex"})
 check("diagnostics after a clean compile", dg["ok"] and ROOT not in json.dumps(dg), str(dg)[:200])
 esc = call("structure", {"root_id": "drv", "action": "outline", "rel": "../outside.tex"})
 check("structure escape is a tool error", not esc["ok"] and "forbidden" in esc.get("error", ""), str(esc))
@@ -314,14 +314,14 @@ check("undo restores", u["ok"] and u.get("path", "").endswith("chapters/method.t
 
 with open(ROOT + "/fail.tex", "w") as f:
     f.write("\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{document}\n")
-fr = call("compile_run", {"root_id": "drv", "rel": "fail.tex"})
+fr = call("paper", {"action": "start", "root_id": "drv", "main_rel": "fail.tex"})
 fjob = (fr.get("job_id") or "")
 check("failure compile starts", fr["ok"] and bool(fjob), str(fr))
 ft0 = time.time()
 fsc = {"status": "running"}
 for _ in range(30):
     time.sleep(4)
-    fsc = call("compile_poll", {"job_id": fjob, "tail_lines": 5})
+    fsc = call("paper", {"action": "poll", "job_id": fjob, "tail_lines": 5})
     if fsc.get("status") != "running":
         break
 fail_ms = (time.time() - ft0) * 1000
@@ -329,7 +329,7 @@ flog = (fsc.get("log") or "") + "\n" + "\n".join(fsc.get("lines") or [])
 check("failure reports failed", fsc.get("status") == "failed", str(fsc)[:200], ms=fail_ms)
 check("failure names the cause", "Undefined control sequence" in flog, flog[:200])
 check("failure writes no pdf", not fsc.get("pdf_url"), str(fsc.get("pdf_url")))
-fd = call("diagnostics", {"root_id": "drv", "main_rel": "fail.tex"})
+fd = call("paper", {"action": "diagnostics", "root_id": "drv", "main_rel": "fail.tex"})
 fdd = fd.get("diagnostics") or []
 check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
@@ -361,10 +361,10 @@ for tid in tids + ["welcome"]:
         bad.append(f"{tid}: {nc.get('error')}")
         continue
     g = call("session", {"root_id": "tpl-" + tid, "action": "grant", "root": nc["root"]})
-    j = call("compile_run", {"root_id": "tpl-" + tid, "rel": nc["main"]}).get("job_id") or ""
+    j = call("paper", {"action": "start", "root_id": "tpl-" + tid, "main_rel": nc["main"]}).get("job_id") or ""
     rec = {"status": "running"}
     for _ in range(15):
-        rec = call("compile_poll", {"job_id": j, "tail_lines": 5, "wait_ms": 20000})
+        rec = call("paper", {"action": "poll", "job_id": j, "tail_lines": 5, "wait_ms": 20000})
         if rec.get("status") != "running":
             break
     if rec.get("status") != "success" or not os.path.exists(rec.get("pdf_url") or ""):
@@ -378,17 +378,17 @@ check("a relative parent folder is refused and nothing lands in the working dire
 # ---- pre-compile checks: every missing dependency at once ----
 with open(ROOT + "/three.tex", "w") as f:
     f.write("\\documentclass{article}\n\\usepackage{amsmath,nopkga}\n\\usepackage{nopkgb}\n\\usepackage[style=alpha]{biblatex}\n\\RequirePackage{nopkgc}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n")
-pc = call("precompile_checks", {"root_id": "drv", "main_rel": "three.tex"})
+pc = call("paper", {"action": "prechecks", "root_id": "drv", "main_rel": "three.tex"})
 found = [(f["kind"], f["name"], f["line"]) for f in pc.get("findings") or []]
 check("pre-compile checks ran against the bundle index", pc["ok"] and pc.get("bundleChecked") is True, str(pc)[:200])
 check("a doc with 3 missing packages lists all 3 before compiling", [x for x in found if x[0] == "not-in-bundle"] == [("not-in-bundle", "nopkga.sty", 2), ("not-in-bundle", "nopkgb.sty", 3), ("not-in-bundle", "nopkgc.sty", 5)], str(found))
 check("pre-compile checks flag biber and shell escape", ("external-tool", "biber", 4) in found and ("shell-escape", "minted", 6) in found, str(found))
-tr = call("compile_run", {"root_id": "drv", "rel": "three.tex"})
+tr = call("paper", {"action": "start", "root_id": "drv", "main_rel": "three.tex"})
 tj = tr.get("job_id") or ""
 ts = {"status": "running"}
 for _ in range(30):
     time.sleep(2)
-    ts = call("compile_poll", {"job_id": tj, "tail_lines": 5})
+    ts = call("paper", {"action": "poll", "job_id": tj, "tail_lines": 5})
     if ts.get("status") != "running":
         break
 check("the compile itself stops at the first of them", ts.get("missing") == {"file": "nopkga.sty", "reason": "not-in-bundle"}, str(ts.get("missing")))
@@ -410,11 +410,11 @@ def session(env, offline):
     def tool(name, args):
         return flat(client.tool(name, args))
     def compile_doc(rel):
-        j = tool("compile_run", {"root_id": "off", "rel": rel}).get("job_id") or ""
+        j = tool("paper", {"action": "start", "root_id": "off", "main_rel": rel}).get("job_id") or ""
         rec = {"status": "running"}
         for _ in range(60):
             time.sleep(1)
-            rec = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+            rec = tool("paper", {"action": "poll", "job_id": j, "tail_lines": 400})
             if rec.get("status") != "running":
                 break
         return rec
@@ -445,13 +445,13 @@ else:
     check("offline session grants the project", granted)
     r = compile_doc("main.tex")
     check("true-offline recompile succeeds from the cache", r.get("status") == "success" and bool(r.get("pdf_url")), str(r)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("an offline recompile makes the project ready offline", rd.get("state") == "ready" and rd.get("needs") == [], str(rd))
     r = compile_doc("pkg.tex")
     check("offline: an uncached bundle package is not-cached", r.get("status") == "failed" and r.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(r.get("missing")) + " " + str(r.get("log"))[:200])
-    d = tool("diagnostics", {"root_id": "off", "main_rel": "pkg.tex"})
+    d = tool("paper", {"action": "diagnostics", "root_id": "off", "main_rel": "pkg.tex"})
     check("diagnostics report the missing dependency", d.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(d)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("readiness names what needs network", rd.get("state") == "needs-network" and rd.get("needs") == [pick + ".sty"], str(rd))
     r = compile_doc("nib.tex")
     check("offline: a package outside the bundle is not-in-bundle", r.get("status") == "failed" and r.get("missing") == {"file": "nonexistentpkgxyz.sty", "reason": "not-in-bundle"}, str(r.get("missing")))
@@ -464,18 +464,18 @@ else:
     r = compile_doc("pkg.tex")
     lines = r.get("lines") or []
     check("online: a cache miss is fetched by one online rerun", r.get("status") == "success" and "note: using only cached resource files" in lines and ("note: downloading " + pick + ".sty") in lines, str(r)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("an online success leaves readiness unverified", rd.get("state") == "unverified", str(rd))
-    j = tool("compile_run", {"root_id": "off", "rel": "pkg.tex", "networked": True}).get("job_id") or ""
+    j = tool("paper", {"action": "start", "root_id": "off", "main_rel": "pkg.tex", "networked": True}).get("job_id") or ""
     r = {"status": "running"}
     for _ in range(60):
         time.sleep(1)
-        r = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+        r = tool("paper", {"action": "poll", "job_id": j, "tail_lines": 400})
         if r.get("status") != "running":
             break
     lines = r.get("lines") or []
     check("make available offline: one networked compile, then a cached-only proof", r.get("status") == "success" and lines.index("verifying offline: compiling from cached files only") < max(i for i, l in enumerate(lines) if l == "note: using only cached resource files"), str(lines[:4]))
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("make available offline leaves the project ready offline", rd.get("state") == "ready", str(rd))
     q.kill()
 
@@ -523,34 +523,34 @@ check(
 
 gp = call("session", {"root_id": "pages", "action": "grant", "root": PAGES_ROOT})
 check("grant 3000pp root", gp["ok"], str(gp))
-cr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+cr = call("paper", {"action": "start", "root_id": "pages", "main_rel": "doc.tex"})
 cjob = cr.get("job_id") or ""
 check("cancel probe compile starts", cr["ok"] and bool(cjob), str(cr))
 cancel_t0 = time.time()
 time.sleep(0.3)
-cs = call("compile_poll", {"job_id": cjob, "tail_lines": 3})
+cs = call("paper", {"action": "poll", "job_id": cjob, "tail_lines": 3})
 check("cancel probe finds the engine still running", cs.get("status") == "running", str(cs)[:200])
 # cancel only succeeds while the job still owns a live child, so an accepted
 # cancel is itself proof the engine was mid-run.
-cc = call("compile_cancel", {"job_id": cjob})
+cc = call("paper", {"action": "cancel", "job_id": cjob})
 check("cancel accepted mid-compile", cc["ok"], str(cc))
 for _ in range(100):
     time.sleep(0.1)
-    cs = call("compile_poll", {"job_id": cjob, "tail_lines": 5})
+    cs = call("paper", {"action": "poll", "job_id": cjob, "tail_lines": 5})
     if cs.get("status") != "running":
         break
 cancel_ms = (time.time() - cancel_t0) * 1000
 check("cancelled compile reports cancelled", cs.get("status") == "cancelled", str(cs)[:200], ms=cancel_ms)
 check("cancelled compile writes no pdf", not cs.get("pdf_url"), str(cs.get("pdf_url")))
 
-hr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+hr = call("paper", {"action": "start", "root_id": "pages", "main_rel": "doc.tex"})
 hjob = hr.get("job_id") or ""
 check("3000pp compile starts", hr["ok"] and bool(hjob), str(hr))
 ht0 = time.time()
 hs = {"status": "running"}
 for _ in range(180):
     time.sleep(1)
-    hs = call("compile_poll", {"job_id": hjob, "tail_lines": 5})
+    hs = call("paper", {"action": "poll", "job_id": hjob, "tail_lines": 5})
     if hs.get("status") != "running":
         break
 heavy_ms = (time.time() - ht0) * 1000

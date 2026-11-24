@@ -9,7 +9,10 @@
     "steps": [
       { "tool": "session", "args": { "root_id": "agent", "action": "grant", "root": "{project}" } },
       { "compile": "main.tex" },
-      { "tool": "structure", "args": { "root_id": "agent", "action": "outline", "rel": "main.tex" } },
+      {
+        "tool": "structure",
+        "args": { "root_id": "agent", "action": "outline", "rel": "main.tex" }
+      },
       {
         "tool": "sync_view",
         "args": {
@@ -37,7 +40,7 @@
   },
   "oracles": [
     {
-      "called": ["session", "compile_run", "sync_view"]
+      "called": ["session", "paper", "sync_view"]
     },
     {
       "view_resource": { "tool": "sync_view", "uri": "ui://maleficium/snippet/v1" }
