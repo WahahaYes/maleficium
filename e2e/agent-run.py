@@ -104,13 +104,13 @@ class Mcp(McpClient):
         return [t["name"] for t in self.request("tools/list", {})["result"]["tools"]]
 
     def compile(self, root_id, rel, timeout=600):
-        ok, job = self.call("compile_run", {"root_id": root_id, "rel": rel})
+        ok, job = self.call("paper", {"action": "start", "root_id": root_id, "main_rel": rel})
         if not ok:
             return {"status": "refused", "error": job}
         deadline = time.time() + timeout
         rec = {"status": "running"}
         while rec.get("status") == "running" and time.time() < deadline:
-            ok, rec = self.call("compile_poll", {"job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
+            ok, rec = self.call("paper", {"action": "poll", "job_id": job["job_id"], "tail_lines": 40, "wait_ms": 30000})
             if not ok:
                 return {"status": "poll-error", "error": rec}
         return rec
@@ -127,10 +127,10 @@ def pdf_stamp(server, home, project, main):
     the reload and repaint of that exact build."""
     mcp = Mcp(server, home)
     try:
-        ok, _ = mcp.call("grant", {"root_id": "stamp", "root": project})
+        ok, _ = mcp.call("session", {"root_id": "stamp", "action": "grant", "root": project})
         if not ok:
             return None
-        ok, r = mcp.call("output_stamp", {"root_id": "stamp", "main_rel": main})
+        ok, r = mcp.call("paper", {"action": "output", "root_id": "stamp", "main_rel": main})
         return (r or {}).get("stamp") if ok else None
     finally:
         mcp.close()
@@ -236,7 +236,7 @@ def warm_cache(server, scenario):
             f.write(text.replace("\\end{document}", FONT_SOAK + "\\end{document}"))
         mcp = Mcp(server, home)
         try:
-            ok, err = mcp.call("grant", {"root_id": "warm", "root": project})
+            ok, err = mcp.call("session", {"root_id": "warm", "action": "grant", "root": project})
             if not ok:
                 die("warm grant: %s" % err)
             rec = mcp.compile("warm", "main.tex")
@@ -417,7 +417,7 @@ def run_agent_claude(scenario, server, model, run_dir, warm, tool_names, max_tur
 def run_agent_script(scenario, server, run_dir, warm, answer=None, skip=()):
     """No model: the scenario's `script` played by a fake agent. Each step is
     an MCP call (`{"tool", "args"}`, `{project}` filled in) or `{"compile":
-    main}` (compile_run, then compile_poll until done); `answer` is the final
+    main}` (paper start, then paper poll until done); `answer` is the final
     reply, with `{page}`, `{pages}` and `{wrong_page}` taken from the last
     snippet result. It writes a claude stream-json transcript, so the
     oracles and read_events_claude see exactly what a real run gives them.
@@ -446,16 +446,16 @@ def run_agent_script(scenario, server, run_dir, warm, answer=None, skip=()):
     try:
         for step in script["steps"]:
             if "compile" in step:
-                job = call("compile_run", {"root_id": "agent", "rel": step["compile"]})["structuredContent"]
+                job = call("paper", {"action": "start", "root_id": "agent", "main_rel": step["compile"]})["structuredContent"]
                 rec = {"status": "running"}
                 while rec.get("status") == "running":
-                    rec = call("compile_poll", {"job_id": job["job_id"], "wait_ms": 30000})["structuredContent"]
+                    rec = call("paper", {"action": "poll", "job_id": job["job_id"], "wait_ms": 30000})["structuredContent"]
                 continue
             if step["tool"] in skip:
                 continue
             args = json.loads(json.dumps(step["args"]).replace("{project}", project))
             r = call(step["tool"], args)
-            if step["tool"] == "snippet" and not r.get("isError"):
+            if step["tool"] == "sync_view" and not r.get("isError"):
                 last_snippet = r["structuredContent"]
     finally:
         mcp.close()
@@ -697,9 +697,9 @@ class Judge:
     def mcp(self):
         if self._mcp is None:
             self._mcp = Mcp(self.server, self.home)
-            ok, err = self._mcp.call("grant", {"root_id": "judge", "root": self.project})
+            ok, err = self._mcp.call("session", {"root_id": "judge", "action": "grant", "root": self.project})
             if not ok:
-                raise RuntimeError("grant: " + err)
+                raise RuntimeError("session grant: " + err)
         return self._mcp
 
     def compiled(self, main):
@@ -715,7 +715,7 @@ class Judge:
     def o_compiles(self, main):
         rec = self.compiled(main)
         if rec.get("status") != "success":
-            return False, "status %s: %s" % (rec.get("status"), str(rec.get("log_tail") or rec)[-300:])
+            return False, "status %s: %s" % (rec.get("status"), str(rec.get("log") or rec)[-300:])
         pdf = rec.get("pdf_path") or rec.get("pdf_url") or ""
         pdf = re.sub(r"^file://", "", pdf)
         if pdf and not os.path.isfile(pdf):
@@ -730,28 +730,28 @@ class Judge:
         if rec.get("status") != "success":
             return False, "did not compile"
         m = self.mcp()
-        ok, d = m.call("diagnostics", {"root_id": "judge", "main_rel": main, "max": 200})
+        ok, d = m.call("paper", {"action": "diagnostics", "root_id": "judge", "main_rel": main, "max": 200})
         if not ok:
             return False, "diagnostics refused: " + d
         bad = ["%s:%s %s" % (x.get("path"), x["line"], x["message"][:80]) for x in d["diagnostics"]
                if x["severity"] == "error" or re.search(r"undefined|multiply defined", x["message"], re.I)]
-        ok, lr = m.call("labels_refs", {"root_id": "judge", "main_rel": main})
+        ok, lr = m.call("structure", {"root_id": "judge", "action": "labels_refs", "main_rel": main})
         if not ok:
-            return False, "labels_refs refused: " + lr
+            return False, "structure labels_refs refused: " + lr
         bad += ["unresolved \\ref{%s} at %s:%s" % (r["key"], r["rel"], r["line"]) for r in lr["refs"] if not r["resolved"]]
         bad += ["duplicate \\label{%s}" % l["key"] for l in lr["labels"] if l["duplicate"]]
-        ok, ci = m.call("citations", {"root_id": "judge", "main_rel": main})
+        ok, ci = m.call("structure", {"root_id": "judge", "action": "citations", "main_rel": main})
         if not ok:
-            return False, "citations refused: " + ci
+            return False, "structure citations refused: " + ci
         bad += ["unresolved \\cite{%s} at %s:%s" % (c["key"], c["rel"], c["line"]) for c in ci["cites"] if not c["resolved"]]
         if bad:
             return False, "; ".join(bad[:5])
         return True, "no errors; %d refs and %d cites resolve" % (len(lr["refs"]), len(ci["cites"]))
 
     def o_outline_has(self, spec):
-        ok, doc = self.mcp().call("outline", {"root_id": "judge", "rel": spec["file"]})
+        ok, doc = self.mcp().call("structure", {"root_id": "judge", "action": "outline", "rel": spec["file"]})
         if not ok:
-            return False, "outline refused: " + doc
+            return False, "structure outline refused: " + doc
         titles = [r.get("title") or r.get("text") or r.get("name") for r in doc.get("rows", doc.get("entries", []))]
         titles = [t for t in titles if t]
         want = spec["titles"]
@@ -844,7 +844,7 @@ class Judge:
         return True, "%d out-of-root calls, all refused" % len(tries)
 
     def o_only_project_granted(self, _):
-        roots = [c["input"].get("root") for c in self.calls if c["tool"] == "grant"]
+        roots = [c["input"].get("root") for c in self.calls if c["tool"] == "session"]
         real = os.path.realpath(self.project)
         other = [r for r in roots if not r or os.path.realpath(r) != real]
         if other:
@@ -863,7 +863,7 @@ class Judge:
         rec = self.compiled(spec["main"])
         if rec.get("status") != "success":
             return False, "did not compile"
-        ok, s = self.mcp().call("snippet", {"root_id": "judge", "main_rel": spec["main"], "page": 1})
+        ok, s = self.mcp().call("sync_view", {"root_id": "judge", "action": "snippet", "main_rel": spec["main"], "page": 1})
         pages = s.get("pages") if ok else None
         return bool(pages and pages >= spec["n"]), "pages %s" % pages
 
@@ -920,10 +920,10 @@ class Judge:
         if not where:
             return False, "no captioned plot figure"
         # SyncTeX places a caption where it is typeset, not tikz lines.
-        ok, s = self.mcp().call("snippet", {"root_id": "judge", "main_rel": spec["main"],
+        ok, s = self.mcp().call("sync_view", {"root_id": "judge", "action": "snippet", "main_rel": spec["main"],
                                             "tex_rel": where[0], "line": where[1]})
         if not ok:
-            return False, "snippet refused: %s" % s
+            return False, "sync_view snippet refused: %s" % s
         good = s.get("page") == spec["page"] and (s.get("region") or {}).get("y", 999) < 450
         return good, "page %s y %s" % (s.get("page"), (s.get("region") or {}).get("y"))
 
@@ -940,13 +940,13 @@ class Judge:
     def agent_snippet(self):
         """The arguments of the agent's last successful snippet call, minus
         its root id (the judge grants its own)."""
-        hits = [c for c in self.calls if c["tool"] == "snippet" and c["ok"]]
+        hits = [c for c in self.calls if c["tool"] == "sync_view" and c["ok"]]
         if not hits:
-            raise RuntimeError("the agent made no successful snippet call")
+            raise RuntimeError("the agent made no successful sync_view snippet call")
         return {k: v for k, v in hits[-1]["input"].items() if k != "root_id"}
 
     def replay(self, client, args):
-        return client.request("tools/call", {"name": "snippet",
+        return client.request("tools/call", {"name": "sync_view",
                                              "arguments": dict(args, root_id="judge")})["result"]
 
     def o_view_resource(self, spec):
@@ -996,9 +996,9 @@ class Judge:
         args = self.agent_snippet()
         apps = Mcp(self.server, self.home, capabilities=APPS_CAPABILITY)
         try:
-            ok, err = apps.call("grant", {"root_id": "judge", "root": self.project})
+            ok, err = apps.call("session", {"root_id": "judge", "action": "grant", "root": self.project})
             if not ok:
-                return False, "grant: " + err
+                return False, "session grant: " + err
             bad = []
             for v in (args, dict(args, with_image=True)):
                 bad += ["%s: %s" % (json.dumps(v, sort_keys=True), p)
@@ -1121,9 +1121,9 @@ def self_test_oracles():
                 return {"status": self.status}
 
             def call(self, name, args):
-                if name == "snippet" and "tex_rel" in args:
+                if name == "sync_view" and "tex_rel" in args:
                     return True, self.snippet
-                if name == "snippet":
+                if name == "sync_view":
                     return True, {"pages": self.pages}
                 return False, "unexpected"
 
@@ -1178,7 +1178,7 @@ def self_test_runtime_authoring(server):
     with tempfile.TemporaryDirectory(dir="/var/tmp") as home:
         mcp = Mcp(server, home)
         try:
-            ok, draft = mcp.call("runtime_scaffold", {"name": "self-test-draft"})
+            ok, draft = mcp.call("runtime_read", {"action": "scaffold", "name": "self-test-draft"})
             check("scaffold", ok, draft if not ok else draft["reference"])
             if ok:
                 want = {"runtime.json", "index.html", "bridge.js", "samples/photo.svg", "LICENSE"}
@@ -1186,21 +1186,21 @@ def self_test_runtime_authoring(server):
                         for r, _, fs in os.walk(draft["path"]) for f in fs}
                 check("draft-shape", draft["reference"] == "self-test-draft@1" and want <= have,
                       sorted(have))
-                ok, valid = mcp.call("runtime_validate", {"reference": draft["reference"]})
+                ok, valid = mcp.call("runtime_read", {"action": "validate", "reference": draft["reference"]})
                 check("draft-validates", ok and valid["valid"] and not valid["errors"]
                       and not valid["warnings"], valid if ok else valid)
             with tempfile.TemporaryDirectory(dir="/var/tmp") as p:
                 shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
                                 os.path.join(p, "runtimes", "bad-cdn@1"))
-                ok, _ = mcp.call("grant", {"root_id": "rt", "root": p})
+                ok, _ = mcp.call("session", {"root_id": "rt", "action": "grant", "root": p})
                 check("grant", ok)
-                ok, red = mcp.call("runtime_validate",
-                                   {"root_id": "rt", "reference": "bad-cdn@1"})
+                ok, red = mcp.call("runtime_read",
+                                   {"action": "validate", "root_id": "rt", "reference": "bad-cdn@1"})
                 check("bad-cdn-fails-url-load",
                       ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
                       red if ok else red)
-            ok, fork = mcp.call("runtime_scaffold",
-                                {"name": "self-test-fork", "from": "model@1"})
+            ok, fork = mcp.call("runtime_read",
+                                {"action": "scaffold", "name": "self-test-fork", "from": "model@1"})
             check("fork-scaffold", ok, fork if not ok else fork["reference"])
             if ok:
                 want = {"runtime.json", "index.html", "bridge.js", "viewer.js",
@@ -1213,7 +1213,7 @@ def self_test_runtime_authoring(server):
                 # The fork is the built-in viewer as a readable classic
                 # script over vendored three.js: untouched, it validates
                 # with a silent scan, so it can go straight to install.
-                ok, green = mcp.call("runtime_validate", {"reference": fork["reference"]})
+                ok, green = mcp.call("runtime_read", {"action": "validate", "reference": fork["reference"]})
                 check("fork-validates-untouched",
                       ok and green["valid"] and not green["errors"] and not green["warnings"],
                       green if ok else green)
@@ -1221,7 +1221,7 @@ def self_test_runtime_authoring(server):
                 # runtimes/<ref>/, never approved; the same files again are
                 # unchanged, and an edited draft replaces only on request.
                 with tempfile.TemporaryDirectory(dir="/var/tmp") as proj:
-                    ok, _ = mcp.call("grant", {"root_id": "rt-inst", "root": proj})
+                    ok, _ = mcp.call("session", {"root_id": "rt-inst", "action": "grant", "root": proj})
                     check("grant-install", ok)
                     args = {"root_id": "rt-inst", "reference": fork["reference"]}
                     ok, inst = mcp.call("runtime_install", args)
@@ -1231,7 +1231,7 @@ def self_test_runtime_authoring(server):
                           and inst["path"] == "runtimes/self-test-fork@1"
                           and os.path.isfile(os.path.join(proj, "runtimes", "self-test-fork@1", "viewer.js")),
                           inst)
-                    ok, there = mcp.call("runtime_validate", args)
+                    ok, there = mcp.call("runtime_read", {"action": "validate", **args})
                     check("install-validates-in-project", ok and there["valid"], there)
                     ok, again = mcp.call("runtime_install", args)
                     check("install-again-unchanged", ok and again["outcome"] == "unchanged", again)
@@ -1245,10 +1245,10 @@ def self_test_runtime_authoring(server):
             with tempfile.TemporaryDirectory(dir="/var/tmp") as q:
                 shutil.copytree(os.path.join(ROOT, "docs", "runtimes", "samples", "bad-cdn@1"),
                                 os.path.join(q, "runtimes", "bad-cdn@1"))
-                ok, _ = mcp.call("grant", {"root_id": "rt-fix", "root": q})
+                ok, _ = mcp.call("session", {"root_id": "rt-fix", "action": "grant", "root": q})
                 check("grant-fix", ok)
-                ok, red = mcp.call("runtime_validate",
-                                   {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                ok, red = mcp.call("runtime_read",
+                                   {"action": "validate", "root_id": "rt-fix", "reference": "bad-cdn@1"})
                 check("repair-fails-url-load",
                       ok and not red["valid"] and any("url-load" in e for e in red["errors"]),
                       red if ok else red)
@@ -1258,14 +1258,14 @@ def self_test_runtime_authoring(server):
                 fixed = "\n".join(l for l in text.split("\n") if "cdn.example.com" not in l)
                 with open(entry, "w") as f:
                     f.write(fixed)
-                ok, green = mcp.call("runtime_validate",
-                                     {"root_id": "rt-fix", "reference": "bad-cdn@1"})
+                ok, green = mcp.call("runtime_read",
+                                     {"action": "validate", "root_id": "rt-fix", "reference": "bad-cdn@1"})
                 check("repair-fixed-validates",
                       ok and green["valid"] and not green["errors"],
                       green if ok else green)
-            ok, _ = mcp.call("runtime_scaffold", {"name": "nope", "approve": True})
+            ok, _ = mcp.call("runtime_read", {"action": "scaffold", "name": "nope", "approve": True})
             check("scaffold-refuses-approval", not ok)
-            ok, _ = mcp.call("runtime_validate", {"reference": "nope@1", "allow": True})
+            ok, _ = mcp.call("runtime_read", {"action": "validate", "reference": "nope@1", "allow": True})
             check("validate-refuses-approval", not ok)
             ok, _ = mcp.call("runtime_install",
                              {"root_id": "rt-inst", "reference": "nope@1", "approve": True})

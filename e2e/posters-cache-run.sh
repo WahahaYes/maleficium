@@ -14,7 +14,7 @@
 #   5. porcelain shows only the edited paper and .maleficium/, search and
 #      find_files never list the cache, the watcher never queues it (core
 #      test), and a hand-edited README survives;
-#   6. export_zip carries posters, map and README; the unzipped paper
+#   6. export_write zip carries posters, map and README; the unzipped paper
 #      compiles with its posters through a sidecar with no app beside it
 #      and no display, leaving .maleficium as it was; the bundle export
 #      takes the cached posters.
@@ -97,11 +97,11 @@ def client(binary, name, env=None):
 mcp, call = client(os.environ["MCP_BIN"], "poster-cache")
 
 def compile(call, root_id, rel="auto.tex"):
-    r = call("compile_run", {"root_id": root_id, "rel": rel})
+    r = call("paper", {"action": "start", "root_id": root_id, "main_rel": rel})
     rec = {"status": "not-started", "log": str(r)}
     for _ in range(160 if r.get("job_id") else 0):
         time.sleep(2)
-        rec = call("compile_poll", {"job_id": r["job_id"], "tail_lines": 400})
+        rec = call("paper", {"action": "poll", "job_id": r["job_id"], "tail_lines": 400})
         if rec.get("status") != "running":
             break
     return rec
@@ -130,7 +130,7 @@ def tree(root):
             out[os.path.relpath(p, root)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
     return out
 
-check("grant project root", call("grant", {"root_id": "pc", "root": ROOT})["ok"])
+check("grant project root", call("session", {"root_id": "pc", "action": "grant", "root": ROOT})["ok"])
 
 # 1. First compile: no widget list before the engine, so the posters render
 # after it and a second engine run embeds them.
@@ -140,7 +140,7 @@ pdf = r1.get("pdf_url") or ""
 check("the first compile renders both posters",
       "posters: 0 cached, 2 rendered, 0 placeholder" in posters_lines(r1), str(posters_lines(r1)))
 imgs = images(pdf)
-wl = call("widgets", {"root_id": "pc", "main_rel": "auto.tex"})
+wl = call("widget", {"action": "list", "root_id": "pc", "main_rel": "auto.tex"})
 ws = {w["id"]: w for w in wl.get("widgets") or []}
 check("both widgets are listed without a poster=",
       set(ws) == {"auto-model", "auto-chart"} and all("poster" not in w for w in ws.values()), str(wl)[:300])
@@ -201,21 +201,21 @@ st = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"]
 st = sorted(l for l in st if l)
 check("porcelain shows only the edited paper and .maleficium/",
       st == [" M auto.tex", "?? .maleficium/"], str(st))
-s = call("search", {"root_id": "pc", "pattern": "safe to delete"})
+s = call("search", {"root_id": "pc", "action": "search", "pattern": "safe to delete"})
 check("search never reads the cache (README and map say it)", s["ok"] and s.get("hits") == 0, str(s)[:300])
-f = call("find_files", {"root_id": "pc", "query": "map"})
+f = call("search", {"root_id": "pc", "action": "find_files", "query": "map"})
 check("find_files never lists the cache", f["ok"] and ".maleficium" not in str(f), str(f)[:300])
-lst = call("list", {"root_id": "pc", "rel": "."})
+lst = call("file", {"root_id": "pc", "action": "list", "rel": "."})
 check("the file listing hides the cache", lst["ok"] and ".maleficium" not in str(lst), str(lst)[:300])
 
 # 6. Export, then compile without the app.
-b = call("export_bundle", {"root_id": "pc", "main_rel": "auto.tex",
+b = call("export_write", {"root_id": "pc", "action": "bundle", "main_rel": "auto.tex",
                            "dest": os.path.join(SCRATCH, "bundle.html"), "profile": "single-file"})
 check("the bundle export takes the cached posters", b["ok"], str(b)[:300])
 zp = os.path.join(SCRATCH, "paper.zip")
-z = call("export_zip", {"root_id": "pc", "dest": zp})
+z = call("export_write", {"root_id": "pc", "action": "zip", "dest": zp})
 files = z.get("files") or []
-check("export_zip carries the posters, the map and the README",
+check("export_write zip carries the posters, the map and the README",
       z["ok"] and ".maleficium/README.md" in files and ".maleficium/posters/auto.map" in files
       and all(f".maleficium/posters/{p}" in files for p in pngs()), str(files)[:400])
 mcp.p.kill()
@@ -225,7 +225,7 @@ zipfile.ZipFile(zp).extractall(UNZ)
 cache_before = tree(os.path.join(UNZ, ".maleficium"))
 env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
 lonely, lcall = client(os.environ["LONELY_BIN"], "no-app", env=env)
-check("grant the unzipped paper", lcall("grant", {"root_id": "uz", "root": UNZ})["ok"])
+check("grant the unzipped paper", lcall("session", {"root_id": "uz", "action": "grant", "root": UNZ})["ok"])
 r7 = compile(lcall, "uz")
 check("the exported paper compiles without the app", r7.get("status") == "success", str(r7)[:300])
 upd = r7.get("pdf_url") or ""

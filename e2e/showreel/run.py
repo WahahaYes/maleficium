@@ -115,7 +115,7 @@ def warm(server):
         f.write(SOAK % ar.FONT_SOAK)
     mcp = ar.Mcp(server, home)
     try:
-        mcp.call("grant", {"root_id": "soak", "root": proj})
+        mcp.call("session", {"root_id": "soak", "action": "grant", "root": proj})
         rec = mcp.compile("soak", "main.tex")
     finally:
         mcp.close()
@@ -212,8 +212,8 @@ def one_take(s, server, warm_home, model, take_dir, procs, preset, bundle_url, t
             m = tl.mark("walk.start")
             mcp = ar.Mcp(server, HOME)
             try:
-                mcp.call("grant", {"root_id": "walk", "root": project})
-                ok, sn = mcp.call("snippet", {"root_id": "walk", "main_rel": s["main"], "page": 1})
+                mcp.call("session", {"root_id": "walk", "action": "grant", "root": project})
+                ok, sn = mcp.call("sync_view", {"root_id": "walk", "action": "snippet", "main_rel": s["main"], "page": 1})
                 final_pages = sn.get("pages") if ok else None
             finally:
                 mcp.close()
@@ -273,12 +273,12 @@ def camera_test(s, server, warm_home, out, procs, preset, bundle_url, fixture):
         d.log("start")
         mcp = ar.Mcp(server, HOME)
         try:
-            mcp.call("grant", {"root_id": "t", "root": project})
+            mcp.call("session", {"root_id": "t", "action": "grant", "root": project})
             m = now_ms()
-            ok, job = mcp.call("compile_run", {"root_id": "t", "rel": s["main"], "networked": True})
+            ok, job = mcp.call("paper", {"action": "start", "root_id": "t", "main_rel": s["main"], "networked": True})
             rec = {"status": "running"}
             while ok and rec.get("status") == "running":
-                ok, rec = mcp.call("compile_poll", {"job_id": job["job_id"], "wait_ms": 30000})
+                ok, rec = mcp.call("paper", {"action": "poll", "job_id": job["job_id"], "wait_ms": 30000})
             say("camera test compile: %s" % (rec or {}).get("status"))
         finally:
             mcp.close()

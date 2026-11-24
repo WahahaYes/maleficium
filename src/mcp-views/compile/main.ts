@@ -1,8 +1,8 @@
-// The compile-dashboard MCP App View: a `compile_run` job as a live panel,
+// The compile-dashboard MCP App View: a `paper` start job as a live panel,
 // with its status, phase and downloads, log tail, what it lacked, and a
 // cancel button. One self-contained page, no framework. It only reads
-// through tools a text-only host sees too (compile_poll, compile_cancel,
-// diagnostics, offline_readiness), so both get the same facts.
+// through the `paper` tool a text-only host sees too (poll, cancel,
+// diagnostics, readiness), so both get the same facts.
 import {
   App,
   applyDocumentTheme,
@@ -189,8 +189,13 @@ async function settle(p: Poll): Promise<void> {
   if (p.status === 'failed' || p.status === 'timed-out') {
     try {
       const r = await app.callServerTool({
-        name: 'diagnostics',
-        arguments: { root_id: rootId, main_rel: job.main, max: MAX_DIAGNOSTICS },
+        name: 'paper',
+        arguments: {
+          action: 'diagnostics',
+          root_id: rootId,
+          main_rel: job.main,
+          max: MAX_DIAGNOSTICS,
+        },
       });
       const ds = (r.structuredContent as { diagnostics?: Diagnostic[] } | undefined)?.diagnostics;
       for (const d of (ds ?? []).filter((d) => d.severity === 'error')) {
@@ -203,8 +208,8 @@ async function settle(p: Poll): Promise<void> {
   if (p.status !== 'cancelled') {
     try {
       const r = await app.callServerTool({
-        name: 'offline_readiness',
-        arguments: { root_id: rootId },
+        name: 'paper',
+        arguments: { action: 'readiness', root_id: rootId },
       });
       const o = r.structuredContent as Readiness | undefined;
       if (o && o.state === 'ready') extra.push(finding('Compiles offline', 'ok'));
@@ -232,8 +237,8 @@ async function poll(): Promise<void> {
   inFlight = true;
   try {
     const r = await app.callServerTool({
-      name: 'compile_poll',
-      arguments: { job_id: job.id, tail_lines: TAIL_LINES },
+      name: 'paper',
+      arguments: { action: 'poll', job_id: job.id, tail_lines: TAIL_LINES },
     });
     if (r.isError) {
       // The server no longer knows the job (restarted): nothing to follow.
@@ -259,7 +264,10 @@ cancel.onclick = async () => {
   cancel.disabled = true;
   cancel.textContent = 'Cancelling…';
   try {
-    const r = await app.callServerTool({ name: 'compile_cancel', arguments: { job_id: job.id } });
+    const r = await app.callServerTool({
+      name: 'paper',
+      arguments: { action: 'cancel', job_id: job.id },
+    });
     // "nothing to cancel": the run just finished, and the next poll says how.
     if (r.isError) say(textOf(r));
   } catch (e) {

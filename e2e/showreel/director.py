@@ -113,7 +113,7 @@ class Director(threading.Thread):
             if path.startswith(self.project + os.sep) and path.endswith(".tex"):
                 line = self.changed_line(path)
                 self.put_show(os.path.relpath(path, self.project), line, "result")
-        elif name == "mcp__maleficium__compile_poll":
+        elif name == "mcp__maleficium__paper":
             if '"status":"success"' in json.dumps(c.get("content")).replace(" ", "").replace('\\"', '"'):
                 self.q.put(("sync", now_ms()))
         elif name == "mcp__maleficium__snippet":

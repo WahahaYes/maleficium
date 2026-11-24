@@ -1,7 +1,8 @@
-// The paper-snippet MCP App View: the region of the compiled PDF a `snippet`
-// call landed on, beside the source that made it. One self-contained page, no
-// framework. The image arrives as MCP image content, or is fetched with the
-// app-only `snippet_render` tool when the model did not ask for one.
+// The paper-snippet MCP App View: the region of the compiled PDF a
+// `sync_view` snippet call landed on, beside the source that made it. One
+// self-contained page, no framework. The image arrives as MCP image content,
+// or is fetched with the app-only `sync_render` render action when the model
+// did not ask for one.
 import {
   App,
   applyDocumentTheme,
@@ -103,8 +104,9 @@ async function render(page: number, withRegion: boolean): Promise<void> {
   const seq = ++renderSeq;
   try {
     const r = await app.callServerTool({
-      name: 'snippet_render',
+      name: 'sync_render',
       arguments: {
+        action: 'render',
         root_id: ref.rootId,
         main_rel: ref.main,
         page,
@@ -159,8 +161,8 @@ async function pollStamp(seed = false): Promise<void> {
   if (!ref || document.visibilityState !== 'visible') return;
   try {
     const r = await app.callServerTool({
-      name: 'output_stamp',
-      arguments: { root_id: ref.rootId, main_rel: ref.main },
+      name: 'export_read',
+      arguments: { action: 'stamp', root_id: ref.rootId, main_rel: ref.main },
     });
     const s = JSON.stringify(
       (r.structuredContent as { stamp: unknown } | undefined)?.stamp ?? null,

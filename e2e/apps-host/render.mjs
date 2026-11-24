@@ -29,10 +29,13 @@ try {
   await client.connect(
     new StdioClientTransport({ command: spec.cmd[0], args: spec.cmd.slice(1), env: spec.env }),
   );
-  await client.callTool({ name: 'grant', arguments: { root_id: 'view', root: spec.project } });
+  await client.callTool({
+    name: 'session',
+    arguments: { root_id: 'view', action: 'grant', root: spec.project },
+  });
   const args = { ...spec.args, root_id: 'view' };
-  const toolResult = await client.callTool({ name: 'snippet', arguments: args });
-  if (toolResult.isError) throw new Error(`snippet: ${JSON.stringify(toolResult.content)}`);
+  const toolResult = await client.callTool({ name: 'sync_view', arguments: args });
+  if (toolResult.isError) throw new Error(`sync_view: ${JSON.stringify(toolResult.content)}`);
   out.structured = toolResult.structuredContent;
   const viewHtml = (await client.readResource({ uri: 'ui://maleficium/snippet/v1' })).contents[0]
     .text;
@@ -65,7 +68,7 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => (out.error ??= `page error: ${e}`));
   await page.exposeFunction('mcpCall', async (params) => {
-    if (params.name === 'snippet_render') out.renderCalls++;
+    if (params.name === 'sync_render') out.renderCalls++;
     return client.callTool({ name: params.name, arguments: params.arguments });
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);

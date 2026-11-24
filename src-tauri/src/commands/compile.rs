@@ -2,6 +2,15 @@
 //! itself (registry, timeout, report) lives in `core::compile`; this layer
 //! only forwards lines to the window and keeps the command async so the
 //! webview paints progress and accepts Cancel meanwhile.
+//!
+//! Transports share one core job interface: the desktop streams a
+//! foreground run here through [`core::compile::run_blocking`], while the
+//! MCP `paper` tool starts background jobs with [`core::compile::run`] and
+//! follows them with `poll`/`cancel`. Both register in the same `Jobs`
+//! registry (so `cancel_current` and `shutdown` reach either), share
+//! `COMPILE_TIMEOUT_SECS`, and settle, report and render posters through
+//! the same helpers. Push delivery to the window stays here: converging the
+//! desktop onto poll would add latency and lose live lines for no gain.
 
 use maleficium_core::Core;
 use tauri::{AppHandle, Emitter, State};

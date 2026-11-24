@@ -187,13 +187,13 @@ p = mcp.p
 def call(name, args):
     return flat(mcp.tool(name, args))
 
-g = call("grant", {"root_id": "drv", "root": ROOT})
+g = call("session", {"root_id": "drv", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
-e = call("read", {"root_id": "drv", "rel": "../outside.tex"})
+e = call("file", {"root_id": "drv", "action": "read", "rel": "../outside.tex"})
 check("escape fails closed", not e["ok"], str(e))
 
-r = call("compile_run", {"root_id": "drv", "rel": "main.tex"})
+r = call("paper", {"action": "start", "root_id": "drv", "main_rel": "main.tex"})
 job = (r.get("job_id") or "")
 check("compile starts", r["ok"] and bool(job), str(r))
 t0 = time.time()
@@ -202,15 +202,15 @@ sc = {"status": "running"}
 for _ in range(ROUNDS):
     time.sleep(4)
     polls += 1
-    sc = call("compile_poll", {"job_id": job, "tail_lines": 3})
+    sc = call("paper", {"action": "poll", "job_id": job, "tail_lines": 3})
     if sc.get("status") != "running":
         break
 compile_ms = (time.time() - t0) * 1000
 check("compile succeeds", sc.get("status") == "success", str(sc)[:200], ms=compile_ms)
-check("compile_run names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
+check("paper start names the main file it compiles", r.get("main_rel") == "main.tex", str(r))
 prog = sc.get("progress") or {}
-check("compile_poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
-again = [call("compile_poll", {"job_id": job, "tail_lines": 3}).get("status") for _ in range(3)]
+check("paper poll reports the phase reached and downloads", prog.get("phase") in ("writing", "xdvipdfmx", "tex") and isinstance(prog.get("fetched"), int), str(prog))
+again = [call("paper", {"action": "poll", "job_id": job, "tail_lines": 3}).get("status") for _ in range(3)]
 check("a finished compile answers later polls the same", again == [sc.get("status")] * 3, str(again))
 check("compile polls bounded", polls < ROUNDS, f"{polls} polls")
 if WARM_ONLY:
@@ -221,107 +221,107 @@ EC = os.environ["ENGINE_CACHE"]
 pinned = os.path.join(EC, "bundles", "hashes", "https,58,,47,,47,data1b.fullyjustified.net,47,tlextras-2022.0r0.tar")
 check("engine cache is app-owned under OS tmp", EC.startswith(tempfile.gettempdir()) and os.path.isdir(EC), EC)
 check("compile resolved the pinned bundle", os.path.isfile(pinned) and open(pinned).read().strip() == os.environ["BUNDLE_DIGEST"], pinned)
-st1 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+st1 = call("paper", {"action": "output", "root_id": "drv", "main_rel": "main.tex"}).get("stamp")
 check("output stamp names the compiled pdf", bool(st1) and st1.get("bytes", 0) > 0, str(st1))
 time.sleep(1.1)
-rj = call("compile_run", {"root_id": "drv", "rel": "main.tex"}).get("job_id") or ""
+rj = call("paper", {"action": "start", "root_id": "drv", "main_rel": "main.tex"}).get("job_id") or ""
 for _ in range(30):
     time.sleep(1)
-    if call("compile_poll", {"job_id": rj, "tail_lines": 1}).get("status") != "running":
+    if call("paper", {"action": "poll", "job_id": rj, "tail_lines": 1}).get("status") != "running":
         break
-st2 = call("output_stamp", {"root_id": "drv", "main_rel": "main.tex"}).get("stamp")
+st2 = call("paper", {"action": "output", "root_id": "drv", "main_rel": "main.tex"}).get("stamp")
 check("an MCP recompile moves the output stamp (what the app polls)", bool(st2) and st2 != st1, f"{st1} -> {st2}")
 pdf = sc.get("pdf_url") or ""
 check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
 check("pdf exists", bool(pdf) and _os.path.exists(pdf), pdf)
 
-fw = call("synctex_forward", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+fw = call("sync_view", {"root_id": "drv", "action": "forward", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
 check("forward query", fw["ok"] and (fw.get("page") or 0) >= 1, str(fw)[:120])
 
-iv = call("synctex_inverse", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
+iv = call("sync_view", {"root_id": "drv", "action": "inverse", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
 ivh = iv
 check("inverse query", iv["ok"] and (ivh.get("line") or 0) >= 1, str(iv)[:120])
 check("inverse hit is root-relative", bool(ivh.get("relPath")) and not ivh["relPath"].startswith("/"), str(ivh))
 
-sn = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
-check("snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
-check("snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
+sn = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+check("sync_view snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
+check("sync_view snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
 import base64 as _b64
-raw = mcp.request("tools/call", {"name": "snippet", "arguments": {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
+raw = mcp.request("tools/call", {"name": "sync_view", "arguments": {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
 blocks = raw.get("content") or []
 img = next((b for b in blocks if b.get("type") == "image"), None)
 png = _b64.b64decode(img["data"]) if img else b""
 meta = (raw.get("structuredContent") or {}).get("image") or {}
-check("snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
-check("snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
-pg = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "with_image": True})
-fl = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram"})
-fi = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 32})
+check("sync_view snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
+check("sync_view snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
+pg = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "page": 1, "with_image": True})
+fl = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "label": "fig:diagram"})
+fi = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 32})
 check("a label lands where its figure is, not on the page body", fl["ok"] and fi["ok"] and fl["page"] == fi["page"] and (fl.get("region") or {}).get("height", 999) < 400, str(fl.get("region")) + " vs " + str(fi.get("region")))
-check("snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
-two = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
-check("snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
+check("sync_view snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
+two = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
+check("sync_view snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
 
 tl = mcp.request("tools/list")["result"]["tools"]
 ui_of = {t["name"]: (t.get("_meta") or {}).get("ui") for t in tl}
-check("only the snippet tools and compile_run carry a View", sorted(k for k, v in ui_of.items() if v) == ["compile_run", "snippet", "snippet_render"], str(sorted(k for k, v in ui_of.items() if v)))
-check("compile_run names the dashboard and stays model-callable", ui_of["compile_run"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["compile_run"]))
-check("the dashboard's own calls stay plain tools", all(ui_of[n] is None for n in ["compile_poll", "compile_cancel", "diagnostics", "offline_readiness"]), str({n: ui_of[n] for n in ["compile_poll", "compile_cancel"]}))
+check("only the sync tools and paper carry a View", sorted(k for k, v in ui_of.items() if v) == ["paper", "sync_render", "sync_view"], str(sorted(k for k, v in ui_of.items() if v)))
+check("paper names the dashboard and stays model-callable", ui_of["paper"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["paper"]))
+check("paper is the only compile-flow tool with a View", [k for k, v in ui_of.items() if v and "compile" in (v.get("resourceUri") or "")] == ["paper"], str(ui_of))
 dash = mcp.request("resources/read", {"uri": "ui://maleficium/compile/v1"})["result"]["contents"][0]
 check("the dashboard is served as an MCP App html page", dash["mimeType"] == "text/html;profile=mcp-app" and dash["text"].lstrip().lower().startswith("<!doctype html>") and (dash.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (dash.get("_meta") or {}).get("ui", {}), str(dash)[:160])
 check("the dashboard is self-contained", "src=\"http" not in dash["text"] and "href=\"http" not in dash["text"] and "@import" not in dash["text"])
 check("an unknown version of the dashboard is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/compile/v2"}))
-check("snippet names its View and stays model-callable", ui_of["snippet"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["snippet"]["visibility"], str(ui_of["snippet"]))
-check("snippet_render is app-only", ui_of["snippet_render"]["visibility"] == ["app"], str(ui_of["snippet_render"]))
+check("sync_view names its View and stays model-callable", ui_of["sync_view"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["sync_view"]["visibility"], str(ui_of["sync_view"]))
+check("sync_render is app-only", ui_of["sync_render"]["visibility"] == ["app"], str(ui_of["sync_render"]))
 view = mcp.request("resources/read", {"uri": "ui://maleficium/snippet/v1"})["result"]["contents"][0]
 check("the View is served as an MCP App html page", view["mimeType"] == "text/html;profile=mcp-app" and view["text"].lstrip().lower().startswith("<!doctype html>") and (view.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (view.get("_meta") or {}).get("ui", {}), str(view)[:160])
 check("the View is self-contained", "src=\"http" not in view["text"] and "href=\"http" not in view["text"] and "@import" not in view["text"])
 check("an unknown ui resource is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/nope/v1"}))
 check("Views stay out of resources/list", mcp.request("resources/list")["result"].get("resources") == [])
-sr = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 1, "scale": 1}})["result"]
+sr = mcp.request("tools/call", {"name": "sync_render", "arguments": {"root_id": "drv", "action": "render", "main_rel": "main.tex", "page": 1, "scale": 1}})["result"]
 srimg = next((b for b in sr.get("content") or [] if b.get("type") == "image"), None)
-check("snippet_render returns the page as a png", not sr.get("isError") and srimg and _b64.b64decode(srimg["data"])[:8] == b"\x89PNG\r\n\x1a\n" and ROOT not in json.dumps(sr.get("structuredContent")), str(sr.get("structuredContent")))
-sr2 = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 999}})["result"]
-check("snippet_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
+check("sync_render returns the page as a png", not sr.get("isError") and srimg and _b64.b64decode(srimg["data"])[:8] == b"\x89PNG\r\n\x1a\n" and ROOT not in json.dumps(sr.get("structuredContent")), str(sr.get("structuredContent")))
+sr2 = mcp.request("tools/call", {"name": "sync_render", "arguments": {"root_id": "drv", "action": "render", "main_rel": "main.tex", "page": 999}})["result"]
+check("sync_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
 
-st = call("file_graph", {"root_id": "drv", "main_rel": "main.tex"})
+st = call("structure", {"root_id": "drv", "action": "file_graph", "main_rel": "main.tex"})
 st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}
 check("file graph walks inputs", st["ok"] and st_files.get("chapters/method.tex") is True and st_files.get("chapters/background.tex") is True, str(st)[:200])
 check("structure is disk-sourced + revisioned", st.get("source") == "disk" and len(st.get("revision") or "") == 16, str(st)[:120])
 check("structure paths are root-relative", ROOT not in json.dumps(st), json.dumps(st)[:200])
-ol = call("outline", {"root_id": "drv", "rel": "main.tex"})
+ol = call("structure", {"root_id": "drv", "action": "outline", "rel": "main.tex"})
 check("outline lists sections", ol["ok"] and any(e["kind"] == "section" and e["title"] == "Introduction" for e in ol.get("entries") or []), str(ol)[:200])
-lrf = call("labels_refs", {"root_id": "drv", "main_rel": "main.tex"})
+lrf = call("structure", {"root_id": "drv", "action": "labels_refs", "main_rel": "main.tex"})
 check("refs resolve", lrf["ok"] and any(r["key"] == "fig:diagram" and r["resolved"] for r in lrf.get("refs") or []), str(lrf)[:200])
-ci = call("citations", {"root_id": "drv", "main_rel": "main.tex"})
+ci = call("structure", {"root_id": "drv", "action": "citations", "main_rel": "main.tex"})
 check("cites resolve against refs.bib", ci["ok"] and any(c["key"] == "knuth1984texbook" and c["resolved"] for c in ci.get("cites") or []), str(ci)[:200])
-dg = call("diagnostics", {"root_id": "drv", "main_rel": "main.tex"})
+dg = call("paper", {"action": "diagnostics", "root_id": "drv", "main_rel": "main.tex"})
 check("diagnostics after a clean compile", dg["ok"] and ROOT not in json.dumps(dg), str(dg)[:200])
-esc = call("outline", {"root_id": "drv", "rel": "../outside.tex"})
+esc = call("structure", {"root_id": "drv", "action": "outline", "rel": "../outside.tex"})
 check("structure escape is a tool error", not esc["ok"] and "forbidden" in esc.get("error", ""), str(esc))
 
-d0 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex"})
+d0 = call("file_mutate", {"root_id": "drv", "action": "delete", "rel": "chapters/method.tex"})
 check("delete needs confirm", not d0["ok"] and "confirm" in (d0.get("error") or ""), str(d0))
 abs_target = ROOT + "/chapters/method.tex"
-d1 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex", "confirm": abs_target})
+d1 = call("file_mutate", {"root_id": "drv", "action": "delete", "rel": "chapters/method.tex", "confirm": abs_target})
 trash = d1.get("trash_path") or ""
 check("delete trashes", d1["ok"] and bool(trash), str(d1))
 check("trash outside project", trash and not trash.startswith(ROOT), trash)
 
-u = call("undo", {"root_id": "drv", "trash_path": trash})
+u = call("file_mutate", {"root_id": "drv", "action": "undo", "trash_path": trash})
 check("undo restores", u["ok"] and u.get("path", "").endswith("chapters/method.tex"), str(u))
 
 with open(ROOT + "/fail.tex", "w") as f:
     f.write("\\documentclass{article}\n\\begin{document}\n\\badcommand\n\\end{document}\n")
-fr = call("compile_run", {"root_id": "drv", "rel": "fail.tex"})
+fr = call("paper", {"action": "start", "root_id": "drv", "main_rel": "fail.tex"})
 fjob = (fr.get("job_id") or "")
 check("failure compile starts", fr["ok"] and bool(fjob), str(fr))
 ft0 = time.time()
 fsc = {"status": "running"}
 for _ in range(30):
     time.sleep(4)
-    fsc = call("compile_poll", {"job_id": fjob, "tail_lines": 5})
+    fsc = call("paper", {"action": "poll", "job_id": fjob, "tail_lines": 5})
     if fsc.get("status") != "running":
         break
 fail_ms = (time.time() - ft0) * 1000
@@ -329,7 +329,7 @@ flog = (fsc.get("log") or "") + "\n" + "\n".join(fsc.get("lines") or [])
 check("failure reports failed", fsc.get("status") == "failed", str(fsc)[:200], ms=fail_ms)
 check("failure names the cause", "Undefined control sequence" in flog, flog[:200])
 check("failure writes no pdf", not fsc.get("pdf_url"), str(fsc.get("pdf_url")))
-fd = call("diagnostics", {"root_id": "drv", "main_rel": "fail.tex"})
+fd = call("paper", {"action": "diagnostics", "root_id": "drv", "main_rel": "fail.tex"})
 fdd = fd.get("diagnostics") or []
 check("failure diagnostics are structured", fd["ok"] and any(d.get("path") == "fail.tex" and d["line"] == 3 and d["severity"] == "error" for d in fdd), str(fd)[:300])
 _os.remove(ROOT + "/fail.tex")
@@ -338,57 +338,57 @@ _os.remove(ROOT + "/fail.tex")
 import zipfile
 xp = os.path.join(scratch, "export")
 os.makedirs(xp, exist_ok=True)
-ep = call("export_pdf", {"root_id": "drv", "main_rel": "main.tex", "dest": xp + "/paper.pdf"})
+ep = call("export_write", {"root_id": "drv", "action": "pdf", "main_rel": "main.tex", "dest": xp + "/paper.pdf"})
 check("export pdf copies the compiled bytes", ep["ok"] and open(xp + "/paper.pdf", "rb").read() == open(pdf, "rb").read() and ep.get("bytes") == os.path.getsize(pdf), str(ep)[:200])
-ez = call("export_zip", {"root_id": "drv", "dest": xp + "/proj.zip"})
+ez = call("export_write", {"root_id": "drv", "action": "zip", "dest": xp + "/proj.zip"})
 names = sorted(zipfile.ZipFile(xp + "/proj.zip").namelist()) if ez["ok"] else []
 want = sorted(subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split())
 check("export zip holds exactly the sources (a standard reader agrees)", names == want and zipfile.ZipFile(xp + "/proj.zip").testzip() is None, f"{len(names)} vs {len(want)}: {sorted(set(names) ^ set(want))[:5]}")
 check("export zip leaves out outputs, trash and dot files", not any(n.endswith((".aux", ".log", ".pdf")) or n.startswith(".") or "/." in n for n in names), str(names[:10]))
-ei = call("export_zip", {"root_id": "drv", "dest": ROOT + "/inside.zip"})
+ei = call("export_write", {"root_id": "drv", "action": "zip", "dest": ROOT + "/inside.zip"})
 check("export into the project is refused", not ei["ok"] and "inside the project" in ei.get("error", "") and not os.path.exists(ROOT + "/inside.zip"), str(ei))
 
 # ---- templates: every bundled template (and the welcome tour) compiles ----
-tl = call("templates", {})
+tl = call("scaffold", {"action": "list"})
 tids = [t["id"] for t in tl.get("templates") or [] if not t.get("user")]
 check("templates list the bundled set, not the welcome tour", tl["ok"] and set(["article", "report", "book", "letter", "beamer", "assignment", "cv", "resume", "journal"]) <= set(tids) and "welcome" not in tids, str(tids))
 tp = os.path.join(scratch, "from-templates")
 os.makedirs(tp, exist_ok=True)
 bad = []
 for tid in tids + ["welcome"]:
-    nc = call("new_from_template", {"template": tid, "parent_dir": tp, "name": tid})
+    nc = call("scaffold", {"action": "create", "template": tid, "parent_dir": tp, "name": tid})
     if not nc["ok"]:
         bad.append(f"{tid}: {nc.get('error')}")
         continue
-    g = call("grant", {"root_id": "tpl-" + tid, "root": nc["root"]})
-    j = call("compile_run", {"root_id": "tpl-" + tid, "rel": nc["main"]}).get("job_id") or ""
+    g = call("session", {"root_id": "tpl-" + tid, "action": "grant", "root": nc["root"]})
+    j = call("paper", {"action": "start", "root_id": "tpl-" + tid, "main_rel": nc["main"]}).get("job_id") or ""
     rec = {"status": "running"}
     for _ in range(15):
-        rec = call("compile_poll", {"job_id": j, "tail_lines": 5, "wait_ms": 20000})
+        rec = call("paper", {"action": "poll", "job_id": j, "tail_lines": 5, "wait_ms": 20000})
         if rec.get("status") != "running":
             break
     if rec.get("status") != "success" or not os.path.exists(rec.get("pdf_url") or ""):
         bad.append(f"{tid}: {rec.get('status')} {rec.get('missing')} {str(rec.get('log'))[:160]}")
 check("every bundled template and the welcome tour compiles to a pdf", not bad, "; ".join(bad))
-again = call("new_from_template", {"template": "article", "parent_dir": tp, "name": "article"})
+again = call("scaffold", {"action": "create", "template": "article", "parent_dir": tp, "name": "article"})
 check("a template never writes into a folder that is in use", not again["ok"] and "not empty" in again.get("error", ""), str(again))
-rel = call("new_from_template", {"template": "beamer", "parent_dir": "talks", "name": "beamer"})
+rel = call("scaffold", {"action": "create", "template": "beamer", "parent_dir": "talks", "name": "beamer"})
 check("a relative parent folder is refused and nothing lands in the working directory", not rel["ok"] and "absolute" in rel.get("error", "") and not os.path.exists(os.path.join(os.getcwd(), "talks")) and not os.path.exists(os.path.join(os.getcwd(), "beamer")), str(rel))
 
 # ---- pre-compile checks: every missing dependency at once ----
 with open(ROOT + "/three.tex", "w") as f:
     f.write("\\documentclass{article}\n\\usepackage{amsmath,nopkga}\n\\usepackage{nopkgb}\n\\usepackage[style=alpha]{biblatex}\n\\RequirePackage{nopkgc}\n\\usepackage{minted}\n\\begin{document}\nx\n\\end{document}\n")
-pc = call("precompile_checks", {"root_id": "drv", "main_rel": "three.tex"})
+pc = call("paper", {"action": "prechecks", "root_id": "drv", "main_rel": "three.tex"})
 found = [(f["kind"], f["name"], f["line"]) for f in pc.get("findings") or []]
 check("pre-compile checks ran against the bundle index", pc["ok"] and pc.get("bundleChecked") is True, str(pc)[:200])
 check("a doc with 3 missing packages lists all 3 before compiling", [x for x in found if x[0] == "not-in-bundle"] == [("not-in-bundle", "nopkga.sty", 2), ("not-in-bundle", "nopkgb.sty", 3), ("not-in-bundle", "nopkgc.sty", 5)], str(found))
 check("pre-compile checks flag biber and shell escape", ("external-tool", "biber", 4) in found and ("shell-escape", "minted", 6) in found, str(found))
-tr = call("compile_run", {"root_id": "drv", "rel": "three.tex"})
+tr = call("paper", {"action": "start", "root_id": "drv", "main_rel": "three.tex"})
 tj = tr.get("job_id") or ""
 ts = {"status": "running"}
 for _ in range(30):
     time.sleep(2)
-    ts = call("compile_poll", {"job_id": tj, "tail_lines": 5})
+    ts = call("paper", {"action": "poll", "job_id": tj, "tail_lines": 5})
     if ts.get("status") != "running":
         break
 check("the compile itself stops at the first of them", ts.get("missing") == {"file": "nopkga.sty", "reason": "not-in-bundle"}, str(ts.get("missing")))
@@ -410,15 +410,15 @@ def session(env, offline):
     def tool(name, args):
         return flat(client.tool(name, args))
     def compile_doc(rel):
-        j = tool("compile_run", {"root_id": "off", "rel": rel}).get("job_id") or ""
+        j = tool("paper", {"action": "start", "root_id": "off", "main_rel": rel}).get("job_id") or ""
         rec = {"status": "running"}
         for _ in range(60):
             time.sleep(1)
-            rec = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+            rec = tool("paper", {"action": "poll", "job_id": j, "tail_lines": 400})
             if rec.get("status") != "running":
                 break
         return rec
-    g = tool("grant", {"root_id": "off", "root": ROOT})
+    g = tool("session", {"root_id": "off", "action": "grant", "root": ROOT})
     return q, tool, compile_doc, g["ok"]
 
 BIN = os.environ["MCP_BIN"]
@@ -445,13 +445,13 @@ else:
     check("offline session grants the project", granted)
     r = compile_doc("main.tex")
     check("true-offline recompile succeeds from the cache", r.get("status") == "success" and bool(r.get("pdf_url")), str(r)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("an offline recompile makes the project ready offline", rd.get("state") == "ready" and rd.get("needs") == [], str(rd))
     r = compile_doc("pkg.tex")
     check("offline: an uncached bundle package is not-cached", r.get("status") == "failed" and r.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(r.get("missing")) + " " + str(r.get("log"))[:200])
-    d = tool("diagnostics", {"root_id": "off", "main_rel": "pkg.tex"})
+    d = tool("paper", {"action": "diagnostics", "root_id": "off", "main_rel": "pkg.tex"})
     check("diagnostics report the missing dependency", d.get("missing") == {"file": pick + ".sty", "reason": "not-cached"}, str(d)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("readiness names what needs network", rd.get("state") == "needs-network" and rd.get("needs") == [pick + ".sty"], str(rd))
     r = compile_doc("nib.tex")
     check("offline: a package outside the bundle is not-in-bundle", r.get("status") == "failed" and r.get("missing") == {"file": "nonexistentpkgxyz.sty", "reason": "not-in-bundle"}, str(r.get("missing")))
@@ -464,18 +464,18 @@ else:
     r = compile_doc("pkg.tex")
     lines = r.get("lines") or []
     check("online: a cache miss is fetched by one online rerun", r.get("status") == "success" and "note: using only cached resource files" in lines and ("note: downloading " + pick + ".sty") in lines, str(r)[:300])
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("an online success leaves readiness unverified", rd.get("state") == "unverified", str(rd))
-    j = tool("compile_run", {"root_id": "off", "rel": "pkg.tex", "networked": True}).get("job_id") or ""
+    j = tool("paper", {"action": "start", "root_id": "off", "main_rel": "pkg.tex", "networked": True}).get("job_id") or ""
     r = {"status": "running"}
     for _ in range(60):
         time.sleep(1)
-        r = tool("compile_poll", {"job_id": j, "tail_lines": 400})
+        r = tool("paper", {"action": "poll", "job_id": j, "tail_lines": 400})
         if r.get("status") != "running":
             break
     lines = r.get("lines") or []
     check("make available offline: one networked compile, then a cached-only proof", r.get("status") == "success" and lines.index("verifying offline: compiling from cached files only") < max(i for i, l in enumerate(lines) if l == "note: using only cached resource files"), str(lines[:4]))
-    rd = tool("offline_readiness", {"root_id": "off"})
+    rd = tool("paper", {"action": "readiness", "root_id": "off"})
     check("make available offline leaves the project ready offline", rd.get("state") == "ready", str(rd))
     q.kill()
 
@@ -502,17 +502,17 @@ def record(line):
 PAGES_ROOT = os.environ["PAGES_ROOT"]
 TREE_ROOT = os.environ["TREE_ROOT"]
 
-gt = call("grant", {"root_id": "tree", "root": TREE_ROOT})
+gt = call("session", {"root_id": "tree", "action": "grant", "root": TREE_ROOT})
 check("grant 1000-file root", gt["ok"], str(gt))
 t = time.time()
-lr = call("list", {"root_id": "tree", "rel": "."})
+lr = call("file", {"root_id": "tree", "action": "list", "rel": "."})
 open_ms = (time.time() - t) * 1000
 names = [e["name"] for e in (lr.get("entries") or [])]
 check("1000-file open lists the whole level", lr["ok"] and len(names) == 1003, f"{len(names)} entries", ms=open_ms)
 check("1000-file open stays depth 1", "deep" in names and "d1.tex" not in names, ",".join(names[:5]))
 check("1000-file open under 750ms", open_ms < 750, f"{open_ms:.0f}ms", ms=open_ms)
 t = time.time()
-ls = call("list", {"root_id": "tree", "rel": "small"})
+ls = call("file", {"root_id": "tree", "action": "list", "rel": "small"})
 small_ms = (time.time() - t) * 1000
 check(
     "open cost tracks the listed level, not the tree",
@@ -521,36 +521,36 @@ check(
     ms=small_ms,
 )
 
-gp = call("grant", {"root_id": "pages", "root": PAGES_ROOT})
+gp = call("session", {"root_id": "pages", "action": "grant", "root": PAGES_ROOT})
 check("grant 3000pp root", gp["ok"], str(gp))
-cr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+cr = call("paper", {"action": "start", "root_id": "pages", "main_rel": "doc.tex"})
 cjob = cr.get("job_id") or ""
 check("cancel probe compile starts", cr["ok"] and bool(cjob), str(cr))
 cancel_t0 = time.time()
 time.sleep(0.3)
-cs = call("compile_poll", {"job_id": cjob, "tail_lines": 3})
+cs = call("paper", {"action": "poll", "job_id": cjob, "tail_lines": 3})
 check("cancel probe finds the engine still running", cs.get("status") == "running", str(cs)[:200])
 # cancel only succeeds while the job still owns a live child, so an accepted
 # cancel is itself proof the engine was mid-run.
-cc = call("compile_cancel", {"job_id": cjob})
+cc = call("paper", {"action": "cancel", "job_id": cjob})
 check("cancel accepted mid-compile", cc["ok"], str(cc))
 for _ in range(100):
     time.sleep(0.1)
-    cs = call("compile_poll", {"job_id": cjob, "tail_lines": 5})
+    cs = call("paper", {"action": "poll", "job_id": cjob, "tail_lines": 5})
     if cs.get("status") != "running":
         break
 cancel_ms = (time.time() - cancel_t0) * 1000
 check("cancelled compile reports cancelled", cs.get("status") == "cancelled", str(cs)[:200], ms=cancel_ms)
 check("cancelled compile writes no pdf", not cs.get("pdf_url"), str(cs.get("pdf_url")))
 
-hr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
+hr = call("paper", {"action": "start", "root_id": "pages", "main_rel": "doc.tex"})
 hjob = hr.get("job_id") or ""
 check("3000pp compile starts", hr["ok"] and bool(hjob), str(hr))
 ht0 = time.time()
 hs = {"status": "running"}
 for _ in range(180):
     time.sleep(1)
-    hs = call("compile_poll", {"job_id": hjob, "tail_lines": 5})
+    hs = call("paper", {"action": "poll", "job_id": hjob, "tail_lines": 5})
     if hs.get("status") != "running":
         break
 heavy_ms = (time.time() - ht0) * 1000
