@@ -40,7 +40,7 @@
   "vendored": [
     {
       "name": "three",
-      "version": "0.186.1",
+      "version": "0.187.0",
       "license": "MIT",
       "source": "https://www.npmjs.com/package/three"
     }
