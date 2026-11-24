@@ -205,7 +205,7 @@ s = call("search", {"root_id": "pc", "pattern": "safe to delete"})
 check("search never reads the cache (README and map say it)", s["ok"] and s.get("hits") == 0, str(s)[:300])
 f = call("find_files", {"root_id": "pc", "query": "map"})
 check("find_files never lists the cache", f["ok"] and ".maleficium" not in str(f), str(f)[:300])
-lst = call("list", {"root_id": "pc", "rel": "."})
+lst = call("file", {"root_id": "pc", "action": "list", "rel": "."})
 check("the file listing hides the cache", lst["ok"] and ".maleficium" not in str(lst), str(lst)[:300])
 
 # 6. Export, then compile without the app.

@@ -190,7 +190,7 @@ def call(name, args):
 g = call("session", {"root_id": "drv", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
-e = call("read", {"root_id": "drv", "rel": "../outside.tex"})
+e = call("file", {"root_id": "drv", "action": "read", "rel": "../outside.tex"})
 check("escape fails closed", not e["ok"], str(e))
 
 r = call("compile_run", {"root_id": "drv", "rel": "main.tex"})
@@ -301,15 +301,15 @@ check("diagnostics after a clean compile", dg["ok"] and ROOT not in json.dumps(d
 esc = call("outline", {"root_id": "drv", "rel": "../outside.tex"})
 check("structure escape is a tool error", not esc["ok"] and "forbidden" in esc.get("error", ""), str(esc))
 
-d0 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex"})
+d0 = call("file_mutate", {"root_id": "drv", "action": "delete", "rel": "chapters/method.tex"})
 check("delete needs confirm", not d0["ok"] and "confirm" in (d0.get("error") or ""), str(d0))
 abs_target = ROOT + "/chapters/method.tex"
-d1 = call("delete", {"root_id": "drv", "rel": "chapters/method.tex", "confirm": abs_target})
+d1 = call("file_mutate", {"root_id": "drv", "action": "delete", "rel": "chapters/method.tex", "confirm": abs_target})
 trash = d1.get("trash_path") or ""
 check("delete trashes", d1["ok"] and bool(trash), str(d1))
 check("trash outside project", trash and not trash.startswith(ROOT), trash)
 
-u = call("undo", {"root_id": "drv", "trash_path": trash})
+u = call("file_mutate", {"root_id": "drv", "action": "undo", "trash_path": trash})
 check("undo restores", u["ok"] and u.get("path", "").endswith("chapters/method.tex"), str(u))
 
 with open(ROOT + "/fail.tex", "w") as f:
@@ -505,14 +505,14 @@ TREE_ROOT = os.environ["TREE_ROOT"]
 gt = call("session", {"root_id": "tree", "action": "grant", "root": TREE_ROOT})
 check("grant 1000-file root", gt["ok"], str(gt))
 t = time.time()
-lr = call("list", {"root_id": "tree", "rel": "."})
+lr = call("file", {"root_id": "tree", "action": "list", "rel": "."})
 open_ms = (time.time() - t) * 1000
 names = [e["name"] for e in (lr.get("entries") or [])]
 check("1000-file open lists the whole level", lr["ok"] and len(names) == 1003, f"{len(names)} entries", ms=open_ms)
 check("1000-file open stays depth 1", "deep" in names and "d1.tex" not in names, ",".join(names[:5]))
 check("1000-file open under 750ms", open_ms < 750, f"{open_ms:.0f}ms", ms=open_ms)
 t = time.time()
-ls = call("list", {"root_id": "tree", "rel": "small"})
+ls = call("file", {"root_id": "tree", "action": "list", "rel": "small"})
 small_ms = (time.time() - t) * 1000
 check(
     "open cost tracks the listed level, not the tree",

@@ -117,10 +117,119 @@ struct RootParams {
     root_id: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum FileAction {
+    Read,
+    List,
+}
+
+impl<'de> Deserialize<'de> for FileAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "read" => Ok(Self::Read),
+            "list" => Ok(Self::List),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["read", "list"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a file call names a project, an action and
+/// a path, nothing that could approve, fetch or write.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ListParams {
+#[serde(deny_unknown_fields)]
+struct FileParams {
     root_id: String,
+    action: FileAction,
+    /// Required iff action is read; the level to list iff action is list
+    /// (defaults to the root).
     rel: Option<String>,
+}
+
+/// The `file` result for one action, verbatim: `read` the file's text,
+/// `list` the level's entries.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum FileOut {
+    Text(TextOut),
+    Listing(ListOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for FileOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FileOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `read` returns the file's text, `list` returns the level's entries.",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum FileMutateAction {
+    Delete,
+    Undo,
+}
+
+impl<'de> Deserialize<'de> for FileMutateAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "delete" => Ok(Self::Delete),
+            "undo" => Ok(Self::Undo),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["delete", "undo"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a mutation names a project, an action and
+/// the path that action needs, nothing that could approve or fetch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FileMutateParams {
+    root_id: String,
+    action: FileMutateAction,
+    /// Required iff action is delete.
+    rel: Option<String>,
+    /// Iff action is delete: the absolute path from the refused first call.
+    confirm: Option<String>,
+    /// Required iff action is undo: the trash path from a `delete`.
+    trash_path: Option<String>,
+}
+
+/// The `file_mutate` result for one action, verbatim: `delete` the trash
+/// path, `undo` the restored path.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum FileMutateOut {
+    Deleted(DeleteOut),
+    Restored(PathOut),
+}
+
+// Same object-shape naming as `FileOut`: the union serializes as the
+// bare per-action record.
+impl schemars::JsonSchema for FileMutateOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FileMutateOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `delete` returns the trash path, `undo` returns the restored path.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -135,7 +244,7 @@ struct ListOut {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct FileParams {
+struct OutlineParams {
     root_id: String,
     rel: String,
 }
@@ -587,21 +696,8 @@ struct InverseParams {
     y: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct DeleteParams {
-    root_id: String,
-    rel: String,
-    confirm: Option<String>,
-}
-
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct DeleteOut {
-    trash_path: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct UndoParams {
-    root_id: String,
     trash_path: String,
 }
 
@@ -938,7 +1034,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "List one directory level inside a session root",
+        description = "Read a project file or list one directory level: the read half of working in a granted root. `read` returns a file as UTF-8 text; `list` lists one level, with rel defaulting to the root. Both stay inside the root: escapes are refused.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -946,32 +1042,26 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<Json<ListOut>, String> {
-        self.tool("list", || {
-            let entries = core::list_dir(&self.cx, &p.root_id, p.rel.as_deref().unwrap_or("."))?
-                .into_iter()
-                .map(|e| EntryOut {
-                    name: e.name,
-                    entry_type: e.entry_type,
-                })
-                .collect();
-            Ok(Json(ListOut { entries }))
-        })
-    }
-
-    #[tool(
-        description = "Read a project file as UTF-8 text",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn read(&self, Parameters(p): Parameters<FileParams>) -> Result<Json<TextOut>, String> {
-        self.tool("read", || {
-            let text = core::read_text(&self.cx, &p.root_id, &p.rel)?;
-            Ok(Json(TextOut { text }))
+    fn file(&self, Parameters(p): Parameters<FileParams>) -> Result<Json<FileOut>, String> {
+        self.tool("file", || match p.action {
+            FileAction::Read => {
+                let rel = p.rel.as_deref().ok_or_else(|| {
+                    "read requires `rel`: the project-relative file to read".to_string()
+                })?;
+                let text = core::read_text(&self.cx, &p.root_id, rel)?;
+                Ok(Json(FileOut::Text(TextOut { text })))
+            }
+            FileAction::List => {
+                let entries =
+                    core::list_dir(&self.cx, &p.root_id, p.rel.as_deref().unwrap_or("."))?
+                        .into_iter()
+                        .map(|e| EntryOut {
+                            name: e.name,
+                            entry_type: e.entry_type,
+                        })
+                        .collect();
+                Ok(Json(FileOut::Listing(ListOut { entries })))
+            }
         })
     }
 
@@ -1742,7 +1832,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Delete a project file to the app-local trash, in two calls: without confirm it is refused with the file's absolute path; call again with that absolute path as confirm to delete.",
+        description = "Delete a project file to the app-local trash, or restore one: the only way to remove project files. `delete` without confirm is refused with the file's absolute path; call again with that path as confirm to delete. `undo` restores a trashed file by its trash_path.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1750,27 +1840,42 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<Json<DeleteOut>, String> {
-        self.tool("delete", || {
-            let confirm = p.confirm.as_deref().unwrap_or("");
-            let trash_path = core::trash_file(&self.cx, &p.root_id, &p.rel, confirm)?;
-            Ok(Json(DeleteOut { trash_path }))
-        })
-    }
-
-    #[tool(
-        description = "Restore a trashed file to its original path",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = false,
-            open_world_hint = false
-        )
-    )]
-    fn undo(&self, Parameters(p): Parameters<UndoParams>) -> Result<Json<PathOut>, String> {
-        self.tool("undo", || {
-            let path = core::undo_trash(&self.cx, &p.root_id, &p.trash_path)?;
-            Ok(Json(PathOut { path }))
+    fn file_mutate(
+        &self,
+        Parameters(p): Parameters<FileMutateParams>,
+    ) -> Result<Json<FileMutateOut>, String> {
+        self.tool("file_mutate", || match p.action {
+            FileMutateAction::Delete => {
+                let rel = p.rel.as_deref().ok_or_else(|| {
+                    "delete requires `rel`: the project-relative file to trash".to_string()
+                })?;
+                if p.trash_path.is_some() {
+                    return Err(
+                        "delete takes no `trash_path`: it trashes by `rel`, and `undo` restores by `trash_path`"
+                            .to_string(),
+                    );
+                }
+                let confirm = p.confirm.as_deref().unwrap_or("");
+                let trash_path = core::trash_file(&self.cx, &p.root_id, rel, confirm)?;
+                Ok(Json(FileMutateOut::Deleted(DeleteOut { trash_path })))
+            }
+            FileMutateAction::Undo => {
+                let trash_path = p.trash_path.as_deref().ok_or_else(|| {
+                    "undo requires `trash_path`: the trash path from a `delete`".to_string()
+                })?;
+                for (name, set) in [
+                    ("rel", p.rel.is_some()),
+                    ("confirm", p.confirm.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "undo takes only `trash_path`; remove `{name}` (delete trashes by `rel`, undo restores by `trash_path`)"
+                        ));
+                    }
+                }
+                let path = core::undo_trash(&self.cx, &p.root_id, trash_path)?;
+                Ok(Json(FileMutateOut::Restored(PathOut { path })))
+            }
         })
     }
 
@@ -1801,7 +1906,7 @@ impl Maleficium {
     )]
     fn outline(
         &self,
-        Parameters(p): Parameters<FileParams>,
+        Parameters(p): Parameters<OutlineParams>,
     ) -> Result<Json<core::structure::OutlineDoc>, String> {
         self.tool("outline", || {
             Ok(Json(core::structure::outline_of(
@@ -3204,20 +3309,28 @@ mod tests {
         assert_eq!(grant.0.path, root);
 
         let list = m
-            .list(Parameters(ListParams {
+            .file(Parameters(FileParams {
                 root_id: "cov".into(),
+                action: FileAction::List,
                 rel: None,
             }))
             .unwrap();
-        assert!(list.0.entries.iter().any(|e| e.name == "main.tex"));
+        let FileOut::Listing(list) = list.0 else {
+            panic!("list returns its entries");
+        };
+        assert!(list.entries.iter().any(|e| e.name == "main.tex"));
 
         let read = m
-            .read(Parameters(FileParams {
+            .file(Parameters(FileParams {
                 root_id: "cov".into(),
-                rel: "main.tex".into(),
+                action: FileAction::Read,
+                rel: Some("main.tex".into()),
             }))
             .unwrap();
-        assert!(read.0.text.contains("\\section{Hi}"));
+        let FileOut::Text(read) = read.0 else {
+            panic!("read returns its text");
+        };
+        assert!(read.text.contains("\\section{Hi}"));
 
         assert!(
             m.compile_run(Parameters(CompileRunParams {
@@ -3385,29 +3498,42 @@ mod tests {
         );
 
         std::fs::write(dir.join("victim.txt"), "bye").unwrap();
-        let unconfirmed = m.delete(Parameters(DeleteParams {
+        let unconfirmed = m.file_mutate(Parameters(FileMutateParams {
             root_id: "cov".into(),
-            rel: "victim.txt".into(),
+            action: FileMutateAction::Delete,
+            rel: Some("victim.txt".into()),
             confirm: None,
+            trash_path: None,
         }));
         assert!(unconfirmed.err().unwrap().contains("victim.txt"));
         let abs = canon.join("victim.txt").to_string_lossy().to_string();
         let trashed = m
-            .delete(Parameters(DeleteParams {
+            .file_mutate(Parameters(FileMutateParams {
                 root_id: "cov".into(),
-                rel: "victim.txt".into(),
+                action: FileMutateAction::Delete,
+                rel: Some("victim.txt".into()),
                 confirm: Some(abs),
+                trash_path: None,
             }))
             .unwrap();
+        let FileMutateOut::Deleted(trashed) = trashed.0 else {
+            panic!("delete returns its trash path");
+        };
         assert!(!canon.join("victim.txt").exists());
 
         let restored = m
-            .undo(Parameters(UndoParams {
+            .file_mutate(Parameters(FileMutateParams {
                 root_id: "cov".into(),
-                trash_path: trashed.0.trash_path,
+                action: FileMutateAction::Undo,
+                rel: None,
+                confirm: None,
+                trash_path: Some(trashed.trash_path),
             }))
             .unwrap();
-        assert!(restored.0.path.ends_with("victim.txt"));
+        let FileMutateOut::Restored(restored) = restored.0 else {
+            panic!("undo returns its restored path");
+        };
+        assert!(restored.path.ends_with("victim.txt"));
         assert_eq!(
             std::fs::read_to_string(canon.join("victim.txt")).unwrap(),
             "bye"
@@ -3423,7 +3549,7 @@ mod tests {
         );
 
         assert!(
-            m.outline(Parameters(FileParams {
+            m.outline(Parameters(OutlineParams {
                 root_id: "cov".into(),
                 rel: "main.tex".into()
             }))
@@ -3661,8 +3787,8 @@ mod tests {
 
         let covered = [
             "session",
-            "list",
-            "read",
+            "file",
+            "file_mutate",
             "compile_run",
             "compile_poll",
             "offline_readiness",
@@ -3676,8 +3802,7 @@ mod tests {
             "snippet",
             "snippet_render",
             "synctex_inverse",
-            "delete",
-            "undo",
+            "file_mutate",
             "log_tail",
             "outline",
             "file_graph",
@@ -3812,6 +3937,195 @@ mod tests {
         assert!(
             serde_json::from_value::<SessionParams>(serde_json::json!({
                 "root_id": "r", "action": "info", "root_id2": "x",
+            }))
+            .is_err()
+        );
+    }
+
+    /// Grouped `file` validates per action: `read` needs `rel`, `list`
+    /// defaults it to the root, and an unknown action names the valid list
+    /// with a did-you-mean hint. Both actions only read, so the tool stays
+    /// honestly read-only.
+    #[test]
+    fn file_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "file").expect("file");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "rel", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-file");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "\\section{Hi}\n").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "file", &root.to_string_lossy()).unwrap();
+
+        let err = m
+            .file(Parameters(FileParams {
+                root_id: "file".into(),
+                action: FileAction::Read,
+                rel: None,
+            }))
+            .err()
+            .expect("read without a rel fails");
+        assert!(err.contains("rel"), "{err}");
+        let read = m
+            .file(Parameters(FileParams {
+                root_id: "file".into(),
+                action: FileAction::Read,
+                rel: Some("main.tex".into()),
+            }))
+            .expect("a read reads")
+            .0;
+        let FileOut::Text(read) = read else {
+            panic!("read returns its text");
+        };
+        assert!(read.text.contains("\\section{Hi}"));
+        let list = m
+            .file(Parameters(FileParams {
+                root_id: "file".into(),
+                action: FileAction::List,
+                rel: None,
+            }))
+            .expect("a list lists")
+            .0;
+        let FileOut::Listing(list) = list else {
+            panic!("list returns its entries");
+        };
+        assert!(list.entries.iter().any(|e| e.name == "main.tex"));
+
+        let err = serde_json::from_value::<FileParams>(serde_json::json!({
+            "root_id": "r", "action": "lis",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `list`?"), "{err}");
+        assert!(
+            serde_json::from_value::<FileParams>(serde_json::json!({
+                "root_id": "r", "action": "read", "rel": "m.tex", "dest": "/tmp/x",
+            }))
+            .is_err()
+        );
+    }
+
+    /// Grouped `file_mutate` keeps the two-call delete confirm gate across
+    /// the split: `delete` without confirm is refused with the file's
+    /// absolute path, `undo` needs the trash path, each rejects the other's
+    /// fields, and an unknown action names the valid list with a
+    /// did-you-mean hint. The worst action deletes, so the tool is honestly
+    /// destructive.
+    #[test]
+    fn file_mutate_keeps_the_two_call_confirm_gate() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "file_mutate")
+            .expect("file_mutate");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(true));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "confirm", "rel", "root_id", "trash_path"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-file-mutate");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("victim.txt"), "bye").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "mut", &root.to_string_lossy()).unwrap();
+        let abs = root.join("victim.txt").to_string_lossy().to_string();
+
+        let delete = |rel: Option<&str>, confirm: Option<&str>, trash: Option<&str>| {
+            m.file_mutate(Parameters(FileMutateParams {
+                root_id: "mut".into(),
+                action: FileMutateAction::Delete,
+                rel: rel.map(Into::into),
+                confirm: confirm.map(Into::into),
+                trash_path: trash.map(Into::into),
+            }))
+        };
+        let err = delete(None, None, None)
+            .err()
+            .expect("delete without a rel fails");
+        assert!(err.contains("rel"), "{err}");
+        let err = delete(Some("victim.txt"), None, None)
+            .err()
+            .expect("delete without confirm is refused");
+        assert!(err.contains(&abs), "{err}");
+        assert!(root.join("victim.txt").exists());
+        let err = delete(Some("victim.txt"), None, Some("/tmp/t"))
+            .err()
+            .expect("delete rejects a trash path");
+        assert!(err.contains("takes no `trash_path`"), "{err}");
+        let trashed = delete(Some("victim.txt"), Some(&abs), None)
+            .expect("the confirmed call deletes")
+            .0;
+        let FileMutateOut::Deleted(trashed) = trashed else {
+            panic!("delete returns its trash path");
+        };
+        assert!(!root.join("victim.txt").exists());
+
+        let undo = |rel: Option<&str>, confirm: Option<&str>, trash: Option<&str>| {
+            m.file_mutate(Parameters(FileMutateParams {
+                root_id: "mut".into(),
+                action: FileMutateAction::Undo,
+                rel: rel.map(Into::into),
+                confirm: confirm.map(Into::into),
+                trash_path: trash.map(Into::into),
+            }))
+        };
+        let err = undo(None, None, None)
+            .err()
+            .expect("undo without a trash path fails");
+        assert!(err.contains("trash_path"), "{err}");
+        let err = undo(Some("victim.txt"), None, Some(&trashed.trash_path))
+            .err()
+            .expect("undo rejects a rel");
+        assert!(err.contains("takes only `trash_path`"), "{err}");
+        let restored = undo(None, None, Some(&trashed.trash_path))
+            .expect("an undo restores")
+            .0;
+        let FileMutateOut::Restored(restored) = restored else {
+            panic!("undo returns its restored path");
+        };
+        assert!(restored.path.ends_with("victim.txt"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("victim.txt")).unwrap(),
+            "bye"
+        );
+
+        let err = serde_json::from_value::<FileMutateParams>(serde_json::json!({
+            "root_id": "r", "action": "delet", "rel": "v.txt",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `delete`?"), "{err}");
+        assert!(
+            serde_json::from_value::<FileMutateParams>(serde_json::json!({
+                "root_id": "r", "action": "delete", "rel": "v.txt", "approve": true,
             }))
             .is_err()
         );
@@ -4081,11 +4395,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-37 session split of this phase.
+    /// rescan. The count pins the 40-to-35 session and file splits of this phase.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 37, "the session split lands at 37 tools");
+        assert_eq!(tools.len(), 35, "the file split lands at 35 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
