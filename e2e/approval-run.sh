@@ -73,7 +73,7 @@ def porcelain():
     return subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=ROOT,
                           capture_output=True, text=True).stdout
 
-g = mcp.tool("grant", {"root_id": "ip", "root": ROOT})
+g = mcp.tool("session", {"root_id": "ip", "action": "grant", "root": ROOT})
 check("grant project root", g[0], str(g))
 ok, r = mcp.tool("compile_run", {"root_id": "ip", "rel": "main.tex"})
 job = (r or {}).get("job_id", "") if ok else ""
@@ -178,7 +178,7 @@ write_store(False, DIGEST)
 # No session root may reach the store: a granted one would let a replace
 # or restore rewrite approvals.
 for label, d in [("the project's store folder", store_dir), ("the app data dir holding it", DATA)]:
-    ok, e = mcp.tool("grant", {"root_id": "store", "root": d})
+    ok, e = mcp.tool("session", {"root_id": "store", "action": "grant", "root": d})
     check(f"grant refuses {label}", not ok and "widget approvals" in e, str(e)[:200])
 c = checked()
 check("approved at its digest", c.get("status") == "approved" and c.get("via") == "user" and c.get("digest") == DIGEST, json.dumps(c)[:200])

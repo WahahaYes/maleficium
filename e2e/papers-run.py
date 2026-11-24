@@ -87,7 +87,7 @@ def blocker(rec, diags):
 def run_paper(mcp, paper, scratch):
     proj = os.path.join(scratch, paper["name"])
     shutil.copytree(paper["dir"], proj)
-    ok, g = mcp.tool("grant", {"root_id": paper["name"], "root": proj})
+    ok, g = mcp.tool("session", {"root_id": paper["name"], "action": "grant", "root": proj})
     if not ok:
         return {"status": "grant-failed", "blocker": g}
     ok, pre = mcp.tool("precompile_checks", {"root_id": paper["name"], "main_rel": paper["main"]})
