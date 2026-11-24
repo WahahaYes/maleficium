@@ -717,44 +717,116 @@ struct CancelOut {
     status: String,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct SnippetParams {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SyncViewAction {
+    Forward,
+    Inverse,
+    Snippet,
+}
+
+impl<'de> Deserialize<'de> for SyncViewAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "forward" => Ok(Self::Forward),
+            "inverse" => Ok(Self::Inverse),
+            "snippet" => Ok(Self::Snippet),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["forward", "inverse", "snippet"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a view call names a project, an action and
+/// the target that action needs, nothing more.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SyncViewParams {
     root_id: String,
+    action: SyncViewAction,
     main_rel: String,
-    /// Target a source line: tex_rel and line together.
+    /// Iff action is forward, or the line target of snippet: with `line`.
     tex_rel: Option<String>,
-    line: Option<u32>,
-    /// Or target a label's definition.
+    /// Iff action is forward, or the line target of snippet: with `tex_rel`.
+    line: Option<u64>,
+    /// Or the label target of snippet.
     label: Option<String>,
-    /// Or a whole page (1-based).
-    page: Option<u32>,
-    /// Also return the region as a PNG image (default false: images cost context).
+    /// Iff action is inverse, or the page target of snippet.
+    page: Option<u64>,
+    /// Iff action is inverse: the horizontal PDF point (defaults to 0).
+    x: Option<f32>,
+    /// Iff action is inverse: the vertical PDF point (defaults to 0).
+    y: Option<f32>,
+    /// Snippet only: also return the region as a PNG (default false:
+    /// images cost context).
     with_image: Option<bool>,
 }
 
-impl SnippetParams {
+impl SyncViewParams {
     fn target(&self) -> Result<core::snippet::Target, String> {
         use core::snippet::Target;
         match (&self.tex_rel, self.line, &self.label, self.page) {
             (Some(tex_rel), Some(line), None, None) => Ok(Target::Line {
                 tex_rel: tex_rel.clone(),
-                line,
+                line: line as u32,
             }),
             (None, None, Some(label), None) => Ok(Target::Label {
                 label: label.clone(),
             }),
-            (None, None, None, Some(page)) => Ok(Target::Page { page }),
+            (None, None, None, Some(page)) => Ok(Target::Page { page: page as u32 }),
             _ => Err("give exactly one target: tex_rel with line, or label, or page".to_string()),
+        }
+    }
+
+    /// The per-action extras the schema cannot see die here, before the
+    /// project is touched.
+    fn reject(&self, names: &[(&str, bool)], action: &str) -> Result<(), String> {
+        for (name, set) in names {
+            if *set {
+                return Err(format!(
+                    "{action} takes no `{name}` (pass it under the action that needs it)"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Marker for sync_view's per-action record, verbatim: `forward` the
+/// SyncTeX hit, `inverse` the source position, `snippet` the region (plus a
+/// PNG when asked).
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct SyncViewOut {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SyncRenderAction {
+    Render,
+}
+
+impl<'de> Deserialize<'de> for SyncRenderAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "render" => Ok(Self::Render),
+            other => Err(serde::de::Error::custom(unknown_action(other, &["render"]))),
         }
     }
 }
 
+/// Unknown fields are refused: a re-render names a project and a page,
+/// nothing more.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct SnippetRenderParams {
+#[serde(deny_unknown_fields)]
+struct SyncRenderParams {
     root_id: String,
+    action: SyncRenderAction,
     main_rel: String,
     /// The page to render (1-based).
-    page: u32,
+    page: u64,
     /// Crop to a full-width band around this region (pdf points from the
     /// page's top left); omit for the whole page.
     region: Option<core::snippet::Region>,
@@ -762,22 +834,9 @@ struct SnippetRenderParams {
     scale: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ForwardParams {
-    root_id: String,
-    main_rel: String,
-    tex_rel: String,
-    line: u32,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct InverseParams {
-    root_id: String,
-    main_rel: String,
-    page: u32,
-    x: Option<f32>,
-    y: Option<f32>,
-}
+/// Marker for sync_render's `render` record: the page re-rendered as a PNG.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct SyncRenderOut {}
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct DeleteOut {
@@ -1778,115 +1837,119 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Forward SyncTeX query: the PDF page showing a line of tex_rel, in the output of main_rel",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn synctex_forward(
-        &self,
-        Parameters(p): Parameters<ForwardParams>,
-    ) -> Result<Json<core::ForwardHit>, String> {
-        self.tool("synctex_forward", || {
-            Ok(Json(core::forward(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                &p.tex_rel,
-                p.line,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "See how part of main_rel's compiled PDF looks: the page and region where a source line (tex_rel + line), a label, or a page landed, with the source lines around it. with_image: true also returns that region rendered as a PNG; use it for layout questions (placement, width, overflow, how a figure or table looks), not to read text. stale is true when the source changed after the last compile.",
-        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Snippet>(),
+        description = "Look at the compiled PDF through SyncTeX or a rendered region: how the output shows a source position. `forward` maps a source line (tex_rel with line) to its PDF page; `inverse` maps a PDF position (page with x and y) to its source line; `snippet` returns the page and region where a source line, label or page landed, with its source lines (and a PNG when with_image is true). Needs a compiled main_rel; stale is true when sources changed after the compile.",
+        output_schema = rmcp::handler::server::common::schema_for_output::<SyncViewOut>(),
         meta = ui_meta(Some(SNIPPET_VIEW_URI), &["model", "app"])
     ,
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn snippet(
+    fn sync_view(
         &self,
-        Parameters(p): Parameters<SnippetParams>,
+        Parameters(p): Parameters<SyncViewParams>,
     ) -> Result<rmcp::model::CallToolResult, String> {
-        self.tool("snippet", || {
+        self.tool("sync_view", || {
             use base64::Engine as _;
-            let target = p.target()?;
-            let s = core::snippet::snippet(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                &target,
-                p.with_image.unwrap_or(false),
-            )?;
-            let value = serde_json::to_value(&s).map_err(|e| e.to_string())?;
-            let mut result = rmcp::model::CallToolResult::structured(value);
-            if let Some(png) = &s.png {
-                let data = base64::engine::general_purpose::STANDARD.encode(png);
-                result
-                    .content
-                    .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
-            }
-            Ok(result)
+            let value = match p.action {
+                SyncViewAction::Forward => {
+                    let tex_rel = p.tex_rel.as_deref().ok_or_else(|| {
+                        "forward requires `tex_rel`: the source file whose line to map".to_string()
+                    })?;
+                    let line = p.line.ok_or_else(|| {
+                        "forward requires `line`: the 1-based source line to map".to_string()
+                    })?;
+                    p.reject(
+                        &[
+                            ("label", p.label.is_some()),
+                            ("page", p.page.is_some()),
+                            ("x", p.x.is_some()),
+                            ("y", p.y.is_some()),
+                            ("with_image", p.with_image.is_some()),
+                        ],
+                        "forward",
+                    )?;
+                    let hit =
+                        core::forward(&self.cx, &p.root_id, &p.main_rel, tex_rel, line as u32)?;
+                    serde_json::to_value(&hit).map_err(|e| e.to_string())?
+                }
+                SyncViewAction::Inverse => {
+                    let page = p.page.ok_or_else(|| {
+                        "inverse requires `page`: the 1-based PDF page to map back".to_string()
+                    })?;
+                    p.reject(
+                        &[
+                            ("tex_rel", p.tex_rel.is_some()),
+                            ("line", p.line.is_some()),
+                            ("label", p.label.is_some()),
+                            ("with_image", p.with_image.is_some()),
+                        ],
+                        "inverse",
+                    )?;
+                    let hit = core::inverse(
+                        &self.cx,
+                        &p.root_id,
+                        &p.main_rel,
+                        page as u32,
+                        p.x.unwrap_or(0.0),
+                        p.y.unwrap_or(0.0),
+                    )?;
+                    serde_json::to_value(&hit).map_err(|e| e.to_string())?
+                }
+                SyncViewAction::Snippet => {
+                    p.reject(&[("x", p.x.is_some()), ("y", p.y.is_some())], "snippet")?;
+                    let target = p.target()?;
+                    let s = core::snippet::snippet(
+                        &self.cx,
+                        &p.root_id,
+                        &p.main_rel,
+                        &target,
+                        p.with_image.unwrap_or(false),
+                    )?;
+                    let value = serde_json::to_value(&s).map_err(|e| e.to_string())?;
+                    if let Some(png) = &s.png {
+                        let data = base64::engine::general_purpose::STANDARD.encode(png);
+                        let mut result = rmcp::model::CallToolResult::structured(value);
+                        result
+                            .content
+                            .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
+                        return Ok(result);
+                    }
+                    value
+                }
+            };
+            Ok(rmcp::model::CallToolResult::structured(value))
         })
     }
 
     #[tool(
-        description = "For the snippet View only: re-render a page, or a band of it, as a PNG at another scale",
-        output_schema = rmcp::handler::server::common::schema_for_output::<core::snippet::Rendered>(),
+        description = "Re-render a page of main_rel's compiled PDF, or a band of it, as a PNG at another scale: the View's own refresh. `render` returns the PNG for page (or its region band); scale defaults to 2 and clamps to 0.5..3. App-only: the model reads page images through sync_view's snippet instead.",
+        output_schema = rmcp::handler::server::common::schema_for_output::<SyncRenderOut>(),
         meta = ui_meta(Some(SNIPPET_VIEW_URI), &["app"])
     ,
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
-    fn snippet_render(
+    fn sync_render(
         &self,
-        Parameters(p): Parameters<SnippetRenderParams>,
+        Parameters(p): Parameters<SyncRenderParams>,
     ) -> Result<rmcp::model::CallToolResult, String> {
-        self.tool("snippet_render", || {
-            use base64::Engine as _;
-            let r = core::snippet::render_page(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                p.page,
-                p.region,
-                p.scale,
-            )?;
-            let value = serde_json::to_value(&r).map_err(|e| e.to_string())?;
-            let mut result = rmcp::model::CallToolResult::structured(value);
-            let data = base64::engine::general_purpose::STANDARD.encode(&r.png);
-            result
-                .content
-                .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
-            Ok(result)
-        })
-    }
-
-    #[tool(
-        description = "Inverse SyncTeX query: the root-relative source file and line at a position in the output of main_rel",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn synctex_inverse(
-        &self,
-        Parameters(p): Parameters<InverseParams>,
-    ) -> Result<Json<core::InverseHit>, String> {
-        self.tool("synctex_inverse", || {
-            Ok(Json(core::inverse(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                p.page,
-                p.x.unwrap_or(0.0),
-                p.y.unwrap_or(0.0),
-            )?))
+        self.tool("sync_render", || match p.action {
+            SyncRenderAction::Render => {
+                use base64::Engine as _;
+                let r = core::snippet::render_page(
+                    &self.cx,
+                    &p.root_id,
+                    &p.main_rel,
+                    p.page as u32,
+                    p.region,
+                    p.scale,
+                )?;
+                let value = serde_json::to_value(&r).map_err(|e| e.to_string())?;
+                let mut result = rmcp::model::CallToolResult::structured(value);
+                let data = base64::engine::general_purpose::STANDARD.encode(&r.png);
+                result
+                    .content
+                    .insert(0, rmcp::model::ContentBlock::image(data, "image/png"));
+                Ok(result)
+            }
         })
     }
 
@@ -2452,7 +2515,7 @@ mod tests {
         assert!(ext.contains_key(UI_EXTENSION), "{ext:?}");
     }
 
-    /// Only the snippet tools and compile_run name a View; the re-render
+    /// Only the sync tools and compile_run name a View; the re-render
     /// tool is hidden from the model, and the dashboard's own calls
     /// (compile_poll, compile_cancel, diagnostics, offline_readiness) stay
     /// plain tools so text-only hosts see them as before.
@@ -2471,11 +2534,11 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
         with.sort();
-        assert_eq!(with, ["compile_run", "snippet", "snippet_render"]);
+        assert_eq!(with, ["compile_run", "sync_render", "sync_view"]);
         let get = |n: &str| ui(tools.iter().find(|t| t.name == n).unwrap()).unwrap();
-        assert!(get("snippet").contains(SNIPPET_VIEW_URI) && get("snippet").contains("model"));
+        assert!(get("sync_view").contains(SNIPPET_VIEW_URI) && get("sync_view").contains("model"));
         assert_eq!(
-            get("snippet_render"),
+            get("sync_render"),
             format!(r#"{{"resourceUri":"{SNIPPET_VIEW_URI}","visibility":["app"]}}"#)
         );
         assert_eq!(
@@ -3260,14 +3323,17 @@ mod tests {
     }
 
     #[test]
-    fn snippet_takes_exactly_one_target() {
-        let p = |tex_rel: Option<&str>, line, label: Option<&str>, page| SnippetParams {
+    fn sync_view_takes_exactly_one_target() {
+        let p = |tex_rel: Option<&str>, line, label: Option<&str>, page| SyncViewParams {
             root_id: "r".into(),
+            action: SyncViewAction::Snippet,
             main_rel: "main.tex".into(),
             tex_rel: tex_rel.map(Into::into),
             line,
             label: label.map(Into::into),
             page,
+            x: None,
+            y: None,
             with_image: None,
         };
         assert!(p(Some("a.tex"), Some(3), None, None).target().is_ok());
@@ -3317,27 +3383,42 @@ mod tests {
         for (root_id, main_rel, tex_rel) in cases {
             let main_rel = main_rel.to_string();
             let desktop = core::forward(cx, root_id, &main_rel, tex_rel, 1);
-            let mcp = m.synctex_forward(Parameters(ForwardParams {
+            let base = SyncViewParams {
                 root_id: root_id.to_string(),
+                action: SyncViewAction::Forward,
                 main_rel: main_rel.clone(),
-                tex_rel: tex_rel.to_string(),
-                line: 1,
-            }));
+                tex_rel: Some(tex_rel.to_string()),
+                line: Some(1),
+                label: None,
+                page: None,
+                x: None,
+                y: None,
+                with_image: None,
+            };
+            let mcp = m.sync_view(Parameters(base));
             let err = desktop
                 .err()
                 .unwrap_or_else(|| panic!("accepted: {:?}", (root_id, &main_rel)));
             assert_eq!(mcp.err(), Some(err));
 
             let desktop = core::inverse(cx, root_id, &main_rel, 1, 0.0, 0.0);
-            let mcp = m.synctex_inverse(Parameters(InverseParams {
+            let mcp = m.sync_view(Parameters(SyncViewParams {
                 root_id: root_id.to_string(),
+                action: SyncViewAction::Inverse,
                 main_rel: main_rel.clone(),
-                page: 1,
+                tex_rel: None,
+                line: None,
+                label: None,
+                page: Some(1),
                 x: None,
                 y: None,
+                with_image: None,
             }));
             assert_eq!(mcp.as_ref().err(), desktop.as_ref().err());
-            assert_eq!(mcp.ok().map(|j| j.0), desktop.ok());
+            assert_eq!(
+                mcp.ok().map(|r| r.structured_content),
+                desktop.ok().map(|d| serde_json::to_value(&d).ok())
+            );
         }
         let _ = std::fs::remove_dir_all(&out.outdir);
     }
@@ -3554,47 +3635,43 @@ mod tests {
         }));
         assert_eq!(cancel.err(), Some("unknown job: nope".to_string()));
 
-        assert!(
-            m.synctex_forward(Parameters(ForwardParams {
+        let view = |action: SyncViewAction| {
+            let mut p = SyncViewParams {
                 root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-                tex_rel: "main.tex".into(),
-                line: 1,
-            }))
-            .is_err()
-        );
-
-        assert!(
-            m.snippet(Parameters(SnippetParams {
-                root_id: "cov".into(),
+                action,
                 main_rel: "main.tex".into(),
                 tex_rel: None,
                 line: None,
                 label: None,
-                page: Some(1),
+                page: None,
+                x: None,
+                y: None,
                 with_image: None,
-            }))
-            .is_err()
-        );
+            };
+            match action {
+                SyncViewAction::Forward => {
+                    p.tex_rel = Some("main.tex".into());
+                    p.line = Some(1);
+                }
+                SyncViewAction::Inverse | SyncViewAction::Snippet => {
+                    p.page = Some(1);
+                }
+            }
+            m.sync_view(Parameters(p))
+        };
+        // Never compiled: every view action fails like the core's.
+        assert!(view(SyncViewAction::Forward).is_err());
+        assert!(view(SyncViewAction::Inverse).is_err());
+        assert!(view(SyncViewAction::Snippet).is_err());
 
         assert!(
-            m.snippet_render(Parameters(SnippetRenderParams {
+            m.sync_render(Parameters(SyncRenderParams {
                 root_id: "cov".into(),
+                action: SyncRenderAction::Render,
                 main_rel: "main.tex".into(),
                 page: 1,
                 region: None,
                 scale: None,
-            }))
-            .is_err()
-        );
-
-        assert!(
-            m.synctex_inverse(Parameters(InverseParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-                page: 1,
-                x: None,
-                y: None,
             }))
             .is_err()
         );
@@ -3884,10 +3961,8 @@ mod tests {
             "templates",
             "new_from_template",
             "compile_cancel",
-            "synctex_forward",
-            "snippet",
-            "snippet_render",
-            "synctex_inverse",
+            "sync_view",
+            "sync_render",
             "file_mutate",
             "log_tail",
             "structure",
@@ -4315,6 +4390,148 @@ mod tests {
         );
     }
 
+    /// Grouped `sync_view` validates per action: each view action names
+    /// the target it needs and rejects the rest, before touching the
+    /// project. An unknown action names the valid list with a did-you-mean
+    /// hint. Every action only reads, so the tool stays honestly read-only
+    /// and keeps the snippet View for the model.
+    #[test]
+    fn sync_view_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "sync_view")
+            .expect("sync_view");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(
+            props,
+            [
+                "action",
+                "label",
+                "line",
+                "main_rel",
+                "page",
+                "root_id",
+                "tex_rel",
+                "with_image",
+                "x",
+                "y"
+            ]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let base = |action: SyncViewAction| SyncViewParams {
+            root_id: "nope".into(),
+            action,
+            main_rel: "main.tex".into(),
+            tex_rel: None,
+            line: None,
+            label: None,
+            page: None,
+            x: None,
+            y: None,
+            with_image: None,
+        };
+        let call = |p: SyncViewParams| m.sync_view(Parameters(p));
+
+        let mut p = base(SyncViewAction::Forward);
+        let err = call(p.clone())
+            .err()
+            .expect("forward without a target fails");
+        assert!(err.contains("tex_rel"), "{err}");
+        p.tex_rel = Some("main.tex".into());
+        let err = call(p.clone()).err().expect("forward without a line fails");
+        assert!(err.contains("line"), "{err}");
+        p.line = Some(10);
+        p.label = Some("fig:x".into());
+        let err = call(p).err().expect("forward rejects a label");
+        assert!(err.contains("forward takes no `label`"), "{err}");
+
+        let mut p = base(SyncViewAction::Inverse);
+        let err = call(p.clone()).err().expect("inverse without a page fails");
+        assert!(err.contains("page"), "{err}");
+        p.page = Some(1);
+        p.tex_rel = Some("main.tex".into());
+        let err = call(p).err().expect("inverse rejects a source file");
+        assert!(err.contains("inverse takes no `tex_rel`"), "{err}");
+
+        let mut p = base(SyncViewAction::Snippet);
+        p.page = Some(1);
+        p.x = Some(3.0);
+        let err = call(p).err().expect("snippet rejects a position");
+        assert!(err.contains("snippet takes no `x`"), "{err}");
+
+        let err = serde_json::from_value::<SyncViewParams>(serde_json::json!({
+            "root_id": "r", "action": "foward", "main_rel": "m.tex", "tex_rel": "a.tex", "line": 1,
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `forward`?"), "{err}");
+        assert!(
+            serde_json::from_value::<SyncViewParams>(serde_json::json!({
+                "root_id": "r", "action": "snippet", "main_rel": "m.tex", "page": 1, "approve": true,
+            }))
+            .is_err()
+        );
+    }
+
+    /// `sync_render` keeps the re-render's contract across the split: it
+    /// names the snippet View, stays hidden from the model, and renders the
+    /// named page (or its region band) at the named scale. Per-action there
+    /// is only `render`; anything else names it with a did-you-mean hint.
+    #[test]
+    fn sync_render_keeps_the_app_only_rerender() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "sync_render")
+            .expect("sync_render");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(
+            props,
+            ["action", "main_rel", "page", "region", "root_id", "scale"]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+
+        let err = serde_json::from_value::<SyncRenderParams>(serde_json::json!({
+            "root_id": "r", "action": "rendr", "main_rel": "m.tex", "page": 1,
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `render`?"), "{err}");
+        assert!(
+            serde_json::from_value::<SyncRenderParams>(serde_json::json!({
+                "root_id": "r", "action": "render", "main_rel": "m.tex", "page": 1, "wait_ms": 3,
+            }))
+            .is_err()
+        );
+    }
+
     /// Grouped `search` validates per action: `search` needs `pattern`,
     /// `find_files` needs `query`, each rejects the other's fields, and an
     /// unknown action names the valid list with a did-you-mean hint. The
@@ -4579,11 +4796,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-30 regroup of this phase so far.
+    /// rescan. The count pins the 40-to-28 regroup of this phase so far.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 30, "the structure split lands at 30 tools");
+        assert_eq!(tools.len(), 28, "the sync split lands at 28 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");

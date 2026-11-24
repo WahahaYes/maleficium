@@ -236,54 +236,54 @@ check("pdf outside project", pdf and not pdf.startswith(ROOT), pdf)
 import os as _os
 check("pdf exists", bool(pdf) and _os.path.exists(pdf), pdf)
 
-fw = call("synctex_forward", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+fw = call("sync_view", {"root_id": "drv", "action": "forward", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
 check("forward query", fw["ok"] and (fw.get("page") or 0) >= 1, str(fw)[:120])
 
-iv = call("synctex_inverse", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
+iv = call("sync_view", {"root_id": "drv", "action": "inverse", "main_rel": "main.tex", "page": 1, "x": 100, "y": 600})
 ivh = iv
 check("inverse query", iv["ok"] and (ivh.get("line") or 0) >= 1, str(iv)[:120])
 check("inverse hit is root-relative", bool(ivh.get("relPath")) and not ivh["relPath"].startswith("/"), str(ivh))
 
-sn = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
-check("snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
-check("snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
+sn = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 10})
+check("sync_view snippet places a source line", sn["ok"] and sn.get("page", 0) >= 1 and sn.get("region") and (sn.get("source") or {}).get("rel") == "main.tex", str(sn)[:200])
+check("sync_view snippet sends no image unless asked", sn["ok"] and sn.get("image") is None, str(sn.get("image")))
 import base64 as _b64
-raw = mcp.request("tools/call", {"name": "snippet", "arguments": {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
+raw = mcp.request("tools/call", {"name": "sync_view", "arguments": {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "label": "fig:diagram", "with_image": True}})["result"]
 blocks = raw.get("content") or []
 img = next((b for b in blocks if b.get("type") == "image"), None)
 png = _b64.b64decode(img["data"]) if img else b""
 meta = (raw.get("structuredContent") or {}).get("image") or {}
-check("snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
-check("snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
-pg = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "with_image": True})
-fl = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "label": "fig:diagram"})
-fi = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 32})
+check("sync_view snippet with_image returns a png of the label's region", not raw.get("isError") and img and img.get("mimeType") == "image/png" and png[:8] == b"\x89PNG\r\n\x1a\n" and meta.get("bytes") == len(png), str(meta))
+check("sync_view snippet structure is root-relative", ROOT not in json.dumps(raw.get("structuredContent")), json.dumps(raw.get("structuredContent"))[:200])
+pg = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "page": 1, "with_image": True})
+fl = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "label": "fig:diagram"})
+fi = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 32})
 check("a label lands where its figure is, not on the page body", fl["ok"] and fi["ok"] and fl["page"] == fi["page"] and (fl.get("region") or {}).get("height", 999) < 400, str(fl.get("region")) + " vs " + str(fi.get("region")))
-check("snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
-two = call("snippet", {"root_id": "drv", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
-check("snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
+check("sync_view snippet renders a whole page", pg["ok"] and pg.get("region") is None and (pg.get("image") or {}).get("height", 0) > 1000, str(pg.get("image")))
+two = call("sync_view", {"root_id": "drv", "action": "snippet", "main_rel": "main.tex", "page": 1, "label": "fig:diagram"})
+check("sync_view snippet refuses two targets", not two["ok"] and "exactly one target" in two.get("error", ""), str(two))
 
 tl = mcp.request("tools/list")["result"]["tools"]
 ui_of = {t["name"]: (t.get("_meta") or {}).get("ui") for t in tl}
-check("only the snippet tools and compile_run carry a View", sorted(k for k, v in ui_of.items() if v) == ["compile_run", "snippet", "snippet_render"], str(sorted(k for k, v in ui_of.items() if v)))
+check("only the sync tools and compile_run carry a View", sorted(k for k, v in ui_of.items() if v) == ["compile_run", "sync_render", "sync_view"], str(sorted(k for k, v in ui_of.items() if v)))
 check("compile_run names the dashboard and stays model-callable", ui_of["compile_run"] == {"resourceUri": "ui://maleficium/compile/v1", "visibility": ["model", "app"]}, str(ui_of["compile_run"]))
 check("the dashboard's own calls stay plain tools", all(ui_of[n] is None for n in ["compile_poll", "compile_cancel", "diagnostics", "offline_readiness"]), str({n: ui_of[n] for n in ["compile_poll", "compile_cancel"]}))
 dash = mcp.request("resources/read", {"uri": "ui://maleficium/compile/v1"})["result"]["contents"][0]
 check("the dashboard is served as an MCP App html page", dash["mimeType"] == "text/html;profile=mcp-app" and dash["text"].lstrip().lower().startswith("<!doctype html>") and (dash.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (dash.get("_meta") or {}).get("ui", {}), str(dash)[:160])
 check("the dashboard is self-contained", "src=\"http" not in dash["text"] and "href=\"http" not in dash["text"] and "@import" not in dash["text"])
 check("an unknown version of the dashboard is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/compile/v2"}))
-check("snippet names its View and stays model-callable", ui_of["snippet"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["snippet"]["visibility"], str(ui_of["snippet"]))
-check("snippet_render is app-only", ui_of["snippet_render"]["visibility"] == ["app"], str(ui_of["snippet_render"]))
+check("sync_view names its View and stays model-callable", ui_of["sync_view"]["resourceUri"] == "ui://maleficium/snippet/v1" and "model" in ui_of["sync_view"]["visibility"], str(ui_of["sync_view"]))
+check("sync_render is app-only", ui_of["sync_render"]["visibility"] == ["app"], str(ui_of["sync_render"]))
 view = mcp.request("resources/read", {"uri": "ui://maleficium/snippet/v1"})["result"]["contents"][0]
 check("the View is served as an MCP App html page", view["mimeType"] == "text/html;profile=mcp-app" and view["text"].lstrip().lower().startswith("<!doctype html>") and (view.get("_meta") or {}).get("ui", {}).get("prefersBorder") is True and "csp" not in (view.get("_meta") or {}).get("ui", {}), str(view)[:160])
 check("the View is self-contained", "src=\"http" not in view["text"] and "href=\"http" not in view["text"] and "@import" not in view["text"])
 check("an unknown ui resource is refused", "error" in mcp.request("resources/read", {"uri": "ui://maleficium/nope/v1"}))
 check("Views stay out of resources/list", mcp.request("resources/list")["result"].get("resources") == [])
-sr = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 1, "scale": 1}})["result"]
+sr = mcp.request("tools/call", {"name": "sync_render", "arguments": {"root_id": "drv", "action": "render", "main_rel": "main.tex", "page": 1, "scale": 1}})["result"]
 srimg = next((b for b in sr.get("content") or [] if b.get("type") == "image"), None)
-check("snippet_render returns the page as a png", not sr.get("isError") and srimg and _b64.b64decode(srimg["data"])[:8] == b"\x89PNG\r\n\x1a\n" and ROOT not in json.dumps(sr.get("structuredContent")), str(sr.get("structuredContent")))
-sr2 = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 999}})["result"]
-check("snippet_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
+check("sync_render returns the page as a png", not sr.get("isError") and srimg and _b64.b64decode(srimg["data"])[:8] == b"\x89PNG\r\n\x1a\n" and ROOT not in json.dumps(sr.get("structuredContent")), str(sr.get("structuredContent")))
+sr2 = mcp.request("tools/call", {"name": "sync_render", "arguments": {"root_id": "drv", "action": "render", "main_rel": "main.tex", "page": 999}})["result"]
+check("sync_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
 
 st = call("structure", {"root_id": "drv", "action": "file_graph", "main_rel": "main.tex"})
 st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}
