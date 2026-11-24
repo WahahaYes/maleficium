@@ -136,7 +136,7 @@ for (const withImage of [true, false]) {
   check(`${label}: the View shows the page region`, size[0] > 100 && size[1] > 20, String(size));
   check(
     `${label}: the render tool is called only when the result had no image`,
-    toolCalls.includes('snippet_render') === !withImage,
+    toolCalls.includes('sync_render') === !withImage,
     String(toolCalls),
   );
   const where = await view.locator('#where').textContent();
@@ -191,8 +191,8 @@ for (const withImage of [true, false]) {
       await page.waitForTimeout(1500);
       const w2 = await view.locator('#where').textContent();
       check(
-        'paging re-renders through snippet_render',
-        toolCalls.includes('snippet_render') && !w2.includes(`page ${sc.page} of`),
+        'paging re-renders through sync_render',
+        toolCalls.includes('sync_render') && !w2.includes(`page ${sc.page} of`),
         `${toolCalls} ${w2}`,
       );
     }
@@ -246,7 +246,7 @@ for (const theme of ['light', 'dark']) {
   await page.waitForTimeout(5000);
   check(
     'a recompile makes the View re-render',
-    toolCalls.includes('snippet_render'),
+    toolCalls.includes('sync_render'),
     String(toolCalls),
   );
   await page.close();
