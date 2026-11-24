@@ -285,20 +285,20 @@ check("snippet_render returns the page as a png", not sr.get("isError") and srim
 sr2 = mcp.request("tools/call", {"name": "snippet_render", "arguments": {"root_id": "drv", "main_rel": "main.tex", "page": 999}})["result"]
 check("snippet_render refuses a page past the end", sr2.get("isError") is True, str(sr2)[:160])
 
-st = call("file_graph", {"root_id": "drv", "main_rel": "main.tex"})
+st = call("structure", {"root_id": "drv", "action": "file_graph", "main_rel": "main.tex"})
 st_files = {f["rel"]: f["exists"] for f in (st.get("files") or [])}
 check("file graph walks inputs", st["ok"] and st_files.get("chapters/method.tex") is True and st_files.get("chapters/background.tex") is True, str(st)[:200])
 check("structure is disk-sourced + revisioned", st.get("source") == "disk" and len(st.get("revision") or "") == 16, str(st)[:120])
 check("structure paths are root-relative", ROOT not in json.dumps(st), json.dumps(st)[:200])
-ol = call("outline", {"root_id": "drv", "rel": "main.tex"})
+ol = call("structure", {"root_id": "drv", "action": "outline", "rel": "main.tex"})
 check("outline lists sections", ol["ok"] and any(e["kind"] == "section" and e["title"] == "Introduction" for e in ol.get("entries") or []), str(ol)[:200])
-lrf = call("labels_refs", {"root_id": "drv", "main_rel": "main.tex"})
+lrf = call("structure", {"root_id": "drv", "action": "labels_refs", "main_rel": "main.tex"})
 check("refs resolve", lrf["ok"] and any(r["key"] == "fig:diagram" and r["resolved"] for r in lrf.get("refs") or []), str(lrf)[:200])
-ci = call("citations", {"root_id": "drv", "main_rel": "main.tex"})
+ci = call("structure", {"root_id": "drv", "action": "citations", "main_rel": "main.tex"})
 check("cites resolve against refs.bib", ci["ok"] and any(c["key"] == "knuth1984texbook" and c["resolved"] for c in ci.get("cites") or []), str(ci)[:200])
 dg = call("diagnostics", {"root_id": "drv", "main_rel": "main.tex"})
 check("diagnostics after a clean compile", dg["ok"] and ROOT not in json.dumps(dg), str(dg)[:200])
-esc = call("outline", {"root_id": "drv", "rel": "../outside.tex"})
+esc = call("structure", {"root_id": "drv", "action": "outline", "rel": "../outside.tex"})
 check("structure escape is a tool error", not esc["ok"] and "forbidden" in esc.get("error", ""), str(esc))
 
 d0 = call("file_mutate", {"root_id": "drv", "action": "delete", "rel": "chapters/method.tex"})

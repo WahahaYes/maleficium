@@ -201,9 +201,9 @@ st = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"]
 st = sorted(l for l in st if l)
 check("porcelain shows only the edited paper and .maleficium/",
       st == [" M auto.tex", "?? .maleficium/"], str(st))
-s = call("search", {"root_id": "pc", "pattern": "safe to delete"})
+s = call("search", {"root_id": "pc", "action": "search", "pattern": "safe to delete"})
 check("search never reads the cache (README and map say it)", s["ok"] and s.get("hits") == 0, str(s)[:300])
-f = call("find_files", {"root_id": "pc", "query": "map"})
+f = call("search", {"root_id": "pc", "action": "find_files", "query": "map"})
 check("find_files never lists the cache", f["ok"] and ".maleficium" not in str(f), str(f)[:300])
 lst = call("file", {"root_id": "pc", "action": "list", "rel": "."})
 check("the file listing hides the cache", lst["ok"] and ".maleficium" not in str(lst), str(lst)[:300])

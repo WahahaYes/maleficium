@@ -243,10 +243,93 @@ struct ListOut {
     entries: Vec<EntryOut>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct OutlineParams {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum StructureAction {
+    Outline,
+    FileGraph,
+    LabelsRefs,
+    Citations,
+    DocumentStructure,
+    Definition,
+}
+
+impl<'de> Deserialize<'de> for StructureAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "outline" => Ok(Self::Outline),
+            "file_graph" => Ok(Self::FileGraph),
+            "labels_refs" => Ok(Self::LabelsRefs),
+            "citations" => Ok(Self::Citations),
+            "document_structure" => Ok(Self::DocumentStructure),
+            "definition" => Ok(Self::Definition),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &[
+                    "outline",
+                    "file_graph",
+                    "labels_refs",
+                    "citations",
+                    "document_structure",
+                    "definition",
+                ],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a structure call names a project, an action
+/// and the file or key that action needs, nothing that could approve,
+/// fetch or write.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct StructureParams {
     root_id: String,
-    rel: String,
+    action: StructureAction,
+    /// Required iff action is outline, or for the at-position spelling of
+    /// definition (with `line` and `col`).
+    rel: Option<String>,
+    /// Required iff action is file_graph, labels_refs, citations or
+    /// document_structure; optional for definition (inputs resolve from its
+    /// directory, else from the root).
+    main_rel: Option<String>,
+    /// Iff action is definition, with `key`: the reference kind (label,
+    /// citation, macro or input).
+    kind: Option<maleficium_index::definition::RefKind>,
+    /// Iff action is definition, with `kind`.
+    key: Option<String>,
+    /// Iff action is definition, with `rel` and `col`: the 1-based line.
+    line: Option<u64>,
+    /// Iff action is definition, with `rel` and `line`: the UTF-16 column.
+    col: Option<u64>,
+}
+
+/// The `structure` result for one action, verbatim: each action returns
+/// what its old tool returned.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum StructureOut {
+    Outline(core::structure::OutlineDoc),
+    FileGraph(core::structure::FileGraph),
+    LabelsRefs(core::structure::LabelsRefs),
+    Citations(core::structure::Citations),
+    Document(core::document::DocumentStructure),
+    Definition(DefinitionOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for StructureOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "StructureOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `outline` the file's sections, `file_graph` its inputs, `labels_refs` its labels and uses, `citations` its cites, `document_structure` the conversion, `definition` the lookup.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -714,15 +797,6 @@ struct MainParams {
     main_rel: String,
 }
 
-/// Unknown fields are refused: the document takes a project and a main
-/// file, nothing that could approve or fetch.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct DocumentParams {
-    root_id: String,
-    main_rel: String,
-}
-
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct DiagnosticsParams {
     root_id: String,
@@ -898,21 +972,6 @@ impl schemars::JsonSchema for ReplaceOut {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct ReplaceUndoOut {
     restored: Vec<maleficium_events::BatchFile>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct DefinitionParams {
-    root_id: String,
-    /// Look up a known reference: label, citation, macro (with its
-    /// backslash) or input.
-    kind: Option<maleficium_index::definition::RefKind>,
-    key: Option<String>,
-    /// Or look up whatever sits at a 1-based line and UTF-16 column of a file.
-    rel: Option<String>,
-    line: Option<u32>,
-    col: Option<u32>,
-    /// Inputs resolve from this main file's directory (default: the root).
-    main_rel: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -1896,7 +1955,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Outline of one saved file: sections (level 0 chapter .. 4 paragraph) with labels, figures, tables, and input boundaries as marker rows, each with its 1-based line. Reads disk, not unsaved editor buffers; revision changes when the file does.",
+        description = "Map a document's structure without compiling: the read-only way to learn what a project holds. `outline` sections of one file; `file_graph`, `labels_refs` and `citations` the inputs, labels and cites reachable from main_rel; `document_structure` the conversion's sections, theorems and figures; `definition` where a label, cite key, macro or input is defined. Reads saved files on disk, never the editor buffers.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1904,102 +1963,162 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn outline(
+    fn structure(
         &self,
-        Parameters(p): Parameters<OutlineParams>,
-    ) -> Result<Json<core::structure::OutlineDoc>, String> {
-        self.tool("outline", || {
-            Ok(Json(core::structure::outline_of(
-                &self.cx, &p.root_id, &p.rel,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "File graph of a document: every file reachable from main_rel over \\input/\\include/\\subfile (resolved from the main file's directory, as the engine does), with missing files and edges that leave the project flagged. Paths are root-relative.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn file_graph(
-        &self,
-        Parameters(p): Parameters<MainParams>,
-    ) -> Result<Json<core::structure::FileGraph>, String> {
-        self.tool("file_graph", || {
-            Ok(Json(core::structure::file_graph(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Labels and references across the whole document from main_rel: each \\label with file and line (duplicate keys flagged), each \\ref-family use with whether its key is defined.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn labels_refs(
-        &self,
-        Parameters(p): Parameters<MainParams>,
-    ) -> Result<Json<core::structure::LabelsRefs>, String> {
-        self.tool("labels_refs", || {
-            Ok(Json(core::structure::labels_refs(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Citations across the whole document from main_rel, checked against its \\bibliography/\\addbibresource files: each cite key with file, line, and whether a bib entry defines it.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn citations(
-        &self,
-        Parameters(p): Parameters<MainParams>,
-    ) -> Result<Json<core::structure::Citations>, String> {
-        self.tool("citations", || {
-            Ok(Json(core::structure::citations(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Document structure of main_rel from its conversion to HTML (never the PDF): sections with levels, theorems with kinds, equations with TeX, citations with bibliography entries, figures with captions, and widget placeholders in order. Citation keys are the conversion's bibliography ids; the citations tool has the source-level keys. Needs no compile; widget ids and rects are the widgets tool's job.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn document_structure(
-        &self,
-        Parameters(p): Parameters<DocumentParams>,
-    ) -> Result<Json<core::document::DocumentStructure>, String> {
-        self.tool("document_structure", || {
-            Ok(Json(core::document::document_structure(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-            )?))
+        Parameters(p): Parameters<StructureParams>,
+    ) -> Result<Json<StructureOut>, String> {
+        self.tool("structure", || match p.action {
+            StructureAction::Outline => {
+                let rel = p.rel.as_deref().ok_or_else(|| {
+                    "outline requires `rel`: the project-relative file to outline".to_string()
+                })?;
+                for (name, set) in [
+                    ("main_rel", p.main_rel.is_some()),
+                    ("kind", p.kind.is_some()),
+                    ("key", p.key.is_some()),
+                    ("line", p.line.is_some()),
+                    ("col", p.col.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "outline takes only `rel`; remove `{name}` (use action `definition` to look a key up)"
+                        ));
+                    }
+                }
+                Ok(Json(StructureOut::Outline(
+                    core::structure::outline_of(&self.cx, &p.root_id, rel)?,
+                )))
+            }
+            StructureAction::FileGraph => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "file_graph requires `main_rel`: the main file whose inputs to walk"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("rel", p.rel.is_some()),
+                    ("kind", p.kind.is_some()),
+                    ("key", p.key.is_some()),
+                    ("line", p.line.is_some()),
+                    ("col", p.col.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "file_graph takes only `main_rel`; remove `{name}`"
+                        ));
+                    }
+                }
+                Ok(Json(StructureOut::FileGraph(core::structure::file_graph(
+                    &self.cx,
+                    &p.root_id,
+                    main_rel,
+                )?)))
+            }
+            StructureAction::LabelsRefs => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "labels_refs requires `main_rel`: the main file whose labels to list"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("rel", p.rel.is_some()),
+                    ("kind", p.kind.is_some()),
+                    ("key", p.key.is_some()),
+                    ("line", p.line.is_some()),
+                    ("col", p.col.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "labels_refs takes only `main_rel`; remove `{name}`"
+                        ));
+                    }
+                }
+                Ok(Json(StructureOut::LabelsRefs(core::structure::labels_refs(
+                    &self.cx,
+                    &p.root_id,
+                    main_rel,
+                )?)))
+            }
+            StructureAction::Citations => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "citations requires `main_rel`: the main file whose cites to check"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("rel", p.rel.is_some()),
+                    ("kind", p.kind.is_some()),
+                    ("key", p.key.is_some()),
+                    ("line", p.line.is_some()),
+                    ("col", p.col.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "citations takes only `main_rel`; remove `{name}`"
+                        ));
+                    }
+                }
+                Ok(Json(StructureOut::Citations(core::structure::citations(
+                    &self.cx,
+                    &p.root_id,
+                    main_rel,
+                )?)))
+            }
+            StructureAction::DocumentStructure => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "document_structure requires `main_rel`: the main file to convert"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("rel", p.rel.is_some()),
+                    ("kind", p.kind.is_some()),
+                    ("key", p.key.is_some()),
+                    ("line", p.line.is_some()),
+                    ("col", p.col.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "document_structure takes only `main_rel`; remove `{name}`"
+                        ));
+                    }
+                }
+                Ok(Json(StructureOut::Document(
+                    core::document::document_structure(&self.cx, &p.root_id, main_rel)?,
+                )))
+            }
+            StructureAction::Definition => {
+                use core::search::DefinitionTarget;
+                let by_key = p.kind.is_some() || p.key.is_some();
+                let at_position = p.rel.is_some() || p.line.is_some() || p.col.is_some();
+                if by_key && at_position {
+                    return Err(
+                        "definition takes kind and key, or rel, line and col: not both"
+                            .to_string(),
+                    );
+                }
+                let target = match (p.kind, p.key, p.rel, p.line, p.col) {
+                    (Some(kind), Some(key), _, _, _) => {
+                        let command = (kind == maleficium_index::definition::RefKind::Input)
+                            .then(|| "input".to_string());
+                        DefinitionTarget::Ref(maleficium_index::definition::RefAt {
+                            kind,
+                            key,
+                            command,
+                        })
+                    }
+                    (_, _, Some(rel), Some(line), Some(col)) => DefinitionTarget::At {
+                        rel,
+                        line: line as u32,
+                        col: col as u32,
+                    },
+                    _ => return Err("pass kind and key, or rel, line and col".to_string()),
+                };
+                Ok(Json(StructureOut::Definition(DefinitionOut {
+                    lookup: core::search::definition(
+                        &self.cx,
+                        &p.root_id,
+                        target,
+                        p.main_rel.as_deref(),
+                    )?,
+                })))
+            }
         })
     }
 
@@ -2188,45 +2307,6 @@ impl Maleficium {
                     })))
                 }
             }
-        })
-    }
-
-    #[tool(
-        description = "Where a label, citation key, macro or input is defined, across the project's saved files: pass kind + key, or rel + line + col to look up what sits there. Returns every definition (a duplicate label lists each) with root-relative path, line, and a one-line summary (the defining line, a bib entry's author, title and year, the macro definition, or the input's first line).",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn definition(
-        &self,
-        Parameters(p): Parameters<DefinitionParams>,
-    ) -> Result<Json<DefinitionOut>, String> {
-        self.tool("definition", || {
-            use core::search::DefinitionTarget;
-            let target = match (p.kind, p.key, p.rel, p.line, p.col) {
-                (Some(kind), Some(key), _, _, _) => {
-                    let command = (kind == maleficium_index::definition::RefKind::Input)
-                        .then(|| "input".to_string());
-                    DefinitionTarget::Ref(maleficium_index::definition::RefAt {
-                        kind,
-                        key,
-                        command,
-                    })
-                }
-                (_, _, Some(rel), Some(line), Some(col)) => DefinitionTarget::At { rel, line, col },
-                _ => return Err("pass kind and key, or rel, line and col".to_string()),
-            };
-            Ok(Json(DefinitionOut {
-                lookup: core::search::definition(
-                    &self.cx,
-                    &p.root_id,
-                    target,
-                    p.main_rel.as_deref(),
-                )?,
-            }))
         })
     }
 
@@ -2428,16 +2508,18 @@ mod tests {
         assert!(!err.is_empty());
     }
 
-    /// The document structure only reads the conversion: hosts may call it
-    /// without confirmation. Its parameters refuse unknown fields, and its
-    /// failures reach the client as tool errors, never as an empty document.
+    /// The structure tool only reads: hosts may call it without
+    /// confirmation. Its parameters refuse unknown fields, and its
+    /// failures reach the client as tool errors, never as an empty
+    /// document. The `document_structure` action reads the conversion; the
+    /// other actions read the saved files and the index.
     #[test]
-    fn document_structure_is_a_read_only_tool_over_the_conversion() {
+    fn structure_is_a_read_only_tool_with_per_action_params() {
         let tools = Maleficium::tool_router().list_all();
         let t = tools
             .iter()
-            .find(|t| t.name == "document_structure")
-            .expect("document_structure");
+            .find(|t| t.name == "structure")
+            .expect("structure");
         let a = t.annotations.as_ref().expect("annotations");
         assert_eq!(a.read_only_hint, Some(true));
         assert_eq!(a.destructive_hint, Some(false));
@@ -2452,17 +2534,22 @@ mod tests {
             .map(String::as_str)
             .collect();
         props.sort();
-        assert_eq!(props, ["main_rel", "root_id"]);
+        assert_eq!(
+            props,
+            [
+                "action", "col", "key", "kind", "line", "main_rel", "rel", "root_id"
+            ]
+        );
         assert_eq!(schema["additionalProperties"], false);
         assert!(
-            serde_json::from_value::<DocumentParams>(
-                serde_json::json!({"root_id": "r", "main_rel": "main.tex"})
+            serde_json::from_value::<StructureParams>(
+                serde_json::json!({"root_id": "r", "action": "outline", "rel": "main.tex"})
             )
             .is_ok()
         );
         assert!(
-            serde_json::from_value::<DocumentParams>(
-                serde_json::json!({"root_id": "r", "main_rel": "main.tex", "approve": true})
+            serde_json::from_value::<StructureParams>(
+                serde_json::json!({"root_id": "r", "action": "outline", "rel": "main.tex", "approve": true})
             )
             .is_err()
         );
@@ -2476,12 +2563,21 @@ mod tests {
         core::grant_root(&m.cx, "docm", &root.to_string_lossy()).unwrap();
         m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
         let d = m
-            .document_structure(Parameters(DocumentParams {
+            .structure(Parameters(StructureParams {
                 root_id: "docm".into(),
-                main_rel: "main.tex".into(),
+                action: StructureAction::DocumentStructure,
+                rel: None,
+                main_rel: Some("main.tex".into()),
+                kind: None,
+                key: None,
+                line: None,
+                col: None,
             }))
             .expect("a fixed conversion parses")
             .0;
+        let StructureOut::Document(d) = d else {
+            panic!("document_structure returns its document");
+        };
         assert_eq!(d.main, "main.tex");
         assert_eq!(d.sections.len(), 2);
         assert_eq!(d.figures.len(), 4);
@@ -2489,9 +2585,15 @@ mod tests {
         assert_eq!(d.citations.len(), 1);
 
         let err = m
-            .document_structure(Parameters(DocumentParams {
+            .structure(Parameters(StructureParams {
                 root_id: "nope".into(),
-                main_rel: "main.tex".into(),
+                action: StructureAction::DocumentStructure,
+                rel: None,
+                main_rel: Some("main.tex".into()),
+                kind: None,
+                key: None,
+                line: None,
+                col: None,
             }))
             .err()
             .expect("an ungranted root fails");
@@ -3548,43 +3650,40 @@ mod tests {
             .is_err()
         );
 
-        assert!(
-            m.outline(Parameters(OutlineParams {
+        let structure = |action: StructureAction| {
+            let mut p = StructureParams {
                 root_id: "cov".into(),
-                rel: "main.tex".into()
-            }))
-            .is_ok()
-        );
-        assert!(
-            m.file_graph(Parameters(MainParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into()
-            }))
-            .is_ok()
-        );
-        assert!(
-            m.labels_refs(Parameters(MainParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into()
-            }))
-            .is_ok()
-        );
-        assert!(
-            m.citations(Parameters(MainParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into()
-            }))
-            .is_ok()
-        );
+                action,
+                rel: None,
+                main_rel: None,
+                kind: None,
+                key: None,
+                line: None,
+                col: None,
+            };
+            match action {
+                StructureAction::Outline => p.rel = Some("main.tex".into()),
+                StructureAction::Definition => {
+                    p.kind = Some(maleficium_index::definition::RefKind::Label);
+                    p.key = Some("sec:hi".into());
+                }
+                _ => p.main_rel = Some("main.tex".into()),
+            }
+            m.structure(Parameters(p))
+        };
+        assert!(structure(StructureAction::Outline).is_ok());
+        assert!(structure(StructureAction::FileGraph).is_ok());
+        assert!(structure(StructureAction::LabelsRefs).is_ok());
+        assert!(structure(StructureAction::Citations).is_ok());
         m.cx.set_converter(std::sync::Arc::new(FixedHtml(CONVERTED.to_string())));
-        let doc = m
-            .document_structure(Parameters(DocumentParams {
-                root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-            }))
-            .unwrap();
-        assert_eq!(doc.0.sections.len(), 2);
-        assert_eq!(doc.0.widgets.len(), 5);
+        let doc = structure(StructureAction::DocumentStructure).unwrap();
+        let StructureOut::Document(doc) = doc.0 else {
+            panic!("document_structure returns its document");
+        };
+        assert_eq!(doc.sections.len(), 2);
+        assert_eq!(doc.widgets.len(), 5);
+        let defined = structure(StructureAction::Definition).unwrap();
+        assert!(matches!(defined.0, StructureOut::Definition(ref d) if d.lookup.is_some()));
         assert!(
             m.precompile_checks(Parameters(MainParams {
                 root_id: "cov".into(),
@@ -3672,19 +3771,6 @@ mod tests {
                 .unwrap()
                 .contains("\\section{Hi}")
         );
-
-        let definition = m
-            .definition(Parameters(DefinitionParams {
-                root_id: "cov".into(),
-                kind: Some(maleficium_index::definition::RefKind::Label),
-                key: Some("sec:hi".into()),
-                rel: None,
-                line: None,
-                col: None,
-                main_rel: None,
-            }))
-            .unwrap();
-        assert!(definition.0.lookup.is_some());
 
         let found = m
             .search(Parameters(SearchParams {
@@ -3804,15 +3890,11 @@ mod tests {
             "synctex_inverse",
             "file_mutate",
             "log_tail",
-            "outline",
-            "file_graph",
-            "labels_refs",
-            "citations",
-            "document_structure",
+            "structure",
             "precompile_checks",
             "search",
             "replace",
-            "definition",
+            "structure",
             "diagnostics",
             "widgets",
             "widgets_status",
@@ -4131,6 +4213,108 @@ mod tests {
         );
     }
 
+    /// Grouped `structure` validates per action: each reading action names
+    /// the file it needs and rejects the rest, `definition` takes kind and
+    /// key or rel, line and col (never both), and an unknown action names
+    /// the valid list with a did-you-mean hint. Six readings, no writes, so
+    /// the tool stays honestly read-only.
+    #[test]
+    fn structure_validates_per_action() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-structure");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.tex"),
+            "\\section{Hi}\\label{sec:hi}\nSee~\\ref{sec:hi}.\n",
+        )
+        .unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "st", &root.to_string_lossy()).unwrap();
+
+        let base = |action: StructureAction| StructureParams {
+            root_id: "st".into(),
+            action,
+            rel: None,
+            main_rel: None,
+            kind: None,
+            key: None,
+            line: None,
+            col: None,
+        };
+        let call = |p: StructureParams| m.structure(Parameters(p));
+
+        let mut p = base(StructureAction::Outline);
+        let err = call(p.clone()).err().expect("outline without a rel fails");
+        assert!(err.contains("rel"), "{err}");
+        p.rel = Some("main.tex".into());
+        p.main_rel = Some("main.tex".into());
+        let err = call(p).err().expect("outline rejects a main file");
+        assert!(err.contains("takes only `rel`"), "{err}");
+
+        for action in [
+            StructureAction::FileGraph,
+            StructureAction::LabelsRefs,
+            StructureAction::Citations,
+            StructureAction::DocumentStructure,
+        ] {
+            let mut p = base(action);
+            let err = call(p.clone())
+                .err()
+                .expect("a main-file reading without one fails");
+            assert!(err.contains("main_rel"), "{err}");
+            p.main_rel = Some("main.tex".into());
+            p.key = Some("sec:hi".into());
+            let err = call(p).err().expect("a main-file reading rejects a key");
+            assert!(err.contains("takes only `main_rel`"), "{err}");
+        }
+        let mut p = base(StructureAction::FileGraph);
+        p.main_rel = Some("main.tex".into());
+        assert!(call(p).is_ok());
+
+        let mut p = base(StructureAction::Definition);
+        let err = call(p.clone())
+            .err()
+            .expect("definition without either spelling fails");
+        assert!(err.contains("kind and key"), "{err}");
+        p.kind = Some(maleficium_index::definition::RefKind::Label);
+        let err = call(p.clone())
+            .err()
+            .expect("definition with kind but no key fails");
+        assert!(err.contains("kind and key"), "{err}");
+        p.key = Some("sec:hi".into());
+        p.rel = Some("main.tex".into());
+        let err = call(p.clone())
+            .err()
+            .expect("definition with both spellings fails");
+        assert!(err.contains("not both"), "{err}");
+        p.rel = None;
+        let defined = call(p).expect("a kind-and-key lookup runs").0;
+        assert!(matches!(defined, StructureOut::Definition(ref d) if d.lookup.is_some()));
+
+        let err = serde_json::from_value::<StructureParams>(serde_json::json!({
+            "root_id": "r", "action": "outlin", "rel": "m.tex",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `outline`?"), "{err}");
+        let err = serde_json::from_value::<StructureParams>(serde_json::json!({
+            "root_id": "r", "action": "graph", "main_rel": "m.tex",
+        }))
+        .expect_err("an unknown action fails");
+        assert!(
+            err.to_string().contains(
+                "[outline, file_graph, labels_refs, citations, document_structure, definition]"
+            ),
+            "{err}"
+        );
+        assert!(
+            serde_json::from_value::<StructureParams>(serde_json::json!({
+                "root_id": "r", "action": "outline", "rel": "m.tex", "fetch": true,
+            }))
+            .is_err()
+        );
+    }
+
     /// Grouped `search` validates per action: `search` needs `pattern`,
     /// `find_files` needs `query`, each rejects the other's fields, and an
     /// unknown action names the valid list with a did-you-mean hint. The
@@ -4395,11 +4579,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-35 session and file splits of this phase.
+    /// rescan. The count pins the 40-to-30 regroup of this phase so far.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 35, "the file split lands at 35 tools");
+        assert_eq!(tools.len(), 30, "the structure split lands at 30 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");

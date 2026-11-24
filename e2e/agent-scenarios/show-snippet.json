@@ -9,7 +9,7 @@
     "steps": [
       { "tool": "session", "args": { "root_id": "agent", "action": "grant", "root": "{project}" } },
       { "compile": "main.tex" },
-      { "tool": "outline", "args": { "root_id": "agent", "rel": "main.tex" } },
+      { "tool": "structure", "args": { "root_id": "agent", "action": "outline", "rel": "main.tex" } },
       {
         "tool": "snippet",
         "args": {
