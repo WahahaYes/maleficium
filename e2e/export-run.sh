@@ -432,7 +432,7 @@ mcp.p.kill()
 # grants the project again; the compiled outputs are on disk already.
 if os.environ.get("NONET") == "1":
     offline = McpClient(["unshare", "-rn", BIN], "export-offline")
-    og = flat(offline.tool("grant", {"root_id": "ip", "root": ROOT}))
+    og = flat(offline.tool("session", {"root_id": "ip", "action": "grant", "root": ROOT}))
     check("offline: grant", og["ok"], str(og))
     net = subprocess.run(["unshare", "-rn", "sh", "-c", "cat /proc/net/dev | tail -n +3 | cut -d: -f1 | tr -d ' ' | tr '\\n' ' '"],
                          capture_output=True, text=True).stdout.strip()

@@ -56,7 +56,7 @@ const text = (r) =>
     .map((c) => c.text)
     .join('');
 
-await call('grant', { root_id: 'h', root: proj });
+await call('session', { root_id: 'h', action: 'grant', root: proj });
 const job = (await call('compile_run', { root_id: 'h', rel: 'main.tex' })).structuredContent.job_id;
 for (let i = 0; i < 600; i++) {
   const s = (await call('compile_poll', { job_id: job, tail_lines: 1 })).structuredContent;
@@ -110,11 +110,12 @@ async function openView(withImage, theme) {
   await page.goto(url);
   const args = {
     root_id: 'h',
+    action: 'snippet',
     main_rel: 'main.tex',
     label: 'fig:diagram',
     ...(withImage ? { with_image: true } : {}),
   };
-  const toolResult = await call('snippet', args);
+  const toolResult = await call('sync_view', args);
   await page.evaluate((o) => window.runView(o), {
     html: viewHtml,
     toolInput: { arguments: args },
@@ -228,7 +229,8 @@ for (const theme of ['light', 'dark']) {
   toolCalls.length = 0;
   writeFileSync(
     join(proj, 'main.tex'),
-    (await call('read', { root_id: 'h', rel: 'main.tex' })).structuredContent.text + '\n%touch\n',
+    (await call('file', { root_id: 'h', action: 'read', rel: 'main.tex' })).structuredContent.text +
+      '\n%touch\n',
   );
   const j = (await call('compile_run', { root_id: 'h', rel: 'main.tex' })).structuredContent.job_id;
   for (let i = 0; i < 240; i++) {

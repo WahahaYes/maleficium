@@ -418,7 +418,7 @@ def session(env, offline):
             if rec.get("status") != "running":
                 break
         return rec
-    g = tool("grant", {"root_id": "off", "root": ROOT})
+    g = tool("session", {"root_id": "off", "action": "grant", "root": ROOT})
     return q, tool, compile_doc, g["ok"]
 
 BIN = os.environ["MCP_BIN"]
