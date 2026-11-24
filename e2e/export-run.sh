@@ -122,7 +122,7 @@ check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 # Before any compile: an error, not an empty bundle.
 out0 = os.path.join(scratch, "out0")
-early = call("export_bundle", {"root_id": "ip", "main_rel": "main.tex", "dest": out0, "profile": "folder"})
+early = call("export_write", {"root_id": "ip", "action": "bundle", "main_rel": "main.tex", "dest": out0, "profile": "folder"})
 check("export before any compile is refused", not early["ok"] and "compile" in early["error"], str(early)[:200])
 check("...and writes nothing", not os.path.exists(out0))
 
@@ -137,9 +137,9 @@ os.makedirs(OUT)
 exp = {}
 
 def export(profile, name, extra=None, main="main.tex"):
-    args = {"root_id": "ip", "main_rel": main, "dest": os.path.join(OUT, name), "profile": profile}
+    args = {"root_id": "ip", "action": "bundle", "main_rel": main, "dest": os.path.join(OUT, name), "profile": profile}
     args.update(extra or {})
-    return call("export_bundle", args)
+    return call("export_write", args)
 
 def manifest_of(profile, dest):
     if profile == "single-file":
@@ -220,13 +220,13 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
 before = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
 for profile in ["folder", "single-file", "hosted"]:
     for d in [os.path.join(ROOT, "export-here"), ROOT, os.path.join(ROOT, "figures", "x.html")]:
-        r = call("export_bundle", {"root_id": "ip", "main_rel": "main.tex", "dest": d, "profile": profile})
+        r = call("export_write", {"root_id": "ip", "action": "bundle", "main_rel": "main.tex", "dest": d, "profile": profile})
         check(f"{profile}: destination {os.path.relpath(d, ROOT)} inside the project is refused",
               not r["ok"] and "inside the project" in r["error"], str(r)[:200])
 check("no export folder appeared in the project", not os.path.exists(os.path.join(ROOT, "export-here")))
-rel = call("export_bundle", {"root_id": "ip", "main_rel": "main.tex", "dest": "out/rel", "profile": "folder"})
+rel = call("export_write", {"root_id": "ip", "action": "bundle", "main_rel": "main.tex", "dest": "out/rel", "profile": "folder"})
 check("a relative destination is refused", not rel["ok"] and "absolute" in rel["error"], str(rel)[:200])
-unknown = call("export_bundle", {"root_id": "nope", "main_rel": "main.tex", "dest": os.path.join(OUT, "x"), "profile": "folder"})
+unknown = call("export_write", {"root_id": "nope", "action": "bundle", "main_rel": "main.tex", "dest": os.path.join(OUT, "x"), "profile": "folder"})
 check("an ungranted root is refused", not unknown["ok"], str(unknown)[:200])
 
 # Size cap: a small configured cap, then the real 50 MiB default.
@@ -291,17 +291,17 @@ check("a remote asset with no local copy is refused", not r["ok"] and "fig-remot
       and "https://media.example.org/clip.mp4" in r["error"] and "approve" in r["error"], str(r)[:300])
 check("...and nothing is left at the destination", not os.path.exists(os.path.join(OUT, "remote-folder")) and not any(n.startswith(".remote") for n in os.listdir(OUT)))
 for extra in ["approved_fetch", "approve_fetch", "approve", "fetch"]:
-    resp = mcp.request("tools/call", {"name": "export_bundle", "arguments": {
-        "root_id": "ip", "main_rel": "remote.tex", "dest": os.path.join(OUT, "self-approved"),
+    resp = mcp.request("tools/call", {"name": "export_write", "arguments": {
+        "root_id": "ip", "action": "bundle", "main_rel": "remote.tex", "dest": os.path.join(OUT, "self-approved"),
         "profile": "folder", extra: ["https://media.example.org/clip.mp4"]}})
     refused = "error" in resp or (resp.get("result") or {}).get("isError")
     check(f"MCP cannot self-approve with `{extra}`", bool(refused) and not os.path.exists(os.path.join(OUT, "self-approved")), str(resp)[:200])
-tool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "export_bundle"), {})
+tool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "export_write"), {})
 ann = tool.get("annotations") or {}
-check("export_bundle advertises it writes, never reaches the network, and is repeatable",
-      ann.get("readOnlyHint") is False and ann.get("openWorldHint") is False and ann.get("idempotentHint") is True, str(ann))
-check("export_bundle's input has no approval field",
-      sorted(tool.get("inputSchema", {}).get("properties", {})) == ["dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
+check("export_write advertises it writes, never reaches the network, and is repeatable",
+      ann.get("readOnlyHint") is False and ann.get("destructiveHint") is True and ann.get("openWorldHint") is False and ann.get("idempotentHint") is True, str(ann))
+check("export_write's input has no approval field",
+      sorted(tool.get("inputSchema", {}).get("properties", {})) == ["action", "dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
       and tool["inputSchema"].get("additionalProperties") is False, str(tool.get("inputSchema"))[:300])
 
 # The project is exactly as it was before exporting.
@@ -319,14 +319,15 @@ check("a non-empty foreign folder is refused and untouched", not foreign["ok"] a
 # Preview: the same single-file export, written by the core to a scratch
 # folder under the app data dir (XDG_DATA_HOME here), path returned, nothing
 # opened, project untouched, next run replaces the previous preview.
-ptool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "preview_bundle"), {})
+ptool = next((t for t in mcp.request("tools/list")["result"]["tools"] if t["name"] == "export_read"), {})
 pann = ptool.get("annotations") or {}
-check("preview_bundle takes only a project and main file, and never reaches the network",
-      sorted(ptool.get("inputSchema", {}).get("properties", {})) == ["main_rel", "root_id"]
-      and pann.get("openWorldHint") is False and pann.get("readOnlyHint") is False, str(ptool)[:300])
+check("export_read only reads and never reaches the network",
+      sorted(ptool.get("inputSchema", {}).get("properties", {})) == ["action", "main_rel", "root_id"]
+      and pann.get("readOnlyHint") is True and pann.get("destructiveHint") is False
+      and pann.get("openWorldHint") is False, str(ptool)[:300])
 status_before = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
-pv = call("preview_bundle", {"root_id": "ip", "main_rel": "main.tex"})
-check("preview_bundle succeeds", pv["ok"], str(pv)[:300])
+pv = call("export_write", {"root_id": "ip", "action": "preview", "main_rel": "main.tex"})
+check("preview succeeds", pv["ok"], str(pv)[:300])
 if pv["ok"]:
     pp = pv["path"]
     check("preview path is an existing index.html", os.path.isabs(pp) and os.path.basename(pp) == "index.html" and os.path.isfile(pp), pp)
@@ -337,11 +338,11 @@ if pv["ok"]:
     check("preview returns a hint and opens nothing itself", pp in pv["hint"])
     stale = os.path.join(os.path.dirname(pp), "stale.txt")
     open(stale, "w").write("old")
-    pv2 = call("preview_bundle", {"root_id": "ip", "main_rel": "main.tex"})
+    pv2 = call("export_write", {"root_id": "ip", "action": "preview", "main_rel": "main.tex"})
     check("the next preview reuses the folder and cleans the last one", pv2["ok"] and pv2["path"] == pp and not os.path.exists(stale) and os.listdir(os.path.dirname(pp)) == ["index.html"], str(pv2)[:200])
 status_after = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
 check("previews leave the project tree unchanged (porcelain)", status_after == status_before == before, repr(status_after))
-pbad = call("preview_bundle", {"root_id": "nope", "main_rel": "main.tex"})
+pbad = call("export_write", {"root_id": "nope", "action": "preview", "main_rel": "main.tex"})
 check("preview of an unknown project is refused", not pbad["ok"], str(pbad)[:200])
 
 # Declared frame origins. Three https listeners on loopback (started later
@@ -437,7 +438,7 @@ if os.environ.get("NONET") == "1":
                          capture_output=True, text=True).stdout.strip()
     check("offline: the namespace has loopback only", net in ("lo", ""), net)
     for profile, name in [("folder", "o-folder"), ("single-file", "o-single.html"), ("hosted", "o-hosted")]:
-        r = flat(offline.tool("export_bundle", {"root_id": "ip", "main_rel": "main.tex", "dest": os.path.join(OUT, name), "profile": profile}))
+        r = flat(offline.tool("export_write", {"root_id": "ip", "action": "bundle", "main_rel": "main.tex", "dest": os.path.join(OUT, name), "profile": profile}))
         check(f"offline: {profile} export needs no network", r["ok"], str(r)[:300])
     offline.p.kill()
 else:

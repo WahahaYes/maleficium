@@ -166,19 +166,68 @@ struct OutputStampOut {
     stamp: Option<core::OutputStamp>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ExportPdfParams {
-    root_id: String,
-    main_rel: String,
-    /// Absolute path outside the project.
-    dest: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ExportReadAction {
+    Stamp,
+    Status,
+    Cancel,
 }
 
+impl<'de> Deserialize<'de> for ExportReadAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "stamp" => Ok(Self::Stamp),
+            "status" => Ok(Self::Status),
+            "cancel" => Ok(Self::Cancel),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["stamp", "status", "cancel"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: the read takes a project, a main file and an
+/// action, nothing that could approve, fetch or write.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct ExportZipParams {
+#[serde(deny_unknown_fields)]
+struct ExportReadParams {
     root_id: String,
-    /// Absolute path outside the project.
-    dest: String,
+    action: ExportReadAction,
+    /// Required iff action is stamp or status.
+    main_rel: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct ExportStatusOut {
+    /// Whether a previous compile left a pdf for the main file.
+    fresh: bool,
+}
+
+/// The `export_read` result for one action, verbatim: `stamp` the pdf's
+/// stamp (or null), `status` whether a pdf waits, `cancel` what stopped.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ExportReadOut {
+    Stamp(OutputStampOut),
+    Status(ExportStatusOut),
+    Cancelled(CancelOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for ExportReadOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ExportReadOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `stamp` returns the pdf's stamp or null, `status` whether a pdf waits, `cancel` what stopped.",
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -358,27 +407,80 @@ struct RuntimeValidateOut {
     manifest: Option<serde_json::Value>,
 }
 
+/// The write half of an export: which file the action writes, and where.
+/// `preview` and `open` write the single-file bundle to a scratch folder
+/// under the app data dir (never the project); `open` then hands that path
+/// to the OS browser, like the app's Preview in Browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ExportWriteAction {
+    Pdf,
+    Zip,
+    Bundle,
+    Preview,
+    Open,
+}
+
+impl<'de> Deserialize<'de> for ExportWriteAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "pdf" => Ok(Self::Pdf),
+            "zip" => Ok(Self::Zip),
+            "bundle" => Ok(Self::Bundle),
+            "preview" => Ok(Self::Preview),
+            "open" => Ok(Self::Open),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["pdf", "zip", "bundle", "preview", "open"],
+            ))),
+        }
+    }
+}
+
 /// Unknown fields are refused: the export has no approval argument for an
 /// agent to pass, so an `approved_fetch` (or anything like it) is an error,
 /// not something quietly ignored.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ExportBundleParams {
+struct ExportWriteParams {
     root_id: String,
-    main_rel: String,
-    /// Absolute path outside the project: a new or empty folder (folder,
-    /// hosted), or the file to write (single-file).
-    dest: String,
-    profile: maleficium_events::BundleProfile,
-    /// Single-file warning threshold in bytes; default 50 MiB.
+    action: ExportWriteAction,
+    /// Required iff action is pdf, bundle, preview or open.
+    main_rel: Option<String>,
+    /// Required iff action is pdf, zip or bundle: the absolute path outside
+    /// the project to write (a new or empty folder for folder and hosted, the
+    /// file to write for pdf, zip and single-file).
+    dest: Option<String>,
+    /// Required iff action is bundle.
+    profile: Option<maleficium_events::BundleProfile>,
+    /// Single-file warning threshold in bytes; default 50 MiB (bundle only).
     size_cap_bytes: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct PreviewBundleParams {
-    root_id: String,
-    main_rel: String,
+/// The `export_write` result for one action, verbatim: `pdf` and `zip` the
+/// file written, `bundle` and `open` the bundle written, `preview` the
+/// scratch path to open.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ExportWriteOut {
+    Exported(core::export::Exported),
+    Bundle(core::bundle::BundleExported),
+    Preview(PreviewBundleOut),
+}
+
+// Same object-shape naming as `SearchOut`: the union serializes as the
+// bare per-action record.
+impl schemars::JsonSchema for ExportWriteOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ExportWriteOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `pdf` and `zip` return the file written, `bundle` and `open` the bundle written, `preview` the scratch path.",
+        })
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -738,6 +840,26 @@ fn mcp_event<T>(tool: &str, r: &Result<T, String>) -> maleficium_events::BusEven
 }
 
 impl Maleficium {
+    /// The bundle domain event is best-effort observability: the export
+    /// already ran, so a dropped log write is noted here and never fails
+    /// the tool.
+    fn log_bundle_event(
+        main_rel: &str,
+        profile: maleficium_events::BundleProfile,
+        r: &Result<core::bundle::BundleExported, String>,
+    ) {
+        if core::eventlog::append(std::slice::from_ref(&core::bundle::event(
+            main_rel,
+            profile,
+            r,
+            maleficium_events::Actor::Agent,
+        )))
+        .is_err()
+        {
+            // Nothing to fall back to: the log line is lost, the export stands.
+        }
+    }
+
     fn tool<T>(&self, name: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
         let r = f();
         let _ = core::eventlog::append(std::slice::from_ref(&mcp_event(name, &r)));
@@ -944,45 +1066,48 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Copy main_rel's compiled pdf to dest, an absolute path outside the project. Fails before any compile.",
+        description = "Read export state without writing anything: `stamp` reports main_rel's compiled-pdf stamp (mtimeMs, bytes; null before any compile), `status` reports whether a previous compile left a pdf for main_rel, `cancel` stops a running bundle export's conversion. Needs main_rel except for cancel, which takes nothing else.",
         annotations(
-            read_only_hint = false,
+            read_only_hint = true,
             destructive_hint = false,
             idempotent_hint = true,
             open_world_hint = false
         )
     )]
-    fn export_pdf(
+    fn export_read(
         &self,
-        Parameters(p): Parameters<ExportPdfParams>,
-    ) -> Result<Json<core::export::Exported>, String> {
-        self.tool("export_pdf", || {
-            Ok(Json(core::export::export_pdf(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                &p.dest,
-            )?))
-        })
-    }
-
-    #[tool(
-        description = "Zip the project's sources to dest, an absolute path outside the project: every file but build outputs, trash, dot files and symlinks, listed root-relative in files.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn export_zip(
-        &self,
-        Parameters(p): Parameters<ExportZipParams>,
-    ) -> Result<Json<core::export::Exported>, String> {
-        self.tool("export_zip", || {
-            Ok(Json(core::export::export_zip(
-                &self.cx, &p.root_id, &p.dest,
-            )?))
+        Parameters(p): Parameters<ExportReadParams>,
+    ) -> Result<Json<ExportReadOut>, String> {
+        self.tool("export_read", || match p.action {
+            ExportReadAction::Stamp => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "stamp requires `main_rel`: the main file whose compiled pdf to stamp"
+                        .to_string()
+                })?;
+                Ok(Json(ExportReadOut::Stamp(OutputStampOut {
+                    stamp: core::output_stamp(&self.cx, &p.root_id, main_rel)?,
+                })))
+            }
+            ExportReadAction::Status => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "status requires `main_rel`: the main file whose compiled pdf to look for"
+                        .to_string()
+                })?;
+                Ok(Json(ExportReadOut::Status(ExportStatusOut {
+                    fresh: core::outputs_fresh(&self.cx, &p.root_id, main_rel)?,
+                })))
+            }
+            ExportReadAction::Cancel => {
+                if p.main_rel.is_some() {
+                    return Err(
+                        "cancel takes no `main_rel`: it stops the running bundle export's conversion"
+                            .to_string(),
+                    );
+                }
+                Ok(Json(ExportReadOut::Cancelled(CancelOut {
+                    status: core::reflow::convert::cancel(&self.cx)?,
+                })))
+            }
         })
     }
 
@@ -1317,7 +1442,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Export main_rel's last compile as a paper bundle at dest, an absolute path outside the project: profile folder or hosted writes a folder (manifest.json, index.html, paper.pdf, theme/, widgets/<id>/index.html, content-addressed assets/), single-file writes one html file with everything inline. Every widget is one self-contained document with a strict CSP; assets are sha256-hashed from the project's files. Writes only to dest (an earlier bundle there is replaced; any other non-empty folder is refused) and never fetches: a remote asset with no local copy is refused, since hashing it would need a download that only the user can approve in the app. Returns the path, bytes, counts and warnings (size cap, runtimes missing from this build, files an author bundle could not inline). Fails before any compile, for a destination inside the project, and for an invalid manifest.",
+        description = "Write an export outside the project, never into it: `pdf` copies main_rel's compiled pdf to dest, `zip` packs the sources to dest, `bundle` writes a paper bundle at dest, `preview` writes the single-file bundle to a scratch folder and returns its path without opening anything, `open` previews then opens that path in the OS browser. Every dest is absolute and outside the project; re-exporting over an earlier bundle replaces it, a foreign folder is refused.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1325,58 +1450,136 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn export_bundle(
+    fn export_write(
         &self,
-        Parameters(p): Parameters<ExportBundleParams>,
-    ) -> Result<Json<core::bundle::BundleExported>, String> {
-        self.tool("export_bundle", || {
-            let r = core::bundle::export_bundle(
-                &self.cx,
-                &p.root_id,
-                &p.main_rel,
-                &p.dest,
-                p.profile,
-                p.size_cap_bytes,
-            );
-            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
-                &p.main_rel,
-                p.profile,
-                &r,
-                maleficium_events::Actor::Agent,
-            )));
-            Ok(Json(r?))
-        })
-    }
-
-    #[tool(
-        description = "Preview main_rel's last compile as a paper bundle: exports the single-file profile (everything inline, opens from file://) to index.html in a scratch folder under the app data dir, never in the project, and returns its absolute path. It does not open anything: open the path in a browser yourself, or tell the user to (the app's File menu has Preview in Browser). One scratch folder per project; the next preview replaces it. Same rules as export_bundle: never fetches, no approvals, fails before any compile and for an invalid manifest. The browser sandbox is the only isolation: it is not egress-proof, so treat widgets as untrusted.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn preview_bundle(
-        &self,
-        Parameters(p): Parameters<PreviewBundleParams>,
-    ) -> Result<Json<PreviewBundleOut>, String> {
-        self.tool("preview_bundle", || {
-            let r = core::bundle::preview_bundle(&self.cx, &p.root_id, &p.main_rel);
-            let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event(
-                &p.main_rel,
-                core::bundle::BundleProfile::SingleFile,
-                &r,
-                maleficium_events::Actor::Agent,
-            )));
-            let r = r?;
-            Ok(Json(PreviewBundleOut {
-                hint: format!("open {} in a browser to view it", r.path),
-                path: r.path,
-                bytes: r.bytes,
-                widgets: r.widgets,
-                warnings: r.warnings,
-            }))
+        Parameters(p): Parameters<ExportWriteParams>,
+    ) -> Result<Json<ExportWriteOut>, String> {
+        self.tool("export_write", || match p.action {
+            ExportWriteAction::Pdf => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "pdf requires `main_rel`: the main file whose compiled pdf to copy".to_string()
+                })?;
+                let dest = p.dest.as_deref().ok_or_else(|| {
+                    "pdf requires `dest`: the absolute path outside the project to write"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("profile", p.profile.is_some()),
+                    ("size_cap_bytes", p.size_cap_bytes.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "pdf takes only `main_rel` and `dest`; remove `{name}` (use action `bundle` for a paper bundle)"
+                        ));
+                    }
+                }
+                Ok(Json(ExportWriteOut::Exported(core::export::export_pdf(
+                    &self.cx,
+                    &p.root_id,
+                    main_rel,
+                    dest,
+                )?)))
+            }
+            ExportWriteAction::Zip => {
+                let dest = p.dest.as_deref().ok_or_else(|| {
+                    "zip requires `dest`: the absolute path outside the project to write".to_string()
+                })?;
+                for (name, set) in [
+                    ("main_rel", p.main_rel.is_some()),
+                    ("profile", p.profile.is_some()),
+                    ("size_cap_bytes", p.size_cap_bytes.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "zip takes only `dest`; remove `{name}` (use action `pdf` or `bundle` for a compiled output)"
+                        ));
+                    }
+                }
+                Ok(Json(ExportWriteOut::Exported(core::export::export_zip(
+                    &self.cx, &p.root_id, dest,
+                )?)))
+            }
+            ExportWriteAction::Bundle => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "bundle requires `main_rel`: the main file whose last compile to bundle"
+                        .to_string()
+                })?;
+                let dest = p.dest.as_deref().ok_or_else(|| {
+                    "bundle requires `dest`: the absolute path outside the project to write"
+                        .to_string()
+                })?;
+                let profile = p.profile.ok_or_else(|| {
+                    "bundle requires `profile`: folder, single-file or hosted".to_string()
+                })?;
+                let r = core::bundle::export_bundle(
+                    &self.cx,
+                    &p.root_id,
+                    main_rel,
+                    dest,
+                    profile,
+                    p.size_cap_bytes,
+                );
+                Self::log_bundle_event(main_rel, profile, &r);
+                Ok(Json(ExportWriteOut::Bundle(r?)))
+            }
+            ExportWriteAction::Preview => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "preview requires `main_rel`: the main file whose last compile to preview"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("dest", p.dest.is_some()),
+                    ("profile", p.profile.is_some()),
+                    ("size_cap_bytes", p.size_cap_bytes.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "preview takes only `main_rel`; remove `{name}` (the core picks the scratch folder)"
+                        ));
+                    }
+                }
+                let r = core::bundle::preview_bundle(&self.cx, &p.root_id, main_rel);
+                Self::log_bundle_event(
+                    main_rel,
+                    core::bundle::BundleProfile::SingleFile,
+                    &r,
+                );
+                let r = r?;
+                Ok(Json(ExportWriteOut::Preview(PreviewBundleOut {
+                    hint: format!("open {} in a browser to view it", r.path),
+                    path: r.path,
+                    bytes: r.bytes,
+                    widgets: r.widgets,
+                    warnings: r.warnings,
+                })))
+            }
+            ExportWriteAction::Open => {
+                let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                    "open requires `main_rel`: the main file whose last compile to show in the browser"
+                        .to_string()
+                })?;
+                for (name, set) in [
+                    ("dest", p.dest.is_some()),
+                    ("profile", p.profile.is_some()),
+                    ("size_cap_bytes", p.size_cap_bytes.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "open takes only `main_rel`; remove `{name}` (use action `preview` to only get the path)"
+                        ));
+                    }
+                }
+                let r = core::bundle::preview_bundle(&self.cx, &p.root_id, main_rel);
+                Self::log_bundle_event(
+                    main_rel,
+                    core::bundle::BundleProfile::SingleFile,
+                    &r,
+                );
+                let r = r?;
+                open::that_detached(&r.path)
+                    .map_err(|e| format!("cannot open {} in the browser: {e}", r.path))?;
+                Ok(Json(ExportWriteOut::Bundle(r)))
+            }
         })
     }
 
@@ -2164,47 +2367,50 @@ mod tests {
         assert!(!err.is_empty());
     }
 
-    /// The export writes a new place and replaces only an earlier bundle, so
-    /// it is not read-only; it never fetches, so it is not open-world. An
-    /// agent has no way to approve a download: the parameters refuse any
-    /// field the schema does not list, and the tool has no approval argument.
-    /// The preview tool takes no destination (the core picks the scratch
-    /// folder) and no approval, and it only returns a path: opening it is the
-    /// app menu's job.
+    /// The export split is honest about effects: reading state never writes,
+    /// writing always can, and neither reaches the network. The read takes a
+    /// project, a main file and an action, nothing that could approve or
+    /// fetch; the write has no approval argument either.
     #[test]
-    fn preview_bundle_takes_a_project_and_nothing_else() {
+    fn export_read_is_read_only_and_export_write_is_destructive() {
         let tools = Maleficium::tool_router().list_all();
         let t = tools
             .iter()
-            .find(|t| t.name == "preview_bundle")
-            .expect("preview_bundle");
+            .find(|t| t.name == "export_read")
+            .expect("export_read");
         let a = t.annotations.as_ref().expect("annotations");
-        assert_eq!(a.read_only_hint, Some(false));
-        assert_eq!(a.open_world_hint, Some(false));
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
         assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
         let schema = serde_json::to_value(&*t.input_schema).unwrap();
-        let props: Vec<&str> = schema["properties"]
+        let mut props: Vec<&str> = schema["properties"]
             .as_object()
             .unwrap()
             .keys()
             .map(String::as_str)
             .collect();
-        assert_eq!(props, ["main_rel", "root_id"]);
+        props.sort();
+        assert_eq!(props, ["action", "main_rel", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
         assert!(
-            serde_json::from_value::<PreviewBundleParams>(
-                serde_json::json!({"root_id": "r", "main_rel": "m.tex", "dest": "/tmp/x"})
+            serde_json::from_value::<ExportReadParams>(
+                serde_json::json!({"root_id": "r", "action": "stamp", "main_rel": "m.tex"})
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<ExportReadParams>(
+                serde_json::json!({"root_id": "r", "action": "stamp", "main_rel": "m.tex", "dest": "/tmp/x"})
             )
             .is_err()
         );
-    }
 
-    #[test]
-    fn export_bundle_cannot_be_given_an_approval_and_fails_closed() {
-        let tools = Maleficium::tool_router().list_all();
         let t = tools
             .iter()
-            .find(|t| t.name == "export_bundle")
-            .expect("export_bundle");
+            .find(|t| t.name == "export_write")
+            .expect("export_write");
         let a = t.annotations.as_ref().expect("annotations");
         assert_eq!(a.read_only_hint, Some(false));
         assert_eq!(a.destructive_hint, Some(true));
@@ -2213,21 +2419,33 @@ mod tests {
         assert!(t.output_schema.is_some());
 
         let schema = serde_json::to_value(&*t.input_schema).unwrap();
-        let props: Vec<&str> = schema["properties"]
+        let mut props: Vec<&str> = schema["properties"]
             .as_object()
             .unwrap()
             .keys()
             .map(String::as_str)
             .collect();
+        props.sort();
         assert_eq!(
             props,
-            ["dest", "main_rel", "profile", "root_id", "size_cap_bytes"]
+            [
+                "action",
+                "dest",
+                "main_rel",
+                "profile",
+                "root_id",
+                "size_cap_bytes"
+            ]
         );
         assert_eq!(schema["additionalProperties"], false);
+    }
+
+    #[test]
+    fn export_write_cannot_be_given_an_approval_and_fails_closed() {
         let base = serde_json::json!({
-            "root_id": "r", "main_rel": "main.tex", "dest": "/tmp/x", "profile": "folder"
+            "root_id": "r", "action": "bundle", "main_rel": "main.tex", "dest": "/tmp/x", "profile": "folder"
         });
-        assert!(serde_json::from_value::<ExportBundleParams>(base.clone()).is_ok());
+        assert!(serde_json::from_value::<ExportWriteParams>(base.clone()).is_ok());
         for extra in [
             "approved_fetch",
             "approve_fetch",
@@ -2238,18 +2456,193 @@ mod tests {
             let mut v = base.clone();
             v[extra] = serde_json::json!(["https://media.example.org/clip.mp4"]);
             assert!(
-                serde_json::from_value::<ExportBundleParams>(v).is_err(),
+                serde_json::from_value::<ExportWriteParams>(v).is_err(),
                 "{extra} must not be accepted"
             );
         }
         let m = Maleficium::default();
         let err = m
-            .export_bundle(Parameters(
-                serde_json::from_value::<ExportBundleParams>(base).unwrap(),
+            .export_write(Parameters(
+                serde_json::from_value::<ExportWriteParams>(base).unwrap(),
             ))
             .err()
             .expect("an ungranted root fails");
         assert!(!err.is_empty());
+    }
+
+    /// Grouped `export_read` validates per action: `stamp` and `status` need
+    /// `main_rel`, `cancel` takes nothing else, and an unknown action names
+    /// the valid list with a did-you-mean hint. Nothing is written either
+    /// way: the stamp of a never-compiled project is null, and cancelling
+    /// with no conversion running is an error, not silence.
+    #[test]
+    fn export_read_validates_per_action() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-export-read");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "expr", &root.to_string_lossy()).unwrap();
+
+        let read = |action: ExportReadAction, main_rel: Option<&str>| {
+            m.export_read(Parameters(ExportReadParams {
+                root_id: "expr".into(),
+                action,
+                main_rel: main_rel.map(Into::into),
+            }))
+        };
+        let stamp = read(ExportReadAction::Stamp, Some("main.tex"))
+            .expect("a stamp reads")
+            .0;
+        let ExportReadOut::Stamp(stamp) = stamp else {
+            panic!("stamp returns its stamp");
+        };
+        assert!(stamp.stamp.is_none());
+        let status = read(ExportReadAction::Status, Some("main.tex"))
+            .expect("a status reads")
+            .0;
+        let ExportReadOut::Status(status) = status else {
+            panic!("status returns whether a pdf waits");
+        };
+        assert!(!status.fresh);
+
+        let err = read(ExportReadAction::Stamp, None)
+            .err()
+            .expect("stamp without a main file fails");
+        assert!(err.contains("main_rel"), "{err}");
+        let err = read(ExportReadAction::Status, None)
+            .err()
+            .expect("status without a main file fails");
+        assert!(err.contains("main_rel"), "{err}");
+        let err = read(ExportReadAction::Cancel, Some("main.tex"))
+            .err()
+            .expect("cancel rejects a main file");
+        assert!(err.contains("takes no `main_rel`"), "{err}");
+        let err = m
+            .export_read(Parameters(ExportReadParams {
+                root_id: "expr".into(),
+                action: ExportReadAction::Cancel,
+                main_rel: None,
+            }))
+            .err()
+            .expect("cancelling with no conversion running fails");
+        assert!(err.contains("no conversion is running"), "{err}");
+        assert!(
+            m.export_read(Parameters(ExportReadParams {
+                root_id: "nope".into(),
+                action: ExportReadAction::Stamp,
+                main_rel: Some("main.tex".into()),
+            }))
+            .is_err()
+        );
+
+        let err = serde_json::from_value::<ExportReadParams>(serde_json::json!({
+            "root_id": "r", "action": "stomp", "main_rel": "m.tex",
+        }))
+        .expect_err("an unknown action fails");
+        assert!(err.to_string().contains("[stamp, status, cancel]"), "{err}");
+        let err = serde_json::from_value::<ExportReadParams>(serde_json::json!({
+            "root_id": "r", "action": "stats", "main_rel": "m.tex",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `status`?"), "{err}");
+    }
+
+    /// Grouped `export_write` validates per action: each action names the
+    /// fields it needs and rejects the rest, before touching the project.
+    /// The destination check lives in one place (the core's): every action
+    /// that takes a `dest` refuses a path inside the project.
+    #[test]
+    fn export_write_validates_per_action_and_refuses_inside_project_dest() {
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-export-write");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.tex"), "x").unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        core::grant_root(&m.cx, "expw", &root.to_string_lossy()).unwrap();
+        let inside = root.join("inside.zip").to_string_lossy().to_string();
+
+        let write = |params: ExportWriteParams| m.export_write(Parameters(params));
+        let base = |action: ExportWriteAction| ExportWriteParams {
+            root_id: "expw".into(),
+            action,
+            main_rel: None,
+            dest: None,
+            profile: None,
+            size_cap_bytes: None,
+        };
+        let mut pdf = base(ExportWriteAction::Pdf);
+        let err = write(pdf.clone()).err().expect("pdf without fields fails");
+        assert!(err.contains("main_rel"), "{err}");
+        pdf.main_rel = Some("main.tex".into());
+        let err = write(pdf.clone())
+            .err()
+            .expect("pdf without a destination fails");
+        assert!(err.contains("dest"), "{err}");
+        pdf.dest = Some("/tmp/maleficium-expw-paper.pdf".into());
+        pdf.profile = Some(maleficium_events::BundleProfile::Folder);
+        let err = write(pdf).err().expect("pdf rejects a profile");
+        assert!(
+            err.contains("pdf takes only `main_rel` and `dest`"),
+            "{err}"
+        );
+
+        let mut zip = base(ExportWriteAction::Zip);
+        let err = write(zip.clone())
+            .err()
+            .expect("zip without a destination fails");
+        assert!(err.contains("dest"), "{err}");
+        zip.dest = Some(inside.clone());
+        zip.main_rel = Some("main.tex".into());
+        let err = write(zip.clone()).err().expect("zip rejects a main file");
+        assert!(err.contains("zip takes only `dest`"), "{err}");
+        zip.main_rel = None;
+        let err = write(zip).err().expect("an inside-project dest fails");
+        assert!(err.contains("inside the project"), "{err}");
+
+        let mut bundle = base(ExportWriteAction::Bundle);
+        bundle.main_rel = Some("main.tex".into());
+        bundle.dest = Some(inside.clone());
+        bundle.profile = Some(maleficium_events::BundleProfile::Folder);
+        let err = write(bundle)
+            .err()
+            .expect("an inside-project bundle dest fails");
+        assert!(err.contains("inside the project"), "{err}");
+
+        let mut bundle = base(ExportWriteAction::Bundle);
+        bundle.main_rel = Some("main.tex".into());
+        bundle.dest = Some("/tmp/maleficium-expw-bundle".into());
+        let err = write(bundle).err().expect("bundle without a profile fails");
+        assert!(err.contains("profile"), "{err}");
+
+        let mut preview = base(ExportWriteAction::Preview);
+        let err = write(preview.clone())
+            .err()
+            .expect("preview without a main file fails");
+        assert!(err.contains("main_rel"), "{err}");
+        preview.main_rel = Some("main.tex".into());
+        preview.dest = Some("/tmp/maleficium-expw-preview.html".into());
+        let err = write(preview).err().expect("preview rejects a dest");
+        assert!(err.contains("preview takes only `main_rel`"), "{err}");
+
+        let mut open = base(ExportWriteAction::Open);
+        let err = write(open.clone())
+            .err()
+            .expect("open without a main file fails");
+        assert!(err.contains("main_rel"), "{err}");
+        open.main_rel = Some("main.tex".into());
+        open.size_cap_bytes = Some(1);
+        let err = write(open).err().expect("open rejects a size cap");
+        assert!(err.contains("open takes only `main_rel`"), "{err}");
+
+        let err = serde_json::from_value::<ExportWriteParams>(serde_json::json!({
+            "root_id": "r", "action": "bundel", "main_rel": "m.tex",
+            "dest": "/tmp/x", "profile": "folder",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `bundle`?"), "{err}");
     }
 
     /// The runtime authoring tools stay on their side of the approval
@@ -2836,10 +3229,13 @@ mod tests {
 
         let pdf_dest = dir.join("out.pdf").to_string_lossy().to_string();
         assert!(
-            m.export_pdf(Parameters(ExportPdfParams {
+            m.export_write(Parameters(ExportWriteParams {
                 root_id: "cov".into(),
-                main_rel: "main.tex".into(),
-                dest: pdf_dest,
+                action: ExportWriteAction::Pdf,
+                main_rel: Some("main.tex".into()),
+                dest: Some(pdf_dest),
+                profile: None,
+                size_cap_bytes: None,
             }))
             .is_err()
         );
@@ -2848,13 +3244,48 @@ mod tests {
         std::fs::create_dir_all(&zip_parent).unwrap();
         let zip_dest = zip_parent.join("sources.zip").to_string_lossy().to_string();
         let zip = m
-            .export_zip(Parameters(ExportZipParams {
+            .export_write(Parameters(ExportWriteParams {
                 root_id: "cov".into(),
-                dest: zip_dest.clone(),
+                action: ExportWriteAction::Zip,
+                main_rel: None,
+                dest: Some(zip_dest.clone()),
+                profile: None,
+                size_cap_bytes: None,
             }))
             .unwrap();
-        assert!(zip.0.files.contains(&"main.tex".to_string()));
+        let ExportWriteOut::Exported(zip) = zip.0 else {
+            panic!("zip returns what it wrote");
+        };
+        assert!(zip.files.contains(&"main.tex".to_string()));
         assert!(std::path::Path::new(&zip_dest).is_file());
+
+        let stamp = m
+            .export_read(Parameters(ExportReadParams {
+                root_id: "cov".into(),
+                action: ExportReadAction::Stamp,
+                main_rel: Some("main.tex".into()),
+            }))
+            .unwrap();
+        let ExportReadOut::Stamp(stamp) = stamp.0 else {
+            panic!("stamp returns its stamp");
+        };
+        assert!(stamp.stamp.is_none());
+        let status = m
+            .export_read(Parameters(ExportReadParams {
+                root_id: "cov".into(),
+                action: ExportReadAction::Status,
+                main_rel: Some("main.tex".into()),
+            }))
+            .unwrap();
+        assert!(matches!(status.0, ExportReadOut::Status(ref s) if !s.fresh));
+        assert!(
+            m.export_read(Parameters(ExportReadParams {
+                root_id: "cov".into(),
+                action: ExportReadAction::Cancel,
+                main_rel: None,
+            }))
+            .is_err()
+        );
 
         let templates = m.templates().unwrap();
         assert!(!templates.0.templates.is_empty());
@@ -3151,18 +3582,25 @@ mod tests {
             .is_err()
         );
         assert!(
-            m.preview_bundle(Parameters(
-                serde_json::from_value(main(serde_json::json!({}))).unwrap()
-            ))
+            m.export_write(Parameters(ExportWriteParams {
+                root_id: "cov".into(),
+                action: ExportWriteAction::Preview,
+                main_rel: Some("main.tex".into()),
+                dest: None,
+                profile: None,
+                size_cap_bytes: None,
+            }))
             .is_err()
         );
         assert!(
-            m.export_bundle(Parameters(
-                serde_json::from_value(main(
-                    serde_json::json!({"dest": "/tmp/maleficium-cov-bundle", "profile": "folder"})
-                ))
-                .unwrap()
-            ))
+            m.export_write(Parameters(ExportWriteParams {
+                root_id: "cov".into(),
+                action: ExportWriteAction::Bundle,
+                main_rel: Some("main.tex".into()),
+                dest: Some("/tmp/maleficium-cov-bundle".into()),
+                profile: Some(maleficium_events::BundleProfile::Folder),
+                size_cap_bytes: None,
+            }))
             .is_err()
         );
 
@@ -3201,8 +3639,8 @@ mod tests {
             "compile_poll",
             "offline_readiness",
             "output_stamp",
-            "export_pdf",
-            "export_zip",
+            "export_read",
+            "export_write",
             "templates",
             "new_from_template",
             "compile_cancel",
@@ -3226,8 +3664,6 @@ mod tests {
             "widgets",
             "widgets_status",
             "widget_check",
-            "export_bundle",
-            "preview_bundle",
             "runtime_scaffold",
             "runtime_validate",
             "runtime_install",
@@ -3536,15 +3972,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 43-to-40 split of this phase.
+    /// rescan. The count pins the 40-to-38 split of this phase.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(
-            tools.len(),
-            40,
-            "the search+replace split lands at 40 tools"
-        );
+        assert_eq!(tools.len(), 38, "the export split lands at 38 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");

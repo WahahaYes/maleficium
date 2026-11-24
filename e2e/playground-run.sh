@@ -207,7 +207,7 @@ else:
 # The single-file export, outside the project, for the article checks below.
 out = os.path.join(os.path.dirname(ROOT), "out", "single.html")
 os.makedirs(os.path.dirname(out), exist_ok=True)
-ex = call("export_bundle", {"root_id": "pg", "main_rel": "main.tex", "dest": out, "profile": "single-file"})
+ex = call("export_write", {"root_id": "pg", "action": "bundle", "main_rel": "main.tex", "dest": out, "profile": "single-file"})
 check("single-file export of the playground", ex["ok"] and os.path.isfile(out), str(ex)[:300])
 
 mcp.p.kill()

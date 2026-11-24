@@ -209,11 +209,11 @@ lst = call("list", {"root_id": "pc", "rel": "."})
 check("the file listing hides the cache", lst["ok"] and ".maleficium" not in str(lst), str(lst)[:300])
 
 # 6. Export, then compile without the app.
-b = call("export_bundle", {"root_id": "pc", "main_rel": "auto.tex",
+b = call("export_write", {"root_id": "pc", "action": "bundle", "main_rel": "auto.tex",
                            "dest": os.path.join(SCRATCH, "bundle.html"), "profile": "single-file"})
 check("the bundle export takes the cached posters", b["ok"], str(b)[:300])
 zp = os.path.join(SCRATCH, "paper.zip")
-z = call("export_zip", {"root_id": "pc", "dest": zp})
+z = call("export_write", {"root_id": "pc", "action": "zip", "dest": zp})
 files = z.get("files") or []
 check("export_zip carries the posters, the map and the README",
       z["ok"] and ".maleficium/README.md" in files and ".maleficium/posters/auto.map" in files
