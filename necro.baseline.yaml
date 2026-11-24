@@ -121,15 +121,7 @@ entries:
     fingerprint: "yellow: '#e0af68',"
     line: 34
   - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/Cargo.toml'
-    fingerprint: ''
-    line: 0
-  - rule: 'rust/cargo-manifest'
     path: 'src-tauri/core/Cargo.toml'
-    fingerprint: ''
-    line: 0
-  - rule: 'rust/cargo-manifest'
-    path: 'src-tauri/engine/Cargo.toml'
     fingerprint: ''
     line: 0
   - rule: 'rust/cargo-manifest'
@@ -174,16 +166,12 @@ entries:
     line: 824
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/bundle.rs'
-    fingerprint: 'Pixmap::from_parts(buf, (x1 - x0) as u16, (y1 - y0) as u16)'
-    line: 837
-  - rule: 'rust/lossy-cast'
-    path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'assets: plan.assets.len() as u32,'
-    line: 2529
+    line: 2534
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let pages = pdf.pages().len() as u32;'
-    line: 2079
+    line: 2084
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let px = |v: f32, hi: usize| ((v * scale).max(0.0) as usize).min(hi);'
@@ -203,11 +191,11 @@ entries:
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'warnings: b.warnings.len() as u32,'
-    line: 2560
+    line: 2565
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'widgets: planned.len() as u32,'
-    line: 2528
+    line: 2533
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/document.rs'
     fingerprint: 'cites: uses.iter().filter(|u| *u == &key).count() as u32,'
@@ -270,10 +258,6 @@ entries:
     line: 377
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/snippet.rs'
-    fingerprint: 'let bytes = Pixmap::from_parts(band, w as u16, (bottom - top) as u16)'
-    line: 386
-  - rule: 'rust/lossy-cast'
-    path: 'src-tauri/core/src/snippet.rs'
     fingerprint: 'let pages = pdf.pages().len() as u32;'
     line: 117
   - rule: 'rust/lossy-cast'
@@ -287,7 +271,7 @@ entries:
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/snippet.rs'
     fingerprint: 'return Ok((bytes, w as u32, (bottom - top) as u32));'
-    line: 390
+    line: 394
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/theme.rs'
     fingerprint: 'let b = |v: f64| v.round().clamp(0.0, 255.0) as u8;'
@@ -295,7 +279,7 @@ entries:
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/widgets.rs'
     fingerprint: 'count: l.widgets.len() as u32,'
-    line: 1014
+    line: 1018
   - rule: 'rust/lossy-cast'
     path: 'src-tauri/core/src/widgets.rs'
     fingerprint: 'let page_no = i as u32 + 1;'
@@ -515,63 +499,63 @@ entries:
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: '*cx.jobs().current.lock().unwrap() = None;'
-    line: 389
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: '*cx.jobs().current.lock().unwrap() = None;'
-    line: 433
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: '*cx.jobs().current.lock().unwrap() = Some(id.clone());'
-    line: 347
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: 'cx.jobs().live.lock().unwrap().insert('
-    line: 334
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: 'cx.jobs().live.lock().unwrap().insert('
-    line: 468
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: 'cx.jobs().live.lock().unwrap().remove(&id);'
-    line: 392
-  - rule: 'rust/no-unwrap'
-    path: 'src-tauri/core/src/compile.rs'
-    fingerprint: 'if cx.jobs().current.lock().unwrap().as_deref() == Some(id.as_str()) {'
     line: 388
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
-    fingerprint: 'if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {'
-    line: 488
+    fingerprint: '*cx.jobs().current.lock().unwrap() = None;'
+    line: 432
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: '*cx.jobs().current.lock().unwrap() = Some(id.clone());'
+    line: 346
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: 'cx.jobs().live.lock().unwrap().insert('
+    line: 333
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: 'cx.jobs().live.lock().unwrap().insert('
+    line: 467
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: 'cx.jobs().live.lock().unwrap().remove(&id);'
+    line: 391
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: 'if cx.jobs().current.lock().unwrap().as_deref() == Some(id.as_str()) {'
+    line: 387
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {'
-    line: 582
+    line: 487
+  - rule: 'rust/no-unwrap'
+    path: 'src-tauri/core/src/compile.rs'
+    fingerprint: 'if let Some(job) = cx.jobs().live.lock().unwrap().get_mut(&job_id) {'
+    line: 581
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'if let Some(mut c) = job.child.lock().unwrap().take() {'
-    line: 652
+    line: 651
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let (lines, progress) = cx'
-    line: 549
+    line: 548
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let id = cx.jobs().current.lock().unwrap().take();'
-    line: 419
+    line: 418
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let ids: Vec<String> = cx.jobs().live.lock().unwrap().keys().cloned().collect();'
-    line: 429
+    line: 428
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let mut guard = cx.jobs().live.lock().unwrap();'
-    line: 597
+    line: 596
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let mut guard = cx.jobs().live.lock().unwrap();'
-    line: 644
+    line: 643
   - rule: 'rust/no-unwrap'
     path: 'src-tauri/core/src/engine.rs'
     fingerprint: 'let mut memo = INDEX.get_or_init(|| Mutex::new(None)).lock().unwrap();'
@@ -851,71 +835,71 @@ entries:
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&dir);'
-    line: 1568
+    line: 1573
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&dir);'
-    line: 1928
+    line: 1933
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&dir);'
-    line: 1984
+    line: 1989
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&self.0);'
-    line: 1577
+    line: 1582
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&stage);'
-    line: 2327
+    line: 2332
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&stage);'
-    line: 2489
+    line: 2494
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&stage);'
-    line: 2519
+    line: 2524
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_file(&stage);'
-    line: 2328
+    line: 2333
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_file(&stage);'
-    line: 2490
+    line: 2495
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/bundle.rs'
     fingerprint: 'let _ = std::fs::remove_file(&stage);'
-    line: 2520
+    line: 2525
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ ='
-    line: 545
+    line: 544
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = c.kill();'
-    line: 653
+    line: 652
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = c.wait();'
-    line: 654
+    line: 653
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = cancel(cx, &id);'
-    line: 431
+    line: 430
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = job.done_rx.insert(rx);'
-    line: 612
+    line: 611
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = readiness::store(&root, &r);'
-    line: 246
+    line: 247
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/compile.rs'
     fingerprint: 'let _ = tx.send(record);'
-    line: 586
+    line: 585
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/core/src/document.rs'
     fingerprint: 'let _ = std::fs::remove_dir_all(&dir);'
@@ -1059,51 +1043,35 @@ entries:
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/engine/src/session.rs'
     fingerprint: 'let _ = fs::remove_dir_all(e.path());'
-    line: 198
+    line: 219
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/engine/src/session.rs'
     fingerprint: 'let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));'
-    line: 183
+    line: 204
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/mcp/src/lib.rs'
     fingerprint: 'let _ = core::eventlog::append(&changed);'
-    line: 958
-  - rule: 'rust/swallowed-error'
-    path: 'src-tauri/mcp/src/lib.rs'
-    fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event('
-    line: 1224
-  - rule: 'rust/swallowed-error'
-    path: 'src-tauri/mcp/src/lib.rs'
-    fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&core::bundle::event('
-    line: 1249
+    line: 1852
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/mcp/src/lib.rs'
     fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&core::widgets::event('
-    line: 922
+    line: 1816
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/mcp/src/lib.rs'
     fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&e));'
-    line: 997
+    line: 1891
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/mcp/src/lib.rs'
     fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&mcp_event(name, &r)));'
-    line: 626
+    line: 1511
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/mcp/src/lib.rs'
     fingerprint: 'let _ = core::eventlog::append(std::slice::from_ref(&mcp_event(name, &r)));'
-    line: 636
-  - rule: 'rust/swallowed-error'
-    path: 'src-tauri/src/commands/api.rs'
-    fingerprint: "pub async fn core_request(cx: State<'_, Core>, req: Request) -> Result<Response, String> {"
-    line: 14
+    line: 1521
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/src/commands/compile.rs'
     fingerprint: 'let _ = self.app.emit("compile-line", line.clone());'
     line: 18
-  - rule: 'rust/swallowed-error'
-    path: 'src-tauri/src/commands/poster.rs'
-    fingerprint: ') -> Result<PosterOutcome, String> {'
-    line: 100
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/src/commands/widget_approval.rs'
     fingerprint: 'let _ = maleficium_core::eventlog::append(std::slice::from_ref(&event));'
@@ -1111,7 +1079,7 @@ entries:
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/src/lib.rs'
     fingerprint: 'let _ = o.flush();'
-    line: 123
+    line: 125
   - rule: 'rust/swallowed-error'
     path: 'src-tauri/src/poster.rs'
     fingerprint: 'let _ = slot.done.send(if path == "/done" {'

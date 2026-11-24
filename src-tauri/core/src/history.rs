@@ -196,8 +196,14 @@ impl Store {
     }
 
     fn lock(&self) -> Result<Locked, String> {
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|e| format!("history dir unavailable: {}", e))?;
+        std::fs::create_dir_all(&self.dir).map_err(|e| {
+            format!(
+                "history dir unavailable at {}: {} (app data dir {}; override with XDG_DATA_HOME)",
+                self.dir.display(),
+                e,
+                super::data_base_dir().display()
+            )
+        })?;
         let f = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -762,5 +768,23 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, [std::ffi::OsString::from("history")]);
+    }
+
+    #[test]
+    fn unwritable_history_dir_names_dir_and_xdg_override() {
+        let dir = crate::test_scratch::dir("history-unwritable");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let blocker = dir.join("file");
+        std::fs::write(&blocker, b"x").unwrap();
+        let s = Store::at(blocker.join("history"));
+        let err = s
+            .record_batch(&[("a.tex".to_string(), b"x".to_vec())])
+            .unwrap_err();
+        assert!(
+            err.contains(&blocker.join("history").to_string_lossy().to_string()),
+            "{err}"
+        );
+        assert!(err.contains("XDG_DATA_HOME"), "{err}");
     }
 }

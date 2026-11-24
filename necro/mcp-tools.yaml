@@ -1,0 +1,251 @@
+rules:
+  mcp-hints-explicit:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      lines = open(p).readlines()
+      ends = [i for i, l in enumerate(lines) if re.match(r"\s*\)\]\s*$", l)]
+      starts = [i for i, l in enumerate(lines) if l.lstrip().startswith("#[tool(")]
+      if len(starts) != 17:
+          print(f"{p}:1: router carries {len(starts)} #[tool( blocks, want 17 (the grouped landing)")
+      tools = {}
+      for s in starts:
+          e = min(x for x in ends if x > s)
+          k = e + 1
+          while not re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]):
+              k += 1
+          tools[re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]).group(1)] = (s + 1, "".join(lines[s:e + 1]))
+      for name, (line, block) in sorted(tools.items()):
+          for h in ["read_only_hint", "destructive_hint", "idempotent_hint", "open_world_hint"]:
+              if h not in block:
+                  print(f"{p}:{line}: tool `{name}` lacks {h}")
+      def hv(name, hint):
+          if name not in tools:
+              print(f"{p}:1: tool `{name}` gone: the honesty pin has nothing to check")
+              return None
+          m = re.search(hint + r"\s*=\s*(true|false)", tools[name][1])
+          return m.group(1) == "true"
+      pins = {"search": (True, False), "replace": (False, True), "export_read": (True, False), "export_write": (False, True)}
+      for name, (ro, destr) in pins.items():
+          got = (hv(name, "read_only_hint"), hv(name, "destructive_hint"))
+          if None not in got and got != (ro, destr):
+              print(f"{p}:{tools[name][0]}: tool `{name}` honesty drifted: want read_only={str(ro).lower()} destructive={str(destr).lower()}")
+      ow = sorted(n for n in tools if hv(n, "open_world_hint"))
+      if ow != ["paper"]:
+          print(f"{p}:1: open-world tools are {ow}, want only [paper]")
+      for name in ["widget"]:
+          if name in tools and not (hv(name, "read_only_hint") and not hv(name, "open_world_hint")):
+              print(f"{p}:{tools[name][0]}: tool `{name}` must stay read-only and closed-world")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: an MCP tool without explicit worst-case-honest hints
+    why: >-
+      every registered tool carries all four annotation hints explicitly, so a new tool without them fails here instead of in a rescan (twin every_tool_carries_all_four_hints at src-tauri/mcp/src/lib.rs:4300). Worst-case honesty is pinned where the regroup decided it: search and export_read read, replace and export_write destroy, and only paper (the fetcher) is open-world; widget stays read-only and closed-world (twin no_tool_can_approve_revoke_or_change_auto_approval at src-tauri/mcp/src/lib.rs:3996).
+    fix: >-
+      name all four hints on the #[tool] attribute with the effect the worst action can have, and keep network use on paper alone.
+
+  mcp-covered-list-sync:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      src = open(p).read()
+      routed = sorted(set(re.findall(r"self\.tool(?:_async)?\(\"([a-z_]+)\"", src)))
+      m = re.search(r"let covered = \[(.*?)\];", src, re.S)
+      covered = sorted(re.findall(r"\"([a-z_]+)\"", m.group(1)))
+      if routed != covered:
+          only_tool = [t for t in routed if t not in covered]
+          only_list = [t for t in covered if t not in routed]
+          print(f"{p}:4840: router/list drift: unlisted {only_tool}, unrouted {only_list}")
+      if len(routed) != 17:
+          print(f"{p}:6035: router carries {len(routed)} tools, want 17 (the grouped landing)")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: the registered-tool coverage list drifted from the router
+    why: >-
+      every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:4332) enumerates its covered list (src-tauri/mcp/src/lib.rs:4840) and fails on any tool without a case, while grouped_tools_stay_under_token_budget (src-tauri/mcp/src/lib.rs:6035) pins the count at 17 after log_tail folds into paper.
+    fix: >-
+      register the tool once, add its case beside the others, and keep the count at 17 (or move the pin deliberately with the twins).
+
+  mcp-no-approval-words:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      src = open(p).read()
+      banned = ["approv", "revok", "auto", "mode", "trust", "allow"]
+      def bad(name):
+          n = name.lower()
+          return [b for b in banned if b in n]
+      for t in sorted(set(re.findall(r"self\.tool(?:_async)?\(\"([a-z_]+)\"", src))):
+          if bad(t):
+              print(f"{p}:1: tool `{t}` names an approval word {bad(t)}")
+      for m in re.finditer(r"struct (\w*Params) \{(.*?)\n\}", src, re.S):
+          for f in re.findall(r"^    (\w+):", m.group(2), re.M):
+              if bad(f):
+                  print(f"{p}:1: `{m.group(1)}` takes `{f}`, an approval word {bad(f)}")
+      for m in re.finditer(r"enum (\w*Action) \{(.*?)\n\}", src, re.S):
+          for v in re.findall(r"^    ([A-Z]\w*),?\s*$", m.group(2), re.M):
+              if bad(v):
+                  print(f"{p}:1: `{m.group(1)}` has action `{v}`, an approval word {bad(v)}")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: an approval word in a tool, parameter or action name
+    why: >-
+      no tool is named for approval and no tool takes a parameter for it (twin no_tool_can_approve_revoke_or_change_auto_approval at src-tauri/mcp/src/lib.rs:3996 checks tool names, param names, widget params and the core Request enum at src-tauri/core/src/api.rs:717). The regroup names (search, replace, export_read, export_write, widget, runtime_read, paper with actions search|find_files, preview|apply|undo, stamp|status|cancel, pdf|zip|bundle|preview|open, list|status|check, scaffold|validate, start|poll|cancel|diagnostics|prechecks|readiness|output|log) contain none of approv|revok|auto|mode|trust|allow; keep it that way.
+    fix: >-
+      rename the tool, parameter or action so it says what it does, not what it permits.
+
+  mcp-no-core-approve-call:
+    command: necro grep 'widget_approval::(approve|revoke|set_auto|decide_runtime|review_runtime)[a-z_]*\(' -- 'src-tauri/mcp/src/lib.rs'
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: the MCP crate calls a core user-action approval function
+    why: >-
+      this crate never calls the core's user-action functions (twin at src-tauri/mcp/src/lib.rs:3996 asserts no widget_approval::{approve, approve_at, revoke, revoke_at, set_auto_approve, set_auto_at, decide_runtime, decide_runtime_at, review_runtime, review_runtime_at} call; the core twin at src-tauri/core/src/api.rs:717 keeps approve/revoke/auto out of the shared Request enum). Reads (widget list/status/check, runtime_read validate, check_runtime) stay allowed.
+    fix: >-
+      return approval_required as a normal result like widget_check does, and let the app's View > Widgets own the click.
+
+  mcp-closed-schema:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      lines = open(p).readlines()
+      closed = ["DocumentParams", "ExportReadParams", "ExportWriteParams", "RuntimeReadParams", "RuntimeInstallParams", "WidgetParams", "PaperParams", "AppWindowsParams", "AppRequestOpenParams", "SearchParams", "ReplaceParams"]
+      for i, l in enumerate(lines):
+          m = re.match(r"struct (\w+)", l)
+          if m and m.group(1) in closed:
+              j = i - 1
+              seen = False
+              while j >= 0 and (lines[j].strip() == "" or lines[j].lstrip().startswith("#[") or lines[j].lstrip().startswith("///") or lines[j].lstrip().startswith("//")):
+                  if "deny_unknown_fields" in lines[j]:
+                      seen = True
+                  j -= 1
+              if not seen:
+                  print(f"{p}:{i + 1}: `{m.group(1)}` lost deny_unknown_fields")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: a twin-closed MCP params struct without deny_unknown_fields
+    why: >-
+      the approval-adjacent and grouped params refuse unknown fields at the schema (deny_unknown_fields, which schemars renders as additionalProperties: false) and in handler checks, so an approve (or anything like it) is an error, never a silent extra (twins at src-tauri/mcp/src/lib.rs:3318,3599,3677,3775,3996,5897). These eleven structs are the closed set; other params predate the rule.
+    fix: >-
+      restore #[serde(deny_unknown_fields)] above the struct (and keep the per-action handler checks for fields the schema cannot see).
+
+  mcp-ui-meta-allowlist:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      lines = open(p).readlines()
+      ends = [i for i, l in enumerate(lines) if re.match(r"\s*\)\]\s*$", l)]
+      starts = [i for i, l in enumerate(lines) if l.lstrip().startswith("#[tool(")]
+      got = {}
+      for s in starts:
+          e = min(x for x in ends if x > s)
+          k = e + 1
+          while not re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]):
+              k += 1
+          name = re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]).group(1)
+          m = re.search(r"meta = ui_meta\((.*?)\)\s*,?\s*$", "".join(lines[s:e + 1]), re.S | re.M)
+          if m:
+              got[name] = (s + 1, re.sub(r"\s+", "", m.group(1)))
+      want = {"paper": None, "sync_view": None, "sync_render": None}
+      for name in sorted(set(got) - set(want)):
+          print(f"{p}:{got[name][0]}: `{name}` carries ui meta, want only {sorted(want)}")
+      for name in sorted(set(want) - set(got)):
+          print(f"{p}:3285: `{name}` lost its ui meta, want {sorted(want)}")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: a View attached to a tool outside the allowlist
+    why: >-
+      only sync_view, sync_render and paper name a View: the model reads pages through sync_view's snippet action, and the app-only re-render lives on sync_render (twin only_the_view_tools_carry_ui_meta at src-tauri/mcp/src/lib.rs:3285, moved by the regroup). The dashboard's own readings (poll, cancel, diagnostics, prechecks, readiness, output) stay plain paper actions, so text-only hosts see them as before; the dashboard View sources in src/mcp-views go stale on a regroup until rebuilt (snippet_render already predates its tool the same way).
+    fix: >-
+      drop the meta = ui_meta line, or move the pin deliberately with the twin when a new View lands.
+
+  mcp-trust-gated-writes:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      src = open(p).read()
+      pins = ["without confirm it is refused", "apply requires `token`", "undo requires `batch`", "run runtime_validate first", "core::trash_file(", "core::runtime_author::install("]
+      for pin in pins:
+          if pin not in src:
+              print(f"{p}:1: trust gate lost: `{pin}`")
+      m = re.search(r"struct FileMutateParams \{(.*?)\n\}", src, re.S)
+      if m is None:
+          print(f"{p}:1: FileMutateParams gone: the delete|undo gate has no params")
+      elif re.search(r"\bconfirm\b", m.group(1)) is None or re.search(r"\btrash_path\b", m.group(1)) is None:
+          print(f"{p}:1: FileMutateParams lost its confirm/trash_path fields")
+      a = re.search(r"enum FileMutateAction \{(.*?)\n\}", src, re.S)
+      if a is None:
+          print(f"{p}:1: FileMutateAction gone: the delete|undo gate has no closed action")
+      else:
+          got = re.findall(r"^    ([A-Z]\w*),?\s*$", a.group(1), re.M)
+          if got != ["Delete", "Undo"]:
+              print(f"{p}:1: FileMutateAction carries {got}, want closed [Delete, Undo]")
+      m = re.search(r"struct ReplaceParams \{(.*?)\n\}", src, re.S)
+      if m is None:
+          print(f"{p}:1: ReplaceParams gone: the token/batch gate has no params")
+      elif not ("token" in m.group(1) and "batch" in m.group(1)):
+          print(f"{p}:1: ReplaceParams lost its token/batch fields")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: a gated write lost its gate
+    why: >-
+      file_mutate's delete needs the absolute path back as confirm before it trashes (two calls) and undo restores only by trash_path, replace applies only by preview token and undoes only by batch, and install copies only a draft that validates (run runtime_validate first). The twins pin each gate: the two-call confirm in file_mutate_keeps_the_two_call_confirm_gate (src-tauri/mcp/src/lib.rs:5065) with delete/undo cases in every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:4332), the token state machine in replace_token_flow (src-tauri/mcp/src/lib.rs:5693), install-never-approves in runtime_read_stays_library_scoped_and_cannot_approve (src-tauri/mcp/src/lib.rs:3775).
+    fix: >-
+      restore the two-call confirm, the token/batch threading, or the validate-before-install wording and call.
+
+  mcp-action-enum-closed:
+    command: |-
+      python3 -c 'import re
+      p = "src-tauri/mcp/src/lib.rs"
+      src = open(p).read()
+      lines = src.splitlines(keepends=True)
+      for t in sorted(set(re.findall(r"self\.tool(?:_async)?\(\"([a-z_]+)\"", src))):
+          if t.endswith("_schema"):
+              print(f"{p}:1: per-noun `{t}` tool: fold it into the noun tool as an action")
+      want_actions = {"SearchAction": ["Search", "FindFiles"], "ReplaceAction": ["Preview", "Apply", "Undo"], "ExportReadAction": ["Stamp", "Status", "Cancel"], "ExportWriteAction": ["Pdf", "Zip", "Bundle", "Preview", "Open"], "WidgetAction": ["List", "Status", "Check"], "RuntimeReadAction": ["Scaffold", "Validate"], "PaperAction": ["Start", "Poll", "Cancel", "Diagnostics", "Prechecks", "Readiness", "Output", "Log"]}
+      for enum, want in want_actions.items():
+          m = re.search(r"enum %s \{(.*?)\n\}" % enum, src, re.S)
+          got = re.findall(r"^    ([A-Z]\w*),?\s*$", m.group(1), re.M)
+          if got != want:
+              print(f"{p}:1: `{enum}` carries {got}, want closed {want}")
+          if len(got) >= 12:
+              print(f"{p}:1: `{enum}` has {len(got)} variants, keep noun tools under 12")
+      want_params = {"SearchParams": "SearchAction", "ReplaceParams": "ReplaceAction", "ExportReadParams": "ExportReadAction", "ExportWriteParams": "ExportWriteAction", "WidgetParams": "WidgetAction"}
+      for struct, action in want_params.items():
+          m = re.search(r"struct %s \{(.*?)\n\}" % struct, src, re.S)
+          body = m.group(1)
+          if "    root_id: String," not in body or f"    action: {action}," not in body:
+              print(f"{p}:1: `{struct}` must require exactly [root_id, action: {action}]")
+      scoped_params = {"PaperParams": "PaperAction", "RuntimeReadParams": "RuntimeReadAction"}
+      for struct, action in scoped_params.items():
+          m = re.search(r"struct %s \{(.*?)\n\}" % struct, src, re.S)
+          if m is None:
+              print(f"{p}:1: `{struct}` gone: the noun tool has no params")
+              continue
+          if f"    action: {action}," not in m.group(1):
+              print(f"{p}:1: `{struct}` must name its action: {action}")
+      for struct in list(want_params) + list(scoped_params):
+          m = re.search(r"struct %s \{(.*?)\n\}" % struct, src, re.S)
+          for f in re.findall(r"^    \w+: (.*?),?\s*$", m.group(1), re.M):
+              inner = re.sub(r"^Option<(.*)>$", r"\1", f)
+              if not re.match(r"^(String|bool|usize|u64|f32|[\w:]+(Action|Profile|Kind))$", inner):
+                  print(f"{p}:1: `{struct}` field `{f}` breaks the flat object")
+      ends = [i for i, l in enumerate(lines) if re.match(r"\s*\)\]\s*$", l)]
+      starts = [i for i, l in enumerate(lines) if l.lstrip().startswith("#[tool(")]
+      for s in starts:
+          e = min(x for x in ends if x > s)
+          k = e + 1
+          while not re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]):
+              k += 1
+          name = re.match(r"\s*(?:async\s+)?fn (\w+)", lines[k]).group(1)
+          if name in ["search", "replace", "export_read", "export_write", "widget", "runtime_read", "paper"]:
+              d = re.search(r"description = \"(.*)\"", "".join(lines[s:e + 1]), re.S).group(1)
+              n = len([x for x in re.split(r"\.\s+", d.strip()) if x])
+              if not 2 <= n <= 4:
+                  print(f"{p}:{s + 1}: `{name}` description runs {n} sentences, keep 2-4")
+      '
+    files: '^src-tauri/mcp/src/lib\.rs$'
+    message: a grouped noun tool drifted from the flat-object recipe
+    why: >-
+      each noun tool carries one action enum under 12 variants with the valid list and a did-you-mean hint, requires its action (and root_id wherever the action is project-scoped), stays a flat object of scalars and small enums, and describes its actions in 2-4 sentences instead of growing per-noun *_schema tools (twins search_validates_per_action, replace_token_flow, export_read_validates_per_action, export_write_validates_per_action, widget_validates_per_action, runtime_read_stays_library_scoped_and_cannot_approve, paper_validates_per_action and search_and_replace_reject_unknown_fields at src-tauri/mcp/src/lib.rs:3318,3599,3677,3775,5634,5693,5810,5897).
+    fix: >-
+      add the action to the noun tool's enum with its per-action validation, or split the noun deliberately with the twins.

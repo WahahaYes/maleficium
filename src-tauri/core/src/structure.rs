@@ -122,6 +122,10 @@ pub struct Diagnostics {
     pub truncated: usize,
     /// The dependency the last compile lacked, and why.
     pub missing: Option<ms::MissingDependency>,
+    /// False when no compile has run yet for this main file: `diagnostics`
+    /// is empty, `truncated` is 0, `missing` is None and `revision` is empty.
+    /// Run `start` then `poll` before reading diagnostics.
+    pub compiled: bool,
 }
 
 /// Root-relative `/`-string of a path already inside `root`.
@@ -408,7 +412,9 @@ pub fn precompile_checks(cx: &Core, root_id: &str, main_rel: &str) -> Result<Pre
 
 /// Structured diagnostics from the last compile: its last engine run's
 /// console (an earlier run it retried is not the document's problem) and
-/// TeX's transcript.
+/// TeX's transcript. Before any compile there is no engine log yet, so this
+/// returns `compiled: false` with empty diagnostics instead of failing with
+/// a filesystem error: run `start` then `poll` before reading diagnostics.
 pub fn diagnostics(
     cx: &Core,
     root_id: &str,
@@ -417,9 +423,20 @@ pub fn diagnostics(
 ) -> Result<Diagnostics, String> {
     let root = super::fs::session_root(cx, root_id)?;
     let o = super::outputs_of(cx, root_id, main_rel)?;
+    let main = rel_of(&root, &o.dir.join(&o.main_file));
+    if !super::log_file(&o.outdir, &o.main_file).is_file() {
+        return Ok(Diagnostics {
+            source: "disk".into(),
+            revision: String::new(),
+            main,
+            diagnostics: Vec::new(),
+            truncated: 0,
+            missing: None,
+            compiled: false,
+        });
+    }
     let log = super::engine_log(cx, root_id, main_rel)?;
     let last = super::engine::last_attempt(&log);
-    let main = rel_of(&root, &o.dir.join(&o.main_file));
     let tex = super::tex_log(cx, root_id, main_rel)?;
     let mut diagnostics = ms::diagnostics(last, &root.to_string_lossy(), &o.dir.to_string_lossy());
     diagnostics.extend(tex_log_warnings(cx, root_id, main_rel, &tex)?);
@@ -432,6 +449,7 @@ pub fn diagnostics(
         diagnostics,
         truncated: over,
         missing: missing_of(last),
+        compiled: true,
     })
 }
 
@@ -754,5 +772,22 @@ mod tests {
             ]
         );
         assert_eq!(d.truncated, 1);
+        assert!(d.compiled);
+    }
+
+    #[test]
+    fn diagnostics_before_any_compile_reports_not_compiled() {
+        let cx = &Core::default();
+        let (id, _) = sample(cx, "never");
+        let o = super::super::outputs_of(cx, &id, "paper/main.tex").unwrap();
+        let _ = std::fs::remove_dir_all(&o.outdir);
+        let d = diagnostics(cx, &id, "paper/main.tex", 100).unwrap();
+        assert!(!d.compiled);
+        assert!(d.diagnostics.is_empty());
+        assert_eq!(d.truncated, 0);
+        assert_eq!(d.missing, None);
+        assert_eq!(d.main, "paper/main.tex");
+        assert_eq!(d.source, "disk");
+        assert!(d.revision.is_empty());
     }
 }

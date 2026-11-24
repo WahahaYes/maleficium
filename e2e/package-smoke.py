@@ -74,7 +74,7 @@ def one(dir, pattern):
 
 
 def compile_probe(cmd, scratch, env=None):
-    """initialize -> grant -> compile_run -> compile_poll -> synctex_forward over
+    """initialize -> session grant -> paper start -> paper poll -> sync_view forward over
     the stdio of an installed MCP server, started as `cmd` (a list)."""
     os.makedirs(scratch, exist_ok=True)
     with open(os.path.join(scratch, "main.tex"), "w") as f:
@@ -90,22 +90,22 @@ def compile_probe(cmd, scratch, env=None):
     who = mcp.server_info
     if who["name"] != "maleficium":
         fail("%s: serverInfo is %s" % (" ".join(cmd), who))
-    call("grant", {"root_id": "smoke", "root": scratch})
-    job = call("compile_run", {"root_id": "smoke", "rel": "main.tex"})["job_id"]
+    call("session", {"root_id": "smoke", "action": "grant", "root": scratch})
+    job = call("paper", {"action": "start", "root_id": "smoke", "main_rel": "main.tex"})["job_id"]
     deadline = time.time() + 300
     rec = {"status": "running"}
     while rec["status"] == "running" and time.time() < deadline:
-        rec = call("compile_poll", {"job_id": job, "tail_lines": 5, "wait_ms": 30000})
+        rec = call("paper", {"action": "poll", "job_id": job, "tail_lines": 5, "wait_ms": 30000})
     if rec["status"] != "success":
         path = os.path.join(SMOKE_LOGS, "compile-%s.log" % os.path.basename(cmd[0]))
         with open(path, "w") as f:
             f.write(str(rec))
         fail("compile %s: %s (log %s)" % (rec["status"], str(rec)[:300], path))
-    hit = call("synctex_forward", {"root_id": "smoke", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
+    hit = call("sync_view", {"root_id": "smoke", "action": "forward", "main_rel": "main.tex", "tex_rel": "main.tex", "line": 3})
     mcp.close()
     if hit.get("page") != 1:
-        fail("synctex_forward: %s" % hit)
-    say("%s: %s %s, compile + synctex ok" % (" ".join([os.path.basename(cmd[0])] + cmd[1:]), who["name"], who["version"]))
+        fail("sync_view forward: %s" % hit)
+    say("%s: %s %s, compile + sync ok" % (" ".join([os.path.basename(cmd[0])] + cmd[1:]), who["name"], who["version"]))
 
 
 def read_events(path):

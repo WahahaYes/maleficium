@@ -20,6 +20,7 @@ maleficium-core = { path = "../core" }
 maleficium-structure = { path = "../structure" }
 maleficium-events = { path = "../events" }
 maleficium-index = { path = "../index" }
+open = "5.4.4"
 
 [dev-dependencies]
 dunce = "1.0.5"

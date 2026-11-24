@@ -152,15 +152,15 @@ def run_script(runner, scenario, server, model, agent_dir, project, home, tl):
     mcp = ar.Mcp(server, home)
     calls = []
     try:
-        ok, err = mcp.call("grant", {"root_id": "script", "root": project})
-        calls.append({"tool": "grant", "input": {"root": project}, "ok": ok, "status": None, "error": None})
+        ok, err = mcp.call("session", {"root_id": "script", "action": "grant", "root": project})
+        calls.append({"tool": "session", "input": {"root": project}, "ok": ok, "status": None, "error": None})
         for edit in scenario["solution"]:
             time.sleep(4)
             ar.apply_edits(project, [edit])
             tl.mark("script.edit", file=edit["file"])
             time.sleep(2)
             rec = mcp.compile("script", scenario["codrive"]["main"])
-            calls.append({"tool": "compile_run", "input": {"rel": scenario["codrive"]["main"]},
+            calls.append({"tool": "paper", "input": {"main_rel": scenario["codrive"]["main"]},
                           "ok": rec.get("status") == "success", "status": rec.get("status"), "error": None})
             tl.mark("script.compiled", status=rec.get("status"))
     finally:

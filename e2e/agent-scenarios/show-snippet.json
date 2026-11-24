@@ -3,17 +3,21 @@
   "about": "Show a table from the paper through the snippet tool, which renders in the snippet MCP App View. Judged on the View plumbing, not on edits: the tool names its ui:// View and that View is a self-contained page; the agent's call, replayed, lands on the table, its text fallback is its structuredContent and is the same (text and image) with and without the apps capability; the View, rendered headless, shows that page, and the answer's one stated line agrees with it. Nothing in the project changes.",
   "template": "article",
   "edits": [],
-  "prompt": "Show me how the results table of the paper at {project} (main file main.tex) looks in the compiled PDF. Use the maleficium MCP server: compile the paper, then show the table with its snippet tool, passing with_image: true so I can see it rendered. Do not change any file. End your reply with one line of exactly this form, with the page numbers the snippet tool reported: SHOWN: page <page> of <pages>",
+  "prompt": "Show me how the results table of the paper at {project} (main file main.tex) looks in the compiled PDF. Use the maleficium MCP server: compile the paper, then show the table with its sync_view tool, passing with_image: true so I can see it rendered. Do not change any file. End your reply with one line of exactly this form, with the page numbers the snippet tool reported: SHOWN: page <page> of <pages>",
   "timeout_s": 600,
   "script": {
     "steps": [
-      { "tool": "grant", "args": { "root_id": "agent", "root": "{project}" } },
+      { "tool": "session", "args": { "root_id": "agent", "action": "grant", "root": "{project}" } },
       { "compile": "main.tex" },
-      { "tool": "outline", "args": { "root_id": "agent", "rel": "main.tex" } },
       {
-        "tool": "snippet",
+        "tool": "structure",
+        "args": { "root_id": "agent", "action": "outline", "rel": "main.tex" }
+      },
+      {
+        "tool": "sync_view",
         "args": {
           "root_id": "agent",
+          "action": "snippet",
           "main_rel": "main.tex",
           "label": "tab:results",
           "with_image": true
@@ -36,10 +40,10 @@
   },
   "oracles": [
     {
-      "called": ["grant", "compile_run", "snippet"]
+      "called": ["session", "paper", "sync_view"]
     },
     {
-      "view_resource": { "tool": "snippet", "uri": "ui://maleficium/snippet/v1" }
+      "view_resource": { "tool": "sync_view", "uri": "ui://maleficium/snippet/v1" }
     },
     {
       "snippet_shows_label": { "main": "main.tex", "label": "tab:results" }
