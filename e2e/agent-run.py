@@ -715,7 +715,7 @@ class Judge:
     def o_compiles(self, main):
         rec = self.compiled(main)
         if rec.get("status") != "success":
-            return False, "status %s: %s" % (rec.get("status"), str(rec.get("log_tail") or rec)[-300:])
+            return False, "status %s: %s" % (rec.get("status"), str(rec.get("log") or rec)[-300:])
         pdf = rec.get("pdf_path") or rec.get("pdf_url") or ""
         pdf = re.sub(r"^file://", "", pdf)
         if pdf and not os.path.isfile(pdf):

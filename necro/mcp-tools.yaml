@@ -6,8 +6,8 @@ rules:
       lines = open(p).readlines()
       ends = [i for i, l in enumerate(lines) if re.match(r"\s*\)\]\s*$", l)]
       starts = [i for i, l in enumerate(lines) if l.lstrip().startswith("#[tool(")]
-      if len(starts) != 18:
-          print(f"{p}:1: router carries {len(starts)} #[tool( blocks, want 18 (the grouped landing)")
+      if len(starts) != 17:
+          print(f"{p}:1: router carries {len(starts)} #[tool( blocks, want 17 (the grouped landing)")
       tools = {}
       for s in starts:
           e = min(x for x in ends if x > s)
@@ -56,15 +56,15 @@ rules:
           only_tool = [t for t in routed if t not in covered]
           only_list = [t for t in covered if t not in routed]
           print(f"{p}:4840: router/list drift: unlisted {only_tool}, unrouted {only_list}")
-      if len(routed) != 18:
-          print(f"{p}:6035: router carries {len(routed)} tools, want 18 (the grouped landing)")
+      if len(routed) != 17:
+          print(f"{p}:6035: router carries {len(routed)} tools, want 17 (the grouped landing)")
       '
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: the registered-tool coverage list drifted from the router
     why: >-
-      every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:4332) enumerates its covered list (src-tauri/mcp/src/lib.rs:4840) and fails on any tool without a case, while grouped_tools_stay_under_token_budget (src-tauri/mcp/src/lib.rs:6035) pins the count at 18 after the widget/runtime/paper regroup.
+      every_registered_tool_has_a_case_and_runs (src-tauri/mcp/src/lib.rs:4332) enumerates its covered list (src-tauri/mcp/src/lib.rs:4840) and fails on any tool without a case, while grouped_tools_stay_under_token_budget (src-tauri/mcp/src/lib.rs:6035) pins the count at 17 after log_tail folds into paper.
     fix: >-
-      register the tool once, add its case beside the others, and keep the count at 18 (or move the pin deliberately with the twins).
+      register the tool once, add its case beside the others, and keep the count at 17 (or move the pin deliberately with the twins).
 
   mcp-no-approval-words:
     command: |-
@@ -90,7 +90,7 @@ rules:
     files: '^src-tauri/mcp/src/lib\.rs$'
     message: an approval word in a tool, parameter or action name
     why: >-
-      no tool is named for approval and no tool takes a parameter for it (twin no_tool_can_approve_revoke_or_change_auto_approval at src-tauri/mcp/src/lib.rs:3996 checks tool names, param names, widget params and the core Request enum at src-tauri/core/src/api.rs:717). The regroup names (search, replace, export_read, export_write, widget, runtime_read, paper with actions search|find_files, preview|apply|undo, stamp|status|cancel, pdf|zip|bundle|preview|open, list|status|check, scaffold|validate, start|poll|cancel|diagnostics|prechecks|readiness|output) contain none of approv|revok|auto|mode|trust|allow; keep it that way.
+      no tool is named for approval and no tool takes a parameter for it (twin no_tool_can_approve_revoke_or_change_auto_approval at src-tauri/mcp/src/lib.rs:3996 checks tool names, param names, widget params and the core Request enum at src-tauri/core/src/api.rs:717). The regroup names (search, replace, export_read, export_write, widget, runtime_read, paper with actions search|find_files, preview|apply|undo, stamp|status|cancel, pdf|zip|bundle|preview|open, list|status|check, scaffold|validate, start|poll|cancel|diagnostics|prechecks|readiness|output|log) contain none of approv|revok|auto|mode|trust|allow; keep it that way.
     fix: >-
       rename the tool, parameter or action so it says what it does, not what it permits.
 
@@ -201,7 +201,7 @@ rules:
       for t in sorted(set(re.findall(r"self\.tool(?:_async)?\(\"([a-z_]+)\"", src))):
           if t.endswith("_schema"):
               print(f"{p}:1: per-noun `{t}` tool: fold it into the noun tool as an action")
-      want_actions = {"SearchAction": ["Search", "FindFiles"], "ReplaceAction": ["Preview", "Apply", "Undo"], "ExportReadAction": ["Stamp", "Status", "Cancel"], "ExportWriteAction": ["Pdf", "Zip", "Bundle", "Preview", "Open"], "WidgetAction": ["List", "Status", "Check"], "RuntimeReadAction": ["Scaffold", "Validate"], "PaperAction": ["Start", "Poll", "Cancel", "Diagnostics", "Prechecks", "Readiness", "Output"]}
+      want_actions = {"SearchAction": ["Search", "FindFiles"], "ReplaceAction": ["Preview", "Apply", "Undo"], "ExportReadAction": ["Stamp", "Status", "Cancel"], "ExportWriteAction": ["Pdf", "Zip", "Bundle", "Preview", "Open"], "WidgetAction": ["List", "Status", "Check"], "RuntimeReadAction": ["Scaffold", "Validate"], "PaperAction": ["Start", "Poll", "Cancel", "Diagnostics", "Prechecks", "Readiness", "Output", "Log"]}
       for enum, want in want_actions.items():
           m = re.search(r"enum %s \{(.*?)\n\}" % enum, src, re.S)
           got = re.findall(r"^    ([A-Z]\w*),?\s*$", m.group(1), re.M)

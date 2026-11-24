@@ -342,6 +342,7 @@ enum PaperAction {
     Prechecks,
     Readiness,
     Output,
+    Log,
 }
 
 impl<'de> Deserialize<'de> for PaperAction {
@@ -355,6 +356,7 @@ impl<'de> Deserialize<'de> for PaperAction {
             "prechecks" => Ok(Self::Prechecks),
             "readiness" => Ok(Self::Readiness),
             "output" => Ok(Self::Output),
+            "log" => Ok(Self::Log),
             other => Err(serde::de::Error::custom(unknown_action(
                 other,
                 &[
@@ -365,6 +367,7 @@ impl<'de> Deserialize<'de> for PaperAction {
                     "prechecks",
                     "readiness",
                     "output",
+                    "log",
                 ],
             ))),
         }
@@ -374,7 +377,8 @@ impl<'de> Deserialize<'de> for PaperAction {
 /// Unknown fields are refused: a paper call names an action and the fields
 /// that action needs. `start` compiles (optionally fetching first), `poll`
 /// and `cancel` name a job, the readings name a project and main file, and
-/// `readiness` names only a project.
+/// `readiness` names only a project. `log` tails the engine log shard for
+/// the main file's dir.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct PaperParams {
@@ -385,8 +389,8 @@ struct PaperParams {
     /// Required iff action is poll or cancel: the job id from `start`.
     job_id: Option<String>,
     /// Iff action is start: the main file; absent resolves the same main
-    /// file the app would. Required iff action is diagnostics, prechecks or
-    /// output.
+    /// file the app would. Required iff action is diagnostics, prechecks,
+    /// output or log.
     main_rel: Option<String>,
     /// Iff action is start: fetch everything online first, then prove it
     /// compiles from the cache alone (the app's Make Available Offline).
@@ -396,7 +400,8 @@ struct PaperParams {
     /// Iff action is poll: wait up to this long (ms, at most 60000) for a
     /// running job to finish before answering.
     wait_ms: Option<u64>,
-    /// Iff action is diagnostics: cap rows (default 100).
+    /// Iff action is diagnostics or log: cap rows (default 100 for
+    /// diagnostics, 50 for log).
     max: Option<usize>,
 }
 
@@ -427,7 +432,7 @@ struct CompilePollOut {
 /// file, `poll` the job's status and lines so far, `cancel` what stopped,
 /// `diagnostics` the last compile's errors and warnings, `prechecks` the
 /// blockers before compiling, `readiness` the offline state, `output` the
-/// compiled pdf's stamp (or null).
+/// compiled pdf's stamp (or null), `log` the engine log tail.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum PaperOut {
@@ -438,6 +443,7 @@ enum PaperOut {
     Prechecks(core::structure::Precheck),
     Readiness(maleficium_events::OfflineReadiness),
     Stamped(OutputStampOut),
+    Logged(TextOut),
 }
 
 // An untagged union has no object schema of its own; name the object shape
@@ -449,7 +455,7 @@ impl schemars::JsonSchema for PaperOut {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "object",
-            "description": "Per-action result, verbatim: `start` returns the job id and main file, `poll` the job's status and lines, `cancel` what stopped, `diagnostics` the last compile's errors, `prechecks` the blockers, `readiness` the offline state, `output` the pdf stamp or null.",
+            "description": "Per-action result, verbatim: `start` returns the job id and main file, `poll` the job's status and lines, `cancel` what stopped, `diagnostics` the last compile's errors, `prechecks` the blockers, `readiness` the offline state, `output` the pdf stamp or null, `log` the engine log tail.",
         })
     }
 }
@@ -844,6 +850,7 @@ fn cluster_actions(cluster: &str) -> Option<&'static [&'static str]> {
             "prechecks",
             "readiness",
             "output",
+            "log",
         ]),
         _ => None,
     }
@@ -1033,6 +1040,10 @@ fn action_notes(cluster: &str, action: &str) -> Option<(&'static str, serde_json
             "output needs only `main_rel`: the compiled pdf's stamp, or null before any compile; it changes whenever anyone recompiles.",
             json!({"root_id": "agent", "action": "output", "main_rel": "main.tex"}),
         ),
+        ("paper", "log") => (
+            "log needs only `main_rel`: the engine log tail for its dir, capped by `max` (default 50).",
+            json!({"root_id": "agent", "action": "log", "main_rel": "main.tex"}),
+        ),
         _ => return None,
     };
     Some(note)
@@ -1161,10 +1172,10 @@ fn cluster_notes(cluster: &str) -> (Vec<String>, Vec<serde_json::Value>, String)
             vec![
                 "One cluster for the whole compile loop: start a job, poll or cancel it, then read the last run back without compiling.",
                 "start returns job_id and main_rel; poll by job_id (wait_ms up to 60000) until the status leaves running; cancel by job_id.",
-                "The readings map the old tools one-to-one: diagnostics reads the last compile's errors, prechecks the blockers, readiness the offline state, output the pdf stamp.",
+                "The readings map the old tools one-to-one: diagnostics reads the last compile's errors, prechecks the blockers, readiness the offline state, output the pdf stamp, log the engine log tail.",
             ],
             vec![json!({"root_id": "agent", "action": "start", "main_rel": "main.tex"})],
-            "start returns a job_id to poll or cancel. poll waits up to wait_ms for a running job; the readings (diagnostics, prechecks, readiness, output) are stateless.".to_string(),
+            "start returns a job_id to poll or cancel. poll waits up to wait_ms for a running job; the readings (diagnostics, prechecks, readiness, output, log) are stateless.".to_string(),
         ),
         _ => (
             vec!["Single-purpose tool: its description and schema are the whole contract."],
@@ -1478,13 +1489,6 @@ struct SyncRenderOut {}
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct DeleteOut {
     trash_path: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct LogTailParams {
-    root_id: String,
-    rel: String,
-    max_lines: Option<usize>,
 }
 
 /// A u64 param narrowed for the core, which counts lines, columns, pages
@@ -1814,7 +1818,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Compile main_rel and read back everything about the run, in one place. `start` begins a job (defaulting to the app's main file when main_rel is absent) and returns its job id; `poll` waits for or reports the running job's lines so far; `cancel` stops a running job. `diagnostics`, `prechecks`, `readiness` and `output` read the last run's errors, pre-compile blockers, offline state and pdf stamp without compiling.",
+        description = "Compile main_rel and read back everything about the run, in one place. `start` begins a job (defaulting to the app's main file when main_rel is absent) and returns its job id; `poll` waits for or reports the running job's lines so far; `cancel` stops a running job. `diagnostics`, `prechecks`, `readiness`, `output` and `log` read the last run's errors, pre-compile blockers, offline state, pdf stamp and engine log tail without compiling.",
         meta = ui_meta(Some(COMPILE_VIEW_URI), &["model", "app"])
     ,
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
@@ -2032,6 +2036,30 @@ impl Maleficium {
                     })?;
                     Ok(Json(PaperOut::Stamped(OutputStampOut {
                         stamp: core::output_stamp(&self.cx, root_id, main_rel)?,
+                    })))
+                }
+                PaperAction::Log => {
+                    for (name, set) in [
+                        ("job_id", p.job_id.is_some()),
+                        ("networked", p.networked.is_some()),
+                        ("tail_lines", p.tail_lines.is_some()),
+                        ("wait_ms", p.wait_ms.is_some()),
+                    ] {
+                        if set {
+                            return Err(format!(
+                                "log takes only `root_id`, `main_rel` and `max`; remove `{name}`"
+                            ));
+                        }
+                    }
+                    let root_id = p.root_id.as_deref().ok_or_else(|| {
+                        "log requires `root_id`: the granted project whose log to read".to_string()
+                    })?;
+                    let main_rel = p.main_rel.as_deref().ok_or_else(|| {
+                        "log requires `main_rel`: the main file whose engine log to tail"
+                            .to_string()
+                    })?;
+                    Ok(Json(PaperOut::Logged(TextOut {
+                        text: core::log_tail(&self.cx, root_id, main_rel, p.max.unwrap_or(50))?,
                     })))
                 }
             }
@@ -2809,22 +2837,6 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Tail the engine log for one main-file dir shard",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<Json<TextOut>, String> {
-        self.tool("log_tail", || {
-            let text = core::log_tail(&self.cx, &p.root_id, &p.rel, p.max_lines.unwrap_or(50))?;
-            Ok(Json(TextOut { text }))
-        })
-    }
-
-    #[tool(
         description = "Map a document's structure without compiling: the read-only way to learn what a project holds. `outline` sections of one file; `file_graph`, `labels_refs` and `citations` the inputs, labels and cites reachable from main_rel; `document_structure` the conversion's sections, theorems and figures; `definition` where a label, cite key, macro or input is defined. Reads saved files on disk, never the editor buffers.",
         annotations(
             read_only_hint = true,
@@ -3279,7 +3291,7 @@ mod tests {
 
     /// Only the sync tools and paper name a View; the re-render
     /// tool is hidden from the model, and paper's own readings
-    /// (poll, cancel, diagnostics, prechecks, readiness, output) stay plain
+    /// (poll, cancel, diagnostics, prechecks, readiness, output, log) stay plain
     /// actions so text-only hosts see them as before.
     #[test]
     fn only_the_view_tools_carry_ui_meta() {
@@ -4623,14 +4635,12 @@ mod tests {
             "bye"
         );
 
-        assert!(
-            m.log_tail(Parameters(LogTailParams {
-                root_id: "cov".into(),
-                rel: "main.tex".into(),
-                max_lines: None,
-            }))
-            .is_err()
-        );
+        // The engine log tail reads through `paper log` with the same core
+        // call: never compiled, the shard is missing and it fails closed.
+        let mut log = base(PaperAction::Log);
+        log.root_id = Some("cov".into());
+        log.main_rel = Some("main.tex".into());
+        assert!(paper(log).is_err());
 
         let structure = |action: StructureAction| {
             let mut p = StructureParams {
@@ -4847,7 +4857,6 @@ mod tests {
             "scaffold",
             "sync_view",
             "sync_render",
-            "log_tail",
             "structure",
             "search",
             "replace",
@@ -5609,7 +5618,7 @@ mod tests {
             panic!("a near-miss action fails");
         };
         assert!(err.contains("did you mean `outline`?"), "{err}");
-        let Err(err) = describe("log_tail", Some("tail")) else {
+        let Err(err) = describe("runtime_install", Some("tail")) else {
             panic!("an action on a single-purpose tool fails");
         };
         assert!(err.contains("takes no action"), "{err}");
@@ -6010,6 +6019,18 @@ mod tests {
         let err = paper(output).err().expect("output without a root fails");
         assert!(err.contains("root_id"), "{err}");
 
+        let mut log = base(PaperAction::Log);
+        log.main_rel = Some("m.tex".into());
+        let err = paper(log).err().expect("log without a root fails");
+        assert!(err.contains("root_id"), "{err}");
+
+        let mut log = base(PaperAction::Log);
+        log.root_id = Some("r".into());
+        log.main_rel = Some("m.tex".into());
+        log.job_id = Some("job-1".into());
+        let err = paper(log).err().expect("log rejects a job");
+        assert!(err.contains("log takes only"), "{err}");
+
         let err = serde_json::from_value::<PaperParams>(serde_json::json!({
             "action": "pol", "job_id": "job-1",
         }))
@@ -6021,7 +6042,7 @@ mod tests {
         .expect_err("an unknown action fails");
         assert!(
             err.to_string()
-                .contains("[start, poll, cancel, diagnostics, prechecks, readiness, output]"),
+                .contains("[start, poll, cancel, diagnostics, prechecks, readiness, output, log]"),
             "{err}"
         );
     }
@@ -6029,12 +6050,12 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count lands the phase at 18 tools: 27 minus the 12
+    /// rescan. The count lands the phase at 17 tools: 27 minus the 13
     /// folded, plus the 3 grouped nouns.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 18, "the phase lands at 18 tools");
+        assert_eq!(tools.len(), 17, "the phase lands at 17 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
