@@ -637,6 +637,311 @@ impl schemars::JsonSchema for PresenceOut {
     }
 }
 
+/// Unknown fields are refused: an introspection names a tool, nothing more.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DescribeParams {
+    /// A tool name, e.g. `structure` or `sync_view`.
+    cluster: String,
+    /// One of the cluster's actions, e.g. `outline`.
+    action: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct DescribeOut {
+    cluster: String,
+    action: Option<String>,
+    description: String,
+    input_schema: serde_json::Value,
+    hints: Vec<String>,
+    examples: Vec<serde_json::Value>,
+    /// How calls thread state: the tokens, confirms and batches to keep.
+    token_flow: String,
+}
+
+/// The valid actions of every grouped tool, in wire spelling. `describe`
+/// validates its `action` against this list; the per-action tests pin each
+/// entry to its tool.
+fn cluster_actions(cluster: &str) -> Option<&'static [&'static str]> {
+    match cluster {
+        "session" => Some(&["grant", "info"]),
+        "file" => Some(&["read", "list"]),
+        "file_mutate" => Some(&["delete", "undo"]),
+        "structure" => Some(&[
+            "outline",
+            "file_graph",
+            "labels_refs",
+            "citations",
+            "document_structure",
+            "definition",
+        ]),
+        "sync_view" => Some(&["forward", "inverse", "snippet"]),
+        "sync_render" => Some(&["render"]),
+        "scaffold" => Some(&["list", "create"]),
+        "presence" => Some(&["windows", "request_open"]),
+        "search" => Some(&["search", "find_files"]),
+        "replace" => Some(&["preview", "apply", "undo"]),
+        "export_read" => Some(&["stamp", "status", "cancel"]),
+        "export_write" => Some(&["pdf", "zip", "bundle", "preview", "open"]),
+        _ => None,
+    }
+}
+
+/// One action's calling rules: the fields it needs and a minimal call.
+fn action_notes(cluster: &str, action: &str) -> Option<(&'static str, serde_json::Value)> {
+    use serde_json::json;
+    let note = match (cluster, action) {
+        ("session", "grant") => (
+            "grant needs `root`: the absolute project folder. Reuse the root_id for every later call.",
+            json!({"root_id": "agent", "action": "grant", "root": "/abs/proj"}),
+        ),
+        ("session", "info") => (
+            "info takes no `root`: it shows the folder already granted as this root_id.",
+            json!({"root_id": "agent", "action": "info"}),
+        ),
+        ("file", "read") => (
+            "read needs `rel`: the project-relative file, returned as UTF-8 text.",
+            json!({"root_id": "agent", "action": "read", "rel": "main.tex"}),
+        ),
+        ("file", "list") => (
+            "list takes an optional `rel` (defaults to the root) and lists one level, depth 1.",
+            json!({"root_id": "agent", "action": "list", "rel": "chapters"}),
+        ),
+        ("file_mutate", "delete") => (
+            "delete needs `rel`. Without `confirm` it is refused with the file's absolute path; pass that back as `confirm` to delete.",
+            json!({"root_id": "agent", "action": "delete", "rel": "draft-old.tex"}),
+        ),
+        ("file_mutate", "undo") => (
+            "undo takes only `trash_path`: the trash path from a `delete`.",
+            json!({"root_id": "agent", "action": "undo", "trash_path": "/tmp/trash/draft-old.tex"}),
+        ),
+        ("structure", "outline") => (
+            "outline takes only `rel`: sections of one file with labels, figures and tables.",
+            json!({"root_id": "agent", "action": "outline", "rel": "main.tex"}),
+        ),
+        ("structure", "file_graph") => (
+            "file_graph takes only `main_rel`: every file reachable over inputs, missing ones flagged.",
+            json!({"root_id": "agent", "action": "file_graph", "main_rel": "main.tex"}),
+        ),
+        ("structure", "labels_refs") => (
+            "labels_refs takes only `main_rel`: each label with file and line, each ref-use with whether its key is defined.",
+            json!({"root_id": "agent", "action": "labels_refs", "main_rel": "main.tex"}),
+        ),
+        ("structure", "citations") => (
+            "citations takes only `main_rel`: each cite key with file, line, and whether a bib entry defines it.",
+            json!({"root_id": "agent", "action": "citations", "main_rel": "main.tex"}),
+        ),
+        ("structure", "document_structure") => (
+            "document_structure takes only `main_rel`: the conversion's sections, theorems, equations, figures and widget placeholders.",
+            json!({"root_id": "agent", "action": "document_structure", "main_rel": "main.tex"}),
+        ),
+        ("structure", "definition") => (
+            "definition takes kind with key, or rel with line and col (never both); main_rel is optional. Keys use the source spelling: macros carry their backslash.",
+            json!({"root_id": "agent", "action": "definition", "kind": "label", "key": "sec:hi"}),
+        ),
+        ("sync_view", "forward") => (
+            "forward needs `main_rel`, `tex_rel` and `line`: the PDF page showing that source line.",
+            json!({"root_id": "agent", "action": "forward", "main_rel": "main.tex", "tex_rel": "chapters/method.tex", "line": 10}),
+        ),
+        ("sync_view", "inverse") => (
+            "inverse needs `main_rel` and `page`; `x` and `y` default to 0: the source file and line at that PDF position.",
+            json!({"root_id": "agent", "action": "inverse", "main_rel": "main.tex", "page": 1, "x": 100.0, "y": 600.0}),
+        ),
+        ("sync_view", "snippet") => (
+            "snippet needs `main_rel` and exactly one target: tex_rel with line, label, or page. `with_image` adds the region as a PNG; images cost context.",
+            json!({"root_id": "agent", "action": "snippet", "main_rel": "main.tex", "label": "tab:results", "with_image": true}),
+        ),
+        ("sync_render", "render") => (
+            "render needs `main_rel` and `page`; `region` crops to a band, `scale` defaults to 2. App-only refresh for the View.",
+            json!({"root_id": "agent", "action": "render", "main_rel": "main.tex", "page": 1}),
+        ),
+        ("scaffold", "list") => (
+            "list takes nothing: the bundled set plus the user's own, each with its main file.",
+            json!({"action": "list"}),
+        ),
+        ("scaffold", "create") => (
+            "create needs `template`, `parent_dir` (absolute) and `name`. Refused when the folder exists and is not empty.",
+            json!({"action": "create", "template": "article", "parent_dir": "/abs/work", "name": "paper"}),
+        ),
+        ("presence", "windows") => (
+            "windows takes nothing: every open window with its project, files and root_id, most recently active first.",
+            json!({"action": "windows"}),
+        ),
+        ("presence", "request_open") => (
+            "request_open needs `project` (absolute); `file`, `pid` and `wait_ms` are optional. Nothing opens until the user clicks Open.",
+            json!({"action": "request_open", "project": "/abs/proj", "wait_ms": 0}),
+        ),
+        ("search", "search") => (
+            "search needs `pattern` (regex when `regex` is true); hits reachable from `main_rel` rank first. Cap with `max`.",
+            json!({"root_id": "agent", "action": "search", "pattern": "figure", "main_rel": "main.tex"}),
+        ),
+        ("search", "find_files") => (
+            "find_files takes only `query` and `max`: fuzzy file-name matches.",
+            json!({"root_id": "agent", "action": "find_files", "query": "meth"}),
+        ),
+        ("replace", "preview") => (
+            "preview needs `pattern` and `replacement` (same flags as search) and writes nothing; it returns per-file revisions plus a token.",
+            json!({"root_id": "agent", "action": "preview", "pattern": "sec:method", "replacement": "sec:approach"}),
+        ),
+        ("replace", "apply") => (
+            "apply takes only `token`: writes the previewed plan whole, or refuses it whole when a file changed. A token applies once.",
+            json!({"root_id": "agent", "action": "apply", "token": "preview-token"}),
+        ),
+        ("replace", "undo") => (
+            "undo takes only `batch`: the batch id from `apply`. Restores exact bytes.",
+            json!({"root_id": "agent", "action": "undo", "batch": "batch-id"}),
+        ),
+        ("export_read", "stamp") => (
+            "stamp needs `main_rel`: the compiled pdf's stamp, or null before any compile.",
+            json!({"root_id": "agent", "action": "stamp", "main_rel": "main.tex"}),
+        ),
+        ("export_read", "status") => (
+            "status needs `main_rel`: whether a previous compile left a pdf for it.",
+            json!({"root_id": "agent", "action": "status", "main_rel": "main.tex"}),
+        ),
+        ("export_read", "cancel") => (
+            "cancel takes nothing: it stops the running bundle export's conversion.",
+            json!({"root_id": "agent", "action": "cancel"}),
+        ),
+        ("export_write", "pdf") => (
+            "pdf needs `main_rel` and `dest` (absolute, outside the project): copies the compiled pdf.",
+            json!({"root_id": "agent", "action": "pdf", "main_rel": "main.tex", "dest": "/abs/paper.pdf"}),
+        ),
+        ("export_write", "zip") => (
+            "zip takes only `dest` (absolute, outside the project): packs the sources.",
+            json!({"root_id": "agent", "action": "zip", "dest": "/abs/proj.zip"}),
+        ),
+        ("export_write", "bundle") => (
+            "bundle needs `main_rel`, `dest` and `profile` (folder, single-file or hosted).",
+            json!({"root_id": "agent", "action": "bundle", "main_rel": "main.tex", "dest": "/abs/bundle", "profile": "single-file"}),
+        ),
+        ("export_write", "preview") => (
+            "preview takes only `main_rel`: writes the single-file bundle to a scratch folder and returns its path, opening nothing.",
+            json!({"root_id": "agent", "action": "preview", "main_rel": "main.tex"}),
+        ),
+        ("export_write", "open") => (
+            "open takes only `main_rel`: previews, then opens the path in the OS browser.",
+            json!({"root_id": "agent", "action": "open", "main_rel": "main.tex"}),
+        ),
+        _ => return None,
+    };
+    Some(note)
+}
+
+/// One cluster's hints, examples and token-flow notes. Every grouped tool
+/// has an entry; single-purpose tools share the generic fallback.
+fn cluster_notes(cluster: &str) -> (Vec<String>, Vec<serde_json::Value>, String) {
+    use serde_json::json;
+    let (hints, examples, token_flow) = match cluster {
+        "session" => (
+            vec![
+                "Call it first: every other tool needs the root_id it registers.",
+                "Grant the folder presence shows as open so the user sees your edits.",
+            ],
+            vec![json!({"root_id": "agent", "action": "grant", "root": "/abs/proj"})],
+            "No tokens or batches: grant registers the root_id, info echoes its path. Re-granting a root_id moves it.".to_string(),
+        ),
+        "file" => (
+            vec![
+                "Read one file or list one level; escapes from the root are refused.",
+                "list defaults rel to the root and stays one level deep.",
+            ],
+            vec![json!({"root_id": "agent", "action": "read", "rel": "main.tex"})],
+            "Stateless: every call stands alone.".to_string(),
+        ),
+        "file_mutate" => (
+            vec![
+                "The only way to remove project files; replaces never go through here.",
+                "A refused first delete names the absolute path: pass it back as confirm.",
+            ],
+            vec![json!({"root_id": "agent", "action": "delete", "rel": "draft-old.tex"})],
+            "Two calls to delete: the first refusal names the path to pass back as confirm. undo takes the trash_path from a delete. A replace batch is separate: file_mutate cannot undo a replace.".to_string(),
+        ),
+        "structure" => (
+            vec![
+                "The read-only way to learn what a document holds; needs no compile.",
+                "Reads saved files on disk, never the editor buffers; undefined keys return empty, not errors.",
+            ],
+            vec![json!({"root_id": "agent", "action": "outline", "rel": "main.tex"})],
+            "Stateless readings. definition has two spellings, not a flow: kind with key, or rel with line and col.".to_string(),
+        ),
+        "sync_view" => (
+            vec![
+                "Compile first (compile_run, then poll): forward and inverse need the synctex file, snippet needs the pdf.",
+                "Prefer label targets for figures and tables; use with_image only for layout questions.",
+            ],
+            vec![json!({"root_id": "agent", "action": "snippet", "main_rel": "main.tex", "label": "tab:results"})],
+            "Compile first, then read: forward and inverse need the synctex file, snippet needs the pdf. stale is true when sources changed after the compile; recompile and read again.".to_string(),
+        ),
+        "sync_render" => (
+            vec![
+                "The snippet View's own refresh; the model has no other use for it.",
+                "Scale clamps to 0.5..3; region crops to a full-width band in pdf points.",
+            ],
+            vec![json!({"root_id": "agent", "action": "render", "main_rel": "main.tex", "page": 1})],
+            "No state: renders the named page at call time. The model reads page images through sync_view snippet with_image instead.".to_string(),
+        ),
+        "scaffold" => (
+            vec![
+                "The way to create a project; create refuses a folder that is in use.",
+                "Grant the returned root (session with action grant) to work in it.",
+            ],
+            vec![json!({"action": "create", "template": "article", "parent_dir": "/abs/work", "name": "paper"})],
+            "create returns root and main; session-grant the root to work in it. list carries no state.".to_string(),
+        ),
+        "presence" => (
+            vec![
+                "Call windows at the start of a session to meet the user where they are.",
+                "Never resend a dismissed ask; a waiting ask stays up until the user answers.",
+            ],
+            vec![json!({"action": "windows"})],
+            "windows tells you which project is open; session-grant its folder. request_open outcomes: opened (work there), dismissed (do not resend), waiting (tell the user the prompt is up; ask windows again later).".to_string(),
+        ),
+        "search" => (
+            vec![
+                "Hunts saved files; the file listing and caches are out of scope.",
+                "Hits reachable from main_rel rank first.",
+            ],
+            vec![json!({"root_id": "agent", "action": "search", "pattern": "figure"})],
+            "Stateless: pattern with regex, case_sensitive and whole_word, or find_files with query. Cap runs with max.".to_string(),
+        ),
+        "replace" => (
+            vec![
+                "Always preview before apply; keep the batch to undo.",
+                "A spent token or a plan over changed files fails whole and writes nothing.",
+            ],
+            vec![json!({"root_id": "agent", "action": "preview", "pattern": "sec:method", "replacement": "sec:approach"})],
+            "Three calls: preview returns a token, apply spends it whole (refused when any file changed since), undo takes the batch.".to_string(),
+        ),
+        "export_read" => (
+            vec![
+                "Reading state never writes; cancelling with no conversion running is an error.",
+                "stamp and status need main_rel; cancel takes nothing.",
+            ],
+            vec![json!({"root_id": "agent", "action": "status", "main_rel": "main.tex"})],
+            "Stateless readings.".to_string(),
+        ),
+        "export_write" => (
+            vec![
+                "Writes outside the project, never into it; an inside dest is refused.",
+                "preview opens nothing; open previews then opens it in the OS browser.",
+            ],
+            vec![json!({"root_id": "agent", "action": "pdf", "main_rel": "main.tex", "dest": "/abs/paper.pdf"})],
+            "Each action writes outside the project. preview writes to a scratch folder and returns its path; open previews then opens it.".to_string(),
+        ),
+        _ => (
+            vec!["Single-purpose tool: its description and schema are the whole contract."],
+            vec![],
+            "No grouped flow.".to_string(),
+        ),
+    };
+    (
+        hints.into_iter().map(Into::into).collect(),
+        examples,
+        token_flow,
+    )
+}
+
 /// One running Maleficium window and what it holds.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct AppWindow {
@@ -864,12 +1169,14 @@ impl SyncViewParams {
         match (&self.tex_rel, self.line, &self.label, self.page) {
             (Some(tex_rel), Some(line), None, None) => Ok(Target::Line {
                 tex_rel: tex_rel.clone(),
-                line: line as u32,
+                line: narrow_u32(line, "line")?,
             }),
             (None, None, Some(label), None) => Ok(Target::Label {
                 label: label.clone(),
             }),
-            (None, None, None, Some(page)) => Ok(Target::Page { page: page as u32 }),
+            (None, None, None, Some(page)) => Ok(Target::Page {
+                page: narrow_u32(page, "page")?,
+            }),
             _ => Err("give exactly one target: tex_rel with line, or label, or page".to_string()),
         }
     }
@@ -954,6 +1261,12 @@ struct DiagnosticsParams {
     root_id: String,
     main_rel: String,
     max: Option<usize>,
+}
+
+/// A u64 param narrowed for the core, which counts lines, columns, pages
+/// and pids in u32.
+fn narrow_u32(value: u64, name: &str) -> Result<u32, String> {
+    u32::try_from(value).map_err(|_| format!("`{name}` is out of range"))
 }
 
 /// Edit distance over action names, for did-you-mean suggestions.
@@ -1669,7 +1982,10 @@ impl Maleficium {
                     "request_open requires `project`: the absolute folder to ask the window to open"
                         .to_string()
                 })?;
-                let pid = p.pid.map(|pid| pid as u32);
+                let pid = match p.pid {
+                    Some(pid) => Some(narrow_u32(pid, "pid")?),
+                    None => None,
+                };
                 let r = core::presence::request_open(pid, project, p.file.as_deref())?;
                 let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(30_000).min(120_000));
                 let start = std::time::Instant::now();
@@ -1707,6 +2023,74 @@ impl Maleficium {
                     hint,
                 })))
             }
+        })
+    }
+
+    #[tool(
+        description = "Look up one tool cluster's contract: its JSON schema, hints, examples and token-flow notes. Pass cluster (a tool name); add action for one action's calling rules. Read-only; start here instead of guessing a grouped tool's fields.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn describe(
+        &self,
+        Parameters(p): Parameters<DescribeParams>,
+    ) -> Result<Json<DescribeOut>, String> {
+        self.tool("describe", || {
+            let tools = Maleficium::tool_router().list_all();
+            let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+            let t = tools.iter().find(|t| t.name == p.cluster).ok_or_else(|| {
+                let mut msg = format!(
+                    "unknown cluster `{}`; valid clusters: [{}]",
+                    p.cluster,
+                    names.join(", ")
+                );
+                if let Some(s) = did_you_mean(&p.cluster, &names) {
+                    msg.push_str(&format!("; did you mean `{s}`?"));
+                }
+                msg
+            })?;
+            if let Some(action) = p.action.as_deref() {
+                let valid = cluster_actions(&p.cluster).ok_or_else(|| {
+                    format!(
+                        "cluster `{}` takes no action; call describe with cluster alone",
+                        p.cluster
+                    )
+                })?;
+                if !valid.contains(&action) {
+                    let mut msg = format!(
+                        "unknown action `{action}` for cluster `{}`; valid actions: [{}]",
+                        p.cluster,
+                        valid.join(", ")
+                    );
+                    if let Some(s) = did_you_mean(action, valid) {
+                        msg.push_str(&format!("; did you mean `{s}`?"));
+                    }
+                    return Err(msg);
+                }
+            }
+            let (mut hints, mut examples, token_flow) = cluster_notes(&p.cluster);
+            if let Some((hint, example)) = p
+                .action
+                .as_deref()
+                .and_then(|action| action_notes(&p.cluster, action))
+            {
+                hints.insert(0, hint.to_string());
+                examples.insert(0, example);
+            }
+            Ok(Json(DescribeOut {
+                cluster: p.cluster,
+                action: p.action,
+                description: t.description.as_deref().unwrap_or("").to_string(),
+                input_schema: serde_json::to_value(&*t.input_schema)
+                    .unwrap_or(serde_json::Value::Null),
+                hints,
+                examples,
+                token_flow,
+            }))
         })
     }
 
@@ -1976,8 +2360,13 @@ impl Maleficium {
                         ],
                         "forward",
                     )?;
-                    let hit =
-                        core::forward(&self.cx, &p.root_id, &p.main_rel, tex_rel, line as u32)?;
+                    let hit = core::forward(
+                        &self.cx,
+                        &p.root_id,
+                        &p.main_rel,
+                        tex_rel,
+                        narrow_u32(line, "line")?,
+                    )?;
                     serde_json::to_value(&hit).map_err(|e| e.to_string())?
                 }
                 SyncViewAction::Inverse => {
@@ -1997,7 +2386,7 @@ impl Maleficium {
                         &self.cx,
                         &p.root_id,
                         &p.main_rel,
-                        page as u32,
+                        narrow_u32(page, "page")?,
                         p.x.unwrap_or(0.0),
                         p.y.unwrap_or(0.0),
                     )?;
@@ -2047,7 +2436,7 @@ impl Maleficium {
                     &self.cx,
                     &p.root_id,
                     &p.main_rel,
-                    p.page as u32,
+                    narrow_u32(p.page, "page")?,
                     p.region,
                     p.scale,
                 )?;
@@ -2063,7 +2452,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Delete a project file to the app-local trash, or restore one: the only way to remove project files. `delete` without confirm is refused with the file's absolute path; call again with that path as confirm to delete. `undo` restores a trashed file by its trash_path.",
+        description = "Delete a project file to the app-local trash, or restore one: the only way to remove project files. `delete` needs no confirm on the first call: without confirm it is refused with the file's absolute path; call again with that path as confirm to delete. `undo` restores a trashed file by its trash_path.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -2277,8 +2666,8 @@ impl Maleficium {
                     }
                     (_, _, Some(rel), Some(line), Some(col)) => DefinitionTarget::At {
                         rel,
-                        line: line as u32,
-                        col: col as u32,
+                        line: narrow_u32(line, "line")?,
+                        col: narrow_u32(col, "col")?,
                     },
                     _ => return Err("pass kind and key, or rel, line and col".to_string()),
                 };
@@ -4120,6 +4509,7 @@ mod tests {
             "runtime_validate",
             "runtime_install",
             "presence",
+            "describe",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(
@@ -4590,30 +4980,40 @@ mod tests {
         let call = |p: SyncViewParams| m.sync_view(Parameters(p));
 
         let mut p = base(SyncViewAction::Forward);
-        let err = call(p.clone())
-            .err()
-            .expect("forward without a target fails");
+        let Err(err) = call(p.clone()) else {
+            panic!("forward without a target fails");
+        };
         assert!(err.contains("tex_rel"), "{err}");
         p.tex_rel = Some("main.tex".into());
-        let err = call(p.clone()).err().expect("forward without a line fails");
+        let Err(err) = call(p.clone()) else {
+            panic!("forward without a line fails");
+        };
         assert!(err.contains("line"), "{err}");
         p.line = Some(10);
         p.label = Some("fig:x".into());
-        let err = call(p).err().expect("forward rejects a label");
+        let Err(err) = call(p) else {
+            panic!("forward rejects a label");
+        };
         assert!(err.contains("forward takes no `label`"), "{err}");
 
         let mut p = base(SyncViewAction::Inverse);
-        let err = call(p.clone()).err().expect("inverse without a page fails");
+        let Err(err) = call(p.clone()) else {
+            panic!("inverse without a page fails");
+        };
         assert!(err.contains("page"), "{err}");
         p.page = Some(1);
         p.tex_rel = Some("main.tex".into());
-        let err = call(p).err().expect("inverse rejects a source file");
+        let Err(err) = call(p) else {
+            panic!("inverse rejects a source file");
+        };
         assert!(err.contains("inverse takes no `tex_rel`"), "{err}");
 
         let mut p = base(SyncViewAction::Snippet);
         p.page = Some(1);
         p.x = Some(3.0);
-        let err = call(p).err().expect("snippet rejects a position");
+        let Err(err) = call(p) else {
+            panic!("snippet rejects a position");
+        };
         assert!(err.contains("snippet takes no `x`"), "{err}");
 
         let err = serde_json::from_value::<SyncViewParams>(serde_json::json!({
@@ -4774,6 +5174,110 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    /// `describe` is the read-only reference behind the short upfront
+    /// descriptions: one cluster's schema, hints, examples and token-flow,
+    /// narrowed to one action when asked. Unknown clusters and actions name
+    /// the valid list with a did-you-mean hint; single-purpose tools take
+    /// no action. Every registered tool resolves, and every grouped action
+    /// has a calling-rules note.
+    #[test]
+    fn describe_reports_every_cluster_and_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "describe")
+            .expect("describe");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(true));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "cluster"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let describe = |cluster: &str, action: Option<&str>| {
+            m.describe(Parameters(DescribeParams {
+                cluster: cluster.into(),
+                action: action.map(Into::into),
+            }))
+        };
+        // Every registered tool resolves to its own description and schema.
+        for tool in &tools {
+            let out = describe(&tool.name, None)
+                .unwrap_or_else(|e| panic!("describe resolves `{}`: {e}", tool.name))
+                .0;
+            assert_eq!(out.cluster, tool.name);
+            assert!(out.action.is_none());
+            assert_eq!(
+                out.description,
+                tool.description.as_deref().unwrap_or(""),
+                "{}",
+                tool.name
+            );
+            assert!(out.input_schema.is_object(), "{}", tool.name);
+            assert!(!out.token_flow.is_empty(), "{}", tool.name);
+        }
+        // Every grouped action validates and carries its calling rules.
+        let mut noted = 0;
+        for tool in &tools {
+            if let Some(actions) = cluster_actions(&tool.name) {
+                assert!(!actions.is_empty(), "{}", tool.name);
+                for action in actions {
+                    let out = describe(&tool.name, Some(action))
+                        .unwrap_or_else(|e| {
+                            panic!("describe resolves `{}` `{action}`: {e}", tool.name)
+                        })
+                        .0;
+                    assert_eq!(out.action.as_deref(), Some(*action));
+                    assert!(!out.hints.is_empty(), "{} {action}", tool.name);
+                    assert!(!out.examples.is_empty(), "{} {action}", tool.name);
+                    assert!(action_notes(&tool.name, action).is_some());
+                    noted += 1;
+                }
+            } else {
+                let Err(err) = describe(&tool.name, Some("nope")) else {
+                    panic!("`{}` takes no action", tool.name);
+                };
+                assert!(err.contains("takes no action"), "{err}");
+            }
+        }
+        assert!(noted >= 30, "every grouped action has a note, got {noted}");
+
+        let Err(err) = describe("structur", None) else {
+            panic!("a near-miss cluster fails");
+        };
+        assert!(err.contains("did you mean `structure`?"), "{err}");
+        let Err(err) = describe("structure", Some("outlin")) else {
+            panic!("a near-miss action fails");
+        };
+        assert!(err.contains("did you mean `outline`?"), "{err}");
+        let Err(err) = describe("log_tail", Some("tail")) else {
+            panic!("an action on a single-purpose tool fails");
+        };
+        assert!(err.contains("takes no action"), "{err}");
+        assert!(
+            serde_json::from_value::<DescribeParams>(serde_json::json!({
+                "cluster": "structure", "action": "outline", "verbose": true,
+            }))
+            .is_err()
+        );
+
+        // The coverage case exercises describe beside the other tools.
+        let out = describe("sync_view", Some("snippet")).unwrap().0;
+        assert_eq!(out.cluster, "sync_view");
+        assert!(out.hints.iter().any(|h| h.contains("with_image")));
     }
 
     /// Grouped `search` validates per action: `search` needs `pattern`,
@@ -5040,11 +5544,12 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-26 regroup of this phase so far.
+    /// rescan. The count lands the phase at 27 tools: 38 minus the 20
+    /// folded, plus the 9 grouped nouns.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 26, "the presence split lands at 26 tools");
+        assert_eq!(tools.len(), 27, "the phase lands at 27 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
