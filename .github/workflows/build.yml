@@ -104,7 +104,7 @@ jobs:
   # it. Formatters rewrite files, so a hook that changes anything fails here.
   precommit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       GITLEAKS_VERSION: 8.30.1
       # The necro rust/* checks clippy the engine workspace too, whose
@@ -120,8 +120,26 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       # The necro rust/* checks link through pkg-config (gio-2.0/glib-2.0),
       # so the precommit runner needs the same system libraries as the build.
+      # The .deb archives are cached (main seeds the cache, every run reads
+      # it) so reruns skip the download; the install itself always runs.
+      # actions/cache runs as the runner user, so hand it the archives dir
+      # before the restore step tries to write there.
+      - name: Allow apt archive caching
+        run: sudo mkdir -p /var/cache/apt/archives && sudo chown -R "$(id -u):$(id -g)" /var/cache/apt/archives
+      - name: apt archives cache
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('scripts/linux-deps.txt') }}
       - name: Linux system libraries
         run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
+      - name: apt archives cache save
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('scripts/linux-deps.txt') }}
       - name: Install prek (the hook runner; the pin lives here)
         run: uv tool install "prek==0.5.10"
       - uses: ./.github/actions/npm
