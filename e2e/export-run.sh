@@ -117,7 +117,7 @@ def compile(rel, rounds=ROUNDS):
 
 check("the committed schema is itself a valid 2020-12 schema",
       (jsonschema.Draft202012Validator.check_schema(schema) or True))
-g = call("grant", {"root_id": "ip", "root": ROOT})
+g = call("session", {"root_id": "ip", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 # Before any compile: an error, not an empty bundle.

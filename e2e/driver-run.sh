@@ -187,7 +187,7 @@ p = mcp.p
 def call(name, args):
     return flat(mcp.tool(name, args))
 
-g = call("grant", {"root_id": "drv", "root": ROOT})
+g = call("session", {"root_id": "drv", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 e = call("read", {"root_id": "drv", "rel": "../outside.tex"})
@@ -360,7 +360,7 @@ for tid in tids + ["welcome"]:
     if not nc["ok"]:
         bad.append(f"{tid}: {nc.get('error')}")
         continue
-    g = call("grant", {"root_id": "tpl-" + tid, "root": nc["root"]})
+    g = call("session", {"root_id": "tpl-" + tid, "action": "grant", "root": nc["root"]})
     j = call("compile_run", {"root_id": "tpl-" + tid, "rel": nc["main"]}).get("job_id") or ""
     rec = {"status": "running"}
     for _ in range(15):
@@ -502,7 +502,7 @@ def record(line):
 PAGES_ROOT = os.environ["PAGES_ROOT"]
 TREE_ROOT = os.environ["TREE_ROOT"]
 
-gt = call("grant", {"root_id": "tree", "root": TREE_ROOT})
+gt = call("session", {"root_id": "tree", "action": "grant", "root": TREE_ROOT})
 check("grant 1000-file root", gt["ok"], str(gt))
 t = time.time()
 lr = call("list", {"root_id": "tree", "rel": "."})
@@ -521,7 +521,7 @@ check(
     ms=small_ms,
 )
 
-gp = call("grant", {"root_id": "pages", "root": PAGES_ROOT})
+gp = call("session", {"root_id": "pages", "action": "grant", "root": PAGES_ROOT})
 check("grant 3000pp root", gp["ok"], str(gp))
 cr = call("compile_run", {"root_id": "pages", "rel": "doc.tex"})
 cjob = cr.get("job_id") or ""

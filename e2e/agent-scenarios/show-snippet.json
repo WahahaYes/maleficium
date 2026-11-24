@@ -7,7 +7,7 @@
   "timeout_s": 600,
   "script": {
     "steps": [
-      { "tool": "grant", "args": { "root_id": "agent", "root": "{project}" } },
+      { "tool": "session", "args": { "root_id": "agent", "action": "grant", "root": "{project}" } },
       { "compile": "main.tex" },
       { "tool": "outline", "args": { "root_id": "agent", "rel": "main.tex" } },
       {

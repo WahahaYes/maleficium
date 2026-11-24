@@ -86,7 +86,7 @@ def compile(rel, rounds=ROUNDS):
             break
     return rec
 
-g = call("grant", {"root_id": "ip", "root": ROOT})
+g = call("session", {"root_id": "ip", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 sty = os.path.join(ROOT, "maleficium-interactive.sty")

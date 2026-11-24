@@ -75,10 +75,36 @@ struct Maleficium {
     cx: core::Core,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SessionAction {
+    Grant,
+    Info,
+}
+
+impl<'de> Deserialize<'de> for SessionAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "grant" => Ok(Self::Grant),
+            "info" => Ok(Self::Info),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["grant", "info"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a session call names a root and an action,
+/// nothing that could approve, fetch or write.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct GrantParams {
+#[serde(deny_unknown_fields)]
+struct SessionParams {
     root_id: String,
-    root: String,
+    action: SessionAction,
+    /// Required iff action is grant: the absolute folder to grant.
+    root: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -880,7 +906,7 @@ impl Maleficium {
 #[tool_router]
 impl Maleficium {
     #[tool(
-        description = "Grant a session project root (absolute directory, canonicalized)",
+        description = "Grant or inspect a session project root: call it first so later tools stay inside the user's project. `grant` registers an absolute folder as root_id and returns its path; `info` shows the folder already granted as root_id.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -888,26 +914,26 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn grant(&self, Parameters(p): Parameters<GrantParams>) -> Result<Json<PathOut>, String> {
-        self.tool("grant", || {
-            let path = path_string(core::grant_root(&self.cx, &p.root_id, &p.root)?);
-            Ok(Json(PathOut { path }))
-        })
-    }
-
-    #[tool(
-        description = "Show a granted session root",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn info(&self, Parameters(p): Parameters<RootParams>) -> Result<Json<PathOut>, String> {
-        self.tool("info", || {
-            let path = path_string(core::session_root(&self.cx, &p.root_id)?);
-            Ok(Json(PathOut { path }))
+    fn session(&self, Parameters(p): Parameters<SessionParams>) -> Result<Json<PathOut>, String> {
+        self.tool("session", || match p.action {
+            SessionAction::Grant => {
+                let root = p.root.as_deref().ok_or_else(|| {
+                    "grant requires `root`: the absolute project folder to grant as this root"
+                        .to_string()
+                })?;
+                let path = path_string(core::grant_root(&self.cx, &p.root_id, root)?);
+                Ok(Json(PathOut { path }))
+            }
+            SessionAction::Info => {
+                if p.root.is_some() {
+                    return Err(
+                        "info takes no `root`: it shows the folder already granted as this root"
+                            .to_string(),
+                    );
+                }
+                let path = path_string(core::session_root(&self.cx, &p.root_id)?);
+                Ok(Json(PathOut { path }))
+            }
         })
     }
 
@@ -3160,16 +3186,19 @@ mod tests {
         core::grant_root(cx, "cov", &root).unwrap();
 
         let info = m
-            .info(Parameters(RootParams {
+            .session(Parameters(SessionParams {
                 root_id: "cov".into(),
+                action: SessionAction::Info,
+                root: None,
             }))
             .unwrap();
         assert_eq!(info.0.path, root);
 
         let grant = m
-            .grant(Parameters(GrantParams {
+            .session(Parameters(SessionParams {
                 root_id: "cov2".into(),
-                root: root.clone(),
+                action: SessionAction::Grant,
+                root: Some(root.clone()),
             }))
             .unwrap();
         assert_eq!(grant.0.path, root);
@@ -3631,8 +3660,7 @@ mod tests {
         );
 
         let covered = [
-            "grant",
-            "info",
+            "session",
             "list",
             "read",
             "compile_run",
@@ -3706,6 +3734,87 @@ mod tests {
             token: None,
             batch: None,
         }
+    }
+
+    /// Grouped `session` validates per action: `grant` needs `root`,
+    /// `info` takes nothing else, and an unknown action names the valid
+    /// list with a did-you-mean hint. The tool registers roots but writes
+    /// no project file, so it is honestly non-destructive.
+    #[test]
+    fn session_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools.iter().find(|t| t.name == "session").expect("session");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(true));
+        assert_eq!(a.open_world_hint, Some(false));
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "root", "root_id"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let dir = core::test_scratch::dir("mcp-session");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dunce::canonicalize(&dir).unwrap();
+        let root = root.to_string_lossy().to_string();
+
+        let err = m
+            .session(Parameters(SessionParams {
+                root_id: "sess".into(),
+                action: SessionAction::Grant,
+                root: None,
+            }))
+            .err()
+            .expect("grant without a root fails");
+        assert!(err.contains("root"), "{err}");
+        let grant = m
+            .session(Parameters(SessionParams {
+                root_id: "sess".into(),
+                action: SessionAction::Grant,
+                root: Some(root.clone()),
+            }))
+            .expect("a grant registers")
+            .0;
+        assert_eq!(grant.path, root);
+        let info = m
+            .session(Parameters(SessionParams {
+                root_id: "sess".into(),
+                action: SessionAction::Info,
+                root: None,
+            }))
+            .expect("an info reads back")
+            .0;
+        assert_eq!(info.path, root);
+        let err = m
+            .session(Parameters(SessionParams {
+                root_id: "sess".into(),
+                action: SessionAction::Info,
+                root: Some(root),
+            }))
+            .err()
+            .expect("info rejects a root");
+        assert!(err.contains("takes no `root`"), "{err}");
+
+        let err = serde_json::from_value::<SessionParams>(serde_json::json!({
+            "root_id": "r", "action": "gran",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `grant`?"), "{err}");
+        assert!(
+            serde_json::from_value::<SessionParams>(serde_json::json!({
+                "root_id": "r", "action": "info", "root_id2": "x",
+            }))
+            .is_err()
+        );
     }
 
     /// Grouped `search` validates per action: `search` needs `pattern`,
@@ -3972,11 +4081,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-38 split of this phase.
+    /// rescan. The count pins the 40-to-37 session split of this phase.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 38, "the export split lands at 38 tools");
+        assert_eq!(tools.len(), 37, "the session split lands at 37 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");

@@ -130,7 +130,7 @@ def tree(root):
             out[os.path.relpath(p, root)] = hashlib.sha256(open(p, "rb").read()).hexdigest()
     return out
 
-check("grant project root", call("grant", {"root_id": "pc", "root": ROOT})["ok"])
+check("grant project root", call("session", {"root_id": "pc", "action": "grant", "root": ROOT})["ok"])
 
 # 1. First compile: no widget list before the engine, so the posters render
 # after it and a second engine run embeds them.
@@ -225,7 +225,7 @@ zipfile.ZipFile(zp).extractall(UNZ)
 cache_before = tree(os.path.join(UNZ, ".maleficium"))
 env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
 lonely, lcall = client(os.environ["LONELY_BIN"], "no-app", env=env)
-check("grant the unzipped paper", lcall("grant", {"root_id": "uz", "root": UNZ})["ok"])
+check("grant the unzipped paper", lcall("session", {"root_id": "uz", "action": "grant", "root": UNZ})["ok"])
 r7 = compile(lcall, "uz")
 check("the exported paper compiles without the app", r7.get("status") == "success", str(r7)[:300])
 upd = r7.get("pdf_url") or ""

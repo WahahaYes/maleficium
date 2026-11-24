@@ -35,7 +35,7 @@ def call(name, args):
     ok, r = mcp.tool(name, args)
     return {"ok": True, **r} if ok else {"ok": False, "error": r}
 
-check("grant", call("grant", {"root_id": "s", "root": ROOT})["ok"])
+check("grant", call("session", {"root_id": "s", "action": "grant", "root": ROOT})["ok"])
 
 t0 = time.time()
 r = call("search", {"root_id": "s", "pattern": "figure", "main_rel": "main.tex"})

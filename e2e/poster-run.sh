@@ -153,7 +153,7 @@ def call(name, args):
     ok, r = mcp.tool(name, args)
     return {"ok": True, **r} if ok else {"ok": False, "error": r}
 
-check("grant project root", call("grant", {"root_id": "pp", "root": ROOT})["ok"])
+check("grant project root", call("session", {"root_id": "pp", "action": "grant", "root": ROOT})["ok"])
 before = tree(ROOT)
 r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
 rec = {"status": "not-started", "log": str(r)}
@@ -472,7 +472,7 @@ check("the project is untouched, explicit posters included",
 # The sidecar renders missing auto-posters through the app binary beside it;
 # the probe is approved at its current (edited) digest.
 mcp = McpClient([os.environ["MCP_BIN"]], "posters-compile")
-check("grant project root again", call("grant", {"root_id": "pp", "root": ROOT})["ok"])
+check("grant project root again", call("session", {"root_id": "pp", "action": "grant", "root": ROOT})["ok"])
 def compile_lines():
     r = call("compile_run", {"root_id": "pp", "rel": "posters.tex"})
     rec = {"status": "not-started", "log": str(r)}

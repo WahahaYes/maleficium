@@ -80,7 +80,7 @@ mcp = McpClient([BIN], "playground")
 def call(name, args):
     return flat(mcp.tool(name, args))
 
-g = call("grant", {"root_id": "pg", "root": ROOT})
+g = call("session", {"root_id": "pg", "action": "grant", "root": ROOT})
 check("grant project root", g["ok"] and g["path"] == ROOT, str(g))
 
 # subcaption is not in the warm cache on a fresh machine; networked lets the
