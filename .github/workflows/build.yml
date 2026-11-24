@@ -21,6 +21,12 @@ on:
     # labeled: adding full-ci to a PR starts the full platform matrix.
     types: [opened, synchronize, reopened, labeled]
   workflow_call:
+    inputs:
+      skip_tests:
+        description: 'Skip the test-only jobs: the caller already knows this commit passed them (a release tag on a commit main built)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -118,47 +124,18 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      # The necro rust/* checks link through pkg-config (gio-2.0/glib-2.0),
-      # so the precommit runner needs the same system libraries as the build.
-      # The .deb archives are cached (main seeds the cache, every run reads
-      # it) so reruns skip the download; the install itself always runs.
-      # actions/cache runs as the runner user, so hand it the archives dir
-      # before the restore step tries to write there.
-      - name: Allow apt archive caching
-        run: sudo mkdir -p /var/cache/apt/archives && sudo chown -R "$(id -u):$(id -g)" /var/cache/apt/archives
-      - name: apt archives cache
-        id: apt-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ hashFiles('scripts/linux-deps.txt') }}
-      - name: Linux system libraries
-        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
-      - name: apt archives cache save
-        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ hashFiles('scripts/linux-deps.txt') }}
+          enable-cache: false
       - name: Install prek (the hook runner; the pin lives here)
         run: uv tool install "prek==0.5.10"
-      - uses: ./.github/actions/npm
-      - name: Rust toolchain (rustfmt, from rust-toolchain.toml)
-        run: rustup toolchain install
-      # The engine is its own workspace with its own (nightly) pin.
-      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
-        working-directory: src-tauri/engine
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: |
-            src-tauri
-            src-tauri/engine
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The necro rust/* checks run clippy, whose tauri build script needs the
-      # bundled engine binary; restore it from the shared cache (main seeds it)
+      # Toolchains, system libraries, npm and the engine in one step. The
+      # necro rust/* checks link through pkg-config (gio-2.0/glib-2.0), so
+      # the runner needs the same system libraries as the build; clippy's
+      # tauri build script needs the bundled engine binary, restored here
       # before prek runs. fast_check runs vitest only.
-      - uses: ./.github/actions/engine
+      - uses: ./.github/actions/setup
+        with:
+          rust-save: ${{ github.ref == 'refs/heads/main' }}
       # A version written into the app or docs goes stale at the next bump.
       - name: No hardcoded versions
         run: uv run --no-project scripts/release-meta.py stale
@@ -224,16 +201,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Toolchains: the only per-OS part.
-      - name: Linux build packages
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
-      # The engine links ICU, freetype, graphite2, libpng and fontconfig (found
-      # through pkg-config; build-engine.sh adds the keg-only icu4c) from their
-      # static .a files, so nothing from Homebrew ships.
-      - name: macOS engine libraries
-        if: runner.os == 'macOS'
-        run: |
-          xargs brew install < scripts/macos-brew.txt
       # Windows: the engine's C libraries come from vcpkg, statically linked
       # (tectonic's TECTONIC_DEP_BACKEND=vcpkg; latexml's libxml2 and libxslt
       # find the same triplet through VCPKGRS_TRIPLET). The triplet links the
@@ -270,28 +237,18 @@ jobs:
         with:
           path: ${{ env.VCPKG_ROOT }}\installed
           key: vcpkg-x64-windows-static-engine-v3-${{ hashFiles('scripts/vcpkg-ports.txt') }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      # Everything else (apt/brew, Python, Rust, npm, the engine) in one
+      # step. The engine links ICU, freetype, graphite2, libpng and
+      # fontconfig from their static .a files, so nothing from Homebrew
+      # ships. The rust cache stays keyed on the LTO mode: thin and full
+      # rebuild every dependency, so they cannot share a cache. Only main
+      # saves, so tag builds (full LTO) always build cold.
+      - uses: ./.github/actions/setup
         with:
-          python-version: '3.12'
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      # The engine is its own workspace with its own (nightly) pin.
-      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
-        working-directory: src-tauri/engine
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: |
-            src-tauri
-            src-tauri/engine
-          key: lto-${{ env.MALEFICIUM_LTO }}
-          # Main seeds caches every PR reads; PR runs never write their own sets.
-          # Only main saves, so tag builds (full LTO) always build cold.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: ./.github/actions/npm
-      - uses: ./.github/actions/engine
-        env:
-          CI_ENGINE_LOGS: ${{ runner.temp }}/engine-logs
+          with-python: 'true'
+          engine-logs-dir: ${{ runner.temp }}/engine-logs
+          rust-key: lto-${{ env.MALEFICIUM_LTO }}
+          rust-save: ${{ github.ref == 'refs/heads/main' }}
 
       # The same on every OS from here.
       - name: Package
@@ -322,7 +279,7 @@ jobs:
 
   fast_check:
     needs: [changes, precommit]
-    if: needs.changes.outputs.src == 'true'
+    if: needs.changes.outputs.src == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -342,32 +299,21 @@ jobs:
 
   fixture_papers:
     needs: [changes, precommit]
-    if: needs.changes.outputs.fixtures == 'true'
+    if: needs.changes.outputs.fixtures == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      # The sidecar links system libraries.
-      - name: Linux system libraries
-        run: sudo apt-get update && xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      # The sidecar links system libraries. No npm here: this job only
+      # runs papers-run.py, and its rust cache is restore-only (a sidecar
+      # build for fixtures never seeds the shared cache).
+      - uses: ./.github/actions/setup
         with:
-          python-version: '3.12'
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      # The engine is its own workspace with its own (nightly) pin.
-      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
-        working-directory: src-tauri/engine
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: |
-            src-tauri
-            src-tauri/engine
-          save-if: false
-      - uses: ./.github/actions/engine
+          with-python: 'true'
+          with-npm: 'false'
+          rust-save: 'false'
       - name: Changed vendored papers and examples
         id: papers
         run: |
@@ -397,7 +343,7 @@ jobs:
   # needs the debug-only hanging runtime).
   e2e:
     needs: [changes, precommit]
-    if: needs.changes.outputs.e2e == 'true'
+    if: needs.changes.outputs.e2e == 'true' && !inputs.skip_tests
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -409,42 +355,24 @@ jobs:
       # runner's free disk; drop toolchains this job never uses.
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-      # Xvfb for the virtual displays, Mesa's software GL for the posters
-      # WebKitGTK renders (only recommended by it), and mutool for the
-      # interactive run's table row check.
-      - name: Linux build packages
-        run: |
-          sudo apt-get update
-          xargs -a scripts/linux-deps.txt sudo apt-get install -y --no-install-recommends
-          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri mupdf-tools
       # Ubuntu 24.04's AppArmor denies unprivileged user namespaces, so the
       # export run's offline cells (unshare -rn) would print skip:.
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      # Xvfb for the virtual displays, Mesa's software GL for the posters
+      # WebKitGTK renders (only recommended by it), and mutool for the
+      # interactive run's table row check ride along as extra apt packages.
+      # Before any cargo build the engine must be in place: tauri-build
+      # copies it into target/debug, and ci-e2e.sh checks the copy matches.
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .nvmrc
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-      - name: Python packages
-        run: python -m pip install jsonschema
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - name: Engine toolchain (src-tauri/engine/rust-toolchain.toml)
-        working-directory: src-tauri/engine
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: |
-            src-tauri
-            src-tauri/engine
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: npm ci
-      # Before any cargo build: tauri-build copies this engine into
-      # target/debug, and ci-e2e.sh checks the copy matches.
-      - uses: ./.github/actions/engine
+          extra-apt-packages: 'xvfb libgl1-mesa-dri mupdf-tools'
+          with-python: 'true'
+          python-packages: 'jsonschema'
+          rust-save: ${{ github.ref == 'refs/heads/main' }}
       # The browsers belong to the playwright-core version in the lockfile.
+      # A cache hit restores the browsers, but their system libraries are
+      # not cacheable, so they install on every run; a miss downloads both.
       - name: Playwright browsers cache
         id: playwright-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -452,7 +380,11 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Playwright browsers and their system libraries
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright-core install --with-deps chromium firefox webkit
+      - name: Playwright system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright-core install-deps chromium firefox webkit
       - name: Playwright browsers cache save
         if: github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -460,19 +392,30 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # The TeX bundle the suites compile against, fetched on first use and
-      # content-addressed by the pinned digest.
+      # content-addressed by the pinned digest. The key carries the tectonic
+      # version too, so a toolchain bump starts a new entry instead of
+      # reusing a stale one; the prefix fallbacks let a bumped key still
+      # reuse the same bytes (a prefix hit saves under the new exact key,
+      # so the cache grows forward). A restored older bundle is safe: the
+      # engine records the digest it resolved and refetches on mismatch.
       - name: TeX bundle key
         id: bundle-key
         run: |
           d=$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' src-tauri/core/src/engine.rs)
           [ -n "$d" ] || { echo "BUNDLE_DIGEST not found in src-tauri/core/src/engine.rs"; exit 1; }
+          t=$(sed -n 's/^tectonic = "=\(.*\)"$/\1/p' src-tauri/engine/Cargo.toml)
+          [ -n "$t" ] || { echo "tectonic pin not found in src-tauri/engine/Cargo.toml"; exit 1; }
           echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "tectonic=$t" >> "$GITHUB_OUTPUT"
       - name: TeX bundle cache
         id: tex-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
-          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-${{ steps.bundle-key.outputs.digest }}
+          restore-keys: |
+            tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-
+            tex-bundle-
       - name: Interactive-papers suites
         env:
           CI_E2E_LOGS: ${{ runner.temp }}/e2e-logs
@@ -482,7 +425,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/io.github.wahahayes.maleficium/maleficium-tectonic/${{ steps.bundle-key.outputs.digest }}
-          key: tex-bundle-${{ steps.bundle-key.outputs.digest }}
+          key: tex-bundle-${{ steps.bundle-key.outputs.tectonic }}-${{ steps.bundle-key.outputs.digest }}
       - name: Upload suite logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -518,12 +461,29 @@ jobs:
     if: always()
     steps:
       - name: Gate on source and fixture changes
+        env:
+          SKIP_TESTS: ${{ inputs.skip_tests }}
         run: |
           SRC="${{ needs.changes.outputs.src }}"
           E2E="${{ needs.changes.outputs.e2e }}"
           FIX="${{ needs.changes.outputs.fixtures }}"
           PURGE="${{ needs.purge_caches.result }}"
           FAIL=0
+          # A test suite skipped by the caller (a release tag on a commit
+          # main already built) passes here; any other skip is a failure.
+          suite() {
+            case "$2" in
+              success) echo "$1: $2" ;;
+              skipped)
+                if [ "$SKIP_TESTS" = true ]; then
+                  echo "$1: skipped, already passed on main"
+                else
+                  echo "$1: skipped unexpectedly"
+                  FAIL=1
+                fi ;;
+              *) echo "$1: $2"; FAIL=1 ;;
+            esac
+          }
           echo "precommit: ${{ needs.precommit.result }}"
           if [ "${{ needs.precommit.result }}" != "success" ]; then FAIL=1; fi
           if [ "$SRC" != "true" ] && [ "$E2E" != "true" ] && [ "$FIX" != "true" ]; then
@@ -534,15 +494,13 @@ jobs:
             echo "package: ${{ needs.package.result }} fast_check: ${{ needs.fast_check.result }}"
             if [ "${{ needs.package.result }}" = "cancelled" ]; then echo "package was cancelled: a job hit its timeout-minutes, not a test failure"; fi
             if [ "${{ needs.package.result }}" != "success" ]; then FAIL=1; fi
-            if [ "${{ needs.fast_check.result }}" != "success" ]; then FAIL=1; fi
+            suite fast_check "${{ needs.fast_check.result }}"
           fi
           if [ "$E2E" = "true" ]; then
-            echo "e2e: ${{ needs.e2e.result }}"
-            if [ "${{ needs.e2e.result }}" != "success" ]; then FAIL=1; fi
+            suite e2e "${{ needs.e2e.result }}"
           fi
           if [ "$FIX" = "true" ]; then
-            echo "fixture_papers: ${{ needs.fixture_papers.result }}"
-            if [ "${{ needs.fixture_papers.result }}" != "success" ]; then FAIL=1; fi
+            suite fixture_papers "${{ needs.fixture_papers.result }}"
           fi
           if [ "$PURGE" != "skipped" ] && [ "$PURGE" != "success" ]; then
             echo "purge_caches: $PURGE"

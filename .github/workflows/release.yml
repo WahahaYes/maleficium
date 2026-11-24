@@ -21,14 +21,21 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # High: the tag usually lands right after the merge, while main's build
+    # of the same commit is still running, and this job waits for it below.
+    timeout-minutes: 180
     permissions:
+      actions: read
       contents: read
+    outputs:
+      built: ${{ steps.built.outputs.built }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
       - name: Tag, main, manifests and CHANGELOG
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,10 +52,30 @@ jobs:
             echo "::error::release $GITHUB_REF_NAME is already published"
             exit 1
           fi
+      # The tag lands on the release PR's merge commit, which main's push
+      # run of build.yml is already testing: wait for it and reuse its
+      # result, and only test here when there is none (a tag on an older
+      # commit) or it failed. The platform packages always rebuild in the
+      # build job below (a tag run pays full LTO); only test suites skip.
+      - name: Main's build of this commit
+        id: built
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN=$(gh run list --workflow build.yml --event push --commit "$GITHUB_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$RUN" ] && gh run watch "$RUN" --exit-status --interval 30 >/dev/null; then
+            echo "build.yml run $RUN passed on $GITHUB_SHA; skipping the test suites"
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no passing build.yml push run for $GITHUB_SHA; testing here"
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: check
     uses: ./.github/workflows/build.yml
+    with:
+      skip_tests: ${{ needs.check.outputs.built == 'true' }}
     # A called workflow gets no more than this. build.yml's purge_caches asks
     # for actions: write, and GitHub rejects the whole run if it is not
     # granted here, even though that job only runs on pushes to main.
@@ -65,6 +92,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
