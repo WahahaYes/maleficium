@@ -574,9 +574,68 @@ struct RuntimeValidateParams {
     root_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum PresenceAction {
+    Windows,
+    RequestOpen,
+}
+
+impl<'de> Deserialize<'de> for PresenceAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "windows" => Ok(Self::Windows),
+            "request_open" => Ok(Self::RequestOpen),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["windows", "request_open"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a presence call names an action and the
+/// prompt it needs, nothing that could approve, fetch or write. No session
+/// root: windows are the user's, not the session's.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct AppWindowsParams {}
+struct PresenceParams {
+    action: PresenceAction,
+    /// The project folder, absolute. Required iff action is request_open.
+    project: Option<String>,
+    /// Iff action is request_open: a file in it to show.
+    file: Option<String>,
+    /// Iff action is request_open: the window to ask (from windows);
+    /// needed when several are open.
+    pid: Option<u64>,
+    /// Iff action is request_open: how long to wait for the user's answer,
+    /// in ms (default 30000, at most 120000). 0 returns at once.
+    wait_ms: Option<u64>,
+}
+
+/// The `presence` result for one action, verbatim: `windows` the open
+/// windows and what to do, `request_open` the ask and its outcome.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum PresenceOut {
+    Windows(AppWindowsOut),
+    Asked(AppRequestOpenOut),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for PresenceOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PresenceOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `windows` returns the open windows and what to do, `request_open` returns the ask and its outcome.",
+        })
+    }
+}
 
 /// One running Maleficium window and what it holds.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -595,22 +654,6 @@ struct AppWindow {
     request: Option<serde_json::Value>,
     /// Unix ms of the window's last update (a heartbeat every 30 s).
     updated_ms: u64,
-}
-
-/// An ask that a window open a project; nothing opens until the user
-/// clicks Open in that window.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct AppRequestOpenParams {
-    /// The project folder, absolute.
-    project: String,
-    /// A file in it to show, relative to the project.
-    file: Option<String>,
-    /// The window to ask (from app_windows); needed when several are open.
-    pid: Option<u32>,
-    /// How long to wait for the user's answer, in ms (default 30000, at
-    /// most 120000). 0 returns at once.
-    wait_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -1567,51 +1610,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "List the Maleficium app windows the user has open: each one's project folder, the document's main file and the file in front, most recently active first, and the root_id if you already granted that folder. Use it at the start of a session to work in the project the user already has open: grant its folder (grant with root = project), and your edits and compiles show in their window. Read-only; to have the window open a project, use app_request_open, which asks the user first.",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn app_windows(
-        &self,
-        Parameters(_): Parameters<AppWindowsParams>,
-    ) -> Result<Json<AppWindowsOut>, String> {
-        self.tool("app_windows", || {
-            let requests = core::presence::requests();
-            let windows: Vec<AppWindow> = core::presence::list()
-                .into_iter()
-                .map(|p| AppWindow {
-                    request: requests
-                        .iter()
-                        .find(|r| r.pid == p.pid)
-                        .and_then(|r| serde_json::to_value(r).ok()),
-                    root_id: p
-                        .project
-                        .as_deref()
-                        .and_then(|d| core::presence::granted_as(&self.cx, d)),
-                    pid: p.pid,
-                    project: p.project,
-                    main_rel: p.main_rel,
-                    active_rel: p.active_rel,
-                    updated_ms: p.updated_ms,
-                })
-                .collect();
-            let with_project = windows.iter().filter(|w| w.project.is_some()).count();
-            let hint = match (windows.len(), with_project) {
-                (0, _) => "No Maleficium window is open. Ask the user to open the app and their project, or grant a folder they name.".to_string(),
-                (_, 0) => "Maleficium is open but holds no project folder. Ask the user which folder to work in, or to open it in the app.".to_string(),
-                (_, 1) => "Grant the open project's folder (grant with root = project) unless it has a root_id already; work there so the user sees your edits and compiles.".to_string(),
-                _ => "Several projects are open: ask the user which one to work in before granting it; the first is the most recently active.".to_string(),
-            };
-            Ok(Json(AppWindowsOut { windows, hint }))
-        })
-    }
-
-    #[tool(
-        description = "Ask the user's Maleficium window to open a project folder (and optionally show a file in it). The window shows the user a prompt naming the folder; nothing opens until they click Open, and they may dismiss it. Use it when the user asks to see a project in the app, or after creating one for them. Waits up to wait_ms (default 30 s) for their answer: outcome opened, dismissed, or waiting (the prompt stays up; tell the user it is there, and read the answer later from app_windows). One ask per window at a time; never resend one the user dismissed.",
+        description = "See the user's open Maleficium windows, or ask one to open a project: the read-only way to meet them where they are. `windows` lists every window with its project, files and root_id, most recently active first. `request_open` shows the user a prompt naming a project folder; nothing opens until they click Open.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1619,47 +1618,95 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn app_request_open(
+    fn presence(
         &self,
-        Parameters(p): Parameters<AppRequestOpenParams>,
-    ) -> Result<Json<AppRequestOpenOut>, String> {
-        self.tool("app_request_open", || {
-            let r = core::presence::request_open(p.pid, &p.project, p.file.as_deref())?;
-            let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(30_000).min(120_000));
-            let start = std::time::Instant::now();
-            let mut now = r.clone();
-            while now.outcome.is_none() && start.elapsed() < wait {
-                std::thread::sleep(std::time::Duration::from_millis(250));
-                match core::presence::request_state(r.pid, &r.id) {
-                    Some(s) => now = s,
-                    None => break,
+        Parameters(p): Parameters<PresenceParams>,
+    ) -> Result<Json<PresenceOut>, String> {
+        self.tool("presence", || match p.action {
+            PresenceAction::Windows => {
+                for (name, set) in [
+                    ("project", p.project.is_some()),
+                    ("file", p.file.is_some()),
+                    ("pid", p.pid.is_some()),
+                    ("wait_ms", p.wait_ms.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "windows takes no `{name}` (pass it under action `request_open`)"
+                        ));
+                    }
                 }
+                let requests = core::presence::requests();
+                let windows: Vec<AppWindow> = core::presence::list()
+                    .into_iter()
+                    .map(|p| AppWindow {
+                        request: requests
+                            .iter()
+                            .find(|r| r.pid == p.pid)
+                            .and_then(|r| serde_json::to_value(r).ok()),
+                        root_id: p
+                            .project
+                            .as_deref()
+                            .and_then(|d| core::presence::granted_as(&self.cx, d)),
+                        pid: p.pid,
+                        project: p.project,
+                        main_rel: p.main_rel,
+                        active_rel: p.active_rel,
+                        updated_ms: p.updated_ms,
+                    })
+                    .collect();
+                let with_project = windows.iter().filter(|w| w.project.is_some()).count();
+                let hint = match (windows.len(), with_project) {
+                    (0, _) => "No Maleficium window is open. Ask the user to open the app and their project, or grant a folder they name.".to_string(),
+                    (_, 0) => "Maleficium is open but holds no project folder. Ask the user which folder to work in, or to open it in the app.".to_string(),
+                    (_, 1) => "Grant the open project's folder (session with action grant and root = project) unless it has a root_id already; work there so the user sees your edits and compiles.".to_string(),
+                    _ => "Several projects are open: ask the user which one to work in before granting it; the first is the most recently active.".to_string(),
+                };
+                Ok(Json(PresenceOut::Windows(AppWindowsOut { windows, hint })))
             }
-            let (outcome, hint) = match now.outcome {
-                Some(core::presence::OpenOutcome::Opened) => (
-                    "opened",
-                    match core::presence::granted_as(&self.cx, &now.project) {
-                        Some(id) => format!("The user opened it. Work in it as root_id {id}; they see your edits and compiles."),
-                        None => "The user opened it. Grant the folder (grant with root = project) to work in it; they see your edits and compiles.".to_string(),
-                    },
-                ),
-                Some(core::presence::OpenOutcome::Dismissed) => (
-                    "dismissed",
-                    "The user dismissed it. Do not ask again unless they say so.".to_string(),
-                ),
-                None => (
-                    "waiting",
-                    "The user has not answered: the prompt stays in their window. Tell them it is there; app_windows shows their answer later. Do not send it again.".to_string(),
-                ),
-            };
-            Ok(Json(AppRequestOpenOut {
-                request_id: r.id,
-                pid: r.pid,
-                project: r.project,
-                file: r.file,
-                outcome: outcome.to_string(),
-                hint,
-            }))
+            PresenceAction::RequestOpen => {
+                let project = p.project.as_deref().ok_or_else(|| {
+                    "request_open requires `project`: the absolute folder to ask the window to open"
+                        .to_string()
+                })?;
+                let pid = p.pid.map(|pid| pid as u32);
+                let r = core::presence::request_open(pid, project, p.file.as_deref())?;
+                let wait = std::time::Duration::from_millis(p.wait_ms.unwrap_or(30_000).min(120_000));
+                let start = std::time::Instant::now();
+                let mut now = r.clone();
+                while now.outcome.is_none() && start.elapsed() < wait {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    match core::presence::request_state(r.pid, &r.id) {
+                        Some(s) => now = s,
+                        None => break,
+                    }
+                }
+                let (outcome, hint) = match now.outcome {
+                    Some(core::presence::OpenOutcome::Opened) => (
+                        "opened",
+                        match core::presence::granted_as(&self.cx, &now.project) {
+                            Some(id) => format!("The user opened it. Work in it as root_id {id}; they see your edits and compiles."),
+                            None => "The user opened it. Grant the folder (session with action grant and root = project) to work in it; they see your edits and compiles.".to_string(),
+                        },
+                    ),
+                    Some(core::presence::OpenOutcome::Dismissed) => (
+                        "dismissed",
+                        "The user dismissed it. Do not ask again unless they say so.".to_string(),
+                    ),
+                    None => (
+                        "waiting",
+                        "The user has not answered: the prompt stays in their window. Tell them it is there; presence with action windows shows their answer later. Do not send it again.".to_string(),
+                    ),
+                };
+                Ok(Json(PresenceOut::Asked(AppRequestOpenOut {
+                    request_id: r.id,
+                    pid: r.pid,
+                    project: r.project,
+                    file: r.file,
+                    outcome: outcome.to_string(),
+                    hint,
+                })))
+            }
         })
     }
 
@@ -3122,51 +3169,24 @@ mod tests {
         );
     }
 
-    /// The app-windows view is read-only and takes no arguments: it lists
-    /// what the user's open windows hold and can open or change nothing.
+    /// The presence tool reads windows but can prompt the user, so it is
+    /// honestly non-idempotent and non-read-only. Its parameters refuse
+    /// unknown fields, `windows` takes nothing, and `request_open` names a
+    /// folder, a file, a window and a wait. (Not called here: a live app on
+    /// this machine would show the prompt.)
     #[test]
-    fn app_windows_is_a_read_only_view_with_no_arguments() {
+    fn presence_windows_reads_and_request_open_only_asks() {
         let tools = Maleficium::tool_router().list_all();
         let t = tools
             .iter()
-            .find(|t| t.name == "app_windows")
-            .expect("app_windows");
-        let a = t.annotations.as_ref().expect("annotations");
-        assert_eq!(a.read_only_hint, Some(true));
-        assert_eq!(a.destructive_hint, Some(false));
-        assert_eq!(a.open_world_hint, Some(false));
-        let schema = serde_json::to_value(&*t.input_schema).unwrap();
-        assert!(
-            schema["properties"]
-                .as_object()
-                .is_none_or(|p| p.is_empty())
-        );
-        assert_eq!(schema["additionalProperties"], false);
-        assert!(
-            serde_json::from_value::<AppWindowsParams>(serde_json::json!({"open": true})).is_err()
-        );
-        let out = Maleficium::default()
-            .app_windows(Parameters(
-                serde_json::from_value(serde_json::json!({})).unwrap(),
-            ))
-            .unwrap();
-        assert!(!out.0.hint.is_empty());
-    }
-
-    /// The open request only asks: its arguments name a folder, a file, a
-    /// window and a wait, nothing that could open without the user. (Not
-    /// called here: a live app on this machine would show the prompt.)
-    #[test]
-    fn app_request_open_takes_only_what_the_prompt_shows() {
-        let tools = Maleficium::tool_router().list_all();
-        let t = tools
-            .iter()
-            .find(|t| t.name == "app_request_open")
-            .expect("app_request_open");
+            .find(|t| t.name == "presence")
+            .expect("presence");
         let a = t.annotations.as_ref().expect("annotations");
         assert_eq!(a.read_only_hint, Some(false));
         assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(false));
         assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
         let schema = serde_json::to_value(&*t.input_schema).unwrap();
         let mut props: Vec<&str> = schema["properties"]
             .as_object()
@@ -3175,16 +3195,65 @@ mod tests {
             .map(String::as_str)
             .collect();
         props.sort();
-        assert_eq!(props, ["file", "pid", "project", "wait_ms"]);
+        assert_eq!(props, ["action", "file", "pid", "project", "wait_ms"]);
         assert_eq!(schema["additionalProperties"], false);
+        assert!(
+            serde_json::from_value::<PresenceParams>(
+                serde_json::json!({"action": "windows", "open": true})
+            )
+            .is_err()
+        );
         for extra in ["force", "focus", "skip_prompt", "open"] {
-            let mut v = serde_json::json!({"project": "/p"});
+            let mut v = serde_json::json!({"action": "request_open", "project": "/p"});
             v[extra] = serde_json::json!(true);
             assert!(
-                serde_json::from_value::<AppRequestOpenParams>(v).is_err(),
+                serde_json::from_value::<PresenceParams>(v).is_err(),
                 "{extra}"
             );
         }
+        let out = Maleficium::default()
+            .presence(Parameters(PresenceParams {
+                action: PresenceAction::Windows,
+                project: None,
+                file: None,
+                pid: None,
+                wait_ms: None,
+            }))
+            .unwrap();
+        let PresenceOut::Windows(out) = out.0 else {
+            panic!("windows returns its windows");
+        };
+        assert!(!out.hint.is_empty());
+
+        let m = Maleficium::default();
+        let err = m
+            .presence(Parameters(PresenceParams {
+                action: PresenceAction::Windows,
+                project: Some("/p".into()),
+                file: None,
+                pid: None,
+                wait_ms: None,
+            }))
+            .err()
+            .expect("windows rejects a project");
+        assert!(err.contains("takes no `project`"), "{err}");
+        let err = m
+            .presence(Parameters(PresenceParams {
+                action: PresenceAction::RequestOpen,
+                project: None,
+                file: None,
+                pid: None,
+                wait_ms: None,
+            }))
+            .err()
+            .expect("request_open without a project fails");
+        assert!(err.contains("project"), "{err}");
+
+        let err = serde_json::from_value::<PresenceParams>(serde_json::json!({
+            "action": "windowz",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `windows`?"), "{err}");
     }
 
     /// The approval boundary: no tool approves, revokes or switches
@@ -4050,8 +4119,7 @@ mod tests {
             "runtime_scaffold",
             "runtime_validate",
             "runtime_install",
-            "app_windows",
-            "app_request_open",
+            "presence",
         ];
         for t in Maleficium::tool_router().list_all() {
             assert!(
@@ -4972,11 +5040,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-27 regroup of this phase so far.
+    /// rescan. The count pins the 40-to-26 regroup of this phase so far.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 27, "the scaffold split lands at 27 tools");
+        assert_eq!(tools.len(), 26, "the presence split lands at 26 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
