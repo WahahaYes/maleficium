@@ -349,14 +349,14 @@ ei = call("export_write", {"root_id": "drv", "action": "zip", "dest": ROOT + "/i
 check("export into the project is refused", not ei["ok"] and "inside the project" in ei.get("error", "") and not os.path.exists(ROOT + "/inside.zip"), str(ei))
 
 # ---- templates: every bundled template (and the welcome tour) compiles ----
-tl = call("templates", {})
+tl = call("scaffold", {"action": "list"})
 tids = [t["id"] for t in tl.get("templates") or [] if not t.get("user")]
 check("templates list the bundled set, not the welcome tour", tl["ok"] and set(["article", "report", "book", "letter", "beamer", "assignment", "cv", "resume", "journal"]) <= set(tids) and "welcome" not in tids, str(tids))
 tp = os.path.join(scratch, "from-templates")
 os.makedirs(tp, exist_ok=True)
 bad = []
 for tid in tids + ["welcome"]:
-    nc = call("new_from_template", {"template": tid, "parent_dir": tp, "name": tid})
+    nc = call("scaffold", {"action": "create", "template": tid, "parent_dir": tp, "name": tid})
     if not nc["ok"]:
         bad.append(f"{tid}: {nc.get('error')}")
         continue
@@ -370,9 +370,9 @@ for tid in tids + ["welcome"]:
     if rec.get("status") != "success" or not os.path.exists(rec.get("pdf_url") or ""):
         bad.append(f"{tid}: {rec.get('status')} {rec.get('missing')} {str(rec.get('log'))[:160]}")
 check("every bundled template and the welcome tour compiles to a pdf", not bad, "; ".join(bad))
-again = call("new_from_template", {"template": "article", "parent_dir": tp, "name": "article"})
+again = call("scaffold", {"action": "create", "template": "article", "parent_dir": tp, "name": "article"})
 check("a template never writes into a folder that is in use", not again["ok"] and "not empty" in again.get("error", ""), str(again))
-rel = call("new_from_template", {"template": "beamer", "parent_dir": "talks", "name": "beamer"})
+rel = call("scaffold", {"action": "create", "template": "beamer", "parent_dir": "talks", "name": "beamer"})
 check("a relative parent folder is refused and nothing lands in the working directory", not rel["ok"] and "absolute" in rel.get("error", "") and not os.path.exists(os.path.join(os.getcwd(), "talks")) and not os.path.exists(os.path.join(os.getcwd(), "beamer")), str(rel))
 
 # ---- pre-compile checks: every missing dependency at once ----

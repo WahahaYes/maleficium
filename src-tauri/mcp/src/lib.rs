@@ -448,14 +448,64 @@ impl schemars::JsonSchema for ExportReadOut {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ScaffoldAction {
+    List,
+    Create,
+}
+
+impl<'de> Deserialize<'de> for ScaffoldAction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "list" => Ok(Self::List),
+            "create" => Ok(Self::Create),
+            other => Err(serde::de::Error::custom(unknown_action(
+                other,
+                &["list", "create"],
+            ))),
+        }
+    }
+}
+
+/// Unknown fields are refused: a scaffold call names an action and the
+/// template it needs, nothing that could approve, fetch or write elsewhere.
+/// No session root: templates are global, and `create` takes an absolute
+/// parent folder.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct NewFromTemplateParams {
-    /// A template id from `templates` (or "welcome").
-    template: String,
-    /// Absolute folder the new project goes in.
-    parent_dir: String,
-    /// The new project's folder name.
-    name: String,
+#[serde(deny_unknown_fields)]
+struct ScaffoldParams {
+    action: ScaffoldAction,
+    /// A template id from `list` (or "welcome"). Required iff action is create.
+    template: Option<String>,
+    /// Absolute folder the new project goes in. Required iff action is create.
+    parent_dir: Option<String>,
+    /// The new project's folder name. Required iff action is create.
+    name: Option<String>,
+}
+
+/// The `scaffold` result for one action, verbatim: `list` the templates,
+/// `create` the new project.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ScaffoldOut {
+    List(core::templates::TemplateList),
+    Created(core::templates::Created),
+}
+
+// An untagged union has no object schema of its own; name the object shape
+// explicitly so `opencode mcp list` keeps accepting the server.
+impl schemars::JsonSchema for ScaffoldOut {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ScaffoldOut".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "description": "Per-action result, verbatim: `list` returns the templates, `create` returns the new project.",
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1346,20 +1396,7 @@ impl Maleficium {
     }
 
     #[tool(
-        description = "Project templates: the bundled set (article, report, book, letter, beamer, assignment, cv, resume, journal) and the user's own, each with name, description, category and main file",
-        annotations(
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn templates(&self) -> Result<Json<core::templates::TemplateList>, String> {
-        self.tool("templates", || Ok(Json(core::templates::list())))
-    }
-
-    #[tool(
-        description = "Create parent_dir/name from a template (refused when that folder exists and is not empty). Returns the new root and its main file; grant the root to work in it.",
+        description = "Start from a bundled or user template: the way to create a project. `list` shows every template with its main file; `create` builds parent_dir/name from one (refused when that folder exists and is not empty) and returns the new root and main file. Grant the returned root to work in it.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1367,16 +1404,41 @@ impl Maleficium {
             open_world_hint = false
         )
     )]
-    fn new_from_template(
+    fn scaffold(
         &self,
-        Parameters(p): Parameters<NewFromTemplateParams>,
-    ) -> Result<Json<core::templates::Created>, String> {
-        self.tool("new_from_template", || {
-            Ok(Json(core::templates::instantiate(
-                &p.template,
-                &p.parent_dir,
-                &p.name,
-            )?))
+        Parameters(p): Parameters<ScaffoldParams>,
+    ) -> Result<Json<ScaffoldOut>, String> {
+        self.tool("scaffold", || match p.action {
+            ScaffoldAction::List => {
+                for (name, set) in [
+                    ("template", p.template.is_some()),
+                    ("parent_dir", p.parent_dir.is_some()),
+                    ("name", p.name.is_some()),
+                ] {
+                    if set {
+                        return Err(format!(
+                            "list takes no `{name}` (pass it under action `create`)"
+                        ));
+                    }
+                }
+                Ok(Json(ScaffoldOut::List(core::templates::list())))
+            }
+            ScaffoldAction::Create => {
+                let template = p.template.as_deref().ok_or_else(|| {
+                    "create requires `template`: a template id from `list` (or \"welcome\")"
+                        .to_string()
+                })?;
+                let parent_dir = p.parent_dir.as_deref().ok_or_else(|| {
+                    "create requires `parent_dir`: the absolute folder the new project goes in"
+                        .to_string()
+                })?;
+                let name = p.name.as_deref().ok_or_else(|| {
+                    "create requires `name`: the new project's folder name".to_string()
+                })?;
+                Ok(Json(ScaffoldOut::Created(core::templates::instantiate(
+                    template, parent_dir, name,
+                )?)))
+            }
         })
     }
 
@@ -3612,21 +3674,35 @@ mod tests {
             .is_err()
         );
 
-        let templates = m.templates().unwrap();
-        assert!(!templates.0.templates.is_empty());
+        let listed = m
+            .scaffold(Parameters(ScaffoldParams {
+                action: ScaffoldAction::List,
+                template: None,
+                parent_dir: None,
+                name: None,
+            }))
+            .unwrap();
+        let ScaffoldOut::List(listed) = listed.0 else {
+            panic!("list returns its templates");
+        };
+        assert!(!listed.templates.is_empty());
 
         let tpl_parent = core::test_scratch::dir("cov-tpl");
         std::fs::create_dir_all(&tpl_parent).unwrap();
         let created = m
-            .new_from_template(Parameters(NewFromTemplateParams {
-                template: "welcome".into(),
-                parent_dir: tpl_parent.to_string_lossy().to_string(),
-                name: "proj1".into(),
+            .scaffold(Parameters(ScaffoldParams {
+                action: ScaffoldAction::Create,
+                template: Some("welcome".into()),
+                parent_dir: Some(tpl_parent.to_string_lossy().to_string()),
+                name: Some("proj1".into()),
             }))
             .unwrap();
+        let ScaffoldOut::Created(created) = created.0 else {
+            panic!("create returns its project");
+        };
         assert!(
-            std::path::Path::new(&created.0.root)
-                .join(&created.0.main)
+            std::path::Path::new(&created.root)
+                .join(&created.main)
                 .is_file()
         );
 
@@ -3958,18 +4034,15 @@ mod tests {
             "output_stamp",
             "export_read",
             "export_write",
-            "templates",
-            "new_from_template",
+            "scaffold",
             "compile_cancel",
             "sync_view",
             "sync_render",
-            "file_mutate",
             "log_tail",
             "structure",
             "precompile_checks",
             "search",
             "replace",
-            "structure",
             "diagnostics",
             "widgets",
             "widgets_status",
@@ -4532,6 +4605,109 @@ mod tests {
         );
     }
 
+    /// Grouped `scaffold` validates per action: `list` takes nothing,
+    /// `create` needs the template, the parent folder and the name, and an
+    /// unknown action names the valid list with a did-you-mean hint. Only
+    /// `create` writes (outside any project), so the tool is honestly
+    /// non-idempotent.
+    #[test]
+    fn scaffold_validates_per_action() {
+        let tools = Maleficium::tool_router().list_all();
+        let t = tools
+            .iter()
+            .find(|t| t.name == "scaffold")
+            .expect("scaffold");
+        let a = t.annotations.as_ref().expect("annotations");
+        assert_eq!(a.read_only_hint, Some(false));
+        assert_eq!(a.destructive_hint, Some(false));
+        assert_eq!(a.idempotent_hint, Some(false));
+        assert_eq!(a.open_world_hint, Some(false));
+        assert!(t.output_schema.is_some());
+        let schema = serde_json::to_value(&*t.input_schema).unwrap();
+        let mut props: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        props.sort();
+        assert_eq!(props, ["action", "name", "parent_dir", "template"]);
+        assert_eq!(schema["additionalProperties"], false);
+
+        let m = Maleficium::default();
+        let list = m
+            .scaffold(Parameters(ScaffoldParams {
+                action: ScaffoldAction::List,
+                template: None,
+                parent_dir: None,
+                name: None,
+            }))
+            .expect("a list lists")
+            .0;
+        let ScaffoldOut::List(list) = list else {
+            panic!("list returns its templates");
+        };
+        assert!(!list.templates.is_empty());
+        let err = m
+            .scaffold(Parameters(ScaffoldParams {
+                action: ScaffoldAction::List,
+                template: Some("article".into()),
+                parent_dir: None,
+                name: None,
+            }))
+            .err()
+            .expect("list rejects a template");
+        assert!(err.contains("takes no `template`"), "{err}");
+
+        let create = |template: Option<&str>, parent: Option<&str>, name: Option<&str>| {
+            m.scaffold(Parameters(ScaffoldParams {
+                action: ScaffoldAction::Create,
+                template: template.map(Into::into),
+                parent_dir: parent.map(Into::into),
+                name: name.map(Into::into),
+            }))
+        };
+        let dir = core::test_scratch::dir("mcp-scaffold");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let parent = dir.to_string_lossy().to_string();
+        let err = create(None, Some(&parent), Some("p1"))
+            .err()
+            .expect("create without a template fails");
+        assert!(err.contains("template"), "{err}");
+        let err = create(Some("welcome"), None, Some("p1"))
+            .err()
+            .expect("create without a parent fails");
+        assert!(err.contains("parent_dir"), "{err}");
+        let created = create(Some("welcome"), Some(&parent), Some("p1"))
+            .expect("a create creates")
+            .0;
+        let ScaffoldOut::Created(created) = created else {
+            panic!("create returns its project");
+        };
+        assert!(
+            std::path::Path::new(&created.root)
+                .join(&created.main)
+                .is_file()
+        );
+        let err = create(Some("welcome"), Some(&parent), Some("p1"))
+            .err()
+            .expect("create refuses a folder in use");
+        assert!(err.contains("not empty"), "{err}");
+
+        let err = serde_json::from_value::<ScaffoldParams>(serde_json::json!({
+            "action": "creat", "template": "article", "parent_dir": "/tmp/x", "name": "p",
+        }))
+        .expect_err("a near-miss action fails");
+        assert!(err.to_string().contains("did you mean `create`?"), "{err}");
+        assert!(
+            serde_json::from_value::<ScaffoldParams>(serde_json::json!({
+                "action": "list", "root_id": "r",
+            }))
+            .is_err()
+        );
+    }
+
     /// Grouped `search` validates per action: `search` needs `pattern`,
     /// `find_files` needs `query`, each rejects the other's fields, and an
     /// unknown action names the valid list with a did-you-mean hint. The
@@ -4796,11 +4972,11 @@ mod tests {
     /// Grouped tools stay under the token budget: every registered tool
     /// costs under 1000 tokens of input schema plus description (chars/4),
     /// so a later noun tool that creeps over fails here instead of in a
-    /// rescan. The count pins the 40-to-28 regroup of this phase so far.
+    /// rescan. The count pins the 40-to-27 regroup of this phase so far.
     #[test]
     fn grouped_tools_stay_under_token_budget() {
         let tools = Maleficium::tool_router().list_all();
-        assert_eq!(tools.len(), 28, "the sync split lands at 28 tools");
+        assert_eq!(tools.len(), 27, "the scaffold split lands at 27 tools");
         for t in &tools {
             let schema = serde_json::to_value(&*t.input_schema).unwrap().to_string();
             let desc = t.description.as_deref().unwrap_or("");
