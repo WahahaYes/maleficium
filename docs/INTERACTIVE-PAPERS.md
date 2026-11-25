@@ -60,6 +60,8 @@ The bundle's `index.html` is the paper reflowed for the screen, with each widget
 
 The page opens with `paper.pdf is the version of record.` and a download link. `\maleficiumreaderpdfnote{off}` in the source drops that line; the PDF still ships in the bundle. `\maleficiumcontents{off}` likewise drops the reflowed article's contents list. Both take `on` (the default) or `off`.
 
+Set `SOURCE_DATE_EPOCH` (seconds since 1970) in the environment that runs Maleficium, such as a site's build, and the export is reproducible: the same sources give a byte-identical bundle, PDF included. The PDF's dates and `\today` then show that moment. Without it, each compile stamps the PDF with the time it ran.
+
 ## Hosting a bundle
 
 An exported bundle is a static site. Upload the folder, or the one file, and let the site build add the chrome it needs. However the bundle's format version changes, these anchors stay where they are:
