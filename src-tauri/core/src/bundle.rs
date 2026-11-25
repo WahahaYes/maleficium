@@ -2197,9 +2197,10 @@ fn export_inner(
     let converted = conversion.html.map_err(|e| {
         format!("{main_rel} could not be converted to HTML, so the bundle has no article: {e}")
     })?;
-    // Reader flags: the marker classes the `\maleficiumcontents` and
-    // `\maleficiummeasure` calls left in the conversion, resolved where the
-    // widgets are joined and stripped from the article.
+    // Reader flags: the marker classes the `\maleficiumcontents`,
+    // `\maleficiumreaderpdfnote` and `\maleficiummeasure` calls left in the
+    // conversion, resolved where the widgets are joined and stripped from the
+    // article.
     let flag_scan = flags::scan(&converted);
     for w in &flag_scan.warnings {
         plan.warn(BundleWarningKind::Conversion, w.clone());
@@ -2384,6 +2385,7 @@ fn export_inner(
                 folder: false,
                 article: &article_html,
                 measure: flag_scan.flags.measure,
+                pdf_note: flag_scan.flags.pdf_note,
                 pdf: Some(&pdf_bytes),
                 islands: &islands,
                 frames: &frames,
@@ -2476,6 +2478,7 @@ fn export_inner(
                 folder: true,
                 article: &article_html,
                 measure: flag_scan.flags.measure,
+                pdf_note: flag_scan.flags.pdf_note,
                 pdf: None,
                 islands: &islands,
                 frames: &frames,

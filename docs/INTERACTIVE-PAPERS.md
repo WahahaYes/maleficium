@@ -58,6 +58,8 @@ A widget may declare `https` origins it frames or loads from, such as a YouTube 
 
 The bundle's `index.html` is the paper reflowed for the screen, with each widget in place. `paper.pdf` comes along as the version of record. LaTeX the converter can't read shows as raw source and is listed in the export's warnings.
 
+The page opens with `paper.pdf is the version of record.` and a download link. `\maleficiumreaderpdfnote{off}` in the source drops that line; the PDF still ships in the bundle. `\maleficiumcontents{off}` likewise drops the reflowed article's contents list. Both take `on` (the default) or `off`.
+
 ## Styling the reader
 
 The reader has light and dark modes. To restyle it, name a stylesheet in your source:

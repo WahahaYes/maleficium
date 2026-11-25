@@ -24,6 +24,7 @@
 % Usage:
 %   \maleficiumtheme{house}                    % optional; house is default
 %   \maleficiumcontents{off}                   % optional; on is default
+%   \maleficiumreaderpdfnote{off}              % optional; on is default
 %   \maleficiummeasure{wide}                   % optional: narrow, default, wide or full
 %   \interactiveruntime[runtime=model@1, poster=figures/mesh.png, height=6cm]{models/mesh.glb}
 %   \interactiveruntime[runtime=model@1, height=6cm, alt={...}]{models/mesh.glb}  % auto-poster
@@ -127,6 +128,7 @@
 \newif\ifmfw@ok
 \def\mfw@theme{house}
 \def\mfw@contents{on}
+\def\mfw@pdfnote{on}
 \def\mfw@measure{default}
 \def\mfw@floatlabel{}
 \newwrite\mfw@sidecar
@@ -214,6 +216,16 @@
     \PackageError{maleficium-interactive}%
       {Contents flag `#1' must be on or off}%
       {Pass \protect\maleficiumcontents{on} or \protect\maleficiumcontents{off}.}%
+  }%
+}
+\newcommand{\maleficiumreaderpdfnote}[1]{%
+  \def\mfw@flag{#1}%
+  \mfw@ifin{\mfw@flag}{on,off}{%
+    \gdef\mfw@pdfnote{#1}%
+  }{%
+    \PackageError{maleficium-interactive}%
+      {Reader pdf note flag `#1' must be on or off}%
+      {Pass \protect\maleficiumreaderpdfnote{on} or \protect\maleficiumreaderpdfnote{off}.}%
   }%
 }
 \newcommand{\maleficiummeasure}[1]{%

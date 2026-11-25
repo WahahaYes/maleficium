@@ -1249,6 +1249,7 @@ fn flagged_conversion() -> String {
         "<span class=\"ltx_text m-flag m-flag-contents-on\"></span>",
         "<span class=\"ltx_text m-flag m-flag-measure-narrow\"></span>",
         "<span class=\"ltx_text m-flag m-flag-contents-off\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-pdfnote-off\"></span>",
         "<span class=\"ltx_text m-flag m-flag-measure-wide\"></span>",
         "<span class=\"ltx_text m-flag m-flag-contents-sideways\"></span>",
     );
@@ -1280,6 +1281,10 @@ fn reader_flags_resolve_to_the_manifest_and_shape_the_page() {
             "{name}: contents:false omits the nav"
         );
         assert!(
+            !html.contains("<p class=\"m-version\">"),
+            "{name}: pdfnote:false omits the version-of-record line"
+        );
+        assert!(
             html.contains("<body class=\"m-reader\" data-measure=\"wide\">"),
             "{name}: the wide token overrides the column"
         );
@@ -1307,6 +1312,10 @@ fn reader_flags_default_to_contents_with_the_theme_measure() {
     assert!(
         html.contains("<nav class=\"m-contents\""),
         "nav still emitted"
+    );
+    assert!(
+        html.contains("<p class=\"m-version\">"),
+        "the version-of-record line is still emitted"
     );
     assert!(
         !html.contains("data-measure=\""),

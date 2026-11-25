@@ -239,6 +239,7 @@ for bad_doc, want in [("bad-duplicate.tex", "Duplicate widget id"),
                       ("bad-liveeq-undefined.tex", "is undefined at the defaults: `ln(k)'"),
                       # Reader flags: one document per .sty message.
                       ("bad-contents.tex", "Contents flag `sideways' must be on or off"),
+                      ("bad-pdfnote.tex", "Reader pdf note flag `sideways' must be on or off"),
                       ("bad-measure.tex", "Measure flag `huge' must be narrow, default, wide or full")]:
     fr = compile(bad_doc, rounds=15)
     flog = (fr.get("log") or "") + "\n" + "\n".join(fr.get("lines") or [])

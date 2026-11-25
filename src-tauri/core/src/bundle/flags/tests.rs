@@ -2,14 +2,15 @@ use super::*;
 
 const OFF: &str = "<span class=\"ltx_text m-flag m-flag-contents-off\"></span>";
 const WIDE: &str = "<span class=\"ltx_text m-flag m-flag-measure-wide\"></span>";
+const PDFNOTE_OFF: &str = "<span class=\"ltx_text m-flag m-flag-pdfnote-off\"></span>";
 
 #[test]
 fn no_markers_resolve_the_defaults_and_change_nothing() {
     let html = "<article class=\"ltx_document\"><p>Text.</p></article>";
     let s = scan(html);
     assert_eq!(
-        (s.flags.contents, s.flags.measure),
-        (true, Measure::Default)
+        (s.flags.contents, s.flags.pdf_note, s.flags.measure),
+        (true, true, Measure::Default)
     );
     assert_eq!(s.html, html);
     assert!(s.warnings.is_empty());
@@ -17,12 +18,51 @@ fn no_markers_resolve_the_defaults_and_change_nothing() {
 
 #[test]
 fn valid_markers_resolve_and_are_stripped() {
-    let html = format!("<article><p>One.</p>{OFF}<p>Two.</p>{WIDE}</article>");
+    let html = format!("<article><p>One.</p>{OFF}{PDFNOTE_OFF}<p>Two.</p>{WIDE}</article>");
     let s = scan(&html);
-    assert_eq!((s.flags.contents, s.flags.measure), (false, Measure::Wide));
+    assert_eq!(
+        (s.flags.contents, s.flags.pdf_note, s.flags.measure),
+        (false, false, Measure::Wide)
+    );
     assert_eq!(s.html, "<article><p>One.</p><p>Two.</p></article>");
     assert!(s.warnings.is_empty(), "{:?}", s.warnings);
     assert!(!s.html.contains("m-flag"));
+}
+
+#[test]
+fn the_pdf_note_flag_resolves_on_and_off() {
+    for (value, want) in [("on", true), ("off", false)] {
+        let html = format!("<span class=\"m-flag m-flag-pdfnote-{value}\"></span>");
+        let s = scan(&html);
+        assert_eq!(s.flags.pdf_note, want, "{value}");
+        assert_eq!(s.html, "");
+        assert!(s.warnings.is_empty(), "{value}: {:?}", s.warnings);
+    }
+}
+
+#[test]
+fn an_unknown_pdf_note_value_warns_and_keeps_the_default() {
+    let html = "<span class=\"m-flag m-flag-pdfnote-sideways\"></span>";
+    let s = scan(html);
+    assert!(s.flags.pdf_note);
+    assert_eq!(s.html, "");
+    assert_eq!(s.warnings.len(), 1);
+    assert!(
+        s.warnings[0].contains("m-flag-pdfnote-sideways"),
+        "{}",
+        s.warnings[0]
+    );
+    assert!(s.warnings[0].contains("default"), "{}", s.warnings[0]);
+}
+
+#[test]
+fn the_last_pdf_note_marker_wins() {
+    let html =
+        format!("{PDFNOTE_OFF}<span class=\"m-flag m-flag-pdfnote-on\"></span>{PDFNOTE_OFF}");
+    let s = scan(&html);
+    assert!(!s.flags.pdf_note);
+    assert!(!s.html.contains("m-flag"));
+    assert!(s.warnings.is_empty());
 }
 
 #[test]
