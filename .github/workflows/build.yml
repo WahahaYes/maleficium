@@ -446,13 +446,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh cache list --limit 100 || true
+          # No checkout here: target the repo explicitly or gh resolves nothing
+          # (gh shells out to git; without -R the list comes back empty and
+          # this job silently prunes zero entries).
+          gh cache list -R "$GITHUB_REPOSITORY" --limit 100 || true
           used=$(gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" --jq .active_caches_size_in_bytes 2>/dev/null || echo 0)
           echo "cache use: $((used / 1048576)) MiB of 10240 MiB"
           if [ "$used" -gt 7516192768 ]; then echo "::warning::repo cache use is above 7 GiB (cap is 10 GiB)"; fi
           # Keep main's seeded caches; prune everything else.
-          gh cache list --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
-            [ -n "$id" ] && gh cache delete "$id" || true
+          gh cache list -R "$GITHUB_REPOSITORY" --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
+            [ -n "$id" ] && gh cache delete -R "$GITHUB_REPOSITORY" "$id" || true
           done
 
   ci:
