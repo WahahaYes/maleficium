@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A waving robot that watches the mouse</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: var(--m-figure-bg, #0f0b24);
+        color: var(--m-figure-ink, #fff1a8);
+        font: 14px / 1.3 var(--m-font-body, system-ui, sans-serif);
+      }
+      main {
+        position: relative;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        shape-rendering: crispEdges;
+        cursor: pointer;
+        touch-action: manipulation;
+        outline: none;
+      }
+      #bg1 {
+        fill: #0f0b24;
+      }
+      svg:focus-visible {
+        outline: 2px solid #6fe3ff;
+      }
+      .say {
+        position: absolute;
+        left: 50%;
+        bottom: 10px;
+        transform: translateX(-50%);
+        margin: 0;
+        padding: 2px 10px;
+        border-radius: 999px;
+        background: var(--m-figure-surface, rgba(15, 11, 36, 0.7));
+        color: var(--m-figure-ink, #fff1a8);
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      /* The wave steps through a few poses, and the fingers flip between two,
+         so it stays pixel art. */
+      #fore {
+        animation: wave 1.1s steps(1, end) infinite;
+      }
+      @keyframes wave {
+        0% {
+          transform: rotate(-10deg);
+        }
+        17% {
+          transform: rotate(-3deg);
+        }
+        33% {
+          transform: rotate(5deg);
+        }
+        50% {
+          transform: rotate(12deg);
+        }
+        67% {
+          transform: rotate(5deg);
+        }
+        83% {
+          transform: rotate(-3deg);
+        }
+      }
+      #foreA {
+        animation: flipA 0.55s steps(1, end) infinite;
+      }
+      #foreB {
+        animation: flipB 0.55s steps(1, end) infinite;
+      }
+      @keyframes flipA {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0;
+        }
+      }
+      @keyframes flipB {
+        0% {
+          opacity: 0;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .excited #fore {
+        animation-duration: 0.85s;
+      }
+      .excited #foreA,
+      .excited #foreB {
+        animation-duration: 0.45s;
+      }
+      #light {
+        animation: blink 1.6s steps(1, end) infinite;
+      }
+      .excited #light {
+        animation-duration: 0.8s;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      #fore,
+      #pupilL,
+      #pupilR {
+        transform-box: view-box;
+        transform-origin: var(--pivot, 0 0);
+      }
+      #pupilL,
+      #pupilR,
+      #happyL,
+      #happyR {
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      #happyL,
+      #happyR {
+        display: none;
+      }
+      .excited #pupilL,
+      .excited #pupilR,
+      .excited .glow {
+        display: none;
+      }
+      .excited #happyL,
+      .excited #happyR {
+        display: inline;
+      }
+      .blink #pupilL,
+      .blink #pupilR {
+        transform: scaleY(0.25);
+      }
+      .hop #bot {
+        transform: translateY(-2px);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #fore,
+        #foreA,
+        #foreB,
+        #light {
+          animation: none;
+        }
+        #fore {
+          transform: rotate(5deg);
+        }
+        #foreB {
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg
+        id="stage"
+        tabindex="0"
+        role="img"
+        aria-label="A pixel-art robot waving and looking at the mouse"
+      >
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2b2166" />
+            <stop offset="1" stop-color="#0f0b24" />
+          </linearGradient>
+          <pattern id="dots" width="1.23" height="1.23" patternUnits="userSpaceOnUse">
+            <rect x="0.54" y="0.54" width="0.15" height="0.15" fill="#fff" opacity="0.06" />
+          </pattern>
+          <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="0.77" />
+          </filter>
+        </defs>
+        <rect id="bg1" />
+        <rect id="bg2" fill="url(#dots)" />
+        <g id="bot">
+          <g id="body"></g>
+          <g id="arm">
+            <g id="upper"></g>
+            <g id="fore">
+              <g id="foreA"></g>
+              <g id="foreB"></g>
+            </g>
+          </g>
+          <g id="head">
+            <g id="headart"></g>
+            <g id="light"></g>
+            <g id="eyes">
+              <g class="glow">
+                <ellipse
+                  id="glowL"
+                  rx="3"
+                  ry="2.2"
+                  fill="#6fe3ff"
+                  opacity="0.28"
+                  filter="url(#glow)"
+                />
+                <ellipse
+                  id="glowR"
+                  rx="3"
+                  ry="2.2"
+                  fill="#6fe3ff"
+                  opacity="0.28"
+                  filter="url(#glow)"
+                />
+              </g>
+              <g id="pupilL"></g>
+              <g id="pupilR"></g>
+              <g id="happyL"></g>
+              <g id="happyR"></g>
+            </g>
+          </g>
+        </g>
+      </svg>
+      <p class="say" id="say" aria-live="polite">Hello, world!</p>
+    </main>
+    <script type="application/json" id="art">
+      {
+        "palette": {
+          "a": "#1a1233",
+          "b": "#fff1a8",
+          "c": "#ffc93d",
+          "d": "#e8861e",
+          "e": "#a8551a",
+          "f": "#8d7cf0",
+          "g": "#5b49c4",
+          "h": "#3b2d8f",
+          "i": "#0b0d1f",
+          "j": "#131936",
+          "k": "#d8fbff",
+          "l": "#6fe3ff",
+          "m": "#2a8fb8",
+          "n": "#ff5d7a",
+          "o": "#ffc2cf",
+          "p": "#c23a5c",
+          "q": "#6a58d6"
+        },
+        "body": {
+          "x": 0,
+          "y": 25,
+          "rows": [
+            "............hhhhhhhh............",
+            "........q..agggggghhaa.q........",
+            "...qqqqqqqqahhhhhhhhaqqqqqqqq...",
+            "..qaaaaaaaaagggggghhaaaaaaaaaq..",
+            ".qabbbbbbbbbbbbbcccccccccccccaq.",
+            ".qaddddddddddddddddddddddddddaq.",
+            "qafggggggggggggggggggggggggghhaq",
+            "qafggggggggggggggggggggggggghhaq",
+            "afgggggglgcgngggggghghghggggghha",
+            "afggggggggggggggggghghghggggghha",
+            "afggggggggggggggggggggggggggghha",
+            "afggggggggggggggggggggggggggghha"
+          ]
+        },
+        "head": {
+          "x": 0,
+          "y": 0,
+          "rows": [
+            "..............qaaq..............",
+            ".............qa..aq.............",
+            ".............qa..aq.............",
+            ".............qaghaq.............",
+            ".........qqqqqaghaqqqqq.........",
+            ".......qqaaaaaaghaaaaaaqq.......",
+            "......qaabbbbbbbbbbbbddaaq......",
+            ".....qabbccccccccccccccddaq.....",
+            "....qabeccccccccccccccccedaq....",
+            "....qabccddddddddddddddcddaq....",
+            "...qabcccccccccccccccccccddaq...",
+            "..qaabcdaaaaaaaaaaaaaaaadddaaq..",
+            ".qahabcaiiiiiiiiiiiiiiiiaddahaq.",
+            "qafhhbcajjjjjjjjjjjjjjjjaddfhhaq",
+            "qafhhbcaiiiiiiiiiiiiiiiiaddfhhaq",
+            "qaflhbcajjjjjjjjjjjjjjjjaddflhaq",
+            "qafmhbcaiiiiiiiiiiiiiiiiaddfmhaq",
+            "qafhhbcajjjjjjjjjjjjjjjjaddfhhaq",
+            "qahhhbcaiiiiiiiiiiiiiiiiaddhhhaq",
+            ".qahabcajjjjjjjjjjjjjjjjaddahaq.",
+            "..qaabcdaaaaaaaaaaaaaaaadddaaq..",
+            "...qadcceeeeeeeeeeeeeeeecdeaq...",
+            "....qabbccccccccccccccccddaq....",
+            "....qadecccedededededccceeaq....",
+            ".....qaddcccccccccccccceeaq.....",
+            "......qaaddddddddddddeeaaq......",
+            ".......q.aa...........a.q......."
+          ]
+        },
+        "light": { "x": 15, "y": 1, "rows": ["on", "np"] },
+        "pupilL": { "x": 10, "y": 14, "rows": ["kkll", "klll", "llll", "mmmm"] },
+        "pupilR": { "x": 18, "y": 14, "rows": ["kkll", "klll", "llll", "mmmm"] },
+        "happyL": { "x": 10, "y": 15, "rows": [".ll.", "l..l"] },
+        "happyR": { "x": 18, "y": 15, "rows": [".ll.", "l..l"] },
+        "upper": {
+          "x": 28,
+          "y": 29,
+          "rows": [
+            "...qqqqqqqq...",
+            "...aaaaaaaaq..",
+            ".ffffffffhhaq.",
+            "fggggggggghhaq",
+            "fggggggggghhaq",
+            "hggggggggghhaq",
+            ".hhhhhhhhhhaq.",
+            "....aaaaaaaq..",
+            "....qqqqqqq..."
+          ]
+        },
+        "foreA": {
+          "x": 32,
+          "y": 8,
+          "rows": [
+            ".....q.q....",
+            "...qqaqaq...",
+            "..qaababaq..",
+            ".qabacacaaq.",
+            ".qacacacabaq",
+            ".qacacacacaq",
+            ".qadadadadaq",
+            ".qaabbbddaq.",
+            "qadbccccddaq",
+            "abddccccddaq",
+            "addeccccddaq",
+            "qaedccccdeaq",
+            ".qaadddeeaq.",
+            "..qqaaaaaq..",
+            "....qqqqq...",
+            "....qaaaq...",
+            "...qafffaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qahhhaq..",
+            "....qahaq...",
+            ".....qaq....",
+            "......q....."
+          ]
+        },
+        "foreB": {
+          "x": 32,
+          "y": 10,
+          "rows": [
+            ".....qqq....",
+            "....qaaaq...",
+            "...qabddaq..",
+            "..qadccdeaq.",
+            "...qadeeaq..",
+            "..qabbbddaq.",
+            ".qabccccddaq",
+            ".qadccccddaq",
+            "qaddecccddaq",
+            ".qaeccccdeaq",
+            "..qadddeeaq.",
+            "...qaaaaaq..",
+            "....qqqqq...",
+            "....qaaaq...",
+            "...qafffaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qafhhaq..",
+            "...qahhhaq..",
+            "....qahaq...",
+            ".....qaq....",
+            "......q....."
+          ]
+        },
+        "eyeGlow": [
+          [12, 17.5],
+          [20, 17.5]
+        ],
+        "pivot": [38.5, 33.5],
+        "view": [-4, -2, 54, 39]
+      }
+    </script>
+    <script>
+      (function () {
+        var $ = function (id) {
+          return document.getElementById(id);
+        };
+        var stage = $('stage');
+        // The SVG namespace from the document itself: no literal URL, so the
+        // runtime stays self-contained.
+        var NS = stage.namespaceURI;
+        var art = JSON.parse(document.getElementById('art').textContent);
+        var view = art.view;
+        stage.setAttribute('viewBox', view.join(' '));
+        [$('bg1'), $('bg2')].forEach(function (r) {
+          r.setAttribute('x', view[0]);
+          r.setAttribute('y', view[1]);
+          r.setAttribute('width', view[2]);
+          r.setAttribute('height', view[3]);
+        });
+        document.documentElement.style.setProperty(
+          '--pivot',
+          art.pivot[0] + 'px ' + art.pivot[1] + 'px',
+        );
+
+        // A sprite is rows of one-letter colours; draw each run as one rect.
+        function draw(parent, s) {
+          for (var j = 0; j < s.rows.length; j++) {
+            var row = s.rows[j];
+            var i = 0;
+            while (i < row.length) {
+              if (row[i] === '.') {
+                i++;
+                continue;
+              }
+              var k = i;
+              while (k < row.length && row[k] === row[i]) k++;
+              var r = document.createElementNS(NS, 'rect');
+              r.setAttribute('x', s.x + i);
+              r.setAttribute('y', s.y + j);
+              r.setAttribute('width', k - i);
+              r.setAttribute('height', 1.02);
+              r.setAttribute('fill', art.palette[row[i]]);
+              parent.appendChild(r);
+              i = k;
+            }
+          }
+        }
+        draw($('body'), art.body);
+        draw($('upper'), art.upper);
+        draw($('foreA'), art.foreA);
+        draw($('foreB'), art.foreB);
+        draw($('headart'), art.head);
+        draw($('light'), art.light);
+        draw($('pupilL'), art.pupilL);
+        draw($('pupilR'), art.pupilR);
+        draw($('happyL'), art.happyL);
+        draw($('happyR'), art.happyR);
+        $('glowL').setAttribute('cx', art.eyeGlow[0][0]);
+        $('glowL').setAttribute('cy', art.eyeGlow[0][1]);
+        $('glowR').setAttribute('cx', art.eyeGlow[1][0]);
+        $('glowR').setAttribute('cy', art.eyeGlow[1][1]);
+
+        var page = document.body;
+        var head = $('head');
+        var eyes = $('eyes');
+        var say = $('say');
+        var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var near = false;
+        var timers = {};
+
+        var greeting = 'Hello, world!';
+        function words() {
+          say.textContent = timers.beep ? 'Beep boop!' : near ? 'Hi there!' : greeting;
+        }
+        function mode() {
+          page.classList.toggle('excited', near || !!timers.beep);
+          words();
+        }
+
+        // Where the pointer is relative to the head, in whole cells: the head
+        // leans a cell, the eyes slide up to two across and one up or down.
+        var step = function (v, dead) {
+          return v > dead ? 1 : v < -dead ? -1 : 0;
+        };
+        function look(e) {
+          var r = stage.getBoundingClientRect();
+          var cell = r.width / view[2];
+          var hx = r.left + (16 - view[0]) * cell;
+          var hy = r.top + (14 - view[1]) * cell;
+          var dx = (e.clientX - hx) / cell;
+          var dy = (e.clientY - hy) / cell;
+          var sx = step(dx, 3);
+          var sy = step(dy, 3);
+          var ex = Math.max(-2, Math.min(2, Math.round(dx / 6)));
+          head.style.transform = 'translate(' + sx + 'px,' + sy + 'px)';
+          eyes.style.transform = 'translate(' + ex + 'px,' + (Math.abs(dy) > 2 ? sy : 0) + 'px)';
+        }
+        function close(e) {
+          var r = stage.getBoundingClientRect();
+          var pad = r.width * 0.12;
+          return (
+            e.clientX > r.left - pad &&
+            e.clientX < r.right + pad &&
+            e.clientY > r.top - pad &&
+            e.clientY < r.bottom + pad
+          );
+        }
+
+        document.addEventListener('pointermove', function (e) {
+          look(e);
+          var now = close(e);
+          if (now !== near) {
+            near = now;
+            mode();
+          }
+        });
+        document.addEventListener('pointerleave', function () {
+          near = false;
+          head.style.transform = '';
+          eyes.style.transform = '';
+          mode();
+        });
+
+        function poke() {
+          page.classList.add('hop');
+          clearTimeout(timers.hop);
+          timers.hop = setTimeout(function () {
+            page.classList.remove('hop');
+          }, 180);
+          clearTimeout(timers.beep);
+          timers.beep = setTimeout(function () {
+            timers.beep = 0;
+            mode();
+          }, 1400);
+          mode();
+        }
+        stage.addEventListener('click', poke);
+        stage.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            poke();
+          }
+        });
+
+        // A blink every few seconds.
+        if (!reduced) {
+          (function blink() {
+            setTimeout(
+              function () {
+                page.classList.add('blink');
+                setTimeout(function () {
+                  page.classList.remove('blink');
+                  blink();
+                }, 120);
+              },
+              2200 + Math.random() * 3200,
+            );
+          })();
+        }
+
+        // The widget bridge (docs/RUNTIMES.md): ready once, a status round
+        // trip on init, a fresh theme any time, and a PNG snapshot of the
+        // stage on request. The greeting source is the bubble's opening
+        // line; the backdrop follows the figure plate token, so the light
+        // and dark snapshots differ.
+        var seenInit = false;
+        function post(msg) {
+          msg.mfw = 1;
+          window.parent.postMessage(msg, '*');
+        }
+        function fail(message) {
+          post({ type: 'status', state: 'error', message: message });
+        }
+        function token(name, fallback) {
+          var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+          return v || fallback;
+        }
+        function paint() {
+          $('bg1').style.fill = token('--m-figure-bg', '#0f0b24');
+        }
+        function applyTheme(t) {
+          var tokens = (t && t.tokens) || {};
+          var root = document.documentElement;
+          for (var k in tokens) {
+            if (Object.prototype.hasOwnProperty.call(tokens, k)) {
+              root.style.setProperty(k, tokens[k]);
+            }
+          }
+          paint();
+        }
+        function snapshot(requestId) {
+          try {
+            var W = 648;
+            var H = Math.round((W * view[3]) / view[2]);
+            var clone = stage.cloneNode(true);
+            clone.setAttribute('xmlns', NS);
+            clone.setAttribute('width', W);
+            clone.setAttribute('height', H);
+            var xml = new XMLSerializer().serializeToString(clone);
+            var img = new Image();
+            img.onload = function () {
+              try {
+                var c = document.createElement('canvas');
+                c.width = W;
+                c.height = H + 28;
+                var g = c.getContext('2d');
+                g.fillStyle = token('--m-figure-bg', '#0f0b24');
+                g.fillRect(0, 0, c.width, c.height);
+                g.drawImage(img, 0, 0, W, H);
+                g.fillStyle = token('--m-figure-ink', '#fff1a8');
+                g.font = '14px sans-serif';
+                g.textBaseline = 'middle';
+                g.fillText(say.textContent, 12, H + 14, W - 24);
+                var png = c.toDataURL('image/png');
+                if (png.length < 8 * 1024 * 1024) {
+                  post({ type: 'snapshot', requestId: requestId, png: png });
+                }
+              } catch (e) {
+                fail('the snapshot could not be drawn');
+              }
+            };
+            img.onerror = function () {
+              fail('the snapshot could not be drawn');
+            };
+            img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+          } catch (e) {
+            fail('the snapshot could not be drawn');
+          }
+        }
+        window.addEventListener('message', function (e) {
+          if (e.source !== window.parent) {
+            return;
+          }
+          var d = e.data;
+          if (!d || d.mfw !== 1) {
+            return;
+          }
+          if (d.type === 'init') {
+            seenInit = true;
+            var given = d.sources && d.sources.greeting;
+            if (given && given.bytes) {
+              try {
+                var line = new TextDecoder().decode(given.bytes).trim();
+                if (line) {
+                  greeting = line.split('\n')[0].slice(0, 80);
+                }
+              } catch (err) {
+                greeting = 'Hello, world!';
+              }
+            }
+            applyTheme(d.theme);
+            stage.setAttribute(
+              'aria-label',
+              d.alt || 'A pixel-art robot waving and looking at the mouse',
+            );
+            post({ type: 'status', state: 'loading' });
+            paint();
+            words();
+            post({ type: 'status', state: 'loaded' });
+          } else if (d.type === 'theme') {
+            applyTheme(d.theme);
+          } else if (d.type === 'snapshot-request' && typeof d.requestId === 'string') {
+            if (seenInit) {
+              snapshot(d.requestId);
+            }
+          }
+        });
+        post({ type: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

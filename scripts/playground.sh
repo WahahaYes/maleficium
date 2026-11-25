@@ -4,9 +4,11 @@
 #   <dir>/<paper>     a copy of each real paper in e2e/fixtures/vendored
 #   <dir>/interactive-paper
 #                     a copy of the e2e/fixtures/playground interactive paper
-#                     (a real glb model, h264 clip, csv, vega chart, two plotly
-#                     figures and an html widget; media provenance in its
-#                     NOTICE). It holds a copy
+#                     (posed 3d models, looping and remote clips, an optioned
+#                     table, vega charts from one spec and two data files, a
+#                     styled chart with its own poster, two plotly figures,
+#                     three html widgets and a custom wave runtime, restyled by
+#                     reader.css; media provenance in its NOTICE). It holds a copy
 #                     of maleficium-interactive.sty, as a project made from a
 #                     template does. The first compile
 #                     fetches `subcaption` from the TeX bundle, so allow the
