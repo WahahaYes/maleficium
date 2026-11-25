@@ -287,6 +287,38 @@ mod tests {
     }
 
     #[test]
+    fn the_host_anchors_hold_in_every_profile() {
+        // A host freezes an export and adds its own head tags and back link
+        // at build time: these four anchors are a promise kept across bundle
+        // formats, so a format bump never moves them.
+        for folder in [false, true] {
+            let h = page(folder);
+            let head = &h[..h.find("</head>").unwrap()];
+            let after_head = &head[head.find("<head>").unwrap() + "<head>".len()..];
+            // 1. Exactly one title: hosts insert their tags after it.
+            assert_eq!(head.matches("<title>").count(), 1, "{folder}");
+            assert_eq!(head.matches("</title>").count(), 1, "{folder}");
+            // 2. Exactly one bare main start tag: hosts insert after it.
+            assert_eq!(h.matches("<main").count(), 1, "{folder}");
+            assert_eq!(h.matches("<main>").count(), 1, "{folder}");
+            // 3. The version note, which a host may remove.
+            assert!(h.contains("<p class=\"m-version\">"), "{folder}");
+            // 4. The policy is first in head and allows inline styles, so a
+            // host's <style> keeps working (JSON-LD is data, never run).
+            assert!(
+                after_head.starts_with("<meta http-equiv=\"Content-Security-Policy\""),
+                "{folder}: {after_head}"
+            );
+            let policy = fold::policy_of(&h);
+            let style = &policy[policy.find("style-src ").unwrap()..];
+            assert!(
+                style[..style.find(';').unwrap_or(style.len())].contains("'unsafe-inline'"),
+                "{folder}: {policy}"
+            );
+        }
+    }
+
+    #[test]
     fn the_reader_policy_is_the_first_element_and_matches_the_profile() {
         let single = page(false);
         let folder = page(true);

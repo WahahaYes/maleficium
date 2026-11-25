@@ -207,6 +207,22 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
         check(f"{profile}: layout", all(os.path.isfile(os.path.join(dest, f)) for f in
               ["manifest.json", "index.html", "paper.pdf", "theme/theme.json", "theme/theme.css"] + [f"widgets/{w}/index.html" for w in WIDGETS]))
         docs = {w: open(os.path.join(dest, f"widgets/{w}/index.html"), encoding="utf-8").read() for w in WIDGETS}
+    # The anchors a host relies on: its build inserts head tags after the
+    # title and its chrome after main, and removes the version note if it
+    # likes. The policy stays first and admits a host's inline style.
+    reader = html if profile == "single-file" else open(os.path.join(dest, "index.html"), encoding="utf-8").read()
+    head = reader[:reader.find("</head>")]
+    after_head = head[head.find("<head>") + len("<head>"):]
+    before_islands = reader.split('<script type="application/json"', 1)[0]
+    policy = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', reader).group(1)
+    style_src = re.search(r"style-src ([^;]*)", policy).group(1)
+    check(f"{profile}: reader keeps one title, one bare main and the version note",
+          head.count("<title>") == 1 and head.count("</title>") == 1
+          and before_islands.count("<main") == 1 and before_islands.count("<main>") == 1
+          and '<p class="m-version">' in before_islands)
+    check(f"{profile}: the policy is first in head and admits a host's inline style",
+          after_head.startswith('<meta http-equiv="Content-Security-Policy"')
+          and "'unsafe-inline'" in style_src)
     # Every widget is one inline document with the strict policy first.
     def first_is_policy(doc):
         at = doc.find('<meta http-equiv="Content-Security-Policy"')
