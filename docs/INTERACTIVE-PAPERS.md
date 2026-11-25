@@ -58,6 +58,8 @@ A widget may declare `https` origins it frames or loads from, such as a YouTube 
 
 The bundle's `index.html` is the paper reflowed for the screen, with each widget in place. `paper.pdf` comes along as the version of record. LaTeX the converter can't read shows as raw source and is listed in the export's warnings.
 
+Set `SOURCE_DATE_EPOCH` (seconds since 1970) in the environment that runs Maleficium, such as a site's build, and the export is reproducible: the same sources give a byte-identical bundle, PDF included. The PDF's dates and `\today` then show that moment. Without it, each compile stamps the PDF with the time it ran.
+
 ## Styling the reader
 
 The reader has light and dark modes. To restyle it, name a stylesheet in your source:
