@@ -3,8 +3,9 @@
 # to copy these steps, drifting apart; the job keeps only what is truly its
 # (vcpkg on Windows, prek hooks, playwright, the TeX bundle).
 #  - system libraries: apt on Linux, Homebrew on macOS, both cached. The
-#    package lists live in scripts/linux-deps.txt and scripts/macos-brew.txt;
-#    a job can append more apt packages (the e2e browsers' extras).
+#    package lists live in scripts/linux-deps.txt and scripts/macos-brew.txt.
+#    Jobs needing extra packages install them uncached in their own steps
+#    (the e2e job does this), so the cached key stays the one shared list.
 #  - rust: dtolnay installs the pinned channels (read from the two
 #    rust-toolchain.toml files, so the pins stay single-sourced) before
 #    Swatinem/rust-cache, which needs the toolchains in place.
@@ -15,9 +16,6 @@ inputs:
   with-system-deps:
     description: Install OS system libraries (apt on Linux, Homebrew on macOS; Windows uses the job's own vcpkg steps)
     default: 'true'
-  extra-apt-packages:
-    description: Additional apt packages beyond scripts/linux-deps.txt, space-separated
-    default: ''
   with-python:
     description: Set up CPython 3.12
     default: 'false'
@@ -62,7 +60,6 @@ runs:
       run: |
         if [ "$RUNNER_OS" = Linux ]; then
           pkgs=$(xargs < scripts/linux-deps.txt)
-          pkgs="$pkgs ${{ inputs.extra-apt-packages }}"
         else
           pkgs=$(xargs < scripts/macos-brew.txt)
         fi

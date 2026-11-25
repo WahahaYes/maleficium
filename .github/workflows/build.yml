@@ -361,15 +361,20 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       # Xvfb for the virtual displays, Mesa's software GL for the posters
       # WebKitGTK renders (only recommended by it), and mutool for the
-      # interactive run's table row check ride along as extra apt packages.
-      # Before any cargo build the engine must be in place: tauri-build
-      # copies it into target/debug, and ci-e2e.sh checks the copy matches.
+      # interactive run's table row check. Before any cargo build the engine
+      # must be in place: tauri-build copies it into target/debug, and
+      # ci-e2e.sh checks the copy matches.
       - uses: ./.github/actions/setup
         with:
-          extra-apt-packages: 'xvfb libgl1-mesa-dri mupdf-tools'
           with-python: 'true'
           python-packages: 'jsonschema'
           rust-save: ${{ github.ref == 'refs/heads/main' }}
+      # The three display/PDF helpers install uncached: routing them through
+      # the setup action's cached apt install would mint a second full apt
+      # cache copy keyed on the longer package list. The setup step above
+      # already ran apt-get update, so this resolves without another one.
+      - name: E2E-only system packages (uncached)
+        run: sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri mupdf-tools
       # The browsers belong to the playwright-core version in the lockfile.
       # A cache hit restores the browsers, but their system libraries are
       # not cacheable, so they install on every run; a miss downloads both.
