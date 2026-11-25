@@ -145,10 +145,24 @@ ws = {w["id"]: w for w in wl.get("widgets") or []}
 check("both widgets are listed without a poster=",
       set(ws) == {"auto-model", "auto-chart"} and all("poster" not in w for w in ws.values()), str(wl)[:300])
 rect1 = {k: w["rect"] for k, w in ws.items()}
-chart_frame = round((rect1["auto-chart"]["x1"] - rect1["auto-chart"]["x0"]) * 96 / 72) if rect1 else 0
+chart_fw = round((rect1["auto-chart"]["x1"] - rect1["auto-chart"]["x0"]) * 96 / 72) if rect1 else 0
+chart_fh = round((rect1["auto-chart"]["y1"] - rect1["auto-chart"]["y0"]) * 96 / 72) if rect1 else 0
+def chart_density_ok(pw, ph, fw, fh):
+    if not fw or not fh:
+        return False
+    dw, dh = pw / fw, ph / fh
+    if not (1.9 <= dw <= 2.3 and 1.9 <= dh <= 2.3):
+        return False
+    # chart posters run ~6% taller than wide; allow that while still catching
+    # placeholder-vs-frame mismatches.
+    if abs(dw - dh) / ((dw + dh) / 2) > 0.10:
+        return False
+    return abs(pw / ph - fw / fh) / (fw / fh) <= 0.08
+chart_imgs = [wh for wh in imgs if wh != (320, 240)]
 check("the first compile's pdf embeds the model poster at its size", (320, 240) in imgs, str(imgs))
-check("...and the chart poster at twice its frame",
-      len(imgs) == 2 and any(abs(w - 2 * chart_frame) <= 2 for w, _ in imgs), str((imgs, chart_frame)))
+check("...and the chart poster at uniform ~2x density in its frame",
+      len(imgs) == 2 and len(chart_imgs) == 1 and chart_density_ok(chart_imgs[0][0], chart_imgs[0][1], chart_fw, chart_fh),
+      str((imgs, (chart_fw, chart_fh))))
 check("two posters in the cache", len(pngs()) == 2, str(pngs()))
 check("the README is written", os.path.isfile(os.path.join(CACHE, "README.md")))
 mp = os.path.join(POSTERS, "auto.map")

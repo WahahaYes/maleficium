@@ -272,18 +272,31 @@ check("the reported size and hash match the file",
 chart, _ = render("chart", "chart.png")
 check("the chart renders", chart["ok"], str(chart)[:300])
 ci = png_info(os.path.join(OUT, "chart.png")) if chart["ok"] else None
-frame_w = round((ws["chart"]["rect"]["x1"] - ws["chart"]["rect"]["x0"]) * 96 / 72) if "chart" in ws else 0
-check("the chart poster fills its frame at scale 2",
-      ci is not None and abs(ci[0] - 2 * frame_w) <= 2 and ci[2] is not None and ci[2] > 0.1,
-      str((ci, frame_w)))
+chart_fw = round((ws["chart"]["rect"]["x1"] - ws["chart"]["rect"]["x0"]) * 96 / 72) if "chart" in ws else 0
+chart_fh = round((ws["chart"]["rect"]["y1"] - ws["chart"]["rect"]["y0"]) * 96 / 72) if "chart" in ws else 0
+def density_ok(pw, ph, fw, fh):
+    if not fw or not fh:
+        return False
+    dw, dh = pw / fw, ph / fh
+    if not (1.9 <= dw <= 2.3 and 1.9 <= dh <= 2.3):
+        return False
+    # chart posters run ~6% taller than wide (e.g. 302x320 in a 151x151 frame);
+    # allow that while still catching placeholder-vs-frame mismatches.
+    if abs(dw - dh) / ((dw + dh) / 2) > 0.10:
+        return False
+    return abs(pw / ph - fw / fh) / (fw / fh) <= 0.08
+check("the chart poster fills its frame at uniform ~2x density",
+      ci is not None and density_ok(ci[0], ci[1], chart_fw, chart_fh) and ci[2] is not None and ci[2] > 0.1,
+      str((ci, (chart_fw, chart_fh))))
 
 plot, _ = render("plotly", "plotly.png")
 check("the plotly figure renders", plot["ok"], str(plot)[:300])
 pi = png_info(os.path.join(OUT, "plotly.png")) if plot["ok"] else None
-frame_w = round((ws["plotly"]["rect"]["x1"] - ws["plotly"]["rect"]["x0"]) * 96 / 72) if "plotly" in ws else 0
-check("the plotly poster fills its frame at scale 2",
-      pi is not None and abs(pi[0] - 2 * frame_w) <= 2 and pi[2] is not None and pi[2] > 0.1,
-      str((pi, frame_w)))
+plotly_fw = round((ws["plotly"]["rect"]["x1"] - ws["plotly"]["rect"]["x0"]) * 96 / 72) if "plotly" in ws else 0
+plotly_fh = round((ws["plotly"]["rect"]["y1"] - ws["plotly"]["rect"]["y0"]) * 96 / 72) if "plotly" in ws else 0
+check("the plotly poster fills its frame at uniform ~2x density",
+      pi is not None and density_ok(pi[0], pi[1], plotly_fw, plotly_fh) and pi[2] is not None and pi[2] > 0.1,
+      str((pi, (plotly_fw, plotly_fh))))
 
 hang, took = render("hang", "hang.png", timeout_ms=3000)
 check("a hanging runtime is stopped at its time limit",
