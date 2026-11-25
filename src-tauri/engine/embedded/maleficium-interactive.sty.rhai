@@ -21,6 +21,8 @@
 //                       verbatim and dropped (custom: any runtime's widget)
 //   \maleficiumcontents{on|off}             one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-contents-on|off"/>
+//   \maleficiumreaderpdfnote{on|off}        one empty flag marker per call:
+//                       <ltx:text class="m-flag m-flag-pdfnote-on|off"/>
 //   \maleficiummeasure{narrow|default|wide|full}  one empty flag marker per call:
 //                       <ltx:text class="m-flag m-flag-measure-*"/>
 //   \maleficiumtheme, \maleficiumsetup,
@@ -76,6 +78,17 @@ DefConstructor("\\maleficiumcontents Semiverbatim", |document, v| {
     document.closeElement("ltx:text");
   } else {
     Error("maleficium", "maleficiumcontents", "contents flag `" + s + "' must be on or off");
+  }
+});
+
+DefConstructor("\\maleficiumreaderpdfnote Semiverbatim", |document, v| {
+  let s = ToString(v);
+  if s == "on" || s == "off" {
+    document.openElement("ltx:text");
+    document.setAttribute("class", "m-flag m-flag-pdfnote-" + s);
+    document.closeElement("ltx:text");
+  } else {
+    Error("maleficium", "maleficiumreaderpdfnote", "reader pdf note flag `" + s + "' must be on or off");
   }
 });
 

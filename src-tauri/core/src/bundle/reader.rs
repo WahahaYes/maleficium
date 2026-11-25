@@ -44,6 +44,9 @@ pub(super) struct Reader<'a> {
     /// The article column width (`paper.reader.measure`): a closed token,
     /// rendered as a `data-measure` override of the theme's `--m-measure`.
     pub measure: Measure,
+    /// Whether the page opens with the version-of-record line and its PDF
+    /// download link.
+    pub pdf_note: bool,
     /// The pdf bytes of a single-file bundle (a folder links `paper.pdf`).
     pub pdf: Option<&'a [u8]>,
     /// The `<script type="application/json">` islands the page reads.
@@ -124,9 +127,17 @@ pub(super) fn render(r: &Reader) -> String {
     }
     page.push_str("><main>");
     page.push_str("<noscript><p class=\"note\">Scripts are off, so the interactive figures show their posters.</p></noscript>");
-    page.push_str(&format!(
-        "<p class=\"m-version\"><a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\">paper.pdf</a> is the version of record.</p>"
-    ));
+    if r.pdf_note {
+        page.push_str(&format!(
+            "<p class=\"m-version\"><a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\">paper.pdf</a> is the version of record.</p>"
+        ));
+    } else if !r.folder {
+        // A single file carries the PDF only in this link, so it stays as a
+        // hidden download target when the line is off.
+        page.push_str(&format!(
+            "<a id=\"pdf-link\" href=\"{href}\" download=\"paper.pdf\" hidden></a>"
+        ));
+    }
     page.push_str(r.article);
     page.push_str("</main>");
     // The colophon mirrors the PDF footer mark; it is reader chrome, so it
@@ -156,7 +167,7 @@ mod tests {
     const ARTICLE: &str = "<article class=\"ltx_document\"><h1 class=\"ltx_title ltx_title_document\">T</h1><figure id=\"fig-a\" data-widget=\"fig-a\" data-type=\"model\" style=\"--ar:2.00 / 1.00\"><div class=\"frame\"><img class=\"poster\" src=\"assets/aa.png\" alt=\"A\"></div><figcaption>A</figcaption></figure></article>";
 
     fn page(folder: bool) -> String {
-        page_with(folder, Measure::Default)
+        page_with(folder, Measure::Default, true)
     }
 
     fn page_wasm(folder: bool, wasm: bool) -> String {
@@ -166,6 +177,7 @@ mod tests {
             folder,
             article: ARTICLE,
             measure: Measure::Default,
+            pdf_note: true,
             pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
             islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
             frames: &[],
@@ -178,13 +190,14 @@ mod tests {
         })
     }
 
-    fn page_with(folder: bool, measure: Measure) -> String {
+    fn page_with(folder: bool, measure: Measure, pdf_note: bool) -> String {
         let theme = crate::theme::Theme::house();
         render(&Reader {
             title: "T & <title>",
             folder,
             article: ARTICLE,
             measure,
+            pdf_note,
             pdf: if folder { None } else { Some(b"%PDF-1.4 x") },
             islands: "<script type=\"application/json\" id=\"mfw-manifest\">{}</script>",
             frames: &[],
@@ -206,6 +219,7 @@ mod tests {
             folder: false,
             article: ARTICLE,
             measure: Measure::Default,
+            pdf_note: true,
             pdf: Some(b"%PDF-1.4 x"),
             islands: "",
             frames: &[],
@@ -229,7 +243,7 @@ mod tests {
             "default is the theme's 68ch"
         );
         for (measure, width) in [(Measure::Narrow, "56ch"), (Measure::Wide, "80ch")] {
-            let h = page_with(false, measure);
+            let h = page_with(false, measure, true);
             let token = measure.token();
             assert!(
                 h.contains(&format!(
@@ -245,6 +259,29 @@ mod tests {
                 h.contains(&format!("--m-measure: {width};")),
                 "{token} maps to its closed width"
             );
+        }
+    }
+
+    #[test]
+    fn the_pdf_note_flag_drops_the_version_of_record_line() {
+        let shown = page(false);
+        assert!(shown.contains("<p class=\"m-version\">"));
+        assert!(shown.contains("is the version of record."));
+        // A folder bundle keeps paper.pdf on disk, so no link stands in for
+        // the line; a single file carries the PDF only in the link and keeps
+        // it, hidden, so the PDF still ships.
+        let folder = page_with(true, Measure::Default, false);
+        assert!(!folder.contains("<p class=\"m-version\">"));
+        assert!(!folder.contains("is the version of record."));
+        assert!(!folder.contains("id=\"pdf-link\""));
+        let single = page_with(false, Measure::Default, false);
+        assert!(!single.contains("<p class=\"m-version\">"));
+        assert!(!single.contains("is the version of record."));
+        assert!(single.contains("<a id=\"pdf-link\" href=\"data:application/pdf;base64,"));
+        assert!(single.contains("download=\"paper.pdf\" hidden></a>"));
+        assert_eq!(single.matches("data:application/pdf").count(), 1);
+        for h in [&folder, &single] {
+            assert!(h.contains(ARTICLE), "the article still renders");
         }
     }
 

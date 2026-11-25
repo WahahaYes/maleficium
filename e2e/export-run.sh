@@ -296,6 +296,14 @@ for profile, name in [("single-file", "flags-single.html"), ("folder", "flags-fo
     check(f"flags: {profile} measure wide overrides the article column",
           'data-measure="wide"' in html, "")
     check(f"flags: {profile} no flag marker survives in the article", "m-flag" not in html, "")
+    check(f"flags: {profile} pdfnote:false omits the version-of-record line",
+          'class="m-version"' not in html, "")
+    if profile == "folder":
+        check("flags: folder still writes paper.pdf",
+              os.path.isfile(os.path.join(dest, "paper.pdf")), "")
+    else:
+        check("flags: single file still carries the pdf in a link",
+              'id="pdf-link"' in html and "data:application/pdf;base64," in html, "")
 href = compile("bad-measure.tex")
 check("a hostile measure value fails the compile", href.get("status") != "success", str(href)[:200])
 
