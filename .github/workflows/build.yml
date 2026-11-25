@@ -361,15 +361,20 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       # Xvfb for the virtual displays, Mesa's software GL for the posters
       # WebKitGTK renders (only recommended by it), and mutool for the
-      # interactive run's table row check ride along as extra apt packages.
-      # Before any cargo build the engine must be in place: tauri-build
-      # copies it into target/debug, and ci-e2e.sh checks the copy matches.
+      # interactive run's table row check. Before any cargo build the engine
+      # must be in place: tauri-build copies it into target/debug, and
+      # ci-e2e.sh checks the copy matches.
       - uses: ./.github/actions/setup
         with:
-          extra-apt-packages: 'xvfb libgl1-mesa-dri mupdf-tools'
           with-python: 'true'
           python-packages: 'jsonschema'
           rust-save: ${{ github.ref == 'refs/heads/main' }}
+      # The three display/PDF helpers install uncached: routing them through
+      # the setup action's cached apt install would mint a second full apt
+      # cache copy keyed on the longer package list. The setup step above
+      # already ran apt-get update, so this resolves without another one.
+      - name: E2E-only system packages (uncached)
+        run: sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri mupdf-tools
       # The browsers belong to the playwright-core version in the lockfile.
       # A cache hit restores the browsers, but their system libraries are
       # not cacheable, so they install on every run; a miss downloads both.
@@ -446,13 +451,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh cache list --limit 100 || true
+          # No checkout here: target the repo explicitly or gh resolves nothing
+          # (gh shells out to git; without -R the list comes back empty and
+          # this job silently prunes zero entries).
+          gh cache list -R "$GITHUB_REPOSITORY" --limit 100 || true
           used=$(gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" --jq .active_caches_size_in_bytes 2>/dev/null || echo 0)
           echo "cache use: $((used / 1048576)) MiB of 10240 MiB"
           if [ "$used" -gt 7516192768 ]; then echo "::warning::repo cache use is above 7 GiB (cap is 10 GiB)"; fi
           # Keep main's seeded caches; prune everything else.
-          gh cache list --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
-            [ -n "$id" ] && gh cache delete "$id" || true
+          gh cache list -R "$GITHUB_REPOSITORY" --json id,ref --limit 100 --jq '.[] | select(.ref != "refs/heads/main") | .id' 2>/dev/null | while read -r id; do
+            [ -n "$id" ] && gh cache delete -R "$GITHUB_REPOSITORY" "$id" || true
           done
 
   ci:

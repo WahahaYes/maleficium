@@ -2,22 +2,23 @@
 # libraries, Python, the Rust toolchains, npm and the engine. Each job used
 # to copy these steps, drifting apart; the job keeps only what is truly its
 # (vcpkg on Windows, prek hooks, playwright, the TeX bundle).
-#  - system libraries: apt on Linux, Homebrew on macOS, both cached. The
-#    package lists live in scripts/linux-deps.txt and scripts/macos-brew.txt;
-#    a job can append more apt packages (the e2e browsers' extras).
+#  - system libraries: apt on Linux, Homebrew on macOS. The package lists
+#    live in scripts/linux-deps.txt and scripts/macos-brew.txt; the cache
+#    restores and saves on main only, so other refs install the same lists
+#    uncached and can never orphan a package-list key. Jobs needing extra
+#    packages install them uncached in their own steps (the e2e job does
+#    this), keeping a single shared apt cache key.
 #  - rust: dtolnay installs the pinned channels (read from the two
 #    rust-toolchain.toml files, so the pins stay single-sourced) before
 #    Swatinem/rust-cache, which needs the toolchains in place.
-# Only main saves caches; every other ref restores what main seeded.
+# Only main saves caches; other refs restore what main seeded, except the
+# system libraries, which other refs install uncached (see below).
 name: setup
 description: System libraries, Python, Rust toolchains, npm and the engine
 inputs:
   with-system-deps:
     description: Install OS system libraries (apt on Linux, Homebrew on macOS; Windows uses the job's own vcpkg steps)
     default: 'true'
-  extra-apt-packages:
-    description: Additional apt packages beyond scripts/linux-deps.txt, space-separated
-    default: ''
   with-python:
     description: Set up CPython 3.12
     default: 'false'
@@ -62,7 +63,6 @@ runs:
       run: |
         if [ "$RUNNER_OS" = Linux ]; then
           pkgs=$(xargs < scripts/linux-deps.txt)
-          pkgs="$pkgs ${{ inputs.extra-apt-packages }}"
         else
           pkgs=$(xargs < scripts/macos-brew.txt)
         fi
@@ -72,7 +72,10 @@ runs:
       uses: gerlero/apt-install@c0fa73fe5c4a22deecf6d629565be92a15dd2026 # v1.3.12
       with:
         packages: ${{ steps.syspkgs.outputs.packages }}
-        cache: 'true'
+        # Gerlero saves on every miss with no save-if switch, so an ungated
+        # PR run resolving drifted package versions would mint a PR-scoped
+        # orphan key. Main restores and saves; other refs install uncached.
+        cache: ${{ github.ref == 'refs/heads/main' }}
         update: 'true'
         upgrade: 'false'
         install-recommends: 'false'
@@ -81,7 +84,8 @@ runs:
       uses: gerlero/brew-install@f21af2da1f07ad75501992d36996ddb7afe0cedb # v1.1.6
       with:
         packages: ${{ steps.syspkgs.outputs.packages }}
-        cache: 'true'
+        # Same main-only gate as the apt step above: no save-if upstream.
+        cache: ${{ github.ref == 'refs/heads/main' }}
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       if: inputs.with-python == 'true'
       with:

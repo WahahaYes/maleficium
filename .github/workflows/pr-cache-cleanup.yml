@@ -19,6 +19,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REF: refs/pull/${{ github.event.pull_request.number }}/merge
         run: |
-          gh cache list --ref "$REF" --json id --jq '.[].id' --limit 100 | while read -r id; do
-            [ -n "$id" ] && gh cache delete "$id" || true
+          # No checkout in this job: pass -R explicitly or gh finds no repo,
+          # the list comes back empty, and this cleanup silently deletes nothing.
+          gh cache list -R "$GITHUB_REPOSITORY" --ref "$REF" --json id --jq '.[].id' --limit 100 | while read -r id; do
+            [ -n "$id" ] && gh cache delete -R "$GITHUB_REPOSITORY" "$id" || true
           done
