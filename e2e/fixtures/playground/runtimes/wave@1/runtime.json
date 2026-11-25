@@ -1,0 +1,20 @@
+{
+  "contract": 1,
+  "name": "wave",
+  "version": "1.0.0",
+  "title": "Waving robot",
+  "description": "A pixel-art robot that waves and watches the mouse; its speech bubble opens with the greeting file.",
+  "authors": ["Ethan Wilson"],
+  "license": "MIT-0",
+  "sources": {
+    "greeting": {
+      "primary": true,
+      "required": true,
+      "extensions": ["txt"],
+      "maxBytes": 1024,
+      "description": "The bubble's opening line, plain text."
+    }
+  },
+  "capabilities": { "webgl": false },
+  "vendored": []
+}

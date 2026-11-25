@@ -1,0 +1,23 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Accuracy and latency by method, each from its own CSV file",
+  "layer": [
+    {
+      "data": { "url": "accuracy.csv" },
+      "mark": "bar",
+      "encoding": {
+        "x": { "field": "method", "type": "nominal" },
+        "y": { "field": "accuracy", "type": "quantitative" }
+      }
+    },
+    {
+      "data": { "url": "latency.csv" },
+      "mark": "bar",
+      "encoding": {
+        "x": { "field": "method", "type": "nominal" },
+        "y": { "field": "latency", "type": "quantitative" }
+      }
+    }
+  ],
+  "resolve": { "scale": { "y": "independent" } }
+}

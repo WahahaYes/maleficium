@@ -4,6 +4,7 @@
 \usepackage{booktabs}
 \usepackage{maleficium-interactive}
 \maleficiumtheme{house}
+\maleficiumreaderstyle{reader.css}
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}[theorem]{Lemma}
 \theoremstyle{definition}
@@ -25,10 +26,13 @@ theorems whose proofs fold away in the HTML paper.
 Text typeset with \TeX{}~\cite{knuth1984texbook} and \LaTeX{}~\cite{lamport1994latex}
 (together,~\cite{knuth1984texbook,lamport1994latex}) reads the same in print and on screen; the widgets below add an
 interactive layer on top of that~\cite{shannon1948mathematical}.
-Section~\ref{sec:guide} explains each widget, and
-Figures~\ref{fig:model}, \ref{fig:video}, \ref{fig:chart}, \ref{fig:plotly-tradeoff},
-\ref{fig:plotly-latency} and~\ref{fig:html},
-Table~\ref{tab:results} and Figures~\ref{fig:subs} and~\ref{fig:pair} show them.
+Section~\ref{sec:guide} explains each widget. The model poses in
+Figures~\ref{fig:model} and~\ref{fig:model-pose} and the clips play in
+Figures~\ref{fig:video} and~\ref{fig:video-remote}; Table~\ref{tab:results}
+reads a CSV, Figures~\ref{fig:chart}--\ref{fig:chart-styled} draw charts,
+Figures~\ref{fig:plotly-tradeoff} and~\ref{fig:plotly-latency} draw Plotly
+figures, and Figures~\ref{fig:html}--\ref{fig:wave} embed HTML pages and a
+custom runtime. Plain figures, subfigures, math and theorems follow.
 
 \section{Widgets}\label{sec:widgets}
 
@@ -41,32 +45,94 @@ Table~\ref{tab:results} and Figures~\ref{fig:subs} and~\ref{fig:pair} show them.
   alt={A colored cube, the interactive 3D mesh}]{models/mesh.glb}
 \end{figure}
 
+\subsection{Model from a posed camera}
+Figure~\ref{fig:model-pose} shows the same cube through a posed camera: a
+\texttt{size=} in pixels shapes the poster, a white \texttt{background=}
+sits behind the cube, and a \texttt{camera=} puts the eye at $(0,1,3)$
+looking at the origin. The PDF shows the rendered poster; the live view
+starts from that camera.
+\begin{figure}[ht]
+\centering
+\caption{The cube from the front at eye level, on a white backdrop.}
+\label{fig:model-pose}
+\interactiveruntime[runtime=model@1, height=5cm, id=fig-model-pose, size=640x480,
+  background=ffffff, camera={pos=0,1,3 target=0,0,0 up=0,1,0},
+  alt={The colored cube from the front at eye level on a white backdrop}]{models/mesh.glb}
+\end{figure}
+
 \subsection{Video}
+The clip loops quietly: \texttt{loop=true} plays it again from the start
+and \texttt{muted=true} starts it silent. Figure~\ref{fig:video-remote} also
+names a hosted copy: \texttt{remote=} with its \texttt{sha256=} is the copy
+used when the file does not travel with the paper, and \texttt{at=} starts
+the live view (and draws its poster) one second in.
 \begin{figure}[ht]
 \centering
 \caption{A video widget; the PDF shows a frame of the clip.}
 \label{fig:video}
 \interactiveruntime[runtime=video@1, poster=figures/clip.png, height=5cm, id=fig-video,
+  loop=true, muted=true,
   alt={A frame of the test-pattern clip}]{media/clip.mp4}
+\end{figure}
+\begin{figure}[ht]
+\centering
+\caption{The test-pattern clip from its remote copy, starting one second in.}
+\label{fig:video-remote}
+\interactiveruntime[runtime=video@1, height=4cm, id=fig-video-remote, at=1,
+  remote=https://example.org/media/clip.mp4,
+  sha256=20ae41ca929a117aa92fd403bff6fd7734b5d97ff223d91f7873d7d62050f738,
+  alt={The test-pattern clip, starting one second in}]{media/clip.mp4}
 \end{figure}
 
 \subsection{Table from CSV}
 Table~\ref{tab:results} is read from a CSV file. The PDF keeps the first
-three rows; the interactive view carries all five.
+three rows; the interactive view starts sorted by accuracy, filtered to the
+\texttt{ours} rows, showing three of them with two decimals.
 \begin{table}[ht]
 \centering
 \caption{Accuracy and latency for each configuration.}
 \label{tab:results}
 \interactiveruntime[runtime=table@1, pdfrows=3, id=tab-results,
+  sort={accuracy desc}, filter=ours, columns={method;accuracy;latency},
+  format={accuracy=fixed:2;latency=fixed:0}, maxrows=3,
   alt={Accuracy and latency for five configurations, from baseline to ours-xl}]{data/results.csv}
 \end{table}
 
 \subsection{Chart from a Vega-Lite spec}
+Figure~\ref{fig:chart} draws accuracy by method from a Vega-Lite
+specification; \texttt{scale=2} renders its poster at twice the pixels per
+CSS pixel.
 \begin{figure}[ht]
 \centering
 \caption{Accuracy by method, drawn from a Vega-Lite specification.}
 \label{fig:chart}
-\interactiveruntime[runtime=chart@1, height=5cm, id=fig-chart,
+\interactiveruntime[runtime=chart@1, height=5cm, id=fig-chart, scale=2,
+  alt={Bar chart of accuracy rising from 0.71 for baseline to 0.89 for ours-xl}]{charts/ablation.vl.json}
+\end{figure}
+
+\subsection{Chart from two data files}
+Figure~\ref{fig:chart-split} layers accuracy and latency from two CSV files:
+a chart's \texttt{data} source may repeat, and the spec names each file it
+reads.
+\begin{figure}[ht]
+\centering
+\caption{Accuracy and latency by method, each from its own CSV file.}
+\label{fig:chart-split}
+\interactiveruntime[runtime=chart@1, height=5cm, id=fig-chart-split,
+  sources={data=data/accuracy.csv, data=data/latency.csv},
+  alt={Layered bars of accuracy and latency by method, from two CSV files}]{charts/compare.vl.json}
+\end{figure}
+
+\subsection{Chart with its own poster and plate}
+Figure~\ref{fig:chart-styled} carries the author's own poster, a narrower
+\texttt{width=}, and a \texttt{plate=} of its own instead of the page
+colour.
+\begin{figure}[ht]
+\centering
+\caption{Accuracy by method, with its own poster and plate.}
+\label{fig:chart-styled}
+\interactiveruntime[runtime=chart@1, height=5cm, width=0.6\linewidth, plate=FFF4E0,
+  poster=figures/chart-poster.png, id=fig-chart-styled,
   alt={Bar chart of accuracy rising from 0.71 for baseline to 0.89 for ours-xl}]{charts/ablation.vl.json}
 \end{figure}
 
@@ -74,13 +140,14 @@ three rows; the interactive view carries all five.
 Figures~\ref{fig:plotly-tradeoff} and~\ref{fig:plotly-latency} are what
 Python's \texttt{fig.write\_json()} saves, written from the same CSV by
 \texttt{tools/plotly\_figures.py}. The first keeps Plotly Express defaults,
-so it takes the paper's style. The second brings its own template, and
+so it takes the paper's style, and its poster renders at \texttt{scale=2}.
+The second brings its own template, and
 \texttt{template=figure} keeps it.
 \begin{figure}[ht]
 \centering
 \caption{Accuracy against latency, a scatter plot in the paper's style.}
 \label{fig:plotly-tradeoff}
-\interactiveruntime[runtime=plotly@1, height=5cm, id=fig-plotly-tradeoff,
+\interactiveruntime[runtime=plotly@1, height=5cm, id=fig-plotly-tradeoff, scale=2,
   alt={Line of accuracy against latency, from baseline at 12 ms to ours-xl at 58 ms}]{charts/tradeoff.plotly.json}
 \end{figure}
 \begin{figure}[ht]
@@ -91,13 +158,51 @@ so it takes the paper's style. The second brings its own template, and
   alt={Horizontal bars of latency, from 12 ms for baseline to 58 ms for ours-xl}]{charts/latency.plotly.json}
 \end{figure}
 
-\subsection{HTML widget}
+\subsection{HTML widgets}
 \begin{figure}[ht]
 \centering
 \caption{A self-contained HTML widget in a sandboxed frame.}
 \label{fig:html}
 \interactive[height=5cm, id=fig-html,
   alt={The live HTML demo}]{widgets/demo/}
+\end{figure}
+
+Figure~\ref{fig:bridge} speaks the bridge: it announces readiness and
+status and answers snapshots, drawing the paper's tokens so the reader
+stylesheet reaches it. Figure~\ref{fig:framed} declares the origins it may
+frame or load from, in its \texttt{widget.json} and in the macro's
+\texttt{framedomains=} and \texttt{resourcedomains=} (the two join); it
+fetches nothing, and its PDF poster is a placeholder until the widget is
+approved and Maleficium renders it.
+\begin{figure}[ht]
+\centering
+\caption{An HTML widget that answers the bridge, drawn from the paper's tokens.}
+\label{fig:bridge}
+\interactive[poster=figures/bridge-poster.png, height=4cm, id=fig-bridge,
+  alt={Swatches of the paper accent and four palette steps}]{widgets/bridge/}
+\end{figure}
+\begin{figure}[ht]
+\centering
+\caption{An HTML widget declaring the origins it may frame or load from.}
+\label{fig:framed}
+\interactive[height=3cm, id=fig-framed, framedomains=https://example.org,
+  resourcedomains=https://cdn.example.org,
+  alt={A widget declaring frame and resource origins}]{widgets/framed/}
+\end{figure}
+
+\subsection{Custom runtime}
+Figure~\ref{fig:wave} runs a custom runtime: the waving robot from the
+author's website as a real runtime with its own \texttt{runtime.json}. It
+speaks the bridge, takes the paper's figure tokens, and reads its speech
+bubble from a greeting file; the runtime is not approved in a fresh
+checkout, so the PDF holds a placeholder where its proposed poster will go.
+\begin{figure}[ht]
+\centering
+\caption{A waving robot, a custom runtime; its poster arrives with approval.}
+\label{fig:wave}
+\interactiveruntime[runtime=wave@1, height=5cm, width=0.75\linewidth, plate=1A1233,
+  id=fig-wave,
+  alt={A pixel-art robot waving and watching the mouse}]{words/greeting.txt}
 \end{figure}
 
 \subsection{Widgets side by side}
@@ -230,28 +335,56 @@ figure plate, instead of in the article's text:
 \section{What each widget does}\label{sec:guide}
 \begin{description}
 \item[Model] \verb|runtime=model@1| loads a glTF model (\texttt{.glb}) for orbiting
-  and zooming. The PDF shows the poster (Figure~\ref{fig:model}).
+  and zooming. The PDF shows the poster (Figure~\ref{fig:model}). A posed
+  camera starts the live view from \verb|camera=|, with a \verb|size=| poster
+  in pixels and a \verb|background=| behind the model (Figure~\ref{fig:model-pose}).
 \item[Video] \verb|runtime=video@1| plays a clip, with an optional remote URL
-  and checksum for large files. The PDF shows the poster frame (Figure~\ref{fig:video}).
+  and checksum for large files; \verb|loop=true| plays it again and
+  \verb|muted=true| starts it silent (Figure~\ref{fig:video}). With
+  \verb|at=| the live view starts seconds in and the poster is that frame,
+  and \verb|remote=| with \verb|sha256=| names the hosted copy used when the
+  file does not travel with the paper (Figure~\ref{fig:video-remote}).
 \item[Table] \verb|runtime=table@1| reads a CSV into a sortable table. The PDF
-  prints only the first \texttt{pdfrows} rows (Table~\ref{tab:results}).
+  prints only the first \texttt{pdfrows} rows (Table~\ref{tab:results}); the
+  live view starts sorted by \verb|sort=|, filtered by \verb|filter=|, showing
+  the \verb|columns=| in order with the \verb|format=| each names and at most
+  \verb|maxrows| rows.
 \item[Chart] \verb|runtime=chart@1| renders a Vega-Lite specification with
-  hover details; the PDF shows a poster (Figure~\ref{fig:chart}).
+  hover details, its poster at \verb|scale=| pixels per CSS pixel
+  (Figure~\ref{fig:chart}). A chart's \verb|data| source may repeat, with the
+  spec naming each file it reads (Figure~\ref{fig:chart-split}); an author
+  poster, a narrower \verb|width=| and a \verb|plate=| of its own style one
+  widget (Figure~\ref{fig:chart-styled}).
 \item[Plotly] \verb|runtime=plotly@1| draws a figure saved from Python with
   Plotly's hover, in the paper's style unless \verb|template=figure|
-  (Figures~\ref{fig:plotly-tradeoff} and~\ref{fig:plotly-latency}).
+  (Figures~\ref{fig:plotly-tradeoff} and~\ref{fig:plotly-latency}); its
+  poster also takes \verb|scale=|.
 \item[HTML] \verb|\interactive| embeds a folder with an \texttt{index.html} in a
-  sandboxed frame (Figure~\ref{fig:html}).
+  sandboxed frame (Figure~\ref{fig:html}). One page answers the bridge, with
+  readiness, status and snapshots drawn from the paper's tokens
+  (Figure~\ref{fig:bridge}); another declares the origins it may frame or
+  load from, in its \texttt{widget.json} with the macro's
+  \verb|framedomains=| and \verb|resourcedomains=| (Figure~\ref{fig:framed}).
+\item[Custom runtime] \verb|\interactiveruntime| with a project runtime runs
+  the project's own page under the bridge: readiness, status, snapshots and
+  the paper's tokens, with its sources bound from files
+  (Figure~\ref{fig:wave}).
 \item[Live equation] \verb|liveequation| with \verb|\maleficiumparam{name}{default}[min,max,step]|
   and \verb|\liveresult[digits=n]{formula}|: the PDF typesets the values at the
   defaults, the HTML paper lets the reader change them
-  (Equation~\eqref{eq:binary-entropy}).
+  (Equation~\eqref{eq:binary-entropy}). A widget may also sit in the text
+  outside any float, at the author's width, with no number; the live equation
+  runs there by default and in a frame of its own with \verb|mode=widget|.
+\item[Reader style] \verb|\maleficiumreaderstyle{reader.css}| restyles the
+  reader in light and dark mode alike; its tokens reach every widget and the
+  posters Maleficium renders (the bridge widget's accent chip shows them).
 \end{description}
 Every widget requires \texttt{alt=} text, which becomes the image
 description in the HTML view. The app renders the PDF's picture of a
 model, chart, Plotly figure or HTML widget from the widget itself, so these carry no
-\texttt{poster=}; a video needs a \texttt{poster=} frame until video
-posters are rendered.
+\texttt{poster=}; a video takes a \texttt{poster=} frame or an \texttt{at=}
+moment, and a widget whose poster needs an approval the checkout does not
+have yet shows a placeholder (Figures~\ref{fig:framed} and~\ref{fig:wave}).
 
 \bibliographystyle{plain}
 \bibliography{refs}
