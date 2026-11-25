@@ -55,6 +55,12 @@
 
   Two tools are new. `export_read` reads export state without writing anything (`stamp`, `status`, `cancel`), and `describe` returns one tool's schema, hints and examples. `sync_render` is for the app only; a model reads a page region as an image with `sync_view` `snippet` and `with_image`.
 
+- **Export from the command line.** `maleficium export <project> --main main.tex --out <dest>` compiles a paper and writes its bundle without opening a window, for CI and site builds. `--single-file` writes one file, and `--deny-warnings` fails on any export warning. Nothing is approved from the command line, so unapproved widgets export as posters. See [docs/MCP.md](docs/MCP.md#one-shot-export-command).
+- **Reproducible exports.** With `SOURCE_DATE_EPOCH` set, the same sources export to a byte-identical bundle, PDF included. Without it, each compile stamps the PDF with the time it ran.
+- **Bundles record their source.** The manifest's `source.digest` covers the project's source files and the export's profile and main file, so a site that keeps an old export can tell whether it still matches its source.
+- **Anchors a host can rely on.** A bundle keeps one `<title>`, one plain `<main>` and its policy first in `<head>`, in every future format, so a site can add its own head tags and links to exports it keeps for years. See [Hosting a bundle](docs/INTERACTIVE-PAPERS.md#hosting-a-bundle).
+- **Drop the version-of-record line.** `\maleficiumreaderpdfnote{off}` removes "paper.pdf is the version of record." from the exported page. The PDF still ships.
+
 ### For contributors
 
 - **One formula language, three evaluators.** The reader's interpreter (`embed-runtime/src/expr.ts`, which holds the grammar), the package's `l3fp` path and the app's check are held to the shared cases in `embed-runtime/src/expr.vectors.json`, which a new `liveeq` e2e suite also runs. The bundle manifest gains an optional `equations` list (schema `paper-bundle-2`).
