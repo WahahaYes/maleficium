@@ -58,6 +58,17 @@ A widget may declare `https` origins it frames or loads from, such as a YouTube 
 
 The bundle's `index.html` is the paper reflowed for the screen, with each widget in place. `paper.pdf` comes along as the version of record. LaTeX the converter can't read shows as raw source and is listed in the export's warnings.
 
+## Hosting a bundle
+
+An exported bundle is a static site. Upload the folder, or the one file, and let the site build add the chrome it needs. However the bundle's format version changes, these anchors stay where they are:
+
+- The head holds exactly one `<title>`. Add your head tags right after `</title>`.
+- The page has exactly one `<main>` start tag, written `<main>` with no attributes. Add your top-of-page chrome, such as a back link or a banner, right after it.
+- `<p class="m-version">` is the version-of-record note. It is there by default; a host may remove it.
+- The bundle's `Content-Security-Policy` is the first element in `<head>`, before the charset and the title. It allows inline styles, so a host's `<style>` works. JSON-LD (`<script type="application/ld+json">`) is data the browser never runs, so the policy does not block it.
+
+A format bump never moves those anchors. The rest of the reader's markup and classes may change between format versions.
+
 ## Styling the reader
 
 The reader has light and dark modes. To restyle it, name a stylesheet in your source:
