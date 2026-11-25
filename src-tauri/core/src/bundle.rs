@@ -236,6 +236,30 @@ pub(crate) fn sha_of(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
 
+/// The source digest: what a host compares to tell whether a frozen export
+/// still matches its project. Covers the files a source zip holds (hidden
+/// names, the poster cache and compile outputs left out), each as its
+/// `/`-separated relative path, a NUL, its sha256 and a newline, in path
+/// order; then the profile and main file, which change the output too.
+pub(crate) fn source_digest(
+    root: &Path,
+    main_rel: &str,
+    profile: BundleProfile,
+) -> Result<String, String> {
+    let mut h = Sha256::new();
+    for rel in crate::export::walk_sources(root, false)? {
+        let (sha, _) = hash_file(&root.join(&rel))?;
+        h.update(format!("{rel}\0{sha}\n").as_bytes());
+    }
+    let profile = match profile {
+        BundleProfile::Folder => "folder",
+        BundleProfile::SingleFile => "single-file",
+        BundleProfile::Hosted => "hosted",
+    };
+    h.update(format!("profile\0{profile}\nmain\0{main_rel}\n").as_bytes());
+    Ok(format!("sha256:{}", hex(&h.finalize())))
+}
+
 /// Streams a file through sha256: its digest and length.
 fn hash_file(path: &Path) -> Result<(String, u64), String> {
     let mut f =
@@ -2197,9 +2221,10 @@ fn export_inner(
     let converted = conversion.html.map_err(|e| {
         format!("{main_rel} could not be converted to HTML, so the bundle has no article: {e}")
     })?;
-    // Reader flags: the marker classes the `\maleficiumcontents` and
-    // `\maleficiummeasure` calls left in the conversion, resolved where the
-    // widgets are joined and stripped from the article.
+    // Reader flags: the marker classes the `\maleficiumcontents`,
+    // `\maleficiumreaderpdfnote` and `\maleficiummeasure` calls left in the
+    // conversion, resolved where the widgets are joined and stripped from the
+    // article.
     let flag_scan = flags::scan(&converted);
     for w in &flag_scan.warnings {
         plan.warn(BundleWarningKind::Conversion, w.clone());
@@ -2269,6 +2294,10 @@ fn export_inner(
     manifest.insert(
         "generator".into(),
         json!({ "name": "maleficium", "version": env!("CARGO_PKG_VERSION") }),
+    );
+    manifest.insert(
+        "source".into(),
+        json!({ "digest": source_digest(&root, main_rel, profile)? }),
     );
     manifest.insert(
         "profile".into(),
@@ -2384,6 +2413,7 @@ fn export_inner(
                 folder: false,
                 article: &article_html,
                 measure: flag_scan.flags.measure,
+                pdf_note: flag_scan.flags.pdf_note,
                 pdf: Some(&pdf_bytes),
                 islands: &islands,
                 frames: &frames,
@@ -2476,6 +2506,7 @@ fn export_inner(
                 folder: true,
                 article: &article_html,
                 measure: flag_scan.flags.measure,
+                pdf_note: flag_scan.flags.pdf_note,
                 pdf: None,
                 islands: &islands,
                 frames: &frames,

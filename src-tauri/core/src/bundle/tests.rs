@@ -1249,6 +1249,7 @@ fn flagged_conversion() -> String {
         "<span class=\"ltx_text m-flag m-flag-contents-on\"></span>",
         "<span class=\"ltx_text m-flag m-flag-measure-narrow\"></span>",
         "<span class=\"ltx_text m-flag m-flag-contents-off\"></span>",
+        "<span class=\"ltx_text m-flag m-flag-pdfnote-off\"></span>",
         "<span class=\"ltx_text m-flag m-flag-measure-wide\"></span>",
         "<span class=\"ltx_text m-flag m-flag-contents-sideways\"></span>",
     );
@@ -1280,6 +1281,10 @@ fn reader_flags_resolve_to_the_manifest_and_shape_the_page() {
             "{name}: contents:false omits the nav"
         );
         assert!(
+            !html.contains("<p class=\"m-version\">"),
+            "{name}: pdfnote:false omits the version-of-record line"
+        );
+        assert!(
             html.contains("<body class=\"m-reader\" data-measure=\"wide\">"),
             "{name}: the wide token overrides the column"
         );
@@ -1307,6 +1312,10 @@ fn reader_flags_default_to_contents_with_the_theme_measure() {
     assert!(
         html.contains("<nav class=\"m-contents\""),
         "nav still emitted"
+    );
+    assert!(
+        html.contains("<p class=\"m-version\">"),
+        "the version-of-record line is still emitted"
     );
     assert!(
         !html.contains("data-measure=\""),
@@ -2924,4 +2933,68 @@ fn a_widget_mode_equation_ships_the_liveeq_widget_once() {
         !Path::new(&d).join(reader::LIVEEQ_ENTRY).exists(),
         "inline equations need no widget"
     );
+}
+
+#[test]
+fn every_profile_records_the_source_digest() {
+    let p = project("source-digest", REAL_SIDECAR);
+    let folder = dest(&p, "folder");
+    export(&p, &folder, BundleProfile::Folder).unwrap();
+    let single = dest(&p, "single.html");
+    export(&p, &single, BundleProfile::SingleFile).unwrap();
+    let html = std::fs::read_to_string(&single).unwrap();
+    for (m, profile) in [
+        (manifest_of(Path::new(&folder)), BundleProfile::Folder),
+        (
+            island_json(&html, "mfw-manifest"),
+            BundleProfile::SingleFile,
+        ),
+    ] {
+        let want = source_digest(&p.root, "main.tex", profile).unwrap();
+        assert_eq!(m["source"], json!({ "digest": want }));
+    }
+}
+
+#[test]
+fn the_source_digest_follows_the_sources_and_nothing_else() {
+    let base = crate::test_scratch::dir("bundle-source-digest");
+    let _ = std::fs::remove_dir_all(&base);
+    let a = base.join("a");
+    std::fs::create_dir_all(a.join("figs")).unwrap();
+    std::fs::write(a.join("main.tex"), "\\documentclass{article}").unwrap();
+    std::fs::write(a.join("figs/one.csv"), "1,2\n").unwrap();
+    let d = |root: &Path, main: &str| source_digest(root, main, BundleProfile::Folder).unwrap();
+    let first = d(&a, "main.tex");
+    assert!(
+        first.starts_with("sha256:") && first.len() == 7 + 64,
+        "{first}"
+    );
+    assert_eq!(d(&a, "main.tex"), first, "stable across runs");
+    let b = base.join("b");
+    copy_dir(&a, &b);
+    assert_eq!(
+        d(&b, "main.tex"),
+        first,
+        "a copied project has the same digest"
+    );
+    // Hidden folders, the poster cache among them, are not sources.
+    std::fs::create_dir_all(a.join(".maleficium/posters")).unwrap();
+    std::fs::write(a.join(".maleficium/posters/fig.png"), "png").unwrap();
+    std::fs::write(a.join(".hidden"), "x").unwrap();
+    assert_eq!(
+        d(&a, "main.tex"),
+        first,
+        "hidden files and posters do not count"
+    );
+    assert_ne!(d(&a, "other.tex"), first, "the main file counts");
+    assert_ne!(
+        source_digest(&a, "main.tex", BundleProfile::SingleFile).unwrap(),
+        first,
+        "the profile counts"
+    );
+    std::fs::write(a.join("figs/one.csv"), "1,3\n").unwrap();
+    let edited = d(&a, "main.tex");
+    assert_ne!(edited, first, "one changed byte counts");
+    std::fs::rename(a.join("figs/one.csv"), a.join("figs/two.csv")).unwrap();
+    assert_ne!(d(&a, "main.tex"), edited, "a renamed file counts");
 }

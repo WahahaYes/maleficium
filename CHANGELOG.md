@@ -5,12 +5,71 @@
 ### Changes
 
 - **Live equations.** A `liveequation` is an equation whose numbers a reader can change: the PDF shows the values at their defaults, and the exported paper adds controls that recompute them in the text or, with `mode=widget`, in a frame of its own. See [Live equations](docs/INTERACTIVE-PAPERS.md#live-equations).
+- **The MCP tools are grouped by what they act on.** The 43 tools became 17, each taking an `action`: `paper` compiles, `export_write` writes PDFs, zips and bundles, `structure` reads the document's outline and references, and so on. Old names are gone, with no aliases, so a client that calls them must move to the new ones. Each old tool's new tool and action:
+
+  | Old tool             | New tool          | Action                                |
+  | -------------------- | ----------------- | ------------------------------------- |
+  | `grant`              | `session`         | `grant`                               |
+  | `info`               | `session`         | `info`                                |
+  | `list`               | `file`            | `list`                                |
+  | `read`               | `file`            | `read`                                |
+  | `compile_run`        | `paper`           | `start`                               |
+  | `compile_poll`       | `paper`           | `poll`                                |
+  | `compile_cancel`     | `paper`           | `cancel`                              |
+  | `diagnostics`        | `paper`           | `diagnostics`                         |
+  | `precompile_checks`  | `paper`           | `prechecks`                           |
+  | `offline_readiness`  | `paper`           | `readiness`                           |
+  | `output_stamp`       | `paper`           | `output` (also `export_read` `stamp`) |
+  | `log_tail`           | `paper`           | `log`                                 |
+  | `export_pdf`         | `export_write`    | `pdf`                                 |
+  | `export_zip`         | `export_write`    | `zip`                                 |
+  | `export_bundle`      | `export_write`    | `bundle`                              |
+  | `preview_bundle`     | `export_write`    | `preview`                             |
+  | `templates`          | `scaffold`        | `list`                                |
+  | `new_from_template`  | `scaffold`        | `create`                              |
+  | `synctex_forward`    | `sync_view`       | `forward`                             |
+  | `synctex_inverse`    | `sync_view`       | `inverse`                             |
+  | `snippet`            | `sync_view`       | `snippet`                             |
+  | `snippet_render`     | `sync_render`     | `render`                              |
+  | `delete`             | `file_mutate`     | `delete`                              |
+  | `undo`               | `file_mutate`     | `undo`                                |
+  | `outline`            | `structure`       | `outline`                             |
+  | `file_graph`         | `structure`       | `file_graph`                          |
+  | `labels_refs`        | `structure`       | `labels_refs`                         |
+  | `citations`          | `structure`       | `citations`                           |
+  | `document_structure` | `structure`       | `document_structure`                  |
+  | `definition`         | `structure`       | `definition`                          |
+  | `search`             | `search`          | `search`                              |
+  | `find_files`         | `search`          | `find_files`                          |
+  | `replace_preview`    | `replace`         | `preview`                             |
+  | `replace_apply`      | `replace`         | `apply`                               |
+  | `replace_undo`       | `replace`         | `undo`                                |
+  | `widgets`            | `widget`          | `list`                                |
+  | `widgets_status`     | `widget`          | `status`                              |
+  | `widget_check`       | `widget`          | `check`                               |
+  | `runtime_scaffold`   | `runtime_read`    | `scaffold`                            |
+  | `runtime_validate`   | `runtime_read`    | `validate`                            |
+  | `runtime_install`    | `runtime_install` | _(unchanged)_                         |
+  | `app_windows`        | `presence`        | `windows`                             |
+  | `app_request_open`   | `presence`        | `request_open`                        |
+
+  Two tools are new. `export_read` reads export state without writing anything (`stamp`, `status`, `cancel`), and `describe` returns one tool's schema, hints and examples. `sync_render` is for the app only; a model reads a page region as an image with `sync_view` `snippet` and `with_image`.
+
+- **Export from the command line.** `maleficium export <project> --main main.tex --out <dest>` compiles a paper and writes its bundle without opening a window, for CI and site builds. `--single-file` writes one file, and `--deny-warnings` fails on any export warning. Nothing is approved from the command line, so unapproved widgets export as posters. See [docs/MCP.md](docs/MCP.md#one-shot-export-command).
+- **Reproducible exports.** With `SOURCE_DATE_EPOCH` set, the same sources export to a byte-identical bundle, PDF included. Without it, each compile stamps the PDF with the time it ran.
+- **Bundles record their source.** The manifest's `source.digest` covers the project's source files and the export's profile and main file, so a site that keeps an old export can tell whether it still matches its source.
+- **Anchors a host can rely on.** A bundle keeps one `<title>`, one plain `<main>` and its policy first in `<head>`, in every future format, so a site can add its own head tags and links to exports it keeps for years. See [Hosting a bundle](docs/INTERACTIVE-PAPERS.md#hosting-a-bundle).
+- **Drop the version-of-record line.** `\maleficiumreaderpdfnote{off}` removes "paper.pdf is the version of record." from the exported page. The PDF still ships.
 
 ### For contributors
 
 - **One formula language, three evaluators.** The reader's interpreter (`embed-runtime/src/expr.ts`, which holds the grammar), the package's `l3fp` path and the app's check are held to the shared cases in `embed-runtime/src/expr.vectors.json`, which a new `liveeq` e2e suite also runs. The bundle manifest gains an optional `equations` list (schema `paper-bundle-2`).
 - **The macOS smoke test hides Xcode and the Command Line Tools for real.** It used to only point `DEVELOPER_DIR` at an empty folder, so the runner's tools stayed usable. It now moves every `/Applications/Xcode*.app`, `/Library/Developer/CommandLineTools` and `/usr/local`'s `lib`, `opt` and `Cellar` aside (on Apple silicon too) before the compile and launch probes, and fails unless `xcode-select -p` fails, as on a Mac that never had them.
 - **The Windows smoke test hides the Visual C++ runtime.** Narrowing `PATH` to `System32` left the runner's runtime in place, since it lives in `System32`, so only the clean VM caught a binary that loads it at run time. The smoke now renames every `vcruntime140*`, `msvcp140*` and related DLL in `System32` and `SysWOW64` aside for the compile and launch probes, then restores the files with their ACL and owner. The DLL allowlist now also reads each binary's delay-load imports, which a launch alone can miss.
+- **House rules are checked by necro.** `necro.yaml` and `necro/` hold the repository's rules, the pre-commit hooks run them, and `necro.baseline.yaml` records the existing hits so new code cannot add more.
+- **Cleaning goes by tier.** `npm run clean` removes intermediates (`dist/`, `out/`, `coverage/`), `npm run clean-cache` also removes the caches (cargo incremental sessions, the harness target, harness worktrees), and `--all` removes the target dirs and `node_modules`. `--dry-run` shows what would go. It refuses to remove caches while a build or the app may be using them. `docs/BUILDING.md` lists each generated file's tier.
+- **Rust 2024.** The crates use the 2024 edition and style, and `rust-toolchain.toml` pins Rust 1.100.0 everywhere: development, CI on every OS and Docker.
+- **A Makefile.** `make check` runs the pre-commit hooks on every file and then the full check gate; `make help` lists the targets.
 
 ## 0.4.2 - 2026-10-25
 

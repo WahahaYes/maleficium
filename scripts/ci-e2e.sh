@@ -20,7 +20,7 @@ say() { echo "ci-e2e: $1"; }
 
 [ "$(uname -s)" = Linux ] || die "the suites run on Linux only"
 # The suites, in order.
-[ $# -gt 0 ] || set -- export interactive poster approval liveeq
+[ $# -gt 0 ] || set -- export interactive poster approval liveeq cli-export
 for s in "$@"; do
     [ -f "e2e/$s-run.sh" ] || die "no suite e2e/$s-run.sh"
 done

@@ -53,6 +53,9 @@ export DEVROOT SCRATCH
 # Reuse the warm engine cache: the first cold download is minutes.
 export XDG_CACHE_HOME="${DRIVER_CACHE:-$HOME/.cache}"
 export XDG_DATA_HOME="$SCRATCH/data"
+# A fixed build date makes a recompile byte-identical (the guard below);
+# without it the PDF carries the time of each compile.
+export SOURCE_DATE_EPOCH=1764000000
 ENGINE_RS="$DEVROOT/src-tauri/core/src/engine.rs"
 BUNDLE_DIGEST="$(sed -n 's/^pub const BUNDLE_DIGEST: &str = "\([0-9a-f]*\)";/\1/p' "$ENGINE_RS")"
 [ -n "$BUNDLE_DIGEST" ] || fail "pinned bundle digest not found in $ENGINE_RS"
@@ -207,6 +210,22 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
         check(f"{profile}: layout", all(os.path.isfile(os.path.join(dest, f)) for f in
               ["manifest.json", "index.html", "paper.pdf", "theme/theme.json", "theme/theme.css"] + [f"widgets/{w}/index.html" for w in WIDGETS]))
         docs = {w: open(os.path.join(dest, f"widgets/{w}/index.html"), encoding="utf-8").read() for w in WIDGETS}
+    # The anchors a host relies on: its build inserts head tags after the
+    # title and its chrome after main, and removes the version note if it
+    # likes. The policy stays first and admits a host's inline style.
+    reader = html if profile == "single-file" else open(os.path.join(dest, "index.html"), encoding="utf-8").read()
+    head = reader[:reader.find("</head>")]
+    after_head = head[head.find("<head>") + len("<head>"):]
+    before_islands = reader.split('<script type="application/json"', 1)[0]
+    policy = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', reader).group(1)
+    style_src = re.search(r"style-src ([^;]*)", policy).group(1)
+    check(f"{profile}: reader keeps one title, one bare main and the version note",
+          head.count("<title>") == 1 and head.count("</title>") == 1
+          and before_islands.count("<main") == 1 and before_islands.count("<main>") == 1
+          and '<p class="m-version">' in before_islands)
+    check(f"{profile}: the policy is first in head and admits a host's inline style",
+          after_head.startswith('<meta http-equiv="Content-Security-Policy"')
+          and "'unsafe-inline'" in style_src)
     # Every widget is one inline document with the strict policy first.
     def first_is_policy(doc):
         at = doc.find('<meta http-equiv="Content-Security-Policy"')
@@ -215,6 +234,27 @@ for profile, name in [("folder", "folder"), ("single-file", "single.html"), ("ho
     check(f"{profile}: every widget document carries its policy first", all(first_is_policy(d) for d in docs.values()))
     check(f"{profile}: widget documents load nothing and need no 'self'",
           all("'self'" not in d and "connect-src 'none'" in d and not re.search(r'<script[^>]*\ssrc=', d) for d in docs.values()))
+
+# Reproducible exports: with SOURCE_DATE_EPOCH set, a fresh compile and
+# export of the same sources is byte-identical to the first, in both the
+# folder and the single-file profile.
+def tree(path):
+    if os.path.isfile(path):
+        return {"": open(path, "rb").read()}
+    out = {}
+    for d, _, files in os.walk(path):
+        for f in files:
+            full = os.path.join(d, f)
+            out[os.path.relpath(full, path)] = open(full, "rb").read()
+    return out
+rec2 = compile("main.tex")
+check("the fixture compiles again", rec2.get("status") == "success", str(rec2)[:300])
+for profile, name in [("folder", "folder"), ("single-file", "single.html")]:
+    again = name.replace("folder", "folder-again").replace("single.html", "single-again.html")
+    r = export(profile, again)
+    first, second = tree(os.path.join(OUT, name)), tree(os.path.join(OUT, again))
+    differ = sorted(k for k in set(first) | set(second) if first.get(k) != second.get(k))
+    check(f"{profile}: a second compile and export is byte-identical", r["ok"] and not differ, str(differ)[:300])
 
 # Destination inside the project: refused, for every profile, nothing written.
 before = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
@@ -280,6 +320,14 @@ for profile, name in [("single-file", "flags-single.html"), ("folder", "flags-fo
     check(f"flags: {profile} measure wide overrides the article column",
           'data-measure="wide"' in html, "")
     check(f"flags: {profile} no flag marker survives in the article", "m-flag" not in html, "")
+    check(f"flags: {profile} pdfnote:false omits the version-of-record line",
+          'class="m-version"' not in html, "")
+    if profile == "folder":
+        check("flags: folder still writes paper.pdf",
+              os.path.isfile(os.path.join(dest, "paper.pdf")), "")
+    else:
+        check("flags: single file still carries the pdf in a link",
+              'id="pdf-link"' in html and "data:application/pdf;base64," in html, "")
 href = compile("bad-measure.tex")
 check("a hostile measure value fails the compile", href.get("status") != "success", str(href)[:200])
 

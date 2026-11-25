@@ -1,10 +1,11 @@
 //! Reader flags: the author's document-level settings for the reflowed page,
 //! carried from the conversion as marker classes and resolved here.
 //!
-//! `maleficium-interactive.sty` checks `\maleficiumcontents` and
-//! `\maleficiummeasure` against closed sets for the PDF, and the converter
-//! binding (`engine/embedded/maleficium-interactive.sty.rhai`) carries each
-//! call as one empty marker element:
+//! `maleficium-interactive.sty` checks `\maleficiumcontents`,
+//! `\maleficiummeasure` and `\maleficiumreaderpdfnote` against closed sets for
+//! the PDF, and the converter binding
+//! (`engine/embedded/maleficium-interactive.sty.rhai`) carries each call as
+//! one empty marker element:
 //!
 //! ```html
 //! <span class="ltx_text m-flag m-flag-contents-off"></span>
@@ -16,7 +17,8 @@
 //! article, so none reaches the page. Anything outside the closed sets is a
 //! hostile or stale marker: it is ignored with a warning, never coerced and
 //! never passed to CSS. [`omit_contents`] then drops the generated contents
-//! nav when the flags switch it off (not-emit, rather than hide).
+//! nav when the flags switch it off (not-emit, rather than hide), and the
+//! reader drops its version-of-record line when `pdf_note` is off.
 //!
 //! The scanner is purpose-built like [`crate::reflow::join`]'s: it tokenizes
 //! tags properly (quoted attribute values may hold `<` and `>`), skips
@@ -27,6 +29,8 @@
 const FLAG_CLASS: &str = "m-flag";
 /// The value token of a contents marker: `m-flag-contents-on|off`.
 const CONTENTS_PREFIX: &str = "m-flag-contents-";
+/// The value token of a pdf-note marker: `m-flag-pdfnote-on|off`.
+const PDFNOTE_PREFIX: &str = "m-flag-pdfnote-";
 /// The value token of a measure marker: `m-flag-measure-narrow|default|wide|full`.
 const MEASURE_PREFIX: &str = "m-flag-measure-";
 
@@ -80,6 +84,8 @@ impl Measure {
 pub struct Flags {
     /// Whether the article shows its contents list.
     pub contents: bool,
+    /// Whether the reader opens with the version-of-record line.
+    pub pdf_note: bool,
     /// The article column width.
     pub measure: Measure,
 }
@@ -88,6 +94,7 @@ impl Default for Flags {
     fn default() -> Self {
         Flags {
             contents: true,
+            pdf_note: true,
             measure: Measure::Default,
         }
     }
@@ -103,6 +110,7 @@ pub struct Scan {
 
 enum Vote {
     Contents(bool),
+    PdfNote(bool),
     Measure(Measure),
     Unknown(String),
 }
@@ -209,6 +217,12 @@ fn votes_of(class: &str) -> Vec<Vote> {
                 "off" => Vote::Contents(false),
                 _ => Vote::Unknown(t.to_string()),
             });
+        } else if let Some(v) = t.strip_prefix(PDFNOTE_PREFIX) {
+            votes.push(match v {
+                "on" => Vote::PdfNote(true),
+                "off" => Vote::PdfNote(false),
+                _ => Vote::Unknown(t.to_string()),
+            });
         } else if let Some(v) = t.strip_prefix(MEASURE_PREFIX) {
             votes.push(match Measure::parse(v) {
                 Some(m) => Vote::Measure(m),
@@ -227,6 +241,7 @@ fn apply(flags: &mut Flags, warnings: &mut Vec<String>, votes: &[Vote]) {
     for v in votes {
         match v {
             Vote::Contents(on) => flags.contents = *on,
+            Vote::PdfNote(on) => flags.pdf_note = *on,
             Vote::Measure(m) => flags.measure = *m,
             Vote::Unknown(t) => warn(
                 warnings,
