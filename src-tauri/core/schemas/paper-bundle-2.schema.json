@@ -7,6 +7,7 @@
     "format",
     "formatVersion",
     "generator",
+    "source",
     "paper",
     "pdf",
     "theme",
@@ -21,6 +22,18 @@
       "additionalProperties": false,
       "required": ["name", "version"],
       "properties": { "name": { "const": "maleficium" }, "version": { "type": "string" } }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest"],
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 over the project's source files (those a source zip holds: no hidden names, poster cache or compile outputs), each as `<path>\\0<sha256 hex>\\n` with `/` separators in path order, then `profile\\0<profile>\\nmain\\0<main_rel>\\n`: a host compares it to tell whether a frozen export still matches its source"
+        }
+      }
     },
     "profile": { "enum": ["folder", "single-file", "hosted"] },
     "sizeCapBytes": { "type": "integer", "minimum": 0 },

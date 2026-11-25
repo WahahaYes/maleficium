@@ -114,7 +114,7 @@ fn cache_files(root: &Path, rel: &Path, out: &mut Vec<String>) {
 
 /// Walks the sources; `with_cache` adds each folder's poster cache, so a
 /// paper exported with it compiles with its posters without the app.
-fn walk_sources(root: &Path, with_cache: bool) -> Result<Vec<String>, String> {
+pub(crate) fn walk_sources(root: &Path, with_cache: bool) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
